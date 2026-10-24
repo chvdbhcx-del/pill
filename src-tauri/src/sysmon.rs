@@ -166,7 +166,7 @@ pub fn init(app: &tauri::App) {
     let app: AppHandle = app.handle().clone();
     // one thread for the whole run; while the switch is off or the pill is hidden it only wakes once a second and does nothing
     std::thread::spawn(move || loop {
-        if crate::settings::get_bool("live.sysmon", false) && !crate::pill::is_hidden() {
+        if crate::settings::get_bool("live.sysmon", true) && !crate::pill::is_hidden() {
             let _ = app.emit_to("pill", "sysmon:tick", sample());
             std::thread::sleep(Duration::from_millis(POLL_MS));
         } else {

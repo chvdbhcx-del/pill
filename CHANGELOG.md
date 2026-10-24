@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Changed
+- The system monitor is on by default (Settings > Live events > System monitor turns it off).
+
 ## [0.1.1] - 2026-10-24
 
 ### Added

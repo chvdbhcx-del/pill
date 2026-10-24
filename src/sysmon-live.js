@@ -13,7 +13,7 @@
   const inv = (c, a) => P.invoke(c, a);
   const on = (n, f) => T.event.listen(n, (e) => { try { f(e.payload); } catch (err) { console.error('sysmon-live', n, err); } });
   // Pill.liveOn() treats an unknown key as ON; this switch is opt-in, so read the setting itself
-  const enabled = () => !!(P.settings && P.settings['live.sysmon'] === true);
+  const enabled = () => !!(P.settings && P.settings['live.sysmon'] !== false);
   const GPU_C = 85, CPU_PCT = 95, RAM_PCT = 90, HOLD_MS = 10000, COOL_MS = 5 * 60000, CHIP_MS = 8000, MAX_GPU = 2;
   const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
   const gb = (mb) => (mb / 1024).toFixed(1);
