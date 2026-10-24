@@ -277,6 +277,12 @@
     lctx.strokeStyle = gr;
     if (rp.noline) { lctx.lineWidth = 1.2; lctx.stroke(); } // sleep: just a dark bowl edge
     else {
+      // glow: two wider, translucent passes under the line (cheaper than shadowBlur every frame) so the edge also reads on light / grey wallpapers
+      if (effReact() !== 'calm') { // calm has only the dark hairline: no halo (it would read as a smudge on grey)
+        lctx.globalAlpha = 0.16; lctx.lineWidth = 8; lctx.stroke();
+        lctx.globalAlpha = 0.32; lctx.lineWidth = 4.5; lctx.stroke();
+        lctx.globalAlpha = 1;
+      }
       lctx.lineWidth = 2;
       if (LQ.playing && reduce()) { lctx.shadowColor = LQ.edge; lctx.shadowBlur = 5; } // reduced motion: only a gentle static glow
       lctx.stroke();
@@ -1146,6 +1152,7 @@
     },
     collapse: (how) => doCollapse(true, how === 'click'),
     openCommandBar: () => invoke('cmd_toggle'),
+    relayoutLive() { if (hidden || cardLive) return; sizeLive(); if (Pill.state === 'collapsed') retarget(false, null, 'resize'); }, // the live row's CSS changed (characters.css keeps a slot for the legs' eyes): re-measure its fixed width and resize the capsule to it
     reserve(px) { px = Math.max(0, Math.round(+px || 0)); if (px === petRes) return; petRes = px; if (Pill.state === 'collapsed' && !hidden) retarget(false, null, 'resize'); }, // widen the collapsed capsule by px css px (a pet lives there); animated like any content resize
   };
   Object.defineProperty(Pill, 'lang', { get: () => lang, enumerable: true });

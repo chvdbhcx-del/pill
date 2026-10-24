@@ -348,7 +348,7 @@ ${ln('armL', 'M14.5 34.5L9.5 40.5', 3, '#a9bccf')}${ln('armR', 'M33.5 34.5L38.5 
   if (!body || !clip || !head || !hdr) return;
   const root = document.documentElement;
   const slot = document.createElement('div'); slot.id = 'pet-slot'; head.insertBefore(slot, hdr);
-  const CAP = { s: 20, m: 27, l: 30 }, CAP8 = { s: 14, m: 28, l: 28 }; // css px of the pet box in the 30 px capsule at 100 %; keep in step with pets.css
+  const CAP = { s: 20, m: 27, l: 30 }, CAP8 = { s: 14, m: 21, l: 28 }; // css px of the pet box in the 30 px capsule at 100 %; keep in step with pets.css
   let inst = null, cfg = { id: '', side: 'right', size: 'm' }, cur = 'calm', curCol = '', lastBands = 0, energy = 0, peak = 0.2, lastBandT = 0, sentE = -1;
 
   function mount(fade) { // put the pet where the island is now: capsule floor (collapsed) or the header slot (open)
@@ -366,7 +366,7 @@ ${ln('armL', 'M14.5 34.5L9.5 40.5', 3, '#a9bccf')}${ln('armR', 'M33.5 34.5L38.5 
     if (!inst) { root.style.removeProperty('--pet-res'); delete root.dataset.petSide; if (P.reserve) P.reserve(0); return; }
     const s = Math.min(2, Math.max(0.8, parseFloat(getComputedStyle(root).getPropertyValue('--s')) || 1));
     let n = (cfg.id === 'claude8' ? CAP8 : CAP)[cfg.size];
-    if (cfg.id === 'claude8') n = Math.max(14, Math.floor(n * s / 14 + 1e-6) * 14) / s; // whole cells, as in the CSS
+    if (cfg.id === 'claude8') { const u = cfg.size === 'm' ? 7 : 14; n = Math.max(14, Math.round(n * s / u) * u) / s; } // the same nearest-step rounding as pets.css
     const px = Math.ceil(n * PETS[cfg.id].ar + 12); // box (height x aspect ratio, wide pets up to 2.5:1) + 9 px inset from the end + 3 px gap
     root.style.setProperty('--pet-res', px + 'px'); root.dataset.petSide = cfg.side;
     if (P.reserve) P.reserve(px);

@@ -221,13 +221,20 @@
    Everything moves in whole cells and flips between frames with steps(1): no easing, no blur, no scaling, no transitions (the tint snaps too).
    It stands on its legs on the box floor (the art is 12 rows high, shifted down 2 rows). Capsule: S 14 px (1x cells) / M and L 28 px (2x; 3x would not fit the 30 px capsule), always whole cells
    (round(down) where the engine has it) and never taller than the capsule. Open panel: 14 / 28 / 42 px. */
-.pet[data-where="cap"][data-pet="claude8"] { --cap-n: 28px; }
-.pet[data-where="cap"][data-pet="claude8"][data-size="s"] { --cap-n: 14px; }
+/* three real sizes in the capsule: S 14 px (1 px cells), M 21 px (1.5 px cells), L 28 px (2 px cells; 3x would not fit the 30 px capsule). The box is rounded to the NEAREST step
+   of the cell grid at the island size: rounding down used to collapse all three to 14 px at 95 % (28 * 0.95 < 28), so the setting looked dead */
+.pet[data-where="cap"][data-pet="claude8"] { --cap-n: 21px; --cap-u: 7px; }
+.pet[data-where="cap"][data-pet="claude8"][data-size="s"] { --cap-n: 14px; --cap-u: 14px; }
+.pet[data-where="cap"][data-pet="claude8"][data-size="l"] { --cap-n: 28px; --cap-u: 14px; }
 .pet[data-where="head"][data-pet="claude8"][data-size="s"] { --pet-px: 14px; }
 .pet[data-where="head"][data-pet="claude8"][data-size="l"] { --pet-px: 42px; }
-@supports (width: round(down, 1px, 1px)) { /* whole cells whatever the island size: never larger than the capsule */
-  .pet[data-where="cap"][data-pet="claude8"] { --pet-px: max(14px, round(down, calc(var(--cap-n) * var(--s, 1)), 14px)); }
+@supports (width: round(nearest, 1px, 1px)) {
+  .pet[data-where="cap"][data-pet="claude8"] { --pet-px: max(14px, round(nearest, calc(var(--cap-n) * var(--s, 1)), var(--cap-u))); }
 }
+/* Settings preview card (2x of the capsule): follows the chosen size too */
+.pet-stage .pet[data-pet="claude8"][data-size="s"] { --pet-px: 28px; }
+.pet-stage .pet[data-pet="claude8"][data-size="m"] { --pet-px: 42px; }
+.pet-stage .pet[data-pet="claude8"][data-size="l"] { --pet-px: 56px; }
 .pet[data-pet="claude8"] { --cell: calc(var(--pp) / 14); }
 .pet[data-pet="claude8"], .pet[data-pet="claude8"] * { transition: none !important; }
 .pet[data-pet="claude8"] svg { image-rendering: pixelated; }

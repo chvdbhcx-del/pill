@@ -388,7 +388,7 @@
       function petCard(pg, id) {
         const b = h('button', 'pcard'); b.type = 'button';
         const stage = h('div', 'pet-stage' + (id === 'none' ? ' none' : ''));
-        if (id !== 'none') { const inst = PP.create(id, { state: state === 'ai' ? 'thinking' : state }); stage.append(inst.el); petInst.push(inst); }
+        if (id !== 'none') { const inst = PP.create(id, { state: state === 'ai' ? 'thinking' : state, size: get('pet.size') }); stage.append(inst.el); petInst.push(inst); }
         const nm = id === 'none' ? t({ ru: 'Без питомца', en: 'None' }) : t(PP.registry[id].name);
         const ds = id === 'none' ? t({ ru: 'Остров без жителей.', en: 'An island with nobody on it.' }) : t(PP.registry[id].desc);
         b.title = ds;
@@ -397,7 +397,7 @@
         pg.append(b); return b;
       }
       cleanups.push(() => petInst.forEach((i) => i.destroy()));
-      syncs.push(() => pcards.forEach((b, i) => b.classList.toggle('on', pids[i] === get('pet'))));
+      syncs.push(() => { pcards.forEach((b, i) => b.classList.toggle('on', pids[i] === get('pet'))); petInst.forEach((i) => { i.el.dataset.size = get('pet.size'); }); });
       const pc = card(p);
       row(pc, t({ ru: 'Сторона', en: 'Side' }), t({ ru: 'С какого края острова стоит питомец', en: 'Which end of the island the pet stands at' }),
         segKey('pet.side', [['left', t({ ru: 'Слева', en: 'Left' })], ['right', t({ ru: 'Справа', en: 'Right' })]]));

@@ -4,8 +4,16 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-25
+
 ### Changed
 - The system monitor is on by default (Settings > Live events > System monitor turns it off).
+- The island's coloured edge has a soft glow, so it reads on light and grey wallpapers.
+
+### Fixed
+- Tail and legs characters were never drawn (an SVG overlay of zero size is not rendered); they are now drawn as smooth shapes and match the reference: a tail that hangs down in a smooth arc, legs standing right under the eyes.
+- The legs' eye slot now widens the island (the content used to be pushed against the right edge).
+- The Claude 8-bit pet has three real sizes (14 / 21 / 28 px) at any island size, and the settings preview follows the size.
 
 ## [0.1.1] - 2026-10-24
 

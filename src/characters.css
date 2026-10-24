@@ -1,6 +1,7 @@
 /* Characters (characters.js): the `tail` and `legs` values of the setting `character`.
    One overlay <svg id="chars"> inside #body: no size of its own (overflow visible), coordinates are real px relative to the body's top-left corner. */
-#chars { position: absolute; left: 0; top: 0; width: 0; height: 0; overflow: visible; pointer-events: none; z-index: 4; }
+/* 1 px, not 0: an outer <svg> of zero width / height is not rendered at all (the tail and legs were drawn into nothing); overflow keeps the art visible */
+#chars { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; z-index: 4; }
 
 /* eyes belong to the collapsed capsule: they fade out with the live row when the island opens (the legs and the tail stay) */
 #chars .ch-eyes { transition: opacity 0.15s; }

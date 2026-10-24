@@ -25,26 +25,28 @@
   // The spine is integrated from a heading function f(u) in degrees (0 = right, + = clockwise/down), u = 0 root .. 1 tip: one model for every state.
   function tailPose(s, t, rt, e) {
     const sin = Math.sin;
+    // every pose is a smooth arc that leaves the island's corner heading outward and bends DOWN, like the original (a hanging tail), plus the state's own motion
+    const arc = (h0, h1) => (u) => h0 + (h1 - h0) * (u * (2 - u)); // eases out: most of the bend happens early, the tip hangs nearly straight
     switch (s) {
-      case 'music': { const a = 0.55 + 0.45 * e, ph = TAU * t / 0.7; return { L: 24, w: 3.4, r: 2.9, f: (u) => 18 - 38 * u + 40 * a * sin(ph - 1.8 * u) * (0.25 + u) }; } // swings with the beat, curvature pulses
-      case 'thinking': return { L: 34, w: 3.2, r: 2.8, f: (u) => 10 + 150 * ss(0, 0.5, u) - 250 * ss(0.38, 1, u) - 10 * sin(t * 0.9 - 3 * u) * u }; // S / question-mark loop, slow
-      case 'done': { const k = Math.exp(-rt / 0.9); return { L: 24, w: 3.4, r: 2.9, f: (u) => 14 - 10 * u + 24 * k * sin(rt * 10 - u) * u }; } // straight-ish, a settling wag
-      case 'attention': return { L: 22, w: 5.4, r: 4.6, f: (u) => 8 - 16 * u + 2.5 * sin(t * 24) * u }; // ~1.6x thick, big round tip, a quiver
-      case 'file': return { L: 26, w: 2, r: 2.4, f: (u) => 22 - 40 * u + 5 * sin(t * 2.2 - 2 * u) * u }; // thin
-      case 'sleep': return { L: 22, w: 3.2, r: 2.7, f: (u) => 62 + 30 * u + 3 * sin(t * 0.8) * u }; // drooping, slow breathing
-      default: return { L: 24, w: 3.4, r: 2.9, f: (u) => 28 - 62 * u + 11 * sin(t * 1.3 - 2.4 * u) * (0.4 + u) }; // calm: a comma curl, gentle sway
+      case 'music': { const a = 0.55 + 0.45 * e, ph = TAU * t / 0.7, b = arc(8, 78); return { L: 36, w: 4.4, r: 3.6, f: (u) => b(u) + 26 * a * sin(ph - 1.8 * u) * (0.2 + u) }; } // swings with the beat, curvature pulses
+      case 'thinking': return { L: 34, w: 4.2, r: 3.5, f: (u) => 10 + 150 * ss(0, 0.5, u) - 250 * ss(0.38, 1, u) - 10 * sin(t * 0.9 - 3 * u) * u }; // S / question-mark loop, slow
+      case 'done': { const k = Math.exp(-rt / 0.9), b = arc(16, 84); return { L: 36, w: 4.4, r: 3.6, f: (u) => b(u) + 20 * k * sin(rt * 10 - u) * u }; } // a settling wag
+      case 'attention': { const b = arc(14, 80); return { L: 30, w: 7, r: 5.6, f: (u) => b(u) + 2.5 * sin(t * 24) * u }; } // ~1.6x thick, big round tip, a quiver
+      case 'file': { const b = arc(18, 82); return { L: 38, w: 2.8, r: 3, f: (u) => b(u) + 4 * sin(t * 2.2 - 2 * u) * u }; } // thin
+      case 'sleep': { const b = arc(38, 100); return { L: 34, w: 4.2, r: 3.4, f: (u) => b(u) + 3 * sin(t * 0.8) * u }; } // drooping, slow breathing
+      default: { const b = arc(14, 88); return { L: 38, w: 4.4, r: 3.6, f: (u) => b(u) + 5 * sin(t * 1.3 - 2.4 * u) * (0.3 + u) }; } // calm: a hanging arc, gentle sway
     }
   }
   function buildTail(parent) {
     const g = el('g', null, parent);
-    const line = { fill: 'none', 'stroke-linejoin': 'round', 'stroke-linecap': 'butt' };
+    const line = { fill: 'none', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }; // round ends: the root hides under the island, the tip is covered by its ball
     const o = el('path', Object.assign({ stroke: INK, 'stroke-opacity': '.5' }, line), g), p = el('path', line, g);
     const co = el('circle', { fill: INK, 'fill-opacity': '.5' }, g), c = el('circle', null, g);
     const z = el('path', { d: ZP, fill: 'none', stroke: '#9a9aa6', 'stroke-width': '1.1', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: '0' }, g);
     return {
       g,
       update(st) {
-        const P = tailPose(st.s, st.t, st.rt, st.e == null ? 0.75 : st.e), n = 16, seg = P.L / n;
+        const P = tailPose(st.s, st.t, st.rt, st.e == null ? 0.75 : st.e), n = 36, seg = P.L / n; // enough points that the spine reads as a smooth curve at 3 px thickness
         let x = 0, y = 0, d = 'M0 0';
         for (let i = 0; i < n; i++) { const th = P.f((i + 0.5) / n) * DEG; x += Math.cos(th) * seg; y += Math.sin(th) * seg; d += 'L' + n2(x) + ' ' + n2(y); }
         set(o, { d, 'stroke-width': n2(P.w + 1.8) }); set(p, { d, 'stroke-width': n2(P.w), stroke: st.s === 'attention' ? '#f2b13a' : '#f0a050' });
@@ -59,7 +61,7 @@
     const g = el('g', null, parent);
     const legs = [-1, 1].map((i) => ({
       i,
-      o: el('path', { fill: 'none', stroke: '#5a5a62', 'stroke-opacity': '.6', 'stroke-width': '3.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g),
+      o: el('path', { fill: 'none', stroke: '#6a6a74', 'stroke-opacity': '.38', 'stroke-width': '3.4', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g), // a faint rim so the legs read over a dark desktop
       l: el('path', { fill: 'none', stroke: '#050505', 'stroke-width': '2.2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g),
       f: el('ellipse', { rx: '3.8', ry: '2.1', stroke: '#0a0a0c', 'stroke-opacity': '.55', 'stroke-width': '.8' }, g),
     }));
@@ -68,7 +70,7 @@
       g,
       update(st) {
         const s = st.s, t = st.t, rt = st.rt, lift = [0, 0];
-        let len = 13, sway = 0, bend = 0, tilt = 0;
+        let len = 15, sway = 0, bend = 0, tilt = 0;
         if (s === 'music') { // one foot lifts ~6 px and the leg bends; the legs alternate on every detected beat, else every 0.5 s
           const b = st.beat;
           if (t < stepT0) stepT0 = t;
@@ -77,12 +79,12 @@
           lift[stepLeg] = 6 * Math.sin(Math.PI * Math.min(1, (t - stepT0) / 0.42));
         } else if (s === 'thinking') sway = 1.2 * Math.sin(t * 1.5);
         else if (s === 'done') { const k = Math.exp(-rt / 1.2); bend = 3.2 * k * (1 + 0.3 * Math.cos(rt * 11)); tilt = 16 * k; } // bent, feet tilted, then settle
-        else if (s === 'attention') len = 14.5; // straight and long
+        else if (s === 'attention') len = 16.5; // straight and long
         const col = st.col || FOOT[s];
         legs.forEach((L, k) => {
           const i = L.i, hx = i * 6.5 + sway * 0.3, ax = i * 6.5 + sway + i * bend * 0.5, ay = len - lift[k] - bend * 0.4;
           const kx = i * 6.5 + sway * 0.6 + i * (bend + lift[k] * 0.55), ky = len * 0.5 - lift[k] * 0.4;
-          const d = `M${n2(hx)} -0.4L${n2(kx)} ${n2(ky)}L${n2(ax)} ${n2(ay)}`;
+          const d = `M${n2(hx)} -0.4Q${n2(kx)} ${n2(ky)} ${n2(ax)} ${n2(ay)}`; // one smooth bow instead of two straight sticks with a kink at the knee
           L.o.setAttribute('d', d); L.l.setAttribute('d', d);
           set(L.f, { cx: n2(ax + i * 0.9), cy: n2(ay + 1.4), fill: col, transform: `rotate(${n2(tilt * i)} ${n2(ax + i * 0.9)} ${n2(ay + 1.4)})` });
         });
@@ -191,7 +193,12 @@
       const parts = body.style.borderRadius.split(' '), r = clamp(parseFloat(parts[2]) || H / 2, 1, Math.min(W, H) / 2), a = 35 * DEG;
       tail.g.setAttribute('transform', `translate(${n2(W - r + (r - 0.6) * Math.cos(a))} ${n2(H - r + (r - 0.6) * Math.sin(a))}) scale(${n2(s)})`);
     }
-    if (legs) legs.g.setAttribute('transform', `translate(${n2(W / 2 + (petOn ? (petSide === 'right' ? -6 : 6) * s : 0))} ${n2(H - 0.2)}) scale(${n2(s)})`);
+    if (legs) { // the legs stand right under the eyes (one character); before the eyes are measured: the middle of the island
+      const lr0 = eyeCx || { w: 0, l: 0, r: 0 }, left0 = eyesSide() === 'left';
+      let lx = lr0.w > 1 ? (left0 ? lr0.l + 15 * s : lr0.r - 15 * s) : W / 2;
+      lx = clamp(lx, 14 * s, Math.max(14 * s, W - 14 * s));
+      legs.g.setAttribute('transform', `translate(${n2(lx)} ${n2(H - 0.2)}) scale(${n2(s)})`);
+    }
     if (eyes) { // in the slot that characters.css keeps free on the pet-free side of the live row; stays in the capsule band while the island opens
       const lr = eyeCx || { w: 0, l: 0, r: 0 }, left = eyesSide() === 'left';
       let cx = lr.w > 1 ? (left ? lr.l + 15 * s : lr.r - 15 * s) : (left ? 18 * s : W - 18 * s);
@@ -253,11 +260,13 @@
 
   function apply(c) {
     const v = c === 'tail' || c === 'legs' ? c : '';
+    const side0 = root.dataset.charSide;
     root.dataset.charSide = eyesSide();
-    if (v === style) { kick(); return; }
+    if (v === style) { if (side0 !== root.dataset.charSide && P.relayoutLive) P.relayoutLive(); kick(); return; }
     style = v;
     svg.replaceChildren(); tail = legs = eyes = null;
     if (v) root.dataset.char = v; else delete root.dataset.char;
+    if (P.relayoutLive) P.relayoutLive(); // the eye slot of `legs` appears / disappears: the live row was sized without it
     svg.style.display = v ? '' : 'none';
     if (v === 'tail') tail = buildTail(svg);
     if (v === 'legs') { legs = buildLegs(svg); eyes = buildEyes(svg); }
