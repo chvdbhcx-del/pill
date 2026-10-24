@@ -1,0 +1,32 @@
+/* AI quick actions panel over the Clipboard tab (648 x 260). Same tokens as tab-clipboard.css. Script: ai-actions.js. */
+/* the panel is positioned against .view.clip, which is already position: absolute */
+.clip-ai { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; gap: var(--sp-2); box-sizing: border-box; padding: var(--sp-1) 0 0; background: var(--bg); color: var(--text); }
+.clip-ai-head { flex: none; display: flex; align-items: center; gap: var(--sp-2); height: 28px; padding: 0 var(--sp-1) 0 var(--sp-3); }
+.clip-ai-ico { display: inline-flex; color: var(--accent); }
+.clip-ai-title { flex: 1; min-width: 0; font-size: var(--fs-md); font-weight: var(--fw-semi); line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clip-ai-x { opacity: 1; }
+.clip-ai-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.clip-ai-menu { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+.clip-ai-opt { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: var(--sp-3); height: 52px; padding: 0 var(--sp-3); border-radius: 12px; background: var(--card); cursor: pointer; transition: background var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.clip-ai-opt:hover, .clip-ai-opt:focus-visible { background: var(--raised); }
+.clip-ai-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.clip-ai-opt:active { transform: scale(.98); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+.clip-ai-oi { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: var(--raised); color: var(--text-dim); }
+.clip-ai-opt:hover .clip-ai-oi, .clip-ai-opt:focus-visible .clip-ai-oi { background: var(--raised-2); color: var(--accent); }
+.clip-ai-ot { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.clip-ai-ot .t { font-size: var(--fs-md); line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clip-ai-ot .s { font-size: var(--fs-xs); line-height: 14px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.clip-ai-wait { flex: 1; display: flex; align-items: center; justify-content: center; gap: var(--sp-3); font-size: var(--fs-md); color: var(--text-2); }
+.clip-ai-spin { flex: none; width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--accent-soft); border-top-color: var(--accent); animation: clip-ai-spin .8s linear infinite; }
+@keyframes clip-ai-spin { to { transform: rotate(360deg); } }
+
+.clip-ai-out { flex: 1; min-height: 0; margin: 0 var(--sp-1); padding: var(--sp-2) var(--sp-3); border-radius: 12px; background: var(--card); font-size: var(--fs-md); line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; cursor: text; }
+.clip-ai-note { flex: none; padding: 0 var(--sp-3); font-size: var(--fs-xs); line-height: 14px; color: var(--text-faint); }
+.clip-ai-err { flex: 1; min-height: 0; margin: 0 var(--sp-1); padding: var(--sp-3); border-radius: 12px; background: var(--red-bg); color: var(--red); font-size: var(--fs-md); line-height: 18px; overflow-wrap: anywhere; overflow: auto; }
+.clip-ai-btns { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-1) var(--sp-1); }
+.clip-ai-btns .clip-ai-btn, .clip-ai-wait .clip-ai-btn { height: 30px; padding: 0 var(--sp-3); display: inline-flex; align-items: center; gap: var(--sp-1); }
+.clip-ai-sp { flex: 1; }
+
+@media (prefers-reduced-motion: reduce) { .clip-ai-spin { animation-duration: 2.4s; } }

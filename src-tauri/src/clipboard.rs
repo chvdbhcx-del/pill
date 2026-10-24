@@ -650,6 +650,28 @@ pub async fn clip_paste(id: i64, copy_only: Option<bool>, plain: Option<bool>) -
     "pasted"
 }
 
+/// Puts arbitrary text (an AI result) on the clipboard without recording it in the history, and pastes it unless `copy_only`.
+/// Same return values as clip_paste: "pasted" | "copied_only" | "copied" | "gone".
+#[tauri::command]
+pub async fn clip_paste_text(text: String, copy_only: Option<bool>) -> &'static str {
+    let text: String = text.chars().take(MAX_TEXT).collect();
+    if text.is_empty() {
+        return "gone";
+    }
+    unsafe {
+        if !put_on_clipboard(&Payload::Text(text)) {
+            return "gone";
+        }
+        if copy_only.unwrap_or(false) {
+            return "copied";
+        }
+        if foreground_blocked() || !send_ctrl_v() {
+            return "copied_only";
+        }
+    }
+    "pasted"
+}
+
 /// Hotkey "paste without formatting": the text on the clipboard is put back as plain text only (no fonts, colours, links),
 /// then Ctrl+V goes to the window in front once the hotkey's own modifiers are released. Anything but text is left alone.
 pub fn paste_plain() {

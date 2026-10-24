@@ -26,9 +26,13 @@
     const c = card(p);
     const hk = get('hotkey.voice') !== undefined ? get('hotkey.voice') : 'Ctrl+Alt+D';
     row(c, t({ ru: 'Голос в текст', en: 'Voice to text' }),
-      t({ ru: `Выключен по умолчанию. Включённый, он слушает микрофон только пока идёт диктовка: ${hk || 'горячая клавиша не назначена'}, скажи, нажми ещё раз (или Esc): текст окажется в буфере. Запись уходит только на адрес ниже и только когда ты её закончил.`,
-        en: `Off by default. When on, it listens to the microphone only while you dictate: ${hk || 'no hotkey assigned'}, speak, press again (or Esc): the text lands on the clipboard. The recording goes only to the address below, and only when you finish it.` }),
+      t({ ru: `Выключен по умолчанию. Включённый, он слушает микрофон только пока идёт диктовка: ${hk || 'горячая клавиша не назначена'}, скажи, затем нажми ещё раз или отпусти клавишу (режим ниже; Esc тоже останавливает): текст окажется в буфере. Запись уходит только на адрес ниже и только когда ты её закончил.`,
+        en: `Off by default. When on, it listens to the microphone only while you dictate: ${hk || 'no hotkey assigned'}, speak, then press again or release the key (mode below; Esc stops too): the text lands on the clipboard. The recording goes only to the address below, and only when you finish it.` }),
       sw('voice.enabled'));
+    row(c, t({ ru: 'Режим горячей клавиши', en: 'Hotkey mode' }),
+      t({ ru: 'Удерживание короче 0,35 с считается случайным нажатием: запись отменяется без ошибки и ничего не отправляется', en: 'A hold shorter than 0.35 s counts as an accidental tap: the recording is dropped silently and nothing is sent' }),
+      seg([['toggle', t({ ru: 'Нажать и говорить, нажать ещё раз', en: 'Press, speak, press again' })], ['hold', t({ ru: 'Удерживать, пока говорю', en: 'Hold while speaking' })]],
+        () => (get('voice.mode') === 'hold' ? 'hold' : 'toggle'), (v) => put({ 'voice.mode': v })));
 
     // ---- provider chips
     const top = h('div', 'pad');

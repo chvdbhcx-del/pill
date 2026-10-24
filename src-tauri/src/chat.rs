@@ -97,7 +97,7 @@ fn parse_sse_line(line: &str) -> Sse {
 }
 
 /// "HTTP 401: Incorrect API key" from an error response.
-fn http_error(r: &net::Resp) -> String {
+pub fn http_error(r: &net::Resp) -> String {
     let text = r.text();
     let msg = serde_json::from_str::<Value>(&text)
         .ok()

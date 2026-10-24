@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: chvdbhcx-del.Pill
+PackageVersion: <VERSION>
+InstallerLocale: en-US
+InstallerType: nullsoft
+# The Tauri NSIS installer is per-user by default (bundle.windows.nsis.installMode is not set in tauri.conf.json: currentUser).
+Scope: user
+InstallModes:
+- interactive
+- silent
+- silentWithProgress
+InstallerSwitches:
+  Silent: /S
+  SilentWithProgress: /S
+UpgradeBehavior: install
+ReleaseDate: <DATE>
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/chvdbhcx-del/pill/releases/download/v<VERSION>/Pill_<VERSION>_x64-setup.exe
+  InstallerSha256: <SHA256>
+ManifestType: installer
+ManifestVersion: 1.6.0

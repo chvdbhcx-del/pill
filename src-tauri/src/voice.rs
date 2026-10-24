@@ -6,7 +6,7 @@
 // PRIVACY: audio exists only in RAM during the session, is never written to disk or logged; the key is never logged or echoed.
 // The ONLY network path is net::request(Feature::Voice): gated by `voice.enabled`, host = exactly the host of `voice.endpoint`.
 // Settings: voice.enabled (false), voice.provider (groq|gemini|openai|custom), voice.endpoint, voice.model, voice.language (auto|ru|en),
-// voice.paste (false), voice.autostop (false), voice.key.<provider> (DPAPI blob, same mechanism as ai.apiKeyEnc), hotkey.voice.
+// voice.paste (false), voice.autostop (false), voice.mode (toggle|hold), voice.key.<provider> (DPAPI blob, same mechanism as ai.apiKeyEnc), hotkey.voice.
 // Commands: voice_toggle voice_start voice_stop voice_cancel voice_state voice_test_mic voice_test_service voice_set_key voice_has_key.
 // Events: voice:state {state: idle|recording|transcribing|done|error, startedAt?, text?, code?, message?}, voice:level {rms, level, test?}.
 use crate::net::{self, Abort, Feature, Opts};
@@ -674,6 +674,55 @@ pub fn toggle(app: &AppHandle) {
     }
 }
 
+// Push-to-talk. GateGuard facts: only voice.rs (sync_hotkey handler) calls these; new setting voice.mode "toggle" (default) | "hold",
+// read at every key event so no re-registration is needed; rollback = delete this block and restore `toggle(app)` in sync_hotkey.
+// User request: "давай делать все", item: push-to-talk.
+const HOLD_MIN_MS: i64 = 350; // a shorter hold in "hold" mode is an accidental tap
+
+#[derive(Debug, PartialEq)]
+enum HkAct {
+    Nothing,
+    Start,
+    Stop,
+    Discard, // stop and throw the take away: no upload, no error card
+}
+
+/// Pure decision for a hotkey event. toggle: press flips idle/recording, release is ignored.
+/// hold: press starts only from idle (auto-repeat while recording is ignored), release stops, or discards a short tap.
+fn hotkey_action(hold: bool, st: St, pressed: bool, held_ms: i64) -> HkAct {
+    match (hold, st, pressed) {
+        (_, St::Idle, true) => HkAct::Start,
+        (false, St::Recording, true) => HkAct::Stop,
+        (true, St::Recording, false) if held_ms < HOLD_MIN_MS => HkAct::Discard,
+        (true, St::Recording, false) => HkAct::Stop,
+        _ => HkAct::Nothing,
+    }
+}
+
+static HELD: AtomicBool = AtomicBool::new(false); // the hold-mode press that started the current take; its release acts, any other does not
+
+fn hotkey_event(app: &AppHandle, pressed: bool) {
+    let hold = settings::get_str("voice.mode", "toggle") == "hold";
+    if !hold {
+        HELD.store(false, Ordering::SeqCst);
+    } else if !pressed && !HELD.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    let (st, started) = {
+        let s = sess();
+        (s.st, s.started_ms)
+    };
+    match hotkey_action(hold, st, pressed, crate::store::now_ms() - started) {
+        HkAct::Start => match start(app) {
+            Ok(()) => HELD.store(hold, Ordering::SeqCst),
+            Err(e) => fail(app, e),
+        },
+        HkAct::Stop => stop(),
+        HkAct::Discard => cancel(),
+        HkAct::Nothing => {}
+    }
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Result delivery: clipboard (+ optional Ctrl+V)
 // ---------------------------------------------------------------------------------------------------------------
@@ -898,9 +947,7 @@ fn sync_hotkey(app: &AppHandle) {
     hk.1 = false;
     if let Some(spec) = &want {
         match gs.on_shortcut(spec.as_str(), |app, _, ev| {
-            if ev.state == ShortcutState::Pressed {
-                toggle(app);
-            }
+            hotkey_event(app, ev.state == ShortcutState::Pressed);
         }) {
             Ok(_) => hk.1 = true,
             Err(e) => eprintln!("voice: hotkey '{spec}' could not be registered: {e}"),
@@ -1064,5 +1111,23 @@ mod tests {
         to_mono(&data, &f, &mut m);
         assert_eq!(m, vec![0.125]);
         assert!(parse_format(&b[..10]).is_none());
+    }
+
+    #[test]
+    fn voice_hotkey_action() {
+        use HkAct::*;
+        // toggle: press flips, release ignored
+        assert_eq!(hotkey_action(false, St::Idle, true, 0), Start);
+        assert_eq!(hotkey_action(false, St::Recording, true, 0), Stop);
+        assert_eq!(hotkey_action(false, St::Recording, false, 9999), Nothing);
+        assert_eq!(hotkey_action(false, St::Transcribing, true, 0), Nothing);
+        // hold: press starts, auto-repeat press is ignored, release stops or discards a tap
+        assert_eq!(hotkey_action(true, St::Idle, true, 0), Start);
+        assert_eq!(hotkey_action(true, St::Recording, true, 100), Nothing);
+        assert_eq!(hotkey_action(true, St::Recording, false, HOLD_MIN_MS - 1), Discard);
+        assert_eq!(hotkey_action(true, St::Recording, false, HOLD_MIN_MS), Stop);
+        assert_eq!(hotkey_action(true, St::Idle, false, 1000), Nothing);
+        assert_eq!(hotkey_action(true, St::Transcribing, false, 1000), Nothing);
+        assert_eq!(hotkey_action(true, St::Testing, true, 0), Nothing);
     }
 }

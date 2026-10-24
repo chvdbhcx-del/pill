@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: chvdbhcx-del.Pill
+PackageVersion: <VERSION>
+PackageLocale: en-US
+Publisher: chvdbhcx-del
+PublisherUrl: https://github.com/chvdbhcx-del
+PublisherSupportUrl: https://github.com/chvdbhcx-del/pill/issues
+PackageName: Pill
+PackageUrl: https://github.com/chvdbhcx-del/pill
+License: MIT
+LicenseUrl: https://github.com/chvdbhcx-del/pill/blob/main/LICENSE
+ShortDescription: A small dynamic island for the top of a Windows screen.
+Description: A black capsule at the top of the screen that shows what is playing, the clock, what your tools are doing and notifications, and grows into a panel with clipboard history, notes, weather, an AI chat, quick controls and a command bar. Network features are off by default.
+Moniker: pill
+Tags:
+- dynamic-island
+- notch
+- clipboard
+- widget
+- tauri
+ReleaseNotesUrl: https://github.com/chvdbhcx-del/pill/releases/tag/v<VERSION>
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

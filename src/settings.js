@@ -24,7 +24,7 @@
     'audio.reactive': true, 'sound.reminders': true, 'sound.reminderTone': 'chime', 'sound.volumeDevice': '', 'sound.micDevice': '',
     updateAuto: false, 'net.weather': false, 'net.ai': false, 'weather.units': 'metric', 'weather.city': '',
     'clipboard.clickPaste': true, 'clipboard.maxItems': 1000, 'clipboard.retentionDays': 30, 'clipboard.maxImageMb': 512, 'clipboard.skipSecrets': true,
-    'capture.format': 'mp4', 'capture.fps': 30, 'capture.encoder': 'auto', 'capture.shotAction': 'both', 'capture.revealAfterSave': false, fps: 'auto', edgeIdleFps: 30,
+    'capture.format': 'mp4', 'capture.fps': 30, 'capture.encoder': 'auto', 'capture.shotAction': 'both', 'capture.revealAfterSave': false, fps: 'auto', edgeIdleFps: 30, 'everything.autostart': true,
   };
   const get = (k) => (S[k] !== undefined ? S[k] : DEF[k]);
   const sync = () => syncs.forEach((f) => safe(f));
@@ -472,6 +472,44 @@
     const fpsSeg = (key, vals) => seg(vals.map((v) => [v, v === 'auto' ? t({ ru: 'Авто', en: 'Auto' }) : String(v)]), () => get(key), (v) => put({ [key]: v === 'auto' ? v : +v }));
     row(c, t({ ru: 'Частота кадров', en: 'Frame rate' }), t({ ru: 'Авто = частота монитора. Больше кадров — плавнее, но выше нагрузка на видеокарту', en: 'Auto = the monitor refresh rate. More frames are smoother but cost more GPU' }), fpsSeg('fps', ['auto', 30, 60, 120, 144, 240]));
     row(c, t({ ru: 'Кадры в покое', en: 'Idle edge frame rate' }), t({ ru: 'Для спокойного края острова, когда ничего не происходит', en: 'For the calm island edge while nothing is happening' }), fpsSeg('edgeIdleFps', [15, 30, 60]));
+
+    // file search + settings backup (settings_backup.rs: no keys/passwords in the export; import keeps only known settings)
+    cap(p, t({ ru: 'Поиск файлов и копия настроек', en: 'File search and settings backup' }));
+    c = card(p);
+    row(c, t({ ru: 'Запускать Everything сам', en: 'Start Everything by itself' }),
+      t({ ru: 'Если поиск файлов не отвечает, при первом поиске за сеанс запускается Everything (скрыто, в трее)', en: 'If file search does not answer, the first search of a session starts Everything (hidden in the tray)' }), sw('everything.autostart'));
+    const bk = row(c, t({ ru: 'Резервная копия настроек', en: 'Settings backup' }),
+      t({ ru: 'Экспорт кладёт файл в «Загрузки». Ключи и пароли в него не попадают', en: 'Export puts a file in Downloads. Keys and passwords are not included' }), null);
+    const note = h('span', '');
+    const pick = h('input');
+    pick.type = 'file'; pick.accept = '.json,application/json'; pick.hidden = true;
+    pick.onchange = () => {
+      const f = pick.files && pick.files[0];
+      pick.value = '';
+      if (!f) return;
+      if (f.size > 1048576) { msg(note, t({ ru: 'Файл больше 1 МБ', en: 'The file is larger than 1 MB' }), 'bad'); return; }
+      const rd = new FileReader();
+      rd.onload = async () => {
+        const r = await inv('settings_import', { jsonText: String(rd.result || '') });
+        if (!r) { msg(note, t({ ru: 'Не удалось импортировать', en: 'Import failed' }), 'bad'); return; }
+        if (r.ok) {
+          const s = settingsCounts(r.applied, r.skipped);
+          msg(note, r.error ? s + ' · ' + r.error : s, r.error ? 'bad' : 'ok');
+          const all = await inv('settings_get');
+          if (all) { S = Object.assign({}, all); sync(); }
+        } else msg(note, (r.error || '') + (r.skipped ? ' · ' + settingsCounts(0, r.skipped) : ''), 'bad');
+      };
+      rd.onerror = () => msg(note, t({ ru: 'Не удалось прочитать файл', en: 'Could not read the file' }), 'bad');
+      rd.readAsText(f);
+    };
+    const settingsCounts = (a, s) => t({ ru: `Применено ${a}, пропущено ${s}`, en: `Applied ${a}, skipped ${s}` });
+    const exp = btn(t({ ru: 'Экспорт', en: 'Export' }), async () => {
+      const r = await inv('settings_export');
+      msg(note, r && r.ok ? t({ ru: 'Сохранено: ', en: 'Saved: ' }) + r.path : (r && r.error) || t({ ru: 'Не удалось сохранить', en: 'Could not save' }), r && r.ok ? 'ok' : 'bad');
+    });
+    const imp = btn(t({ ru: 'Импорт', en: 'Import' }), () => pick.click());
+    bk.querySelector('.l').append(note);
+    bk.append(h('div', 'c', [exp, imp, pick]));
   }
 
   // ---- Hotkeys
@@ -675,6 +713,7 @@
     ['live.obs', { ru: 'OBS: запись и трансляция', en: 'OBS: recording and streaming' }, { ru: 'Пока OBS записывает или ведёт трансляцию, в пилюле горит REC или LIVE, а сохранённая запись приходит карточкой. Нужен сервер WebSocket самого OBS: Сервис → Настройки сервера WebSocket → «Включить сервер WebSocket»', en: 'While OBS records or streams, REC or LIVE shows in the pill and the saved recording arrives as a card. Needs the WebSocket server of OBS itself: Tools → WebSocket Server Settings → “Enable WebSocket server”' }, false],
     ['live.agents', { ru: 'ИИ-агенты в терминале', en: 'AI agents in the terminal' }, { ru: 'Claude Code и Codex: в пилюле видно, что агент работает, ждёт ответа или закончил, а когда он ждёт или закончил — приходит карточка', en: 'Claude Code and Codex: the pill shows that an agent works, waits for an answer or has finished, and a card arrives when it waits or finishes' }, true],
     ['live.steam', { ru: 'Загрузки Steam', en: 'Steam downloads' }, { ru: 'Игры и обновления, которые качает Steam: сколько осталось и скорость, а в конце карточка', en: 'Games and updates Steam downloads: time left and speed, and a card at the end' }, true],
+    ['live.sysmon', { ru: 'Монитор системы', en: 'System monitor' }, { ru: 'Загрузка процессора, памяти и видеокарт NVIDIA (с температурой) на вкладке «Управление»; в пилюле предупреждение, если видеокарта горячая (от 85 °C) или процессор забит (от 95 % дольше 10 с)', en: 'CPU, memory and NVIDIA GPU load (with temperature) on the Controls tab; a warning in the pill when a GPU is hot (85 °C and up) or the CPU is pinned (95 % for over 10 s)' }, false],
   ];
   // events Pill has no source for yet: the switch is shown but cannot be flipped (nothing would happen)
   const LIVE_NOSRC = new Set([]); // OBS, Steam and notifications are real now (obs.rs, steam.rs, notif.rs)

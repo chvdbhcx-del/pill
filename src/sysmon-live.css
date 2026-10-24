@@ -1,0 +1,20 @@
+/* System monitor in the pill (sysmon-live.js). New file of the Pill app; user request: "давай делать все", item: system monitor.
+   Meter row on top of the Controls tab: 44 px + 12 px gap = 56 px, taken from the big tiles (172 -> 116) so the stack stays 260 px. Shared tokens only. */
+.tab-controls.has-sm .tc-big { height: 116px; }
+.sm-row { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: var(--sp-3, 12px); height: 44px; margin-bottom: var(--sp-3, 12px); }
+.sm-row[hidden] { display: none; }
+.sm-m { position: relative; box-sizing: border-box; min-width: 0; padding: 8px 12px 0; border-radius: var(--radius, 14px); overflow: hidden; background: var(--tc-off, var(--card)); }
+.sm-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2, 8px); line-height: 16px; white-space: nowrap; }
+.sm-l { font: var(--fw-semi, 600) var(--fs-2xs, 10px) / 16px var(--font); letter-spacing: var(--ls-caps, .06em); color: var(--text-dim); }
+.sm-v { font: var(--fw-semi, 600) var(--fs-sm, 12px) / 16px var(--font); font-variant-numeric: tabular-nums; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.sm-b { position: absolute; left: 12px; right: 12px; bottom: 8px; height: 4px; border-radius: 2px; background: var(--raised-2); overflow: hidden; }
+.sm-b b { display: block; height: 100%; width: 0; border-radius: 2px; background: var(--accent); transition: width .5s var(--ease-out, ease-out), background-color .3s; }
+.sm-m.hot .sm-b b { background: var(--red); }
+.sm-m.hot .sm-v { color: var(--red); }
+
+/* collapsed island chip */
+.lv-sm { gap: 8px; }
+.lv-sm .sm-ico { color: var(--red, #ff453a); }
+
+.rm .sm-b b { transition: none; }
+@media (prefers-reduced-motion: reduce) { .sm-b b { transition: none; } }

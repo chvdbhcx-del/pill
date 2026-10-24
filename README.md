@@ -44,6 +44,18 @@ pwsh tools/release.ps1 -Notes "What is new"   # add -NoPublish to only build
 
 The signing key is generated once (`npx tauri signer generate -w %USERPROFILE%\.tauri\pill-updater.key`); its public half is in `src-tauri/tauri.conf.json`. Keep the private key out of the repository and back it up: without it installed copies cannot update.
 
+### Releasing via CI
+
+The workflow files in `ci-templates/` are meant to be copied to `.github/workflows/` (GitHub only accepts a push there from a token with the `workflow` scope: `gh auth refresh -s workflow`). `release.yml` does the same on GitHub: bump `version` in `src-tauri/tauri.conf.json`, update `CHANGELOG.md`, then push a tag `v<version>` (or run the workflow by hand). It builds the NSIS installer and uploads it with its `.sig` and `latest.json` to the release of that tag. The repository owner must first add the secret `TAURI_SIGNING_PRIVATE_KEY` (the content of the updater key file; plus `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if it has a password); without it the workflow stops at the first step. `ci-templates/ci.yml` runs `cargo check`, `cargo test` and a syntax check of `src/*.js` on every push and pull request to `main`. The installer is not code-signed yet, so Windows SmartScreen warns on first run: see [docs/SIGNING.md](docs/SIGNING.md).
+
+### Packaging
+
+`packaging/winget` holds winget manifest templates; `pwsh tools/winget-manifest.ps1 -Version <v>` fills them in from a published release. Submitting them to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) is a manual step, see [packaging/winget/README.md](packaging/winget/README.md).
+
+### Development tools
+
+`tools/dev` has scripts for checking the running app over the WebView2 debug port (evaluate JS, CPU profile, island transition audit) and a screen-based sideways-jump detector: see [tools/dev/README.md](tools/dev/README.md).
+
 ## License
 
 [MIT](LICENSE)

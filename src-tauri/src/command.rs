@@ -285,9 +285,63 @@ fn find_es() -> Option<PathBuf> {
     dirs.into_iter().map(|d| d.join("es.exe")).find(|p| p.is_file())
 }
 
+fn es_answers(exe: &Path) -> bool {
+    std::process::Command::new(exe).args(["-n", "1"]).creation_flags(NO_WINDOW).output().is_ok_and(|o| o.status.success())
+}
+
+/// The GUI exe of Everything (1.4: Everything.exe, 1.5a: Everything64.exe) in the usual install places.
+fn find_everything_gui() -> Option<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for var in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(pf) = std::env::var_os(var) {
+            dirs.push(Path::new(&pf).join("Everything"));
+            dirs.push(Path::new(&pf).join("Everything 1.5a"));
+        }
+    }
+    if let Some(la) = std::env::var_os("LOCALAPPDATA") {
+        // winget install voidtools.Everything: Packages\voidtools.Everything_<source hash>\
+        if let Ok(rd) = std::fs::read_dir(Path::new(&la).join("Microsoft").join("WinGet").join("Packages")) {
+            dirs.extend(rd.flatten().filter(|e| e.file_name().to_string_lossy().starts_with("voidtools.Everything")).map(|e| e.path()));
+        }
+    }
+    dirs.into_iter().flat_map(|d| [d.join("Everything.exe"), d.join("Everything64.exe")]).find(|p| p.is_file())
+}
+
+fn everything_running() -> bool {
+    std::process::Command::new("tasklist").args(["/FI", "IMAGENAME eq Everything*", "/NH"]).creation_flags(NO_WINDOW).output()
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).to_ascii_lowercase().contains("everything"))
+}
+
+/// Once per session, before the first file search: when Everything does not answer and its GUI is not running, start it
+/// (`-startup` = hidden in the tray) and wait up to 2 s for es.exe to get an answer. Never kills anything.
+/// Concurrent callers (files + folders search run in parallel) block in call_once until the first one is done.
+fn ensure_everything(es_exe: &Path) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    if !settings::get_bool("everything.autostart", true) {
+        return;
+    }
+    ONCE.call_once(|| {
+        if es_answers(es_exe) {
+            return;
+        }
+        if !everything_running() {
+            let Some(gui) = find_everything_gui() else { return };
+            // a GUI app: no CREATE_NO_WINDOW
+            if std::process::Command::new(gui).arg("-startup").spawn().is_err() {
+                return;
+            }
+        }
+        let t = Instant::now();
+        while t.elapsed() < Duration::from_secs(2) && !es_answers(es_exe) {
+            std::thread::sleep(Duration::from_millis(150));
+        }
+    });
+}
+
 /// `es.exe -n LIMIT <attr> words...`, one full path per line.
 fn es(words: &[String], attr: &str) -> Result<Vec<String>, &'static str> {
     let exe = find_es().ok_or("Everything not found: install Everything + es.exe for file search")?;
+    ensure_everything(&exe);
     let out = std::process::Command::new(exe)
         .args(["-n", &LIMIT.to_string(), attr])
         .args(words)

@@ -1,0 +1,33 @@
+# Changelog
+
+All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
+
+## [Unreleased]
+
+## [0.1.1] - 2026-10-24
+
+### Added
+- First-run "AI setup" page: local Whisper (whisper.cpp, hash-checked download) or Ollama models, or a cloud service.
+- Push-to-talk: hold the voice hotkey while you speak (Settings > Voice to text > hotkey mode).
+- AI actions on clipboard items: translate, shorten, fix spelling, explain simply (uses your configured chat model).
+- System monitor: CPU, RAM and GPU load and temperature on the Controls tab, plus an overheating alert chip (Settings > Live events).
+- Settings backup: export/import without secrets or machine-specific paths; Everything starts by itself for file search.
+- GitHub Actions: CI (`cargo check`/`cargo test`, `node --check` of the front-end) and a tag-triggered release workflow.
+- winget manifest templates (`packaging/winget`) and `tools/winget-manifest.ps1`.
+- `docs/SIGNING.md` on code signing options.
+- `tools/dev`: live-check scripts (CDP evaluate, CPU profile, transition audit, sideways-jump detector).
+
+### Fixed
+- The island no longer jumps sideways for a frame after collapsing (the window keeps one width), and the collapse spring no longer undershoots into a clipped sliver.
+- The clipboard trash button now also clears the system clipboard and the Win+V history.
+- Dictation survives a microphone that is reconfigured mid-recording (reopens it); each take is logged to `%APPDATA%\pill\voice.log` (durations only).
+
+## [0.1.0] - 2026-10-24
+
+First public release.
+
+### Added
+- Capsule with a liquid edge, pets and characters; music, clock, notifications and coding-agent status.
+- Expanded panel: clipboard history, notes and reminders, weather, shelf, quick controls, launcher and command bar.
+- AI chat (local models or a cloud provider), voice to text with an OpenAI-compatible Whisper endpoint, screen capture, OCR, colour picker, QR reader.
+- Opt-in updater with signed updates; all network features off by default.

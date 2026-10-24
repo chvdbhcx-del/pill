@@ -8,6 +8,7 @@ mod guard;
 mod media;
 mod pill;
 mod settings;
+mod settings_backup;
 mod shelf;
 mod store;
 mod system;
@@ -28,7 +29,9 @@ mod obs;
 mod steam;
 mod notif;
 mod livesys;
+mod sysmon;
 mod updater;
+mod aiactions;
 
 fn main() {
     tauri::Builder::default()
@@ -51,6 +54,7 @@ fn main() {
             // @audio-commands
             clipboard::clip_list, clipboard::clip_image, clipboard::clip_paste, clipboard::clip_pin, clipboard::clip_delete,
             clipboard::clip_wipe, clipboard::clip_pause, clipboard::clip_status,
+            clipboard::clip_paste_text,
             // @clipboard-commands
             shelf::shelf_add, shelf::shelf_list, shelf::shelf_remove, shelf::shelf_clear,
             shelf::shelf_open, shelf::shelf_reveal, shelf::shelf_copy_path, shelf::shelf_drag_out,
@@ -58,6 +62,7 @@ fn main() {
             command::cmd_toggle, command::cmd_query, command::cmd_run,
             // @command-commands
             settings::settings_get, settings::settings_set,
+            settings_backup::settings_export, settings_backup::settings_import,
             // @settings-commands
             system::sys_state, system::sys_set, system::sys_power,
             // @system-commands
@@ -65,6 +70,7 @@ fn main() {
             // @net-commands
             chat::chat_send, chat::chat_retry, chat::chat_stop, chat::chat_threads, chat::chat_messages, chat::chat_new,
             chat::chat_delete, chat::chat_open_link, chat::ai_test, chat::ai_models, chat::ai_probe, chat::ai_set_key, chat::ai_config,
+            aiactions::ai_transform, aiactions::ai_transform_cancel, aiactions::ai_clip_text,
             // @chat-commands
             notes::note_list, notes::note_get, notes::note_save, notes::note_delete,
             // @notes-commands
@@ -73,6 +79,7 @@ fn main() {
             // @timers-commands
             watch::kbd_state, watch::watch_pause, watch::watch_resume,
             livesys::livesys_visible, livesys::livesys_privacy, livesys::livesys_reveal,
+            sysmon::sysmon_get,
             // @watch-commands
             agents::agents_list, agents::agents_dismiss, agents::agents_hook_snippets,
             // @agents-commands
@@ -120,6 +127,7 @@ fn main() {
             obs::init(app);
             steam::init(app);
             notif::init(app);
+            sysmon::init(app);
             hotkeys::init(app); // last: every module's init() has run, so the actions it triggers exist
             Ok(())
         })

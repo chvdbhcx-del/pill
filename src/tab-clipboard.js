@@ -102,6 +102,7 @@
         <div class="clip-body"><div class="t">${esc(title(it))}</div>
           <div class="s">${it.pinned ? `<span class="clip-pin">${ic('pin', { size: 11, fill: true, sw: 1.4 })}</span>` : ''}${it.kind === 'files' ? esc(fileCount(it)) + ' · ' : ''}${esc(String(it.source || '').replace(/\.exe$/i, ''))}${it.source ? ' · ' : ''}${esc(ago(it.usedAt))}</div></div>
         ${it.kind === 'image' ? '' : `<button class="clip-act clip-plain" data-act="plain" title="${esc(t({ ru: 'Вставить как простой текст', en: 'Paste as plain text' }))}">${ic('text', { size: 14, sw: 1.9 })}</button>`}
+        ${it.kind === 'text' ? `<button class="clip-act" data-act="ai" title="${esc(t({ ru: 'ИИ-действия', en: 'AI actions' }))}">${ic('sparkles', { size: 14, sw: 1.7 })}</button>` : ''}
         <button class="clip-act" data-act="pin" title="${esc(it.pinned ? t({ ru: 'Открепить', en: 'Unpin' }) : t({ ru: 'Закрепить', en: 'Pin' }))}">${ic('pin', { size: 14, fill: !!it.pinned, sw: 1.6 })}</button>
         <button class="clip-act" data-act="del" title="${esc(t({ ru: 'Удалить', en: 'Delete' }))}">${ic('x', { size: 14, sw: 1.9 })}</button>
       </div>`).join(''); };
@@ -138,13 +139,14 @@
     if (act === 'pin') { await inv('clip_pin', { id, pinned: !items.find((i) => i.id === id)?.pinned }); return load(); }
     if (act === 'del') { imgCache.delete(id); const gone = PM.collapse(row, { remove: true }); await inv('clip_delete', { id }); await gone; return load(); }
     if (act === 'plain') return activate(id, false, true);
+    if (act === 'ai') return window.PillClipAI && window.PillClipAI.open({ root, id });
     activate(id, e.shiftKey);
   }
 
   // Up/Down/Enter work while the search box has the keyboard; with the window unfocused nothing arrives at all. Typing a
   // character (or "/") anywhere in the tab hands the keyboard to the search box (pill.js activates the window on focusin).
   function onKey(e) {
-    if (!shown) return;
+    if (!shown || (window.PillClipAI && window.PillClipAI.isOpen())) return; // the AI panel owns the keys while it is open
     if (e.key === 'Escape') { if (searchEl.value) { e.stopImmediatePropagation(); searchEl.value = ''; load(); } return; } // first Esc clears the query, the next one closes the island
     if (!items.length) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel(sel + 1); }
@@ -152,7 +154,7 @@
     else if (e.key === 'Enter') { e.preventDefault(); activate(items[sel].id, e.shiftKey); }
   }
   document.addEventListener('keydown', (e) => {
-    if (!shown || !searchEl || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return;
+    if (!shown || !searchEl || e.defaultPrevented || (window.PillClipAI && window.PillClipAI.isOpen()) || e.ctrlKey || e.altKey || e.metaKey) return;
     if (document.activeElement === searchEl || (document.activeElement && document.activeElement.matches && document.activeElement.matches('input, textarea, [contenteditable]'))) return;
     if (e.key === '/') { e.preventDefault(); searchEl.focus(); }
     else if (e.key.length === 1) searchEl.focus(); // the character itself still lands in the freshly focused field
@@ -168,7 +170,7 @@
     load();
   }
 
-  function onHide() { shown = false; disarm(); }
+  function onHide() { shown = false; disarm(); if (window.PillClipAI) window.PillClipAI.close(); }
 
   P.register({ id: 'clipboard', title: t({ ru: 'Буфер', en: 'Clipboard' }), icon: ic('clipboard'), order: 10, mount, onShow, onHide });
   // the private-mode switch lives in the Settings tab; it tells us through this hook
