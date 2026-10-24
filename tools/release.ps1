@@ -23,7 +23,7 @@ Set-Location $root
 $conf = Get-Content (Join-Path $root 'src-tauri\tauri.conf.json') -Raw | ConvertFrom-Json
 $ver = $conf.version
 if (-not (Test-Path $KeyPath)) { throw "Signing key not found: $KeyPath (see the header of this script)" }
-$env:TAURI_SIGNING_PRIVATE_KEY_PATH = $KeyPath
+$env:TAURI_SIGNING_PRIVATE_KEY = $KeyPath   # `tauri build` accepts the key text or a path to the key file here
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
 
 Write-Host "Building Pill $ver ..."
