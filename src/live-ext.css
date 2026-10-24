@@ -1,0 +1,29 @@
+/* OBS / Steam / notification live events, pill side (GateGuard note: new stylesheet of the Pill app, loaded by pill.html; user request: "делай все оставшееся").
+   Scoped to .lx. Integer line-heights >= 1.25 x font size everywhere, so descenders are never clipped by ellipsis boxes. Every var has a fallback. */
+.lp.lx { justify-content: center; gap: 8px; min-width: 0; font-variant-numeric: tabular-nums; }
+.lx-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #ff423a; box-shadow: 0 0 4px 1px rgba(255, 66, 58, .35); animation: lx-pulse 2s ease-in-out infinite; }
+.lx-dot.live { background: #ff6a3a; }
+.lx-lab { font: 700 var(--fs-sm, 12px) / 16px var(--font, system-ui); letter-spacing: .04em; color: #ff6b63; }
+.lx-rt { font: 700 var(--fs-md, 13px) / 18px var(--font, system-ui); color: var(--text, #fff); min-width: 30px; }
+.lx-sep { flex: none; width: 1px; height: 14px; margin: 0 4px; background: rgba(255, 255, 255, .18); }
+@keyframes lx-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+.rm .lx-dot { animation: none; }
+
+.lx-ring { flex: none; transform: rotate(-90deg); }
+.lx-ring circle { fill: none; stroke-width: 2.4; }
+.lx-ring .bg { stroke: rgba(255, 255, 255, .16); }
+.lx-ring .fg { stroke: var(--accent, #8f96ff); stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
+.lx-g { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 var(--fs-md, 13px) / 18px var(--font, system-ui); color: var(--text, #fff); }
+.lx-p { font: 700 var(--fs-md, 13px) / 18px var(--font, system-ui); color: var(--accent, #8f96ff); white-space: nowrap; }
+.lx-sp { font: 500 var(--fs-xs, 11px) / 16px var(--font, system-ui); color: var(--text-dim, #7c7c7c); white-space: nowrap; }
+
+.tc .ti .lx-ico { font: var(--fw-bold, 700) var(--fs-lg, 16px) / 20px var(--font, system-ui); color: var(--text, #fff); }
+/* Windows notification card (.tc.tn): grows with its text (title <= 2 lines, body <= 3, trimmed by live-ext.js to the room the OS frame leaves).
+   The card's own wave sits ~5 px above the card bottom (+-1.6 amplitude, 5 px underlay), so the bottom padding is 12 px: text never touches it.
+   Avatar and buttons are centred on the text block (align-items: center). */
+.tc.tn { max-height: none; align-items: center; padding: var(--sp-3, 12px) var(--sp-5, 20px) var(--sp-4, 16px); }   /* the island's top edge is flush with the screen, its bottom edge is the liquid line */
+.tc.tn .ti { width: 32px; height: 32px; }
+.lx-n { min-width: 0; max-width: 340px; }
+.lx-nt, .lx-nb { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.lx-nt { font: var(--fw-bold, 700) var(--fs-base, 14px) / 18px var(--font, system-ui); -webkit-line-clamp: var(--lx-tl, 2); }
+.lx-nb { margin-top: 2px; font: var(--fw-regular, 400) var(--fs-sm, 12px) / 16px var(--font, system-ui); color: var(--text-dim, #7c7c7c); -webkit-line-clamp: var(--lx-bl, 3); }

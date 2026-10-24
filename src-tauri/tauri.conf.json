@@ -1,0 +1,65 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Pill",
+  "version": "0.1.0",
+  "identifier": "com.pill.dev",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "security": { "csp": null },
+    "windows": [
+      {
+        "label": "pill",
+        "title": "pill-main",
+        "url": "pill.html",
+        "width": 560,
+        "height": 120,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "focus": false
+      },
+      {
+        "label": "bar",
+        "title": "pill-bar",
+        "url": "bar.html",
+        "width": 680,
+        "height": 420,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png",
+      "icons/32x32.png",
+      "icons/128x128@2x.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": { "installerIcon": "icons/icon.ico" }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQxNjJCRjVFMTBCMDZGNDgKUldSSWI3QVFYcjlpUWJTODQzV2REdFk1a2d4Q0RMam9uOWZmNDBhajQyLzVuWWlOYUVEeUxJTUkK",
+      "endpoints": ["https://github.com/chvdbhcx-del/pill/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+# build output and dependencies
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+.ruff_cache/
+
+# secrets: the updater signing key lives in %USERPROFILE%\.tauri, never here
+*.key
+.env
+.env.*
+
+# working notes and reference captures of the app this one is modelled on: kept local only
+# (only the Claude Code hook installer and its doc are part of the project)
+CONTRACT.md
+replica/*
+!replica/install-claude-hooks.ps1
+!replica/agent-hooks.md
+
+# the author's own Whisper server (uses a private venv)
+tools/whisper-server.py
+
+# local logs and scratch
+*.log

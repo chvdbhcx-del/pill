@@ -1,0 +1,220 @@
+/* Design tokens + shared building blocks for the Pill (shell, Home, Clipboard, Shelf, Settings, command bar and every tab lane).
+   Dark (pure black notch body) is the default, light via <html data-theme="light">. Measured from live screenshots of the reference app at 100 %.
+   --s is the user size (0.8 - 2.0) set by pill.js; pill.css applies it as CSS zoom on #live / #panel / #cards, so everything here is plain px.
+   Building blocks for tabs: .card .btn .btn-primary .btn-ghost .seg .field .list-row .chip .switch .slider .icon-btn .label-caps .dim .scroll */
+/* Optical vertical centring for ALL text: the same installed font (Segoe UI Variable Text) with its ascent / descent redistributed so the middle of the line box sits on the middle of the CAPS
+   (asc' - desc' = cap height 0.70 em, asc' + desc' unchanged = 1.33 em). Labels in pills, buttons, tiles and badges then centre without per-element hacks, whoever writes them.
+   Falls back to the stock stack when the font is missing. */
+@font-face { font-family: "PillUI"; font-weight: 100 499; src: local("Segoe UI Variable Text"), local("Segoe UI"); ascent-override: 101.5%; descent-override: 31.5%; line-gap-override: 0%; }
+@font-face { font-family: "PillUI"; font-weight: 500 699; src: local("Segoe UI Variable Text Semibold"), local("Segoe UI Semibold"); ascent-override: 101.5%; descent-override: 31.5%; line-gap-override: 0%; }
+@font-face { font-family: "PillUI"; font-weight: 700 900; src: local("Segoe UI Variable Text Bold"), local("Segoe UI Bold"); ascent-override: 101.5%; descent-override: 31.5%; line-gap-override: 0%; }
+:root {
+  --s: 1;
+  /* surfaces */
+  --bg: #000;               /* the notch body */
+  --bg-raised: #0f0f0f;     /* tiles / cards on the body (alias: --card) */
+  --card: #0f0f0f;
+  --card-hover: #181818;
+  --raised: #1c1c1c;        /* selected row, hovered tile, fields */
+  --raised-2: #292929;      /* tile inside a selected row, chip */
+  --tab-on: #1f1f1f;        /* active tab pill */
+  --field: #0f0f0f;
+  --hover: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.1);
+  --line: rgba(255, 255, 255, 0.07);
+  --track: #333;
+  /* text */
+  --text: #fff;
+  --text-2: #ababab;        /* artist / secondary */
+  --text-dim: #7c7c7c;      /* captions, meta, icons */
+  --text-faint: #616161;    /* hints */
+  --icon: #878787;          /* inactive line icons */
+  --on-accent: #0b0b14;
+  /* colours */
+  --accent: #8f96ff;        /* periwinkle: primary buttons, switches, sliders */
+  --accent-soft: rgba(143, 150, 255, 0.16);
+  --green: #58ddab;         /* VPN badge, good */
+  --green-bg: #002016;
+  --red: #ff453a;
+  --red-bg: rgba(255, 69, 58, 0.16);
+  --amber: #ffb340;
+  --amber-bg: rgba(255, 179, 64, 0.16);
+  --edge: #6e6e6e;          /* outline of the liquid bottom edge when nothing plays */
+  --wave: var(--edge);
+  /* geometry */
+  --radius: 14px;           /* tiles, cards */
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+  --pill-h: 30px;
+  --pad: 16px;              /* body inner padding */
+  --gap: 6px;
+  /* ONE type scale (px) + weights + line heights + caps tracking. Use these, never ad-hoc 12.5 / 11.5 / 13.5.
+     2xs caps labels | xs meta, captions, times | sm chrome labels (tabs, tiles, small buttons) | md body, rows, inputs | base capsule time, card titles | lg track title | xl big numerals */
+  --fs-2xs: 10px; --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-base: 14px; --fs-lg: 16px; --fs-xl: 20px;
+  --fw-regular: 400; --fw-medium: 500; --fw-semi: 600; --fw-bold: 700;
+  --lh-tight: 1.2; --lh-text: 1.4;   /* ratios; ellipsised / clipped lines use an INTEGER px line-height >= 1.25 x size so descenders stay inside the clip box */
+  --ls-caps: .06em;
+  /* ONE spacing scale: paddings, gaps, insets */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --font: "PillUI", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --mono: "Cascadia Mono", "SF Mono", Consolas, monospace;
+  /* motion tokens: ONE system. Transitions use transform / opacity only; springs live in pill.js (Pill.raf) */
+  --ease: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);   /* small overshoot */
+  --dur-fast: 0.12s;
+  --dur-med: 0.22s;
+  --dur-slow: 0.38s;
+  /* additive motion tokens (smoothness plan WP2). Usage rules:
+     hover colour/bg = --dur-fast + --ease-out | press = --dur-xs + --ease-out, transform scale(.96) | release = --spring-pop, on transform ONLY
+     enter = --spring-settle .4s (transform) | exit = --ease-in .18s | NEVER a spring on opacity / colour (it clamps or flashes) | list stagger 28 ms (.stag)
+     always consume with a fallback: var(--spring-pop, var(--ease-spring)) */
+  --dur-xs: 0.08s;
+  --dur-xl: 0.6s;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --spring-settle: linear(0, 0.034, 0.116, 0.223, 0.338, 0.451, 0.556, 0.648, 0.728, 0.794, 0.848, 0.891, 0.925, 0.95, 0.969, 0.983, 0.992, 0.998, 1.002, 1.005, 1.006, 1.006, 1);
+  --spring-pop: linear(0, 0.044, 0.152, 0.296, 0.452, 0.604, 0.741, 0.856, 0.946, 1.013, 1.057, 1.083, 1.094, 1.093, 1.086, 1.073, 1.059, 1.044, 1.03, 1.018, 1.009, 1.001, 0.996, 0.993, 0.991, 0.991, 0.991, 0.992, 1);
+}
+@supports not (animation-timing-function: linear(0, 1)) {
+  :root { --spring-settle: cubic-bezier(0.22, 1, 0.36, 1); --spring-pop: cubic-bezier(0.34, 1.56, 0.64, 1); }
+}
+:root[data-theme="light"] {
+  --bg: #f6f6f6;
+  --bg-raised: #e9e9e9;
+  --card: #e9e9e9;
+  --card-hover: #e0e0e0;
+  --raised: #dedede;
+  --raised-2: #d2d2d2;
+  --tab-on: #dcdcdc;
+  --field: #e9e9e9;
+  --hover: rgba(0, 0, 0, 0.06);
+  --border: rgba(0, 0, 0, 0.12);
+  --line: rgba(0, 0, 0, 0.08);
+  --track: #c9c9c9;
+  --text: #161616;
+  --text-2: #555;
+  --text-dim: #7a7a7a;
+  --text-faint: #8e8e8e;
+  --icon: #6c6c6c;
+  --on-accent: #fff;
+  --accent: #5b63e6;
+  --accent-soft: rgba(91, 99, 230, 0.14);
+  --green: #11805a;
+  --green-bg: #cdeedf;
+  --red: #d92d20;
+  --red-bg: rgba(217, 45, 32, 0.12);
+  --amber: #b26a00;
+  --amber-bg: rgba(178, 106, 0, 0.14);
+  --edge: #b9b9b9;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.14);
+}
+
+/* ---------- shared building blocks (use these in tab-*.css) ---------- */
+/* text: whole-pixel positions, no ClearType on a transparent window -> grayscale AA tuned for it */
+:root { text-rendering: geometricPrecision; font-optical-sizing: auto; font-kerning: normal; font-synthesis: none; -webkit-font-smoothing: antialiased; }
+.tnum, time, output { font-variant-numeric: tabular-nums; }
+@keyframes row-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* split enter: opacity on ease-out, transform on the settle spring (springs never touch opacity). Used as `animation: var(--fx-enter)` or via .fx-in */
+@keyframes fx-fade { from { opacity: 0; } }
+@keyframes fx-rise { from { transform: translateY(8px); } }
+@keyframes fx-pop { from { transform: scale(.96); } }
+@keyframes row-rise { from { transform: translateY(6px); } }
+:root { --fx-enter: fx-fade var(--dur-med) var(--ease-out) backwards, fx-rise 0.4s var(--spring-settle, var(--ease-out)) backwards; }
+.fx-in { animation: var(--fx-enter, row-in var(--dur-med) var(--ease-out) backwards); }
+.stag { animation: fx-fade var(--dur-med) var(--ease-out) backwards, row-rise 0.4s var(--spring-settle, var(--ease-out)) backwards; animation-delay: calc(min(var(--i, 0), 8) * 28ms); }
+.card { box-sizing: border-box; background: var(--card); border-radius: var(--radius); color: var(--text); }
+.card.hov { cursor: pointer; transition: background var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.card.hov:active { transform: scale(.97); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+.card.hov:hover { background: var(--card-hover); }
+.dim { color: var(--text-dim); }
+.label-caps { font-size: var(--fs-2xs); font-weight: var(--fw-semi); line-height: 14px; letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--text-dim); }
+.scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; }
+.scroll::-webkit-scrollbar { width: 6px; }
+.scroll::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 3px; }
+
+/* buttons */
+.btn, .btn-primary, .btn-ghost {
+  all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  height: 32px; padding: 0 var(--sp-4); border-radius: 12px; cursor: pointer; font: var(--fw-semi) var(--fs-sm)/16px var(--font); color: var(--text);
+  background: var(--card); transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), filter var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring));
+}
+.btn:hover { background: var(--card-hover); }
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary.white { background: #fff; color: #000; }
+.btn-ghost { background: transparent; color: var(--text-dim); }
+.btn-ghost:hover { background: var(--hover); color: var(--text); }
+.btn:active, .btn-primary:active, .btn-ghost:active { transform: scale(.96); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+.btn:focus-visible, .btn-primary:focus-visible, .btn-ghost:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn[disabled], .btn-primary[disabled], .btn-ghost[disabled], .icon-btn[disabled] { opacity: .45; cursor: default; pointer-events: none; }
+.icon-btn { all: unset; box-sizing: border-box; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; cursor: pointer; color: var(--icon); transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.icon-btn:active { transform: scale(.92); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+.icon-btn svg { width: 16px; height: 16px; }
+
+/* segmented control */
+.seg { display: inline-flex; box-sizing: border-box; padding: 4px; gap: 4px; background: var(--card); border-radius: 12px; }
+.seg > button { all: unset; box-sizing: border-box; cursor: pointer; padding: 0 var(--sp-3); height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; font: var(--fw-medium) var(--fs-sm)/16px var(--font); color: var(--text-dim); transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.seg > button:active { transform: scale(.95); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+.seg.wrap { flex-wrap: wrap; max-width: 360px; }
+.seg > button:hover { color: var(--text); }
+.seg > button.on { background: var(--raised-2); color: var(--text); }
+.seg > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* text field */
+.field { box-sizing: border-box; height: 36px; width: 100%; padding: 0 var(--sp-3); border: 0; border-radius: 12px; background: var(--field); color: var(--text); font: var(--fw-regular) var(--fs-md)/18px var(--font); outline: none; user-select: text; -webkit-user-select: text; }
+.field::placeholder { color: var(--text-dim); }
+.field:focus { box-shadow: 0 0 0 1px var(--accent-soft), inset 0 0 0 1px var(--accent); }
+textarea.field { height: auto; padding: 10px 12px; line-height: 1.4; resize: none; }
+
+/* list row */
+.list-row { display: flex; align-items: center; gap: var(--sp-3); box-sizing: border-box; min-height: 48px; padding: var(--sp-2) var(--sp-3); border-radius: 12px; cursor: pointer; color: var(--text); transition: background var(--dur-fast) var(--ease-out), transform var(--dur-med) var(--spring-pop, var(--ease-out)); }
+.list-row:hover, .list-row.sel { background: var(--raised); }
+.list-row:hover { transform: translateY(-1px); }
+.list-row:active { transform: scale(.992); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+.list-row .tile { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+.list-row .tile { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 9px; background: var(--card); color: var(--text-dim); }
+.list-row.sel .tile, .list-row:hover .tile { background: var(--raised-2); }
+.list-row .t { font-size: var(--fs-md); font-weight: var(--fw-regular); line-height: 18px; }
+.list-row .s { font-size: var(--fs-xs); color: var(--text-dim); line-height: 14px; }
+
+/* chip */
+.chip { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-1); height: 24px; padding: 0 var(--sp-2); border-radius: 999px; background: var(--raised-2); color: var(--text-2); font: var(--fw-semi) var(--fs-xs)/14px var(--font); transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+.chip.green { background: var(--green-bg); color: var(--green); }
+.chip.accent { background: var(--accent-soft); color: var(--accent); }
+.chip.red { background: var(--red-bg); color: var(--red); }
+
+/* switch: <label class="switch"><input type="checkbox"><i></i></label> or <input class="switch" type="checkbox"> */
+.switch { position: relative; display: inline-block; flex: none; width: 40px; height: 24px; }
+.switch > input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
+.switch > i { position: absolute; inset: 0; border-radius: 999px; background: #2a2a2a; transition: background var(--dur-med) var(--ease-out); }
+.switch > i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform var(--dur-slow) var(--spring-pop, var(--ease-spring)), width var(--dur-fast) var(--ease-out); }
+.switch > input:active + i::after { width: 22px; }
+.switch > input:checked + i { background: var(--accent); }
+.switch > input:checked + i::after { transform: translateX(16px); }
+.switch > input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+input.switch { appearance: none; -webkit-appearance: none; width: 40px; height: 24px; border-radius: 999px; background: #2a2a2a; position: relative; cursor: pointer; margin: 0; transition: background var(--dur-med) var(--ease-out); }
+input.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform var(--dur-slow) var(--spring-pop, var(--ease-spring)), width var(--dur-fast) var(--ease-out); }
+input.switch:active::after { width: 22px; }
+input.switch:checked { background: var(--accent); }
+input.switch:checked::after { transform: translateX(16px); }
+input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* slider: <input class="slider" type="range">; set style="--p:40%" to paint the filled part (pill.js does it for .slider automatically) */
+.slider { -webkit-appearance: none; appearance: none; width: 100%; height: 16px; margin: 0; background: transparent; cursor: pointer; outline: none; min-width: 0; }
+.slider:disabled { opacity: .4; cursor: default; }
+.slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--fill, var(--accent)) var(--p, 0%), var(--track) var(--p, 0%)); }
+.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; background: var(--thumb, #fff); box-shadow: 0 0 0 1px rgba(0,0,0,.25); opacity: var(--thumb-o, 1); transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-med) var(--spring-pop, var(--ease-spring)); }
+.slider:active::-webkit-slider-thumb { transform: scale(1.18); }
+.slider.thin::-webkit-slider-thumb { opacity: 0; }
+.slider.thin:hover::-webkit-slider-thumb, .slider.thin:active::-webkit-slider-thumb, .slider.thin:focus-visible::-webkit-slider-thumb { opacity: 1; }
+.slider.white { --fill: #fff; }
+
+/* ---------- optical vertical centring ----------
+   The PillUI font metrics above already put the middle of every line box on the middle of the CAPS, so a label with an integer line-height inside an align-items:center box is centred
+   to within 0.5 px (measured). Do NOT use `text-box: trim-*` on a line that is clipped (overflow / ellipsis / line-clamp): the trim cuts the descenders (у р д ц щ g p y) off. */
+svg { display: block; }
+.btn svg, .btn-primary svg, .btn-ghost svg, .chip svg, .icon-btn svg { flex: none; }

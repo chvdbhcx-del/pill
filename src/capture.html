@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- Capture overlay page (one window per monitor, created by capture.rs). Shows the frozen frame, the selection, markup tools,
+     the colour-picker lens. Owner: capture agent. User request: "screen capture, OCR, QR, colour picker and recorder for the Pill replica". -->
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pill capture</title>
+  <link rel="stylesheet" href="theme.css" />
+  <link rel="stylesheet" href="capture.css" />
+</head>
+<body>
+  <canvas id="frame"></canvas>
+  <div id="dim"></div>
+  <div id="sel" hidden>
+    <i data-h="nw"></i><i data-h="n"></i><i data-h="ne"></i><i data-h="e"></i>
+    <i data-h="se"></i><i data-h="s"></i><i data-h="sw"></i><i data-h="w"></i>
+    <span id="size"></span>
+  </div>
+  <canvas id="ann"></canvas>
+  <div id="hint"></div>
+  <div id="bar" hidden></div>
+  <div id="lens" hidden>
+    <canvas id="lensc" width="135" height="135"></canvas>
+    <div id="lensinfo"><i id="lenssw"></i><b id="lenshex"></b><span id="lensrgb"></span></div>
+    <div id="lenskeys"></div>
+  </div>
+  <script src="icons.js"></script>
+  <script src="capture.js"></script>
+</body>
+</html>

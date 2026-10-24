@@ -1,0 +1,85 @@
+[package]
+name = "pill"
+version = "0.1.0"
+edition = "2021"
+description = "Dynamic-island style pill for Windows (personal replica, clean-room)"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# @deps-begin (extra crates, one per line; don't remove others')
+png = "0.18"
+base64 = "0.22"
+tauri-plugin-global-shortcut = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+windows-core = "0.58"
+sha2 = "0.10" # clipboard dedupe hash; already in the tauri dependency tree, pure Rust, no network
+rqrr = { version = "0.11", default-features = false } # capture.rs: pure-Rust QR decoder; without its `image` feature nothing else is pulled in
+tauri-plugin-updater = "2" # updater.rs: signed updates from GitHub Releases, only on user request
+zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] } # aisetup.rs: unpack the whisper.cpp release zip (already in the tree via the updater; deflate = flate2/zlib-rs, also already there)
+# @deps-end
+
+[target.'cfg(windows)'.dependencies]
+# Add Win32/WinRT feature names to this list as needed (one per line). Don't remove others'.
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Graphics_Gdi",
+  "Win32_Graphics_Dwm",
+  "Win32_UI_Shell",
+  "Win32_System_Com",
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
+  "Win32_System_Threading",
+  "Win32_System_ProcessStatus",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_Storage_FileSystem",
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
+  "Media_Control",
+  "Foundation",
+  "Foundation_Collections",
+  "Storage_Streams",
+  "Win32_System_Power",
+  "Graphics_Imaging",
+  "Win32_System_SystemServices",
+  "Win32_UI_Shell_Common",
+  "implement",
+  "Win32_Security",
+  "Win32_System_LibraryLoader",
+  "Win32_Globalization",
+  "Devices_Radios",
+  "Devices_Bluetooth",
+  "Devices_Enumeration",
+  "Networking_Connectivity",
+  "Win32_System_Registry",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_NetworkManagement_Ndis",
+  "Win32_Networking_WinHttp",
+  "Win32_Security_Cryptography",
+  "Win32_System_Time",
+  "Win32_UI_Shell_PropertiesSystem", # audio endpoint friendly names (media.rs)
+  "Win32_Devices_FunctionDiscovery", # PKEY_Device_FriendlyName
+  "Media_Ocr",
+  "Globalization",
+  "Win32_System_JobObjects",
+  "Win32_System_SystemInformation",
+  "UI_Notifications", # notif.rs: toast text, NotificationKinds
+  "UI_Notifications_Management", # notif.rs: UserNotificationListener
+  "ApplicationModel", # notif.rs: AppInfo / AppDisplayInfo (the app name of a notification)
+  "ApplicationModel_DataTransfer", # clipboard.rs: Clipboard::ClearHistory (Win+V history)
+  # @windows-features
+] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+
+[dev-dependencies]
+qrcode = { version = "0.14", default-features = false } # capture.rs tests only: makes a synthetic QR to decode

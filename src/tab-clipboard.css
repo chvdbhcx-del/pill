@@ -1,0 +1,43 @@
+/* Clipboard tab (648 x 260): search 36 + trash 36, rows 52, footer 22. Owner: pill agent (restyle), clipboard agent (behaviour). */
+.clip { display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--text); }
+.clip-bar { display: flex; gap: var(--sp-2); flex: none; }
+.clip-search { flex: 1; min-width: 0; height: 36px; box-sizing: border-box; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3); border-radius: 12px; background: var(--card); color: var(--text-dim); transition: box-shadow .12s; }
+.clip-search:focus-within { box-shadow: inset 0 0 0 1px var(--accent); }
+.clip-search svg { flex: none; }
+.clip-q { flex: 1; min-width: 0; height: 100%; padding: 0; margin: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: var(--fw-regular) var(--fs-md) / 18px var(--font); }
+.clip-q::placeholder { color: var(--text-dim); }
+.clip-q::-webkit-search-cancel-button { display: none; }
+.clip-wipe { all: unset; box-sizing: border-box; flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; background: var(--card); color: var(--icon); cursor: pointer; transition: background .12s, color .12s; }
+.clip-wipe:hover { background: var(--card-hover); color: var(--text); }
+.clip-wipe:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.clip-wipe.armed { background: var(--red-bg); color: var(--red); }
+
+.clip-list { flex: 1; min-height: 0; margin-top: var(--sp-2); display: block; padding-right: var(--sp-2); margin-right: -4px; }
+.clip-row { height: 52px; min-height: 0; padding: 0 var(--sp-2) 0 var(--sp-3); gap: var(--sp-3); position: relative; }
+.clip-row .tile { width: 32px; height: 32px; border-radius: 8px; overflow: hidden; }
+.clip-t { color: var(--icon); }
+.clip-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+.clip-body { flex: 1; min-width: 0; }   /* centred by the row (align-items: center): 18 + 2 + 14 = 34 in 52 -> 9 / 9 */
+.clip-body .t { font-size: var(--fs-md); font-weight: var(--fw-regular); line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* 18 px clip box keeps the descenders */
+.clip-body .s { margin-top: 2px; display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); line-height: 14px; color: #727272; white-space: nowrap; }
+:root[data-theme="light"] .clip-body .s { color: var(--text-dim); }
+.clip-pin { display: inline-flex; color: var(--accent); }
+.clip-act { all: unset; box-sizing: border-box; flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; color: var(--text-dim); cursor: pointer; opacity: 0; transition: opacity .12s, background .12s, color .12s; }
+.clip-row:hover .clip-act, .clip-row.sel .clip-act, .clip-act:focus-visible { opacity: 1; } /* video: the highlighted (keyboard or hovered) row shows T / pin / x */
+.clip-act:hover { background: var(--raised-2); color: var(--text); }
+.clip-act:focus-visible { outline: 2px solid var(--accent); }
+.clip-row.pinned [data-act="pin"] { color: var(--accent); }
+.clip-empty { height: 100%; display: grid; place-items: center; text-align: center; padding: 0 var(--sp-5); font-size: var(--fs-md); line-height: 18px; color: var(--text-dim); }
+
+.clip-foot { flex: none; height: 18px; display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-1); margin-top: var(--sp-1); font-size: var(--fs-xs); line-height: 14px; color: var(--text-faint); }
+.clip-hint { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clip-priv { flex: none; height: 18px; display: inline-flex; align-items: center; padding: 0 var(--sp-2); border-radius: 999px; background: var(--red-bg); color: var(--red); font-weight: var(--fw-semi); }
+.clip-priv[hidden] { display: none; }
+.clip-keys { flex: none; display: inline-flex; align-items: center; gap: var(--sp-1); }
+
+/* ---------- smoothness layer (hover / press / reveal; tokens from theme.css, each with a fallback) ---------- */
+.clip-search { transition: box-shadow var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
+.clip-wipe { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.clip-wipe:active { transform: scale(.94); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+.clip-act { transition: opacity var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.clip-act:active { transform: scale(.9); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }

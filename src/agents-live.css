@@ -1,0 +1,39 @@
+/* Coding-agent status in the collapsed pill (GateGuard note: new stylesheet of the Pill app, loaded by pill.html; user request:
+   "agent completion reports in the pill"). Scoped to .ag. Tokens come from theme.css, every var has a fallback. */
+/* every status icon sits in an 18 px slot (spinner 13 + 2x2.5, dot 10 + 2x4, check 18), so the label starts at the same x in all three states */
+.lp.ag { justify-content: center; gap: var(--sp-2, 8px); min-width: 0; animation: ag-fade var(--dur-med, .22s) var(--ease-out, ease-out), ag-scale .4s var(--spring-pop, var(--ease-spring, ease-out)); }
+.ag .ag-txt { font-size: var(--fs-base, 14px); line-height: 18px; font-weight: 700; color: var(--text, #fff); white-space: nowrap; }
+
+/* working: small ring spinner */
+.ag-spin { flex: none; width: 13px; height: 13px; margin: 0 2.5px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--accent-soft, rgba(143, 150, 255, .22)); border-top-color: var(--accent, #8f96ff); animation: ag-spin .8s linear infinite; }
+/* waiting: amber dot with a soft halo that breathes */
+.ag-dot { flex: none; width: 10px; height: 10px; margin: 0 4px; border-radius: 50%; background: var(--amber, #ffb340); box-shadow: 0 0 0 4px var(--amber-bg, rgba(255, 179, 64, .16)); animation: ag-pulse 1.3s var(--ease-in-out, ease-in-out) infinite; }
+.ag-wait .ag-txt { color: var(--amber, #ffb340); }
+/* done: green check that draws itself */
+.ag-ok { display: grid; place-items: center; width: 18px; height: 18px; color: var(--green, #58ddab); }
+.ag-check path { stroke-dasharray: 20; stroke-dashoffset: 20; animation: ag-draw .35s .08s var(--ease-out, ease-out) forwards; }
+.ag-check .ag-ring { stroke-opacity: .45; }
+.tc .ti .ag-check path { animation-delay: .25s; }
+
+@keyframes ag-in { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: none; } }
+@keyframes ag-fade { from { opacity: 0; } }
+@keyframes ag-scale { from { transform: scale(.92); } }
+@keyframes ag-spin { to { transform: rotate(360deg); } }
+@keyframes ag-pulse { 0%, 100% { box-shadow: 0 0 0 3px var(--amber-bg, rgba(255, 179, 64, .16)); opacity: 1; } 50% { box-shadow: 0 0 0 6px rgba(255, 179, 64, 0); opacity: .7; } }
+@keyframes ag-draw { to { stroke-dashoffset: 0; } }
+
+/* fallback bottom-edge ripple when the shell has no Pill.edgePulse (same look as live-events.css; identical rules are harmless) */
+#wave.lv-ripple { animation: ag-ripple .8s var(--ease, cubic-bezier(.2, .8, .3, 1)); transform-origin: 50% 50%; }
+@keyframes ag-ripple {
+  0% { transform: scale(.7, 1); opacity: .2; filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
+  35% { transform: scale(1, 2.4); opacity: 1; filter: drop-shadow(0 2px 5px rgba(255, 255, 255, .55)); }
+  100% { transform: scale(1, 1); opacity: 1; filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
+}
+.rm .lp.ag, .rm .ag-pulse, .rm #wave.lv-ripple { animation: none; }
+.rm .ag-spin { animation-duration: 2.4s; } /* keep a slow spin: it is the "alive" signal, not decoration */
+.rm .ag-dot { animation: none; }
+.rm .ag-check path { animation: none; stroke-dashoffset: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .lp.ag, #wave.lv-ripple { animation: none; }
+  .ag-spin { animation-duration: 2.4s; } .ag-dot { animation: none; } .ag-check path { animation: none; stroke-dashoffset: 0; }
+}

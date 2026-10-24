@@ -1,0 +1,61 @@
+/* Command bar page: the window is transparent, only .body is drawn. Measured from the live reference at 100 %: body 680 wide,
+   search row 60, result rows 45 (inset 8, radius 16), black body with big round corners and a wavy outline at the bottom. */
+html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; user-select: none; }
+body { font: 14px / 18px var(--font); color: var(--text); -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; font-optical-sizing: auto; }
+.rm *, .rm *::before, .rm *::after { animation-duration: 0.01ms !important; animation-delay: 0s !important; transition-duration: 0.01ms !important; }
+#bar-root { padding: 0 0 12px; }
+
+.body {
+  position: relative; display: flex; flex-direction: column; max-height: 396px; background: var(--bg); border-radius: 28px;
+}
+:root[data-theme="light"] .body { box-shadow: var(--shadow); }
+.body.in { animation: pop var(--dur-slow) var(--ease-spring) both; transform-origin: top center; }
+@keyframes pop { from { opacity: 0; transform: translateY(-18px) scale(.96, .9); } 60% { opacity: 1; } to { opacity: 1; transform: none; } }
+.clipbox { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-radius: inherit; }
+
+/* One grid for the whole bar: icon column at x=26 and text column at x=62 for the search row AND every result row (list inset 8 + row padding 18),
+   right edge 23 from the body for the kbd hint and the row labels (8 + 15). Heights are even so every centre lands on a whole pixel. */
+.sf { display: flex; align-items: center; gap: 16px; height: 60px; padding: 0 23px 0 26px; flex: none; }
+.sf .mag { width: 20px; height: 20px; flex: none; color: var(--text-dim); display: grid; place-items: center; }
+.sf .mag svg { width: 20px; height: 20px; }
+#q { flex: 1; min-width: 0; height: 24px; padding: 0; border: 0; outline: 0; background: transparent; user-select: text; font: 400 18px / 24px var(--font); color: var(--text); caret-color: var(--text); } /* 18 = display size of the search field, deliberately above the scale */
+#q::placeholder { color: var(--text-dim); }
+.sf kbd { font: 600 var(--fs-xs, 11px) / 12px var(--mono); padding: 5px 8px; border-radius: 7px; background: var(--raised); color: var(--text-dim); }
+
+#list { overflow-y: auto; padding: 0 8px 8px; scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; min-height: 0; }
+#list:empty { display: none; }
+.row { display: flex; align-items: center; gap: 16px; height: 44px; box-sizing: border-box; padding: 0 15px 0 18px; border-radius: 16px; cursor: default; }
+.row { transition: background var(--dur-fast), transform var(--dur-fast) var(--ease-spring); }
+.row:active { transform: scale(.99); }
+.row.sel { background: var(--raised); }
+.row.confirm { background: var(--red-bg); }
+.row .ico { width: 20px; height: 20px; flex: none; display: grid; place-items: center; color: var(--text-2); }
+.row .ico svg { width: 20px; height: 20px; }
+.row .txt { min-width: 0; flex: 1; display: flex; align-items: baseline; gap: 12px; }
+.row .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-base, 14px); line-height: 20px; color: var(--text); }
+.row .s { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-sm, 12px); line-height: 20px; color: var(--text-faint); }
+.row .act { flex: none; display: inline-flex; align-items: center; gap: 12px; font-size: var(--fs-md, 13px); line-height: 20px; color: var(--text-dim); max-width: 240px; white-space: nowrap; }
+.row .act svg { width: 16px; height: 16px; opacity: 0; }
+.row.sel .act svg { opacity: 1; }
+.row.calc .t, .row.convert .t { font-size: var(--fs-lg, 16px); line-height: 24px; font-weight: 600; flex: none; }
+.row.confirm .act { color: var(--red); }
+mark { background: none; color: var(--text); font-weight: 700; }
+.none, .tip { padding: 14px 18px; color: var(--text-dim); font-size: var(--fs-md, 13px); line-height: 20px; }
+.hint { margin: 4px 0 8px; padding: 8px 18px; border-radius: 12px; font-size: var(--fs-sm, 12px); line-height: 18px; background: var(--amber-bg); color: var(--amber); }
+.msg { padding: 6px 26px 12px; font-size: var(--fs-sm, 12px); line-height: 18px; color: var(--red); }
+.msg:empty { display: none; }
+
+.wv { position: absolute; left: 30px; right: 30px; bottom: -6px; height: 16px; pointer-events: none; }
+.wv svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.wv path.u { stroke: var(--bg); }
+.wv path.l { stroke: var(--wave); }
+
+/* ---------- smoothness layer: opacity on ease-out, move/scale on the spring (one cubic used to drive both) ---------- */
+.body.in { animation: pop-fade var(--dur-med) var(--ease-out) both, pop-move .45s var(--spring-pop, var(--ease-spring)) both; }
+@keyframes pop-fade { from { opacity: 0; } }
+@keyframes pop-move { from { transform: translateY(-18px) scale(.96, .9); } }
+.row { transition: background var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.row:active { transform: scale(.99); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+.row .act svg { transition: opacity var(--dur-fast) var(--ease-out); }
+.msg:not(:empty) { animation: var(--fx-enter, none); }
+.sf kbd { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }

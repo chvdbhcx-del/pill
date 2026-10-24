@@ -1,0 +1,22 @@
+/* Settings > AI setup (ai-setup.js). Uses the tokens and classes of settings.css (.card, .row, .btn, .chip, .note, .footnote). */
+.as-scope [hidden] { display: none !important; }
+.as-intro { font-size: var(--fs-md); line-height: 18px; color: var(--text-2); margin: 0 4px 4px; }
+.as-mt { margin-top: 10px; }
+.as-sz { color: var(--text-dim); font-size: var(--fs-xs); }
+.as-list { margin: 6px 0 0; padding-left: 18px; font-size: var(--fs-sm); line-height: 18px; color: var(--text-2); }
+.as-list b { color: #fff; font-weight: 600; }
+.as-prog .inline { justify-content: space-between; gap: var(--sp-3); }
+.as-ptxt { flex: 1; min-width: 0; font-size: var(--fs-sm); line-height: 16px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-bar { height: 6px; margin-top: 8px; border-radius: 3px; background: var(--track); overflow: hidden; position: relative; }
+.as-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--accent-fill); transition: width 0.2s linear; }
+.as-bar.ind i { width: 40% !important; position: absolute; left: 0; transition: none; animation: as-slide 1.2s var(--ease-out) infinite; }
+@keyframes as-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.as-prog .note { margin-top: 8px; }
+.as-prog .note:first-child { margin-top: 0; }
+.as-models { display: flex; flex-direction: column; margin-top: 8px; }
+.as-mrow { display: flex; align-items: center; gap: var(--sp-3); min-height: 36px; box-shadow: inset 0 1px 0 var(--row-line); }
+.as-mrow:first-child { box-shadow: none; }
+.as-mrow b { font-weight: 500; font-family: var(--mono); font-size: var(--fs-sm); }
+.as-fillx { margin-left: auto; display: inline-flex; align-items: center; }
+.row .c select.field { max-width: 220px; }
+@media (prefers-reduced-motion: reduce) { .as-bar.ind i { animation: none; width: 100% !important; } }

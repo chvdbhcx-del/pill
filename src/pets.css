@@ -1,0 +1,351 @@
+/* Pets (pets.js): small original vector characters living INSIDE the island's black body.
+   Motion rules: transforms and opacity only; the rig (an HTML box) carries the continuous idle loop so it can run on the compositor,
+   SVG parts only animate in the state that needs them or in short idle bursts (blink / twitch). Everything pauses with .paused (hidden window)
+   and goes static with .rm (reduce-motion switch) or prefers-reduced-motion. The pet never takes pointer events except .pet-hit. */
+
+/* ---------- tint ("painting"): pets.js sets --pet-accent (the reaction colour) and --pet-k (1 = tinted, 0 = calm / none) on the pet box.
+   Registered properties, so both fade (0.35 s) instead of flipping. Only accents take the colour (cheeks, eye highlights, props, the halo under the pet);
+   the bodies keep their own colours. --t-lo / mid / hi = how much of the accent a part takes; all of them are 0 when --pet-k is 0. ---------- */
+@property --pet-accent { syntax: "<color>"; inherits: true; initial-value: #7d8cab; }
+@property --pet-k { syntax: "<number>"; inherits: true; initial-value: 0; }
+
+/* ---------- the pet box ---------- */
+.pet { --pp: var(--pet-px, 34px); --d: -1; position: relative; width: calc(var(--pp) * var(--ar, 1)); height: var(--pp); pointer-events: none; /* --ar = viewBox w / h of wide pets (set by pets.js), the height is the S/M/L size */
+  --t-lo: calc(var(--pet-k) * 35%); --t-mid: calc(var(--pet-k) * 55%); --t-hi: calc(var(--pet-k) * 85%);
+  transition: --pet-accent 0.35s var(--ease-out, ease), --pet-k 0.35s var(--ease-out, ease); }
+.pet[data-side="left"] { --d: 1; } /* --d = drift direction of the props: always towards the free side (the middle of the island) */
+.pet .pet-rig { width: 100%; height: 100%; transform-origin: 50% 100%; will-change: transform; animation: pet-breath 3.6s ease-in-out infinite; }
+.pet-rig > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.pet[data-pet] .fx-host { transform: none; }
+.pet[data-side="left"] .fx-host { transform: translateX(var(--fxx, 0px)); } /* wide pets: the shared props sit in a square at the free end */
+.pet svg .o { stroke: #17141f; stroke-width: 2; stroke-linejoin: round; }
+.pet .pet-hit { position: absolute; inset: 14% 12% 0; pointer-events: auto; cursor: pointer; border-radius: 40%; }
+
+/* INSIDE the island. pets.js mounts the pet in one of two hosts and sets data-where; both hosts are clipped by the island body (#clip: overflow hidden + the body's radii),
+   so no part of the pet or its props can leave the black silhouette. The pet box never takes pointer events (only .pet-hit does), so island content stays clickable.
+   cap  = collapsed capsule (30 px x --s tall): a child of #clip standing on the capsule floor at the chosen end. Box: S 18 / M 24 / L 28 px x --s, never taller than the capsule.
+          pets.js reserves its width with Pill.reserve() and the same width pads #live below, so it never overlaps the clock or the icons.
+   head = open panel: a child of #pet-slot, the free gap of the header row between the tabs and the header buttons (#panel is zoomed by --s already). Box: S 22 / M 28 / L 32 px. */
+.pet[data-where] { position: absolute; z-index: 2; }
+.pet[data-where="cap"] { --cap-n: 27px; --pet-px: calc(var(--cap-n) * var(--s, 1)); bottom: calc(1.5px * var(--s, 1)); }
+.pet[data-where="cap"][data-size="s"] { --cap-n: 20px; }
+.pet[data-where="cap"][data-size="l"] { --cap-n: 30px; }
+.pet[data-where="cap"][data-side="right"] { right: calc(9px * var(--s, 1)); }
+.pet[data-where="cap"][data-side="left"] { left: calc(9px * var(--s, 1)); }
+:root[data-pet-side="right"] #live { padding-right: var(--pet-res, 0px); }
+:root[data-pet-side="left"] #live { padding-left: var(--pet-res, 0px); }
+#live { transition: opacity 0.15s, padding 0.35s ease; } /* the clock slides aside while the capsule widens */
+#pet-slot { flex: 1; min-width: 0; height: 32px; position: relative; container: pet-slot / inline-size; pointer-events: none; }
+.pet[data-where="head"] { --pet-px: 28px; bottom: 0; }
+.pet[data-where="head"] { max-width: calc(100% - 12px); }
+.pet[data-where="head"][data-size="s"] { --pet-px: 22px; }
+.pet[data-where="head"][data-size="l"] { --pet-px: 32px; }
+.pet[data-where="head"][data-side="right"] { right: 6px; }
+.pet[data-where="head"][data-side="left"] { left: 6px; }
+@container pet-slot (max-width: 56px) { .pet[data-where="head"] { display: none; } } /* tabs and buttons need the room: no pet when the gap is narrow */
+.pet.enter { animation: pet-enter 0.2s ease-out var(--enter-delay, 0s) backwards; }
+@keyframes pet-enter { from { opacity: 0; } to { opacity: 1; } }
+/* the ghost floats: a faint floor shadow (light, because the island is black) that shrinks as it rises */
+.pet[data-pet="ghost"]::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 0; height: 7%; border-radius: 50%; background: rgba(255, 255, 255, 0.16); animation: pet-shadow 3.8s ease-in-out infinite; }
+@keyframes pet-shadow { 0%, 100% { transform: scaleX(1); opacity: 1; } 50% { transform: scaleX(0.7); opacity: 0.55; } }
+
+/* Settings > Character: a live preview card = a 2x mock of the collapsed capsule (black, round bottom, a clock) with the pet standing inside at its right end */
+.pet-stage { position: relative; height: 92px; border-radius: 8px; background: #141316; overflow: hidden; }
+.pet-stage::before { content: ""; position: absolute; top: 0; left: 50%; width: 148px; margin-left: -74px; height: 60px; background: #000; border-radius: 0 0 30px 30px; }
+.pet-stage:not(.none)::after { content: "12:34"; position: absolute; top: 0; left: 50%; margin-left: -58px; height: 56px; display: flex; align-items: center; color: #9a9aa4; font: 700 15px / 1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.pet-stage .pet { --pet-px: min(48px, calc(100px / var(--ar, 1))); position: absolute; top: calc(56px - var(--pet-px)); right: calc(50% - 62px); }
+.pet-stage .pet[data-side="left"] { right: auto; left: calc(50% - 62px); }
+.pet-stage .pet[data-pet="claude8"] { --pet-px: 56px; }
+.pet-stage.none::after { content: "\2014"; position: absolute; left: 0; right: 0; top: 46px; text-align: center; color: #55535a; font-size: 18px; }
+.pcard .pet-stage + b { margin-top: 8px; }
+
+/* ---------- parts: pivots (fill-box, so percentages are of the part itself) ---------- */
+.pet .head, .pet .earL, .pet .earR, .pet .tail, .pet .ant, .pet .eye, .pet .eyes, .pet .fig, .pet .armL, .pet .armR, .pet .led, .pet .bub,
+.pet .z, .pet .h, .pet .s, .pet .excl, .pet .fx-think circle, .pet .fx-orbit, .pet .paper { transform-box: fill-box; transform-origin: 50% 50%; }
+.pet .fig { transform-origin: 50% 100%; }
+.pet .head { transform-origin: 50% 100%; transform: rotate(calc(var(--lx, 0) * 4deg)); transition: transform 0.18s var(--ease-out, ease-out); }
+.pet .eyes { transform: translate(calc(var(--lx, 0) * 1.7px), calc(var(--ly, 0) * 1.1px)); transition: transform 0.14s var(--ease-out, ease-out); }
+.pet .earL, .pet .earR, .pet .ant { transform-origin: 50% 100%; transition: transform 0.25s var(--ease-out, ease-out); }
+.pet .tail { transform-origin: 0% 100%; }
+/* state-to-state cross-fades of the static poses (wide eyes, squashed slime, led glow): ease instead of a hard cut. A running keyframe animation (blink etc.) still wins; the one-shot restart in pets.js goes A -> none -> A in one frame, which these transitions bridge without a flash */
+.pet .eye, .pet .fig { transition: transform 0.28s var(--ease-out, ease-out); }
+.pet .led { transition: opacity 0.28s var(--ease-out, ease-out); }
+.pet .armL, .pet .armR { transform-origin: 50% 0; }
+
+/* eye looks: open by default, happy (done / petted), shut (asleep) */
+.pet .e-happy, .pet .e-shut { display: none; }
+.pet[data-state="done"] .e-open, .pet[data-state="sleep"] .e-open { display: none; }
+.pet[data-state="done"] .e-happy { display: inline; }
+.pet[data-state="sleep"] .e-shut { display: inline; }
+
+/* tinted accents of the smooth pets (--b = the part's own colour, set inline in pets.js) */
+.pet .pet-rig { filter: drop-shadow(0 0 calc(var(--pp) * 0.07) color-mix(in srgb, var(--pet-accent) calc(var(--pet-k) * 85%), transparent)); }
+.pet .blush { fill: color-mix(in srgb, var(--pet-accent) var(--t-mid), var(--b)); }
+.pet .hl { fill: color-mix(in srgb, var(--pet-accent) var(--t-lo), var(--b)); }
+.pet .led { fill: color-mix(in srgb, var(--pet-accent) var(--t-mid), #ff7a7a); }
+.pet .chest { fill: color-mix(in srgb, var(--pet-accent) var(--t-mid), #f6c344); }
+.pet .fx-spark .s path { fill: color-mix(in srgb, var(--pet-accent) var(--t-mid), #ffe27a); }
+.pet .fx-spark .s2 path { fill: color-mix(in srgb, var(--pet-accent) var(--t-mid), #fff3b0); }
+.pet .fx-excl .o { fill: color-mix(in srgb, var(--pet-accent) var(--t-hi), #ffb340); }
+.pet .fx-think circle { fill: color-mix(in srgb, var(--pet-accent) var(--t-hi), #e8ebff); }
+.pet .fx-orbit circle { fill: color-mix(in srgb, var(--pet-accent) var(--t-hi), #b9aef5); }
+.pet .fx-z .z path:last-child { stroke: color-mix(in srgb, var(--pet-accent) var(--t-hi), #e8ebff); }
+.pet .fx-file .paper path.o { stroke: color-mix(in srgb, var(--pet-accent) var(--t-hi), #17141f); }
+.pet .fx-file .paper path:nth-child(2) { fill: color-mix(in srgb, var(--pet-accent) var(--t-mid), #cfd6e6); }
+.pet .fx-file .paper path:last-child { stroke: color-mix(in srgb, var(--pet-accent) var(--t-hi), #7d8fb8); }
+
+/* effects are hidden until their state asks for them */
+.pet .fx { transform: translate(5px, 12px); } /* props sit on the free side: left of a right-end pet, right of a left-end one */
+.pet[data-side="left"] .fx { transform: translate(43px, 12px); }
+.pet .fx > g, .pet .fx-orbit, .pet .fx-file { display: none; }
+.pet .fx-file { transform: translate(15px, 36px) rotate(-8deg); }
+.pet[data-side="left"] .fx-file { transform: translate(33px, 36px) rotate(8deg); }
+.pet[data-state="sleep"] .fx-z, .pet[data-state="attention"] .fx-excl, .pet[data-state="done"] .fx-spark { display: inline; }
+.pet[data-state="thinking"] .fx-think { display: inline; }
+.pet[data-pet="ghost"][data-state="thinking"] .fx-think, .pet[data-pet="robot"][data-state="thinking"] .fx-think, .pet[data-pet="slime"][data-state="thinking"] .fx-think { display: none; }
+.pet[data-pet="ghost"][data-state="thinking"] .fx-orbit { display: inline; transform-origin: 24px 23px; transform-box: view-box; animation: pet-orbit 2.4s linear infinite; }
+.pet[data-state="file"] .fx-file { display: inline; }
+.pet.act-pet .fx-heart { display: inline; }
+
+/* ---------- idle loops on the rig (HTML box -> compositor) ---------- */
+.pet[data-pet="ghost"] .pet-rig { animation: pet-float 3.8s ease-in-out infinite; }
+.pet[data-pet="slime"] .pet-rig { animation: pet-squish 2.8s ease-in-out infinite; }
+.pet[data-pet="robot"] .pet-rig { animation-duration: 4.4s; }
+@keyframes pet-breath { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.012, 1.034); } }
+@keyframes pet-float { 0%, 100% { transform: translateY(0) rotate(-1.6deg); } 50% { transform: translateY(-7%) rotate(1.6deg); } }
+@keyframes pet-squish { 0%, 100% { transform: scale(1.03, 0.95); } 50% { transform: scale(0.97, 1.06); } }
+
+/* ---------- reaction states ---------- */
+/* music: dance, a pendulum swing in time with the beat (about 110 bpm) + head nod; with audio:bands JS sets the transform instead (data-energy) */
+.pet[data-state="music"] .pet-rig { animation: pet-dance 1.1s ease-in-out infinite; }
+.pet[data-state="music"] .head { animation: pet-nod 0.55s ease-in-out infinite alternate; }
+.pet[data-state="music"][data-pet="robot"] .chest { animation: pet-chest 0.55s steps(2, jump-none) infinite; }
+.pet[data-energy] .pet-rig { animation: none !important; }
+@keyframes pet-dance { 0%, 100% { transform: rotate(-4.5deg) scale(1, 1.02); } 25% { transform: rotate(0) scale(1.03, 0.95); } 50% { transform: rotate(4.5deg) scale(1, 1.02); } 75% { transform: rotate(0) scale(1.03, 0.95); } }
+@keyframes pet-nod { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+@keyframes pet-chest { 50% { fill: #ff8fa3; } }
+
+/* thinking: a slow thoughtful sway; each pet adds its own loop below */
+.pet[data-state="thinking"] .pet-rig { animation: pet-think 3s ease-in-out infinite; }
+.pet[data-state="thinking"] .head { transform: rotate(-6deg); }
+.pet[data-state="thinking"] .eye { transform: scaleY(0.62); }
+.pet[data-state="thinking"] .fx-think circle { animation: pet-dot 1.2s ease-in-out infinite; }
+.pet[data-state="thinking"] .fx-think .d2 { animation-delay: 0.2s; }
+.pet[data-state="thinking"] .fx-think .d3 { animation-delay: 0.4s; }
+.pet[data-state="thinking"][data-pet="cat"] .tail { animation: pet-swish 1.1s ease-in-out infinite; }
+.pet[data-state="thinking"][data-pet="bunny"] .earL { transform: rotate(-26deg); }
+.pet[data-state="thinking"][data-pet="robot"] .eyes { animation: pet-scan 1.6s ease-in-out infinite; }
+.pet[data-state="thinking"][data-pet="robot"] .led { animation: pet-led 0.5s steps(2, jump-none) infinite; }
+.pet[data-state="thinking"][data-pet="robot"] .head { transform: none; }
+.pet[data-state="thinking"][data-pet="slime"] .pet-rig { animation: pet-squish 1.4s ease-in-out infinite; }
+.pet[data-state="thinking"][data-pet="slime"] .bub { animation: pet-bubble 1.8s ease-in infinite; }
+.pet[data-state="thinking"][data-pet="slime"] .b2 { animation-delay: 0.9s; }
+@keyframes pet-think { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
+@keyframes pet-swish { 0%, 100% { transform: rotate(-16deg); } 50% { transform: rotate(18deg); } }
+@keyframes pet-scan { 0%, 100% { transform: translateX(-2.4px); } 50% { transform: translateX(2.4px); } }
+@keyframes pet-led { 50% { opacity: 0.25; } }
+@keyframes pet-dot { 0%, 100% { transform: scale(0.6); opacity: 0.45; } 40% { transform: scale(1.15); opacity: 1; } }
+@keyframes pet-orbit { to { transform: rotate(360deg); } }
+@keyframes pet-bubble { 0% { transform: translateY(2px); opacity: 0; } 25% { opacity: 1; } 100% { transform: translateY(-16px); opacity: 0; } }
+
+/* done: a happy jump, sparkles, then the happy eyes stay for the rest of the state */
+.pet[data-state="done"] .pet-rig { animation: pet-jump 0.8s var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) 1, pet-breath 3.6s ease-in-out 0.8s infinite; }
+.pet[data-state="done"][data-pet="ghost"] .pet-rig { animation: pet-jump 0.8s var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) 1, pet-float 3.8s ease-in-out 0.8s infinite; }
+.pet[data-state="done"][data-pet="slime"] .pet-rig { animation: pet-jump 0.8s var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) 1, pet-squish 2.8s ease-in-out 0.8s infinite; }
+.pet[data-state="done"] .fx-spark .s { animation: pet-spark 1.1s ease-out both; }
+.pet[data-state="done"] .fx-spark .s2 { animation-delay: 0.12s; }
+.pet[data-state="done"] .fx-spark .s3 { animation-delay: 0.24s; }
+@keyframes pet-jump { 0% { transform: scale(1, 1); } 18% { transform: translateY(4%) scale(1.07, 0.9); } 45% { transform: translateY(-16%) scale(0.94, 1.1); } 72% { transform: translateY(1%) scale(1.05, 0.95); } 100% { transform: scale(1, 1); } }
+@keyframes pet-spark { 0% { transform: scale(0) rotate(0); opacity: 0; } 30% { transform: scale(1.2) rotate(40deg); opacity: 1; } 100% { transform: scale(0.4) rotate(120deg); opacity: 0; } }
+
+/* attention: startle, then an alert pose: wide eyes, ears / antenna up, a "!" */
+.pet[data-state="attention"] .pet-rig { animation: pet-startle 0.45s ease-out 1, pet-alert 0.9s ease-in-out 0.45s infinite; }
+.pet[data-state="attention"] .eye { transform: scale(1.28); }
+.pet[data-state="attention"] .earL, .pet[data-state="attention"] .earR { transform: scaleY(1.22); }
+.pet[data-state="attention"][data-pet="robot"] .led { animation: pet-led 0.28s steps(2, jump-none) infinite; }
+.pet[data-state="attention"][data-pet="robot"] .ant { transform: scaleY(1.25); }
+.pet[data-state="attention"][data-pet="slime"] .fig { transform: scale(0.94, 1.1); }
+.pet[data-state="attention"] .fx-excl .excl { animation: pet-pop 0.35s var(--spring-pop, var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1))) both, pet-bob 0.7s ease-in-out 0.35s infinite alternate; transform-origin: 50% 100%; }
+@keyframes pet-startle { 0% { transform: scale(1, 1); } 30% { transform: translateY(-9%) scale(0.92, 1.12); } 100% { transform: scale(1, 1); } }
+@keyframes pet-alert { 0%, 100% { transform: rotate(-1.4deg) scale(1.02); } 50% { transform: rotate(1.4deg) scale(1.05); } }
+@keyframes pet-pop { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes pet-bob { to { transform: translateY(-1.6px); } }
+
+/* file: holds a tiny paper for as long as the state lasts */
+.pet[data-state="file"] .fx-file .paper { animation: pet-pop 0.35s var(--spring-pop, var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1))) both, pet-paper 1.8s ease-in-out 0.35s infinite alternate; }
+@keyframes pet-paper { from { transform: translateY(0) rotate(-3deg); } to { transform: translateY(-1.4px) rotate(3deg); } }
+
+/* sleep: curled up (smaller, head down, ears drooping), slow breathing, floating z */
+.pet[data-state="sleep"] .pet-rig { animation: pet-sleep 5s ease-in-out infinite; }
+.pet[data-state="sleep"] .head { transform: rotate(8deg); }
+.pet[data-state="sleep"] .earL { transform: rotate(-20deg); }
+.pet[data-state="sleep"] .earR { transform: rotate(20deg); }
+.pet[data-state="sleep"][data-pet="bunny"] .earL { transform: rotate(-42deg); }
+.pet[data-state="sleep"][data-pet="bunny"] .earR { transform: rotate(42deg); }
+.pet[data-state="sleep"][data-pet="slime"] .fig { transform: scale(1.07, 0.86); }
+.pet[data-state="sleep"][data-pet="robot"] .led { opacity: 0.3; }
+.pet[data-state="sleep"] .fx-z .z { animation: pet-z 3s ease-in-out infinite; }
+.pet[data-state="sleep"] .fx-z .z2 { animation-delay: 1s; }
+.pet[data-state="sleep"] .fx-z .z3 { animation-delay: 2s; }
+@keyframes pet-sleep { 0%, 100% { transform: scale(0.9, 0.88); } 50% { transform: scale(0.915, 0.92); } }
+@keyframes pet-z { 0% { transform: translate(0, 4px) scale(0.5); opacity: 0; } 20% { opacity: 1; } 75% { opacity: 1; } 100% { transform: translate(calc(var(--d) * 7px), -12px) scale(1.1); opacity: 0; } }
+
+/* ---------- short bursts (JS adds the class for a moment) ---------- */
+.pet.act-blink .eye { animation: pet-blink 0.2s ease-in-out; }
+@keyframes pet-blink { 45% { transform: scaleY(0.08); } }
+.pet[data-pet="cat"].act-twitch .earL { animation: pet-flick 0.5s ease-in-out; }
+.pet[data-pet="cat"].act-twitch .tail { animation: pet-swish 0.6s ease-in-out 1; }
+.pet[data-pet="bunny"].act-twitch .earR { animation: pet-flick 0.45s ease-in-out; }
+.pet[data-pet="bunny"].act-twitch .earL { animation: pet-flick 0.45s ease-in-out 0.12s; }
+.pet[data-pet="robot"].act-twitch .ant { animation: pet-flick 0.5s ease-in-out; }
+.pet[data-pet="robot"].act-twitch .eyes { animation: pet-scan 0.65s ease-in-out 1; }
+.pet[data-pet="ghost"].act-twitch .pet-rig { animation: pet-wobble 0.65s ease-in-out; }
+.pet[data-pet="slime"].act-twitch .fig { animation: pet-jig 0.65s ease-in-out; }
+.pet[data-pet="bunny"].act-hop .pet-rig { animation: pet-jump 0.7s var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) 1; }
+@keyframes pet-flick { 0%, 100% { transform: rotate(0); } 30% { transform: rotate(-16deg); } 60% { transform: rotate(9deg); } }
+@keyframes pet-wobble { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-7deg); } 50% { transform: rotate(6deg); } 75% { transform: rotate(-3deg); } }
+@keyframes pet-jig { 0%, 100% { transform: scale(1, 1); } 25% { transform: scale(1.1, 0.88); } 55% { transform: scale(0.92, 1.1); } 80% { transform: scale(1.04, 0.97); } }
+
+/* petting: a little squeeze, happy eyes, hearts (at most once a second, see pets.js); last in the file so it wins over the state loops */
+.pet.act-pet[data-pet] .pet-rig { animation: pet-squeeze 0.5s var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) 1; }
+.pet.act-pet .e-open { display: none; }
+.pet.act-pet .e-shut { display: none; }
+.pet.act-pet .e-happy { display: inline; }
+.pet.act-pet .fx-heart .h { animation: pet-heart 1.2s ease-out both; }
+.pet.act-pet .fx-heart .h2 { animation-delay: 0.15s; }
+.pet.act-pet .fx-heart .h3 { animation-delay: 0.3s; }
+@keyframes pet-squeeze { 0%, 100% { transform: scale(1, 1); } 30% { transform: translateY(5%) scale(1.08, 0.9); } 60% { transform: translateY(-7%) scale(0.95, 1.07); } }
+@keyframes pet-heart { 0% { transform: translate(0, 5px) scale(0.3); opacity: 0; } 25% { opacity: 1; } 100% { transform: translate(calc(var(--d) * 5px), -15px) scale(1.15); opacity: 0; } }
+
+/* ================= claude8: the 8-bit pet (14x14 grid, 1 cell = 1 SVG unit = --cell on screen) =================
+   Everything moves in whole cells and flips between frames with steps(1): no easing, no blur, no scaling, no transitions (the tint snaps too).
+   It stands on its legs on the box floor (the art is 12 rows high, shifted down 2 rows). Capsule: S 14 px (1x cells) / M and L 28 px (2x; 3x would not fit the 30 px capsule), always whole cells
+   (round(down) where the engine has it) and never taller than the capsule. Open panel: 14 / 28 / 42 px. */
+.pet[data-where="cap"][data-pet="claude8"] { --cap-n: 28px; }
+.pet[data-where="cap"][data-pet="claude8"][data-size="s"] { --cap-n: 14px; }
+.pet[data-where="head"][data-pet="claude8"][data-size="s"] { --pet-px: 14px; }
+.pet[data-where="head"][data-pet="claude8"][data-size="l"] { --pet-px: 42px; }
+@supports (width: round(down, 1px, 1px)) { /* whole cells whatever the island size: never larger than the capsule */
+  .pet[data-where="cap"][data-pet="claude8"] { --pet-px: max(14px, round(down, calc(var(--cap-n) * var(--s, 1)), 14px)); }
+}
+.pet[data-pet="claude8"] { --cell: calc(var(--pp) / 14); }
+.pet[data-pet="claude8"], .pet[data-pet="claude8"] * { transition: none !important; }
+.pet[data-pet="claude8"] svg { image-rendering: pixelated; }
+/* the rig carries no motion here (only the music energy offset from JS, in whole cells); its filter is a 1-cell outline: dark on calm, the reaction colour when tinted */
+.pet[data-pet="claude8"] .pet-rig { animation: none !important; will-change: auto; --ol: color-mix(in srgb, var(--pet-accent) calc(var(--pet-k) * 100%), #17141f);
+  filter: drop-shadow(var(--cell) 0 0 var(--ol)) drop-shadow(calc(var(--cell) * -1) 0 0 var(--ol)) drop-shadow(0 var(--cell) 0 var(--ol)) drop-shadow(0 calc(var(--cell) * -1) 0 var(--ol)); }
+
+/* tinted pixels: the spark, pupil shine, cheeks, props and the document edge; body, face, arms and legs stay terracotta */
+.pet .px-spark rect { fill: color-mix(in srgb, var(--pet-accent) var(--t-hi), #ffd2a3); }
+.pet .px-hl { fill: color-mix(in srgb, var(--pet-accent) var(--t-lo), #ffe9d9); }
+.pet .px-blush { fill: color-mix(in srgb, var(--pet-accent) var(--t-mid), #ff9a86); }
+.pet .px-dots rect, .pet .px-zs rect { fill: color-mix(in srgb, var(--pet-accent) var(--t-hi), #e8ebff); }
+.pet .px-excl rect { fill: color-mix(in srgb, var(--pet-accent) var(--t-hi), #ffb340); }
+.pet .px-edge { fill: color-mix(in srgb, var(--pet-accent) var(--t-hi), #9a9185); }
+.pet .px-tx { fill: color-mix(in srgb, var(--pet-accent) var(--t-mid), #b3a99c); }
+.pet .px-acc { fill: color-mix(in srgb, var(--pet-accent) var(--t-hi), #ffd34e); }
+
+/* frames: one pose per group, hidden unless the state shows it */
+.pet .px-s-x, .pet .px-s-ring, .pet .px-a-up, .pet .px-e-shut, .pet .px-e-happy, .pet .px-e-wide, .pet .px-m-open, .pet .px-m-o, .pet .px-m-flat,
+.pet .px-p-l, .pet .px-p-r, .pet .px-fx > g { display: none; }
+.pet .px-fx { transform: translateX(13px) scaleX(-1); } /* props sit on the free side: the art has them on the right, so a right-end pet mirrors them around the body centre */
+.pet[data-side="left"] .px-fx { transform: none; }
+.pet .px-eyes { transform: none; }
+
+/* idle: a 2-frame bob (1 cell down / up) with the spark pulsing + / dot in step; a blink is a 240 ms flat-eye frame */
+.pet .px-fig { animation: px-bob 1.6s steps(1) infinite; }
+.pet .px-s-plus { animation: px-h1 1.6s steps(1) infinite; }
+.pet .px-s-dot { animation: px-h2 1.6s steps(1) infinite; }
+.pet.act-blink .px-e-open { display: none; }
+.pet.act-blink .px-e-shut { display: inline; }
+.pet.act-twitch .px-s-x { display: inline; } /* a twitch of the spark: + and x together = a 8-point star for a moment */
+
+/* hover look: eyes step one cell and the shine pixel changes sides */
+.pet[data-look="l"] .px-eyes { transform: translateX(-1px); }
+.pet[data-look="l"] .px-p-c, .pet[data-look="r"] .px-p-c, .pet[data-state="thinking"]:not([data-look]) .px-p-c, .pet[data-state="file"]:not([data-look]) .px-p-c { display: none; }
+.pet[data-look="l"] .px-p-l { display: inline; }
+.pet[data-look="r"] .px-eyes, .pet[data-state="thinking"]:not([data-look]) .px-eyes, .pet[data-state="file"]:not([data-look]) .px-eyes { transform: translateX(1px); }
+.pet[data-look="r"] .px-p-r, .pet[data-state="thinking"]:not([data-look]) .px-p-r, .pet[data-state="file"]:not([data-look]) .px-p-r { display: inline; }
+
+/* music: 2-frame bounce in time (0.55 s): up = feet tucked + arms up + x spark, down = feet out + arms down + plus spark; with audio:bands JS lifts the rig in whole cells instead */
+.pet[data-state="music"] .px-fig { animation: px-hop 0.55s steps(1) infinite; }
+.pet[data-state="music"] .px-feet, .pet[data-state="music"] .px-a-dn, .pet[data-state="music"] .px-s-plus { animation: px-h1 0.55s steps(1) infinite; }
+.pet[data-state="music"] .px-a-up, .pet[data-state="music"] .px-s-x { display: inline; animation: px-h2 0.55s steps(1) infinite; }
+.pet[data-state="music"] .px-s-dot { display: none; }
+.pet[data-energy] .px-fig { animation: none; }
+
+/* thinking: the spark cycles dot / + / ring / x (4 frames, 0.5 s each), "..." fills up pixel by pixel, eyes look at it */
+.pet[data-state="thinking"] .px-s-plus, .pet[data-state="thinking"] .px-s-ring, .pet[data-state="thinking"] .px-s-x { display: inline; }
+.pet[data-state="thinking"] .px-s-dot { animation: px-q1 2s steps(1) infinite; }
+.pet[data-state="thinking"] .px-s-plus { animation: px-q2 2s steps(1) infinite; }
+.pet[data-state="thinking"] .px-s-ring { animation: px-q3 2s steps(1) infinite; }
+.pet[data-state="thinking"] .px-s-x { animation: px-q4 2s steps(1) infinite; }
+.pet[data-state="thinking"] .px-dots { display: inline; }
+.pet .px-d1 { animation: px-d1 1.6s steps(1) infinite; }
+.pet .px-d2 { animation: px-d2 1.6s steps(1) infinite; }
+.pet .px-d3 { animation: px-d3 1.6s steps(1) infinite; }
+
+/* done: 3-frame jump (crouch, up, down) with the feet tucked at the top, then cheering: happy eyes, open mouth, arms up, ring / + spark, pixel confetti */
+.pet[data-state="done"] .px-fig { animation: px-jump 0.6s steps(1) 1, px-bob 1.6s steps(1) 0.6s infinite; }
+.pet[data-state="done"] .px-feet { animation: px-feet 0.6s steps(1) 1; }
+.pet[data-state="done"] .px-e-open { display: none; }
+.pet[data-state="done"] .px-e-happy, .pet[data-state="done"] .px-a-up, .pet[data-state="done"] .px-m-open, .pet[data-state="done"] .px-conf { display: inline; }
+.pet[data-state="done"] .px-m-smile, .pet[data-state="done"] .px-a-dn, .pet[data-state="done"] .px-s-dot { display: none; }
+.pet[data-state="done"] .px-s-ring { display: inline; animation: px-h1 0.8s steps(1) infinite; }
+.pet[data-state="done"] .px-s-plus { animation: px-h2 0.8s steps(1) infinite; }
+.pet[data-state="done"] .px-conf rect { animation: px-conf 0.9s steps(3, end) forwards; }
+
+/* attention: a short pixel shake, wide eyes, "o" mouth, arms up, x spark and a flashing "!" */
+.pet[data-state="attention"] .px-fig { animation: px-shake 0.16s steps(1) 6, px-bob 1.6s steps(1) 1s infinite; }
+.pet[data-state="attention"] .px-e-open, .pet[data-state="attention"] .px-m-smile, .pet[data-state="attention"] .px-a-dn, .pet[data-state="attention"] .px-s-plus, .pet[data-state="attention"] .px-s-dot { display: none; }
+.pet[data-state="attention"] .px-e-wide, .pet[data-state="attention"] .px-m-o, .pet[data-state="attention"] .px-a-up, .pet[data-state="attention"] .px-s-x { display: inline; animation: none; }
+.pet[data-state="attention"] .px-excl { display: inline; animation: px-h1 0.5s steps(1) infinite; }
+
+/* file: holds a 5x6 pixel document that bobs a cell, eyes on it */
+.pet[data-state="file"] .px-docw { display: inline; }
+.pet[data-state="file"] .px-doc { animation: px-bob 0.8s steps(1) infinite; }
+
+/* sleep: flat eyes, a dot for a mouth, only the dim spark dot, a slow low bob and pixel z climbing in 3 steps */
+.pet[data-state="sleep"] .px-fig { animation: px-bob-z 3.2s steps(1) infinite; }
+.pet[data-state="sleep"] .px-e-open { display: none; }
+.pet[data-state="sleep"] .px-e-shut, .pet[data-state="sleep"] .px-m-flat, .pet[data-state="sleep"] .px-zs { display: inline; }
+.pet[data-state="sleep"] .px-m-smile, .pet[data-state="sleep"] .px-s-plus { display: none; }
+.pet[data-state="sleep"] .px-s-dot { animation: none; }
+.pet .px-z { animation: px-z 2.4s steps(3, end) infinite; }
+.pet .px-z2 { animation-delay: -0.8s; }
+.pet .px-z3 { animation-delay: -1.6s; }
+
+/* click: 3-frame hop, happy eyes, three pixel hearts climbing in steps (last in the block so it wins over the states) */
+.pet.act-pet .px-fig { animation: px-jump 0.6s steps(1) 1, px-bob 1.6s steps(1) 0.6s infinite; }
+.pet.act-pet .px-e-open, .pet.act-pet .px-e-shut, .pet.act-pet .px-e-wide { display: none; }
+.pet.act-pet .px-e-happy, .pet.act-pet .px-hearts { display: inline; }
+.pet .px-h { animation: px-heart 1.2s steps(4, end) both; }
+/* a blink must not fight happy or wide eyes */
+.pet[data-state="done"].act-blink .px-e-shut, .pet[data-state="attention"].act-blink .px-e-shut, .pet.act-pet.act-blink .px-e-shut { display: none; }
+
+@keyframes px-bob { 0% { transform: translateY(0); } 50% { transform: translateY(1px); } 100% { transform: translateY(0); } }
+@keyframes px-bob-z { 0% { transform: translateY(1px); } 50% { transform: translateY(2px); } 100% { transform: translateY(1px); } }
+@keyframes px-hop { 0% { transform: translateY(0); } 50% { transform: translateY(-1px); } 100% { transform: translateY(0); } }
+@keyframes px-jump { 0% { transform: translateY(1px); } 34% { transform: translateY(-2px); } 67% { transform: translateY(-1px); } 100% { transform: translateY(0); } }
+@keyframes px-shake { 0% { transform: translateX(-1px); } 50% { transform: translateX(1px); } 100% { transform: translateX(-1px); } }
+@keyframes px-h1 { 0% { visibility: visible; } 50% { visibility: hidden; } 100% { visibility: hidden; } }
+@keyframes px-h2 { 0% { visibility: hidden; } 50% { visibility: visible; } 100% { visibility: visible; } }
+@keyframes px-q1 { 0% { visibility: visible; } 25% { visibility: hidden; } 100% { visibility: hidden; } }
+@keyframes px-q2 { 0% { visibility: hidden; } 25% { visibility: visible; } 50% { visibility: hidden; } 100% { visibility: hidden; } }
+@keyframes px-q3 { 0% { visibility: hidden; } 50% { visibility: visible; } 75% { visibility: hidden; } 100% { visibility: hidden; } }
+@keyframes px-q4 { 0% { visibility: hidden; } 75% { visibility: visible; } 100% { visibility: visible; } }
+@keyframes px-d1 { 0% { visibility: hidden; } 25% { visibility: visible; } 100% { visibility: visible; } }
+@keyframes px-d2 { 0% { visibility: hidden; } 50% { visibility: visible; } 100% { visibility: visible; } }
+@keyframes px-d3 { 0% { visibility: hidden; } 75% { visibility: visible; } 100% { visibility: visible; } }
+@keyframes px-feet { 0% { visibility: visible; } 34% { visibility: hidden; } 67% { visibility: visible; } 100% { visibility: visible; } }
+@keyframes px-z { 0% { transform: translate(0, 0); visibility: visible; } 100% { transform: translate(3px, -6px); visibility: hidden; } }
+@keyframes px-conf { 0% { transform: translate(0, 0); visibility: visible; } 100% { transform: translate(var(--dx), var(--dy)); visibility: hidden; } }
+@keyframes px-heart { 0% { transform: translate(0, 0); visibility: visible; } 100% { transform: translate(0, -4px); visibility: hidden; } }
+
+/* ---------- hidden window and reduced motion: still poses only ---------- */
+.paused .pet *, .paused .pet { animation-play-state: paused !important; }
+.rm .pet *, .rm .pet { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { .pet *, .pet { animation: none !important; transition: none !important; } }
+/* static 8-bit pose: no animation means no frame flipping, so show one spark frame and no confetti */
+.rm .pet .px-conf, .rm .pet .px-s-ring, .rm .pet:not([data-state="attention"]) .px-s-x, .rm .pet:not([data-state="sleep"]) .px-s-dot, .rm .pet[data-state="music"] .px-a-up { display: none; }
+@media (prefers-reduced-motion: reduce) { .pet .px-conf, .pet .px-s-ring, .pet:not([data-state="attention"]) .px-s-x, .pet:not([data-state="sleep"]) .px-s-dot, .pet[data-state="music"] .px-a-up { display: none; } }

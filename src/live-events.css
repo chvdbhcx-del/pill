@@ -1,0 +1,51 @@
+/* Live reactions of the collapsed pill: layout chip + copy reaction (GateGuard note: new stylesheet of the Pill app,
+   loaded by pill.html; user request: "keyboard layout indicator and copy reaction for the pill"). Scoped to .lv. */
+.lp.lv { justify-content: center; gap: 8px; min-width: 0; }
+.lv .lv-ico { display: grid; place-items: center; width: 18px; height: 18px; color: var(--text-dim, #9a9a9a); }
+.lv .lv-code { font-size: var(--fs-base, 14px); line-height: 18px; font-weight: 700; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; color: var(--text, #fff); }
+.lv .lv-txt { font-size: var(--fs-base, 14px); line-height: 18px; font-weight: 700; color: var(--text, #fff); }
+.lv .lv-dim { font-size: var(--fs-md, 13px); line-height: 18px; font-weight: 500; color: var(--text-dim, #9a9a9a); }
+.lv-copy .lv-ico { color: var(--accent, #fff); }
+.lv-kbd, .lv-copy { animation: lv-fade var(--dur-med, .22s) var(--ease-out, ease-out), lv-scale .4s var(--spring-pop, var(--ease-spring, ease-out)); }
+@keyframes lv-in { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: none; } }
+@keyframes lv-fade { from { opacity: 0; } }
+@keyframes lv-scale { from { transform: scale(.92); } }
+
+/* fallback bottom-edge ripple, used only when the shell has no Pill.edgePulse */
+#wave.lv-ripple { animation: lv-ripple .8s var(--ease, cubic-bezier(.2, .8, .3, 1)); transform-origin: 50% 50%; }
+@keyframes lv-ripple {
+  0% { transform: scale(.7, 1); opacity: .2; filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
+  35% { transform: scale(1, 2.4); opacity: 1; filter: drop-shadow(0 2px 5px rgba(255, 255, 255, .55)); }
+  100% { transform: scale(1, 1); opacity: 1; filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
+}
+.rm .lv-kbd, .rm .lv-copy, .rm #wave.lv-ripple { animation: none; }
+@media (prefers-reduced-motion: reduce) { .lv-kbd, .lv-copy, #wave.lv-ripple { animation: none; } }
+
+/* ---- system live events (live-system.js): volume HUD, mic/camera dots, download chip ---- */
+.lv-vol { gap: 10px; }
+.lv-vol .vol-bar { flex: none; width: 56px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .22); overflow: hidden; }
+.lv-vol .vol-bar i { display: block; height: 100%; border-radius: 3px; background: var(--text, #fff); transition: width .12s var(--ease-out, ease-out); }
+.lv-vol .vol-n { min-width: 3ch; text-align: right; }
+.lv-vol.muted .vol-ico, .lv-vol.muted .vol-n { color: var(--text-dim, #9a9a9a); }
+.lv-vol.muted .vol-bar i { transition: none; }
+
+.lv-priv { position: absolute; top: 7px; right: 11px; display: flex; gap: 3px; pointer-events: none; z-index: 2; }
+.lv-priv .pv { width: 6px; height: 6px; border-radius: 50%; animation: pv-pulse 2.4s ease-in-out infinite; }
+.lv-priv .pv.mic { background: #ff9f0a; box-shadow: 0 0 0 2px rgba(255, 159, 10, .18); }
+.lv-priv .pv.cam { background: #30d158; box-shadow: 0 0 0 2px rgba(48, 209, 88, .18); animation-delay: -1.2s; }
+@keyframes pv-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.82); } }
+
+.lv-dl { gap: 8px; }
+.lv-dl .dl-ring-w { display: grid; place-items: center; width: 18px; height: 18px; }
+.lv-dl .dl-ring { display: block; transform: rotate(-90deg); }
+.lv-dl .dl-ring circle { fill: none; stroke-width: 2; }
+.lv-dl .dl-ring .bg { stroke: var(--raised-2, #292929); }
+.lv-dl .dl-ring .fg { stroke: var(--accent, #8f96ff); stroke-linecap: round; transition: stroke-dasharray .4s var(--ease-out, ease-out); }
+.lv-dl .dl-ring.ind { animation: dl-spin 1s linear infinite; }
+.lv-dl .dl-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-base, 14px); line-height: 18px; font-weight: 700; color: var(--text, #fff); }
+.lv-dl .dl-more:empty { display: none; }
+@keyframes dl-spin { to { transform: rotate(270deg); } }
+.lv-vol { animation: lv-fade var(--dur-med, .22s) var(--ease-out, ease-out), lv-scale .4s var(--spring-pop, var(--ease-spring, ease-out)); }
+.lv-dl { animation: lv-fade var(--dur-med, .22s) var(--ease-out, ease-out); }
+.rm .lv-priv .pv, .rm .lv-dl .dl-ring.ind, .rm .lv-vol { animation: none; }
+@media (prefers-reduced-motion: reduce) { .lv-priv .pv, .lv-dl .dl-ring.ind, .lv-vol { animation: none; } }

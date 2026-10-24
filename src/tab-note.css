@@ -1,0 +1,177 @@
+/* Note tab (notes + timer + reminders). Owner: text/note agent. Scoped under .tab-note; tokens come from theme.css with fallbacks. */
+.tab-note {
+  --pn: var(--card, #0f0f0f); --pn2: var(--raised, #1c1c1c); --pn3: var(--raised-2, #292929);
+  --fg: var(--text, #fff); --dim: var(--text-dim, #7c7c7c); --fg2: var(--text-2, #ababab);
+  --tm: var(--amber, #ffb340);
+  height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: var(--sp-3, 12px); font-size: var(--fs-md, 13px);
+}
+.tab-note button { font-family: inherit; }
+
+/* ---------- left: chips, editor, toolbar ---------- */
+.tab-note .tn-left { display: flex; flex-direction: column; gap: var(--sp-2, 8px); min-width: 0; min-height: 0; }
+.tab-note .tn-chips { flex: none; height: 24px; display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.tab-note .tn-chips::-webkit-scrollbar { display: none; }
+.tab-note .tn-chip { all: unset; box-sizing: border-box; flex: none; max-width: 130px; height: 24px; padding: 0 12px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: var(--pn); color: var(--dim);
+  font: 700 var(--fs-xs, 11px) / 1 var(--font); white-space: nowrap; cursor: pointer; transition: background 0.12s, color 0.12s; }
+.tab-note .tn-chip .tn-tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab-note .tn-chip:hover { color: var(--fg); }
+.tab-note .tn-chip.on { background: var(--pn3); color: var(--fg); }
+.tab-note .tn-add { all: unset; box-sizing: border-box; flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--pn); color: var(--dim); cursor: pointer; }
+.tab-note .tn-add:hover { color: var(--fg); background: var(--pn2); }
+.tab-note .tn-add svg { width: 14px; height: 14px; }
+
+.tab-note .tn-edwrap { position: relative; flex: 1; min-height: 0; }
+.tab-note .tn-ed {
+  box-sizing: border-box; width: 100%; height: 100%; overflow-y: auto; padding: var(--sp-4, 16px); background: var(--pn); border-radius: 16px; outline: none;
+  color: var(--fg); font: 500 var(--fs-base, 14px) / 20px var(--font); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; cursor: text; white-space: pre-wrap;
+}
+.tab-note .tn-ed::-webkit-scrollbar { width: 6px; }
+.tab-note .tn-ed::-webkit-scrollbar-thumb { background: var(--pn3); border-radius: 3px; }
+.tab-note .tn-ph { position: absolute; top: var(--sp-4, 16px); left: var(--sp-4, 16px); right: var(--sp-4, 16px); color: var(--dim); font: 500 var(--fs-base, 14px) / 20px var(--font); pointer-events: none; opacity: 0.85; display: none; }
+.tab-note .tn-edwrap.empty .tn-ph { display: block; }
+.tab-note .tn-ed ul, .tab-note .tn-ed ol { margin: 2px 0; padding-left: 22px; white-space: normal; }
+.tab-note .tn-ed li { padding-left: 2px; }
+.tab-note .tn-ed mark { background: color-mix(in srgb, var(--tm) 38%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+.tab-note .tn-ed a { color: var(--accent, #8f96ff); text-decoration: underline; cursor: pointer; }
+.tab-note .tn-ed input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; box-sizing: border-box; width: 15px; height: 15px; margin: 0 4px 0 0; vertical-align: -2px; border-radius: 5px;
+  border: 1.5px solid var(--dim); background: transparent center / 11px no-repeat; cursor: pointer; user-select: none;
+}
+.tab-note .tn-ed input[type="checkbox"]:checked { border-color: var(--accent, #8f96ff); background-color: var(--accent, #8f96ff);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230b0b14' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.500 4.500L19 7.500'/%3E%3C/svg%3E"); }
+
+/* toolbar: every control is a 28 px tall box on the same centre line; icons 16 px (even, so they sit on whole pixels in a 28 px box) */
+.tab-note .tn-bar { flex: none; height: 28px; display: flex; align-items: center; gap: 0; padding: 0; }
+.tab-note .tn-t { all: unset; box-sizing: border-box; flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--dim); cursor: pointer; font: 600 var(--fs-md, 13px) var(--font); transition: background 0.12s, color 0.12s; }
+.tab-note .tn-t:hover { background: var(--hover, rgba(255, 255, 255, 0.07)); color: var(--fg); }
+.tab-note .tn-t.on { background: var(--pn2); color: var(--fg); }
+.tab-note .tn-t svg { width: 16px; height: 16px; }
+.tab-note .tn-t.arm { background: var(--red-bg, rgba(255, 69, 58, 0.16)); color: var(--red, #ff453a); }
+.tab-note .tn-sep { flex: none; width: 1px; height: 16px; margin: 0 6px; background: var(--line, rgba(255, 255, 255, 0.1)); }
+.tab-note .tn-grow { flex: 1; }
+.tab-note .tn-saved { flex: none; width: 24px; height: 28px; display: grid; place-items: center; color: var(--green, #58ddab); }
+.tab-note .tn-saved svg { width: 16px; height: 16px; }
+.tab-note .tn-saved[data-s="saving"] { color: var(--dim); opacity: 0.6; }
+.tab-note .tn-saved[data-s="error"] { color: var(--red, #ff453a); }
+.tab-note .tn-remind { all: unset; box-sizing: border-box; flex: none; height: 28px; padding: 0 8px; margin: 0 2px; display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; color: var(--fg2); cursor: pointer; font: 600 var(--fs-xs, 11px) var(--font); }
+.tab-note .tn-remind:hover { background: var(--hover, rgba(255, 255, 255, 0.07)); color: var(--fg); }
+.tab-note .tn-remind svg { width: 14px; height: 14px; }
+
+.tab-note .tn-toast { position: absolute; left: 50%; bottom: 12px; transform: translate(-50%, 8px); padding: var(--sp-2, 8px) var(--sp-3, 12px); border-radius: 12px; background: var(--pn3); color: var(--fg); font-size: var(--fs-sm, 12px); font-weight: 600; line-height: normal;
+  opacity: 0; pointer-events: none; transition: opacity 0.18s, transform 0.18s var(--ease, ease); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4); white-space: nowrap; }
+.tab-note .tn-toast.show { opacity: 1; transform: translate(-50%, 0); }
+.tab-note .tn-toast.bad { background: #5a1f24; color: #ffd9dc; }
+
+/* ---------- right: timer + reminders ---------- */
+.tab-note .tn-right { min-height: 0; display: flex; }
+.tab-note .tn-card { flex: 1; min-width: 0; min-height: 0; box-sizing: border-box; padding: var(--sp-3, 12px); display: flex; flex-direction: column; background: var(--pn); border-radius: 16px; }
+.tab-note .tn-top { flex: none; display: flex; align-items: center; gap: var(--sp-3, 12px); }
+.tab-note .tn-ring { position: relative; flex: none; width: 68px; height: 68px; display: grid; place-items: center; }
+/* the drawn ring (r 34 + stroke 5 in an 80 box) is 73/80 of the svg: a 74 px svg paints a 67.5 px ring, so the ring's outer edge is flush with the 68 px slot and with the card's 12 px padding */
+.tab-note .tn-ring svg { grid-area: 1 / 1; width: 74px; height: 74px; margin: -3px; display: block; overflow: visible; }
+.tab-note .tn-ring circle { fill: none; stroke-width: 5; }
+.tab-note .tn-ring .tr { stroke: color-mix(in srgb, var(--tm) 45%, transparent); transition: stroke 0.2s; }
+.tab-note .tn-ring .ar { stroke: var(--tm); stroke-linecap: round; opacity: 0; transition: opacity 0.2s; }
+.tab-note .tn-ring.run .tr { stroke: color-mix(in srgb, var(--tm) 18%, transparent); }
+.tab-note .tn-ring.run .ar { opacity: 1; }
+.tab-note .tn-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2, 8px); padding-top: 0; }
+/* 36 + 8 + 24 = 68 = the ring's height */
+.tab-note .tn-start { all: unset; box-sizing: border-box; height: 36px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 12px; background: var(--tm); color: #1b1200; cursor: pointer;
+  font: 700 var(--fs-md, 13px) var(--font); transition: filter 0.12s, transform 0.08s; }
+.tab-note .tn-start:hover { filter: brightness(1.08); }
+.tab-note .tn-start:active { transform: scale(0.97); }
+.tab-note .tn-start svg { width: 12px; height: 12px; }
+.tab-note .tn-start.stop { background: var(--pn3); color: var(--fg); }
+.tab-note .tn-ctime { all: unset; box-sizing: border-box; height: 24px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 12px; background: var(--pn3); color: var(--fg2); cursor: pointer; font: 600 var(--fs-xs, 11px) var(--font); }
+.tab-note .tn-ctime:hover { color: var(--fg); }
+.tab-note .tn-ctime svg { width: 12px; height: 12px; }
+.tab-note .tn-custom { all: unset; box-sizing: border-box; height: 24px; padding: 0 var(--sp-3, 12px); border-radius: 12px; background: var(--pn2); color: var(--fg); font: 600 var(--fs-sm, 12px) var(--font); text-align: center; user-select: text; -webkit-user-select: text; }
+.tab-note .tn-custom::placeholder { color: var(--dim); }
+
+/* presets: 5 chips of 32 px on a 4 px gap, the unit takes the rest of the 208 px row and sits flush right (no space-between, so no fractional x) */
+.tab-note .tn-presets { flex: none; display: grid; grid-template-columns: repeat(5, 32px) minmax(0, 1fr); align-items: center; gap: var(--sp-1, 4px); margin-top: var(--sp-3, 12px); }
+.tab-note .tn-p { all: unset; box-sizing: border-box; min-width: 32px; height: 24px; padding: 0 4px; display: grid; place-items: center; border-radius: 12px; background: var(--pn2); color: var(--fg2); cursor: pointer; font: 600 var(--fs-xs, 11px) var(--font); font-variant-numeric: tabular-nums; transition: background 0.12s, color 0.12s; }
+.tab-note .tn-p:hover { color: var(--fg); }
+.tab-note .tn-p.on { background: var(--pn3); color: var(--fg); font-weight: 700; }
+.tab-note .tn-unit { margin-left: 2px; color: var(--dim); font-size: var(--fs-xs, 11px); }
+.tab-note hr { flex: none; width: 100%; height: 0; margin: var(--sp-3, 12px) 0 var(--sp-2, 8px); border: 0; border-top: 1px solid var(--line, rgba(255, 255, 255, 0.08)); }
+
+/* reminders: header icon and row icon share one centre (x = 6 + 7 = 13 px from the list edge), header text and row text share one left edge (28 px) */
+.tab-note .tn-rhead { flex: none; display: flex; align-items: center; gap: var(--sp-2, 8px); margin: 0 0 4px 6px; font: 700 var(--fs-sm, 12px) var(--font); color: var(--fg2); }
+.tab-note .tn-rhead svg { width: 14px; height: 14px; color: var(--dim); }
+.tab-note .tn-rhead:not([data-n=""])::after { content: attr(data-n); padding: 1px 6px; border-radius: 8px; background: var(--pn3); color: var(--fg2); font-size: var(--fs-2xs, 10px); font-variant-numeric: tabular-nums; }
+.tab-note .tn-rlist { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; scrollbar-color: var(--pn3) transparent; }
+.tab-note .tn-rempty { flex: 1; display: grid; place-items: center; text-align: center; padding: 0 2px; min-height: 0; overflow: hidden; color: var(--text-faint, #616161); font-size: var(--fs-xs, 11px); line-height: 16px; }
+.tab-note .tn-r { position: relative; flex: none; display: flex; align-items: center; gap: var(--sp-2, 8px); padding: 6px 4px 6px 6px; border-radius: 10px; }
+.tab-note .tn-r:hover { background: var(--pn2); }
+.tab-note .tn-r-ic { flex: none; width: 14px; height: 14px; color: var(--dim); }
+.tab-note .tn-r-ic svg { width: 14px; height: 14px; display: block; }
+.tab-note .tn-r-main { flex: 1; min-width: 0; }
+.tab-note .tn-r-text { font: 600 var(--fs-sm, 12px) / 16px var(--font); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-note .tn-r-meta { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs, 11px); line-height: 16px; color: var(--dim); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.tab-note .tn-r.od .tn-r-meta, .tab-note .tn-r.od .tn-r-ic { color: var(--red, #ff453a); }
+.tab-note .tn-badge { padding: 0 6px; border-radius: 8px; background: var(--amber-bg, rgba(255, 179, 64, 0.16)); color: var(--tm); font-size: var(--fs-2xs, 10px); font-weight: 700; line-height: 16px; flex: none; }
+.tab-note .tn-r-act { display: none; flex: none; align-items: center; gap: 0; background: linear-gradient(90deg, transparent, var(--pn2) 14px); padding-left: 14px; }
+.tab-note .tn-r:hover .tn-r-act { display: flex; position: absolute; right: 2px; top: 50%; transform: translateY(-50%); height: 100%; }
+.tab-note .tn-r-act button { all: unset; box-sizing: border-box; width: 24px; height: 24px; align-self: center; display: grid; place-items: center; border-radius: 8px; color: var(--fg2); cursor: pointer; }
+.tab-note .tn-r-act button:hover { background: var(--pn3); color: var(--fg); }
+.tab-note .tn-r-act svg { width: 14px; height: 14px; }
+
+.tab-note .tn-rmsg { flex: none; display: none; margin: 4px 2px 6px; font-size: var(--fs-xs, 11px); line-height: 16px; color: var(--fg2); }
+.tab-note .tn-rmsg.show { display: block; }
+.tab-note .tn-rmsg.bad { color: var(--red, #ff453a); }
+.tab-note .tn-rin { all: unset; box-sizing: border-box; flex: none; height: 32px; margin-top: var(--sp-2, 8px); padding: 0 var(--sp-3, 12px); border-radius: 12px; background: var(--pn2); color: var(--fg); font: 500 var(--fs-sm, 12px) var(--font); user-select: text; -webkit-user-select: text; }
+.tab-note .tn-rin::placeholder { color: var(--dim); }
+.tab-note .tn-rin:focus { box-shadow: inset 0 0 0 1px var(--accent, #8f96ff); }
+.tab-note button:focus-visible { outline: 2px solid var(--accent, #8f96ff); outline-offset: -2px; }
+
+/* collapsed pill: running timer (this lives outside .tab-note on purpose) */
+.tn-live { display: inline-flex; align-items: center; gap: 6px; }
+.tn-live svg { width: 14px; height: 14px; color: var(--amber, #ffb340); }
+.tn-live b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---- alignment layer (timer fix): every label is a .tn-tx box whose edges are the cap height and baseline, so flex centring is optical centring ---- */
+.tab-note .tn-tx, .tab-note .tn-start > span, .tab-note .tn-ctime > span, .tab-note .tn-remind > span, .tab-note .tn-rhead > span, .tab-note .tn-unit { display: block; line-height: 1; white-space: nowrap; }
+@supports (text-box: trim-both cap alphabetic) {
+  .tab-note .tn-tx, .tab-note .tn-start > span, .tab-note .tn-ctime > span, .tab-note .tn-remind > span, .tab-note .tn-rhead > span, .tab-note .tn-unit, .tab-note .tn-t > b, .tab-note .tn-t > i, .tab-note .tn-t > s { text-box: trim-both cap alphabetic; }
+}
+.tab-note .tn-t > b, .tab-note .tn-t > i, .tab-note .tn-t > s { line-height: 1; }
+.tab-note .tn-time { position: absolute; inset: 0; display: grid; place-items: center; --tf: var(--fs-lg, 16px); font: 700 var(--tf) / 1 var(--font); font-variant-numeric: tabular-nums; color: var(--fg); pointer-events: none; }
+.tab-note .tn-time[data-len="5"] { --tf: var(--fs-base, 14px); }
+.tab-note .tn-time[data-len="6"] { --tf: var(--fs-md, 13px); }
+.tab-note .tn-time[data-len="7"], .tab-note .tn-time[data-len="8"] { --tf: var(--fs-sm, 12px); }
+.tab-note .tn-time .tn-tx { min-width: 5ch; text-align: center; font-size: var(--tf); }
+.tab-note .tn-time[data-len="7"] .tn-tx, .tab-note .tn-time[data-len="8"] .tn-tx { min-width: 7ch; }
+.tab-note .tn-side { align-self: stretch; justify-content: center; }
+.tab-note .tn-start, .tab-note .tn-ctime { justify-content: center; text-align: center; }
+.tab-note .tn-p { display: flex; align-items: center; justify-content: center; }
+.tab-note .tn-unit { margin: 0; text-align: right; }
+.tab-note .tn-rhead::after { display: inline-flex; align-items: center; line-height: 1; padding: 3px 6px; }
+.tab-note .tn-rempty { text-align: center; }
+.tab-note .tn-remind svg, .tab-note .tn-start svg, .tab-note .tn-ctime svg, .tab-note .tn-rhead svg { flex: none; display: block; }
+
+/* ---------- smoothness layer (hover / press / reveal; tokens from theme.css, each with a fallback) ---------- */
+.tab-note .tn-chip { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.tab-note .tn-add { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.tab-note .tn-t { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.tab-note .tn-remind { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.tab-note .tn-ctime { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.tab-note .tn-p { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.tab-note .tn-start { transition: filter var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.tab-note .tn-chip:active, .tab-note .tn-add:active, .tab-note .tn-t:active, .tab-note .tn-remind:active, .tab-note .tn-ctime:active, .tab-note .tn-p:active, .tab-note .tn-start:active { transform: scale(.96); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+.tab-note .tn-custom, .tab-note .tn-rin { transition: box-shadow var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
+/* timer ring: 250 ms ticks glide instead of stepping */
+.tab-note .tn-ring .tr { transition: stroke var(--dur-med) var(--ease-out); }
+.tab-note .tn-ring .ar { transition: opacity var(--dur-med) var(--ease-out), stroke-dashoffset .26s linear; }
+/* toast: enter = spring on transform + fade, exit (base state) = ease-in .18 s */
+.tab-note .tn-toast { transition: opacity .18s var(--ease-in), transform .18s var(--ease-in); }
+.tab-note .tn-toast.show { transition: opacity var(--dur-med) var(--ease-out), transform .4s var(--spring-settle, var(--ease-out)); }
+/* reminder rows: hover bg, action buttons fade in instead of display:none -> flex (layout is unchanged: the strip is absolutely positioned) */
+.tab-note .tn-r { transition: background var(--dur-fast) var(--ease-out); }
+.tab-note .tn-r-act { display: flex; position: absolute; right: 2px; top: 50%; transform: translateY(-50%); height: 100%; opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out), visibility 0s linear var(--dur-fast); }
+.tab-note .tn-r:hover .tn-r-act, .tab-note .tn-r:focus-within .tn-r-act { opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s; }
+.tab-note .tn-r-act button { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.tab-note .tn-r-act button:active { transform: scale(.9); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+/* reminder message appears with a fade + rise */
+.tab-note .tn-rmsg.show { animation: var(--fx-enter, none); }
