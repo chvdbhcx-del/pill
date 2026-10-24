@@ -18,7 +18,7 @@ A small "dynamic island" for the top of a Windows screen: a black capsule that s
 
 ## Privacy
 
-Network features are **off by default**. Nothing is sent anywhere until you switch a feature on (weather, AI, voice, update check). The microphone is used only while you dictate. Clipboard history stays on your machine and skips password managers and secret-looking text by default.
+Network features are **off by default**. Nothing is sent anywhere until you switch a feature on (weather, AI, voice). The one exception is the update check: about 20 seconds after launch Pill asks GitHub whether a newer release exists (it only checks; installing is always your click). Turn it off in *Settings → Updates → Check on start*. The microphone is used only while you dictate. Clipboard history stays on your machine and skips password managers and secret-looking text by default.
 
 ## Install
 

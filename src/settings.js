@@ -22,7 +22,7 @@
     character: 'liquid', pet: 'cat', 'pet.side': 'right', 'pet.size': 'm', hideInFullscreen: true, autoHideKeepDesktop: false, underTaskbar: true, passThrough: false, passThroughOpacity: 50, offsetX: 0,
     musicPill: 'title', opacityCol: 0, opacityExp: 0, showTime: true, showDate: false, showTemp: true, showSeconds: false, showBattery: true, monitor: 'primary',
     'audio.reactive': true, 'sound.reminders': true, 'sound.reminderTone': 'chime', 'sound.volumeDevice': '', 'sound.micDevice': '',
-    updateAuto: false, 'net.weather': false, 'net.ai': false, 'weather.units': 'metric', 'weather.city': '',
+    updateAuto: true, 'net.weather': false, 'net.ai': false, 'weather.units': 'metric', 'weather.city': '',
     'clipboard.clickPaste': true, 'clipboard.maxItems': 1000, 'clipboard.retentionDays': 30, 'clipboard.maxImageMb': 512, 'clipboard.skipSecrets': true,
     'capture.format': 'mp4', 'capture.fps': 30, 'capture.encoder': 'auto', 'capture.shotAction': 'both', 'capture.revealAfterSave': false, fps: 'auto', edgeIdleFps: 30, 'everything.autostart': true,
   };
@@ -810,7 +810,7 @@
     const info = (await inv('settings_info')) || {};
     const v = info.version || ver || '';
     const c = card(p);
-    const r = row(c, t({ ru: 'Версия ', en: 'Version ' }) + v, t({ ru: 'Pill ищет обновления только когда вы нажмёте кнопку (или включите автопроверку ниже). Новая версия скачивается с GitHub и проверяется подписью.', en: 'Pill looks for updates only when you press the button (or turn on the automatic check below). A new version is downloaded from GitHub and its signature is verified.' }), null);
+    const r = row(c, t({ ru: 'Версия ', en: 'Version ' }) + v, t({ ru: 'Pill ищет обновления по кнопке и один раз при запуске (это можно выключить ниже). Устанавливается новая версия только по вашему нажатию: она скачивается с GitHub и проверяется подписью.', en: 'Pill looks for updates when you press the button and once at launch (you can turn that off below). A new version is installed only when you click it: it is downloaded from GitHub and its signature is verified.' }), null);
     const out = h('div', 'footnote');
     let found = false;
     const b = btn(t({ ru: 'Проверить сейчас', en: 'Check now' }), async () => {

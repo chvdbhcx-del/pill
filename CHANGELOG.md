@@ -4,6 +4,11 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-25
+
+### Changed
+- "Check on start" is on by default: about 20 seconds after launch Pill checks GitHub for a newer release and shows a card (installing is still your click). Turn it off in Settings > Updates.
+
 ## [0.1.2] - 2026-10-25
 
 ### Changed

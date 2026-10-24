@@ -46,7 +46,7 @@ pub fn init(app: &tauri::App) {
     let app = app.handle().clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(20)); // after the island is up
-        if crate::settings::get_bool("updateAuto", false) {
+        if crate::settings::get_bool("updateAuto", true) {
             let r = tauri::async_runtime::block_on(check(&app));
             if r["status"] == "available" {
                 let _ = app.emit("update:available", r);
