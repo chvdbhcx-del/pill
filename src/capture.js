@@ -189,7 +189,7 @@
         g.imageSmoothingEnabled = false; g.drawImage(tmp, 0, 0, tmp.width, tmp.height, x, y, w, h);
       }
     } else if (o.t === 'text') {
-      g.font = `600 ${Math.round(16 * rx())}px "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif`; g.textBaseline = 'top';
+      g.font = `600 ${Math.round(16 * rx())}px Nunito,"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif`; g.textBaseline = 'top';
       g.lineWidth = Math.max(3, 3 * rx()); g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(o.s, o.a.x, o.a.y); g.fillText(o.s, o.a.x, o.a.y);
     }
     g.restore();

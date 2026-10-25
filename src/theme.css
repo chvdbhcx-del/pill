@@ -57,7 +57,7 @@
   /* ONE spacing scale: paddings, gaps, insets */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35);
-  --font: "PillUI", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font: "Nunito", "PillUI", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --mono: "Cascadia Mono", "SF Mono", Consolas, monospace;
   /* motion tokens: ONE system. Transitions use transform / opacity only; springs live in pill.js (Pill.raf) */
   --ease: cubic-bezier(0.2, 0.9, 0.3, 1);
@@ -179,7 +179,7 @@ textarea.field { height: auto; padding: 10px 12px; line-height: 1.4; resize: non
 .list-row .tile { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 9px; background: var(--card); color: var(--text-dim); }
 .list-row.sel .tile, .list-row:hover .tile { background: var(--raised-2); }
 .list-row .t { font-size: var(--fs-md); font-weight: var(--fw-regular); line-height: 18px; }
-.list-row .s { font-size: var(--fs-xs); color: var(--text-dim); line-height: 14px; }
+.list-row .s { font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--text-dim); line-height: 14px; }
 
 /* chip */
 .chip { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-1); height: 24px; padding: 0 var(--sp-2); border-radius: 999px; background: var(--raised-2); color: var(--text-2); font: var(--fw-semi) var(--fs-xs)/14px var(--font); transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }

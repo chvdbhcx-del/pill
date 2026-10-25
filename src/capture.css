@@ -1,6 +1,6 @@
 /* Capture overlay (capture.html). Owner: capture agent. Tokens from theme.css, every var has a fallback. */
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; user-select: none; -webkit-user-select: none;
-  font: var(--fs-md, 13px) / 18px var(--font, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif); color: #fff; }
+  font: var(--fs-md, 13px) / 18px var(--font, Nunito, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif); color: #fff; }
 body { cursor: crosshair; }
 body[data-mode="color"] { cursor: none; }
 body[data-cursor] { cursor: var(--cur) !important; }

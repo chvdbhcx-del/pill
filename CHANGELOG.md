@@ -2,10 +2,14 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
-## [Unreleased]
+## [0.1.5] - 2026-10-25
 
 ### Added
 - Text tab: the AI mode is connected. Translate, fix errors, shorten, summarize, formal / friendly tone, bullet list, explain, continue, or type your own request; it works on the selection (or the whole text) through the chat endpoint from Settings, and Ctrl+Z restores the original.
+
+### Changed
+- Typography: the whole UI uses the bundled Nunito typeface (SIL OFL).
+- New installer: artwork in the welcome and header areas, English and Russian pages chosen from the system language.
 
 ### Fixed
 - The command bar's key hint shows the real shortcut (`Alt+Shift+Space`) instead of dropping `Shift`.
