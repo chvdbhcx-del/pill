@@ -7,6 +7,7 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 ### Added
 - Command bar: a query starting with `? `, `ии ` or `ai ` is a question for the chat model from Settings > AI. Enter sends it, the answer appears under the input (selectable, scrollable), Enter again copies it.
 - Command bar: a microphone button (and F4) dictates with the same voice-to-text pipeline as the Text tab; the transcript is typed into the input.
+- Live events: a card «Загружено: file name» when a file finishes in Downloads (click opens the folder with the file selected), connected / removed removable drives, battery warnings at 20 % and 10 % plus «Charging» / «Fully charged» (laptops only), and «In 10 min: title» for the next event of a local .ics file (off by default; path in Settings > Live events). Each has its own switch; everything is local and read-only.
 
 ## [0.1.6] - 2026-10-25
 

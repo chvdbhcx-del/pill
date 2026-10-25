@@ -6,7 +6,7 @@
   'use strict';
   window.PillLiveExtRow = function (key, r, X) {
     const { h, btn, msg, inv, get, put, t, onLeave } = X;
-    if (!['live.obs', 'live.steam', 'live.notifications'].includes(key)) return;
+    if (!['live.obs', 'live.steam', 'live.notifications', 'live.calendar'].includes(key)) return;
     const blk = h('div', 'pad');
     const st = h('div', 'note');
     blk.append(st);
@@ -52,6 +52,27 @@
         else if (s.running) show(t({ ru: 'Steam запущен: слежу за загрузками (файлы steamapps читаются только на чтение)', en: 'Steam is running: watching downloads (the steamapps files are only read)' }), 'ok');
         else show(t({ ru: 'Steam не запущен: начну следить, когда он откроется', en: 'Steam is not running: I will start watching when it opens' }));
       }, 3000);
+    } else if (key === 'live.calendar') {
+      const path = h('input', 'field'); path.type = 'text'; path.spellcheck = false; path.style.cssText = 'flex:1;min-width:0';
+      path.placeholder = t({ ru: 'Путь к файлу .ics, например C:\\Users\\Имя\\calendar.ics', en: 'Path to an .ics file, e.g. C:\\Users\\Name\\calendar.ics' });
+      path.value = get('live.calendar.path') || '';
+      path.onchange = () => { put({ 'live.calendar.path': path.value.trim().replace(/^"(.*)"$/, '$1') }); refresh(); };
+      const inl = h('div', 'inline'); inl.style.cssText = 'align-items:center;gap:8px;margin-top:10px'; inl.append(path);
+      blk.append(inl, h('div', 'footnote', t({ ru: 'Файл читается только на чтение, сеть не используется. Понимаются время UTC и местное, события на весь день (без напоминания) и повторы DAILY / WEEKLY / MONTHLY / YEARLY; часовой пояс TZID не учитывается, время считается местным. Чтобы вставить путь, в Проводнике: Shift + правая кнопка → «Копировать как путь».', en: 'The file is only read, nothing goes over the network. UTC and local times, all-day events (no reminder) and DAILY / WEEKLY / MONTHLY / YEARLY repeats are understood; a TZID zone is ignored and the time is taken as local. To paste a path, in Explorer: Shift + right click → “Copy as path”.' })));
+      var refresh = async () => {
+        const s = await inv('liveplus_ics_status');
+        if (!s) return;
+        if (off()) return show(t({ ru: 'Выключено', en: 'Off' }));
+        if (s.state === 'nopath') show(t({ ru: 'Укажите путь к файлу .ics', en: 'Enter the path to an .ics file' }), 'warn');
+        else if (s.state === 'missing') show(t({ ru: 'Файл не найден или не читается', en: 'The file was not found or cannot be read' }), 'bad');
+        else if (s.state === 'big') show(t({ ru: 'Файл слишком большой (больше 8 МБ)', en: 'The file is too large (over 8 MB)' }), 'bad');
+        else if (!s.next) show(t({ ru: 'Событий в файле: ' + s.events + '. Предстоящих со временем начала нет', en: 'Events in the file: ' + s.events + '. None upcoming with a start time' }), 'warn');
+        else {
+          const m = s.next.inMin, when = m >= 1440 ? Math.floor(m / 1440) + t({ ru: ' дн.', en: ' d' }) : m >= 60 ? Math.floor(m / 60) + t({ ru: ' ч ', en: ' h ' }) + (m % 60) + t({ ru: ' мин', en: ' min' }) : m + t({ ru: ' мин', en: ' min' });
+          show(t({ ru: 'Событий в файле: ' + s.events + '. Ближайшее через ' + when + ': ' + s.next.title, en: 'Events in the file: ' + s.events + '. Next in ' + when + ': ' + s.next.title }), 'ok');
+        }
+      };
+      poll(refresh, 3000);
     } else {
       const ask = btn(t({ ru: 'Разрешить доступ', en: 'Allow access' }), async () => { const s = await inv('notif_request'); paint(s && s.status); }, 'sm');
       ask.hidden = true;

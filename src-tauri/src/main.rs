@@ -32,6 +32,7 @@ mod livesys;
 mod sysmon;
 mod updater;
 mod aiactions;
+mod liveplus;
 
 fn main() {
     tauri::Builder::default()
@@ -80,6 +81,7 @@ fn main() {
             watch::kbd_state, watch::watch_pause, watch::watch_resume,
             livesys::livesys_visible, livesys::livesys_privacy, livesys::livesys_reveal,
             sysmon::sysmon_get,
+            liveplus::liveplus_ics_status,
             // @watch-commands
             agents::agents_list, agents::agents_dismiss, agents::agents_hook_snippets,
             // @agents-commands
@@ -128,6 +130,7 @@ fn main() {
             steam::init(app);
             notif::init(app);
             sysmon::init(app);
+            liveplus::init(app);
             hotkeys::init(app); // last: every module's init() has run, so the actions it triggers exist
             Ok(())
         })
