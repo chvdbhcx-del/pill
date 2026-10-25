@@ -27,10 +27,11 @@ The command bar (`Alt+Shift+Space`) finds applications, files and folders with t
 - Voice to text with any OpenAI-compatible Whisper endpoint, local or cloud
 - Screen capture, OCR, colour picker and QR reader
 - Status of coding agents (hooks for Claude Code)
+- Island events with their own switches: finished downloads, USB drives, battery, the next calendar event (a local `.ics` file or an `https://` / `webcal://` subscription) and, optionally, new mail over IMAP (headers only, TLS only, password stored encrypted with Windows DPAPI)
 
 ## Privacy
 
-Network features are **off by default**. Nothing is sent anywhere until you switch a feature on (weather, AI, voice). The one exception is the update check: about 20 seconds after launch Pill asks GitHub whether a newer release exists (it only checks; installing is always your click). Turn it off in *Settings → Updates → Check on start*. The microphone is used only while you dictate. Clipboard history stays on your machine and skips password managers and secret-looking text by default.
+Network features are **off by default**. Nothing is sent anywhere until you switch a feature on (weather, AI, voice, a calendar subscription link, new-mail notifications). Mail notifications connect only to the IMAP server you type in (TLS on port 993), read only the sender and subject of new messages, never mark anything as read and keep the password encrypted with Windows DPAPI; the calendar link is downloaded every 30 minutes and its address is never logged. The one exception is the update check: about 20 seconds after launch Pill asks GitHub whether a newer release exists (it only checks; installing is always your click). Turn it off in *Settings → Updates → Check on start*. The microphone is used only while you dictate. Clipboard history stays on your machine and skips password managers and secret-looking text by default.
 
 ## Install
 

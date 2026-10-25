@@ -1,4 +1,5 @@
-// L10 optional network. Owner: net/chat agent. THE ONLY module allowed to open a socket.
+// L10 optional network. Owner: net/chat agent. THE ONLY module allowed to open a socket, with one exception: mail.rs (IMAP over TLS to the
+// host the user typed, opt-in `live.mail`, off by default; WinHTTP cannot speak IMAP). Everything HTTP goes through here.
 //
 // * Every feature (weather, ai) is a settings switch, OFF by default (`net.weather`, `net.ai`); request() refuses when off.
 // * Hosts are an allow-list per feature; redirects are followed by hand (GET only, max 3), each hop re-checked, never https -> http.
@@ -38,10 +39,11 @@ pub enum Feature {
     Ai,
     Voice, // voice.rs: dictation upload, gated by `voice.enabled`, host = exactly the one in `voice.endpoint`
     Setup, // aisetup.rs: user-clicked downloads (fixed host patterns) and loopback calls to Ollama; never goes through request()/enabled()
+    Calendar, // liveplus.rs: .ics subscription (https:// or webcal:// in live.calendar.path), gated by `live.calendar`, host = exactly the one in that URL
 }
 
 const WEATHER_HOSTS: &[&str] = &["api.met.no", "nominatim.openstreetmap.org"];
-static CALLS: [AtomicU64; 4] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+static CALLS: [AtomicU64; 5] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
 
 impl Feature {
     fn idx(self) -> usize {
@@ -53,6 +55,7 @@ impl Feature {
             Feature::Ai => "net.ai",
             Feature::Voice => "voice.enabled",
             Feature::Setup => "aisetup.never", // no such key: request() refuses Setup, aisetup.rs calls request_checked() on a click
+            Feature::Calendar => "live.calendar",
         }
     }
     fn name(self) -> &'static str {
@@ -61,6 +64,7 @@ impl Feature {
             Feature::Ai => "ai",
             Feature::Voice => "voice",
             Feature::Setup => "setup",
+            Feature::Calendar => "calendar",
         }
     }
 }
@@ -77,6 +81,7 @@ pub fn allowed_hosts(f: Feature) -> Vec<String> {
         Feature::Ai => parse_url(&crate::settings::get_str("ai.baseUrl", "")).map(|u| vec![u.host]).unwrap_or_default(),
         Feature::Voice => parse_url(&crate::voice::endpoint()).map(|u| vec![u.host]).unwrap_or_default(),
         Feature::Setup => Vec::new(), // aisetup.rs passes its own list per call
+        Feature::Calendar => crate::liveplus::ics_url_host().into_iter().collect(),
     }
 }
 
@@ -84,7 +89,7 @@ pub fn allowed_hosts(f: Feature) -> Vec<String> {
 #[tauri::command]
 pub fn net_features_status() -> Value {
     let mut active: Vec<String> = Vec::new();
-    let feats: Vec<Value> = [Feature::Weather, Feature::Ai, Feature::Voice]
+    let mut feats: Vec<Value> = [Feature::Weather, Feature::Ai, Feature::Voice, Feature::Calendar]
         .iter()
         .map(|&f| {
             let on = enabled(f);
@@ -95,6 +100,11 @@ pub fn net_features_status() -> Value {
             json!({ "id": f.name(), "on": on, "hosts": hosts, "calls": CALLS[f.idx()].load(Ordering::Relaxed) })
         })
         .collect();
+    let m = crate::mail::net_feature(); // mail.rs (IMAP) is the one other thing that talks to a server
+    if m["on"] == true {
+        active.extend(m["hosts"].as_array().into_iter().flatten().filter_map(|h| h.as_str().map(str::to_string)));
+    }
+    feats.push(m);
     active.sort();
     active.dedup();
     json!({

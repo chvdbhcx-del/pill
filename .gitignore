@@ -21,3 +21,4 @@ tools/whisper-server.py
 
 # local logs and scratch
 *.log
+src-tauri/target-*/

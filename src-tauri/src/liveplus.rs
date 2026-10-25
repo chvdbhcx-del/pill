@@ -4,13 +4,16 @@
 //                                              (.crdownload .part .tmp ...) and sub-folders are ignored. Switch live.dlDone.
 //  - live:usb       {letter, added}           a removable drive letter appeared / vanished (GetLogicalDrives + GetDriveType, 2 s). Switch live.usb.
 //  - live:battery   {kind: low|charging|full, percent}   GetSystemPowerStatus, only on devices with a battery. Switch live.battery.
-//  - live:calendar  {title, minutes}          10 min before the next VEVENT of a local .ics file (path in live.calendar.path). Switch live.calendar (off by default).
-// One supervisor thread (2 s tick); a switch that is off costs one boolean read. Everything is local and read-only; nothing is stored or sent.
+//  - live:calendar  {title, minutes}          10 min before the next VEVENT of a local .ics file or of an https:// / webcal:// subscription (live.calendar.path).
+//                                              Switch live.calendar (off by default).
+// One supervisor thread (2 s tick); a switch that is off costs one boolean read. Everything is local and read-only; the only network use is the
+// optional calendar subscription (net.rs, Feature::Calendar). Mail (IMAP) has its own thread in mail.rs.
 // The decision logic (DlWatch, UsbWatch, Bat, ics parsing and recurrence, due()) is pure and unit-tested.
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use sha2::{Digest, Sha256};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter};
 use windows::core::PCWSTR;
@@ -30,7 +33,7 @@ const CAL_EVERY: u64 = 5; // ticks between calendar checks (10 s)
 const ICS_MAX_BYTES: u64 = 8 << 20;
 const MAX_EVENTS: usize = 5000;
 
-fn mono_ms() -> u64 {
+pub(crate) fn mono_ms() -> u64 {
     static T0: OnceLock<Instant> = OnceLock::new();
     T0.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
@@ -503,10 +506,150 @@ fn utc_to_local(utc: i64) -> i64 {
     }
 }
 
+// ---- calendar subscription: live.calendar.path may also be an https:// or webcal:// URL. It is fetched by net.rs (Feature::Calendar: gated by the
+// live.calendar switch, only that host, 2 MB, 15 s) every 30 minutes in a short-lived thread (the 2 s tick never waits for the network); the last good
+// body is cached next to the settings, calendar-<hash of the URL>.ics, and the normal file path below reads that cache, so it works offline.
+// The URL can carry a secret token (Google "secret address"): it is never logged or sent to the page, only its host is.
+const ICS_URL_EVERY_MS: u64 = 30 * 60_000;
+const ICS_URL_RETRY_MS: u64 = 5 * 60_000; // after a failed fetch
+const ICS_URL_MAX: usize = 2 << 20;
+const ICS_URL_TIMEOUT_MS: u32 = 15_000;
+
+#[derive(Debug, PartialEq)]
+enum IcsSrc {
+    None,
+    File(PathBuf),
+    Url(String),            // https:// URL to fetch (webcal:// already rewritten)
+    Bad(&'static str),      // "scheme" (not http/https/webcal), "http" (plain http to a non-local host), "url" (unparsable)
+}
+
+/// `scheme://` with a scheme of 2+ letters (so `C:\x` and `\\server\share` stay file paths).
+fn has_scheme(low: &str) -> bool {
+    low.find("://").is_some_and(|i| i >= 2 && low.as_bytes()[0].is_ascii_alphabetic() && low[..i].bytes().all(|b| b.is_ascii_alphanumeric() || b"+.-".contains(&b)))
+}
+
+fn ics_src(raw: &str) -> IcsSrc {
+    let s = raw.trim().trim_matches('"').trim();
+    if s.is_empty() {
+        return IcsSrc::None;
+    }
+    let low = s.to_ascii_lowercase();
+    let url = if low.starts_with("webcal://") {
+        format!("https://{}", &s[9..])
+    } else if low.starts_with("webcals://") {
+        format!("https://{}", &s[10..])
+    } else if low.starts_with("https://") || low.starts_with("http://") {
+        s.to_string()
+    } else if has_scheme(&low) {
+        return IcsSrc::Bad("scheme");
+    } else {
+        return IcsSrc::File(PathBuf::from(s));
+    };
+    match crate::net::parse_url(&url) {
+        Ok(u) if !u.https && !crate::net::is_loopback(&u.host) => IcsSrc::Bad("http"),
+        Ok(_) => IcsSrc::Url(url),
+        Err(_) => IcsSrc::Bad("url"),
+    }
+}
+
+/// File name of the cache of a subscription: a hash of the URL, so neither the host nor a token appears in it.
+fn cache_name(url: &str) -> String {
+    let h = Sha256::digest(url.as_bytes());
+    format!("calendar-{}.ics", h[..6].iter().map(|b| format!("{b:02x}")).collect::<String>())
+}
+
+fn ics_setting() -> IcsSrc {
+    ics_src(&crate::settings::get_str("live.calendar.path", ""))
+}
+
 fn ics_path() -> Option<PathBuf> {
-    let s = crate::settings::get_str("live.calendar.path", "");
-    let s = s.trim().trim_matches('"').trim();
-    (!s.is_empty()).then(|| PathBuf::from(s))
+    match ics_setting() {
+        IcsSrc::File(p) => Some(p),
+        IcsSrc::Url(u) => Some(crate::store::dir().join(cache_name(&u))),
+        _ => None,
+    }
+}
+
+/// Host of the subscription URL (for net.rs: the only host Feature::Calendar may call).
+pub fn ics_url_host() -> Option<String> {
+    match ics_setting() {
+        IcsSrc::Url(u) => crate::net::parse_url(&u).ok().map(|u| u.host),
+        _ => None,
+    }
+}
+
+#[derive(Default)]
+struct Remote {
+    url: String,
+    next_ms: u64,
+    busy: bool,
+    err: Option<String>, // Russian text for the settings page, never contains the URL
+}
+
+static REMOTE: Mutex<Remote> = Mutex::new(Remote { url: String::new(), next_ms: 0, busy: false, err: None });
+
+fn remote() -> std::sync::MutexGuard<'static, Remote> {
+    REMOTE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Readable category of a net.rs error (those texts can be in the system language and carry the host, so they are not shown as they are).
+fn fetch_err_text(e: &str) -> &'static str {
+    if e.contains("larger than") {
+        "ответ больше 2 МБ"
+    } else if e.contains("allow-list") || e.contains("redirect") {
+        "сервер перенаправляет на другой адрес"
+    } else {
+        "нет соединения с сервером или он не ответил за 15 секунд"
+    }
+}
+
+fn fetch_ics(url: &str) -> Result<(), &'static str> {
+    let o = crate::net::Opts {
+        feature: crate::net::Feature::Calendar, method: "GET", url, headers: &[("Accept", "text/calendar, text/plain, */*")],
+        body: None, max_body: ICS_URL_MAX, recv_ms: ICS_URL_TIMEOUT_MS, decompress: true, abort: None,
+    };
+    let r = crate::net::request(&o, None).map_err(|e| fetch_err_text(&e))?;
+    if r.status / 100 != 2 {
+        return Err("сервер не отдал календарь (ответ не 200)");
+    }
+    let text = r.text();
+    if !text.to_ascii_uppercase().contains("BEGIN:VCALENDAR") {
+        return Err("по этому адресу не календарь (.ics)"); // an HTML login page must not replace the good cache
+    }
+    let p = crate::store::dir().join(cache_name(url));
+    let tmp = p.with_extension("ics.tmp");
+    if std::fs::write(&tmp, text.as_bytes()).is_err() || std::fs::rename(&tmp, &p).is_err() {
+        return Err("не удалось сохранить копию календаря");
+    }
+    Ok(())
+}
+
+/// Starts a background fetch when the subscription is due (new URL: at once; then every 30 min, 5 min after a failure).
+fn fetch_if_due() {
+    let IcsSrc::Url(url) = ics_setting() else { return };
+    let now = mono_ms();
+    {
+        let mut r = remote();
+        if r.url != url {
+            *r = Remote { url: url.clone(), ..Remote::default() };
+        }
+        if r.busy || now < r.next_ms {
+            return;
+        }
+        r.busy = true;
+    }
+    std::thread::spawn(move || {
+        let res = std::panic::catch_unwind(|| fetch_ics(&url)).unwrap_or(Err("внутренняя ошибка"));
+        let mut r = remote();
+        if r.url == url {
+            r.busy = false;
+            r.next_ms = mono_ms() + if res.is_ok() { ICS_URL_EVERY_MS } else { ICS_URL_RETRY_MS };
+            r.err = res.err().map(str::to_string);
+        }
+        if let Err(w) = res {
+            eprintln!("calendar: fetch from {} failed: {w}", crate::net::parse_url(&url).map(|u| u.host).unwrap_or_default());
+        }
+    });
 }
 
 /// Ok(events) or a short state word for the settings page: "missing" (cannot be read), "big" (over 8 MB).
@@ -536,6 +679,7 @@ impl Cal {
     }
 
     fn poll(&mut self, app: &AppHandle) {
+        fetch_if_due();
         let Some(p) = ics_path() else { return self.reset() };
         let mtime = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
         if self.path.as_ref() != Some(&p) || self.mtime != mtime {
@@ -622,8 +766,15 @@ pub fn init(app: &tauri::App) {
 /// For the settings page: {state: nopath | missing | big | ok, events, next: {title, inMin} | null}. Reads the file, changes nothing.
 #[tauri::command(async)]
 pub fn liveplus_ics_status() -> Value {
-    let Some(p) = ics_path() else { return json!({ "state": "nopath", "events": 0, "next": Value::Null }) };
-    match load_ics(&p) {
+    let src = ics_setting();
+    let url = matches!(src, IcsSrc::Url(_));
+    let Some(p) = ics_path() else {
+        return match src {
+            IcsSrc::Bad(why) => json!({ "state": "bad", "why": why, "events": 0, "next": Value::Null }),
+            _ => json!({ "state": "nopath", "events": 0, "next": Value::Null }),
+        };
+    };
+    let mut v = match load_ics(&p) {
         Err(s) => json!({ "state": s, "events": 0, "next": Value::Null }),
         Ok(evs) => {
             let now = local_now();
@@ -633,7 +784,15 @@ pub fn liveplus_ics_status() -> Value {
                 "next": next.map(|(o, e)| json!({ "title": e.summary.chars().take(80).collect::<String>(), "inMin": (o - now + 59) / 60 })),
             })
         }
+    };
+    if url {
+        // subscription: only the host, the fetch state and the last error text (never the URL)
+        let r = remote();
+        v["host"] = json!(ics_url_host());
+        v["busy"] = json!(r.busy);
+        v["fetchErr"] = json!(r.err);
     }
+    v
 }
 
 #[cfg(test)]
@@ -816,5 +975,38 @@ END:VCALENDAR\r\n";
         assert_eq!(d, vec![("later".to_string(), 2)]);
         let d = due(&evs, day + 86_400 - 300, &mut fired); // next day's occurrence of "daily"
         assert_eq!(d, vec![("daily".to_string(), 5)]);
+    }
+
+    #[test]
+    fn ics_source_file_url_and_rejected_schemes() {
+        assert_eq!(ics_src("  "), IcsSrc::None);
+        assert_eq!(ics_src(r#""C:\Users\Me\cal.ics""#), IcsSrc::File(PathBuf::from(r"C:\Users\Me\cal.ics"))); // a drive letter is not a scheme
+        assert_eq!(ics_src(r"\\nas\share\cal.ics"), IcsSrc::File(PathBuf::from(r"\\nas\share\cal.ics")));
+        assert_eq!(ics_src("https://cal.example.com/a/b.ics?token=x"), IcsSrc::Url("https://cal.example.com/a/b.ics?token=x".into()));
+        assert_eq!(ics_src("WEBCAL://cal.example.com/a.ics"), IcsSrc::Url("https://cal.example.com/a.ics".into())); // webcal is https
+        assert_eq!(ics_src("webcals://cal.example.com/a.ics"), IcsSrc::Url("https://cal.example.com/a.ics".into()));
+        assert_eq!(ics_src("http://127.0.0.1:8080/a.ics"), IcsSrc::Url("http://127.0.0.1:8080/a.ics".into())); // loopback only
+        assert_eq!(ics_src("http://cal.example.com/a.ics"), IcsSrc::Bad("http"));
+        for bad in ["file:///C:/cal.ics", "ftp://x/a.ics", "javascript://x", "imap://x"] {
+            assert_eq!(ics_src(bad), IcsSrc::Bad("scheme"), "{bad}");
+        }
+        assert_eq!(ics_src("https://user:pw@host/a.ics"), IcsSrc::Bad("url")); // no credentials in the URL
+        assert_eq!(ics_src("https://"), IcsSrc::Bad("url"));
+        assert_eq!(ics_src("https://a b/c"), IcsSrc::Bad("url"));
+    }
+
+    #[test]
+    fn ics_cache_name_hides_the_url_and_is_stable() {
+        let a = cache_name("https://cal.example.com/private/SECRETTOKEN/basic.ics");
+        assert_eq!(a, cache_name("https://cal.example.com/private/SECRETTOKEN/basic.ics"));
+        assert_ne!(a, cache_name("https://cal.example.com/private/OTHER/basic.ics"));
+        assert!(a.starts_with("calendar-") && a.ends_with(".ics") && a.len() == "calendar-".len() + 12 + 4, "{a}");
+        assert!(!a.contains("example") && !a.contains("SECRET"));
+    }
+
+    #[test]
+    fn ics_fetch_errors_are_readable_and_carry_no_host() {
+        assert_eq!(fetch_err_text("response from h is larger than the 2048 KB cap"), "ответ больше 2 МБ");
+        assert!(fetch_err_text("request to h: Время ожидания истекло").contains("15"));
     }
 }

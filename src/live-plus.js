@@ -3,8 +3,9 @@
 //  - live:file-done {name, path, more}            -> "Загружено: <name>" card with a file icon; a click on the card opens Explorer with the file selected
 //  - live:usb {letter, added}                     -> "Подключён диск E:" / "Диск E: отключён"
 //  - live:battery {kind: low|charging|full, percent} -> "Заряд 20 %" (amber, 10 % and less red) / "Заряжается" / "Заряжено"
-//  - live:calendar {title, minutes}               -> "Через 10 мин: <title>" (next VEVENT of the .ics file from Settings)
-// Switches: Settings > Live events (live.dlDone / live.usb / live.battery / live.calendar). PRIVACY: names and titles are only inserted as text.
+//  - live:calendar {title, minutes}               -> "Через 10 мин: <title>" (next VEVENT of the .ics file / subscription URL from Settings)
+//  - live:mail {from, subject, more}               -> "Новое письмо: <отправитель> — <тема>" (+ "и ещё N"); IMAP polling in mail.rs, opt-in (live.mail)
+// Switches: Settings > Live events (live.dlDone / live.usb / live.battery / live.calendar / live.mail). PRIVACY: names and titles are only inserted as text.
 (() => {
   'use strict';
   const T = window.__TAURI__, P = window.Pill;
@@ -15,6 +16,7 @@
   const svg = (d) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
   const usbIcon = svg('<path d="M12 3v13M12 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 11l4-3v-2M12 13l-4-3v-2"/><rect x="14.500" y="3.500" width="3" height="3" rx=".5"/><circle cx="8" cy="7" r="1.200"/>');
   const calIcon = svg('<rect x="3.500" y="5" width="17" height="15" rx="2.500"/><path d="M3.500 10h17M8 3v4M16 3v4"/>');
+  const mailIcon = svg('<rect x="3" y="5" width="18" height="14" rx="2.500"/><path d="m3.500 7.500 8.500 6 8.500-6"/>');
   const close = () => ({ label: t({ ru: 'Закрыть', en: 'Close' }), run: () => {} });
   const clip = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
@@ -78,8 +80,21 @@
     });
   }
 
+  function mail(p) {
+    // opt-in like the calendar: without an explicit true nothing is shown
+    if (!p || !(P.settings && P.settings['live.mail'] === true)) return;
+    const more = p.more | 0;
+    P.toast({
+      id: 'mail', icon: mailIcon, tone: 'accent', ttlMs: 10000,
+      title: t({ ru: 'Новое письмо: ', en: 'New mail: ' }) + clip(p.from || t({ ru: 'неизвестный отправитель', en: 'unknown sender' }), 40) + ' — ' + clip(p.subject || t({ ru: '(без темы)', en: '(no subject)' }), 60),
+      sub: more > 0 ? t({ ru: 'и ещё ' + more, en: 'and ' + more + ' more' }) : undefined,
+      actions: [close()],
+    });
+  }
+
   on('live:file-done', fileDone);
   on('live:usb', usb);
   on('live:battery', battery);
   on('live:calendar', calendar);
+  on('live:mail', mail);
 })();

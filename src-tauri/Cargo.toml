@@ -21,6 +21,8 @@ sha2 = "0.10" # clipboard dedupe hash; already in the tauri dependency tree, pur
 rqrr = { version = "0.11", default-features = false } # capture.rs: pure-Rust QR decoder; without its `image` feature nothing else is pulled in
 tauri-plugin-updater = "2" # updater.rs: signed updates from GitHub Releases, only on user request
 zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] } # aisetup.rs: unpack the whisper.cpp release zip (already in the tree via the updater; deflate = flate2/zlib-rs, also already there)
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] } # mail.rs: IMAP over TLS (already in the tree via the updater; ring provider, no aws-lc)
+rustls-platform-verifier = "0.7" # mail.rs: verifies the server certificate with the Windows certificate store (already in the tree)
 # @deps-end
 
 [target.'cfg(windows)'.dependencies]

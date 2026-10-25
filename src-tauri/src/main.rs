@@ -33,6 +33,7 @@ mod sysmon;
 mod updater;
 mod aiactions;
 mod liveplus;
+mod mail;
 
 fn main() {
     tauri::Builder::default()
@@ -82,6 +83,7 @@ fn main() {
             livesys::livesys_visible, livesys::livesys_privacy, livesys::livesys_reveal,
             sysmon::sysmon_get,
             liveplus::liveplus_ics_status,
+            mail::mail_status, mail::mail_set_password, mail::mail_test,
             // @watch-commands
             agents::agents_list, agents::agents_dismiss, agents::agents_hook_snippets,
             // @agents-commands
@@ -131,6 +133,7 @@ fn main() {
             notif::init(app);
             sysmon::init(app);
             liveplus::init(app);
+            mail::init(app);
             hotkeys::init(app); // last: every module's init() has run, so the actions it triggers exist
             Ok(())
         })

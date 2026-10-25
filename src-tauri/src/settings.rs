@@ -36,6 +36,9 @@ pub(crate) fn defaults() -> Cfg {
         "aiSetupDone": false, "aisetup.whisper.enabled": false, "aisetup.whisper.model": "base", "aisetup.whisper.port": 8179
     }) else { unreachable!() };
     m.extend(more);
+    // third literal (recursion limit again): mail notifications (mail.rs), opt-in; the password lives DPAPI-encrypted in mail.passwordEnc, never plain
+    let Value::Object(mail) = json!({ "live.mail": false, "mail.host": "", "mail.port": 993, "mail.user": "", "mail.mailbox": "INBOX" }) else { unreachable!() };
+    m.extend(mail);
     m
 }
 
