@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Fixed
+- The command bar's key hint shows the real shortcut (`Alt+Shift+Space`) instead of dropping `Shift`.
+
 ## [0.1.4] - 2026-10-25
 
 ### Added

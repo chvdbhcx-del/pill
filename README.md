@@ -6,6 +6,16 @@ A small "dynamic island" for the top of a Windows screen: a black capsule that s
 
 *По-русски: небольшой «остров» в верхней части экрана Windows: музыка, часы, уведомления, статус ИИ-агентов; раскрывается в панель с историей буфера, заметками, погодой, ИИ-чатом и командной строкой.*
 
+![The island on the top edge of the screen](docs/images/island.png)
+
+## Screenshots
+
+The command bar (`Alt+Shift+Space`) finds applications, files and folders with their real icons, calculates, converts and runs commands. It hangs just under the island instead of covering it.
+
+| Apps, folders and files | Calculator | File search (`f` filter) |
+| --- | --- | --- |
+| ![Apps, folders and files](docs/images/bar-apps.png) | ![Calculator](docs/images/bar-calc.png) | ![File search](docs/images/bar-files.png) |
+
 ## Features
 
 - Capsule with a liquid edge that reacts to music, notifications and recordings; pets/characters beside it

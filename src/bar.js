@@ -35,7 +35,7 @@
 
   const root = document.getElementById('bar-root');
   root.innerHTML = `<div class="body"><div class="clipbox"><div class="sf"><span class="mag">${ic('search', { size: 20, sw: 1.8 })}</span>` +
-    '<input id="q" type="text" spellcheck="false" autocomplete="off"><kbd id="hk">Alt+Space</kbd></div>' +
+    '<input id="q" type="text" spellcheck="false" autocomplete="off"><kbd id="hk">Alt+Shift+Space</kbd></div>' +
     '<div id="list"></div><div class="msg" id="msg"></div></div><div class="wv"></div></div>';
   const body = root.firstChild, q = document.getElementById('q'), list = document.getElementById('list');
   const msg = document.getElementById('msg'), wv = body.querySelector('.wv');
@@ -70,7 +70,7 @@
     if (want !== lang) { lang = want; try { localStorage.setItem('pill.lang', lang); } catch (e) { /* ignore */ } }
     root0.classList.toggle('rm', !!s.reduceMotion || matchMedia('(prefers-reduced-motion: reduce)').matches);
     root0.dataset.theme = s.theme === 'light' || (s.theme === 'auto' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
-    document.getElementById('hk').textContent = String(s['hotkey.command'] || 'Alt+Space').replace('Shift+', '');
+    document.getElementById('hk').textContent = String(s['hotkey.command'] || 'Alt+Shift+Space');
     applyLang();
   }
   applyLang();
