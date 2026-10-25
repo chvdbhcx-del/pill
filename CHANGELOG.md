@@ -2,7 +2,7 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
-## [Unreleased]
+## [0.3.0] - 2026-10-25
 
 ### Added
 - Command bar: AI answers are formatted (paragraphs, lists, **bold**, *italic*, `code`, code blocks with a copy button; links stay plain text). Built from DOM nodes, never from raw HTML.
