@@ -8,6 +8,8 @@ A small "dynamic island" for the top of a Windows screen: a black capsule that s
 
 ![The island on the top edge of the screen](docs/images/island.png)
 
+Project page: <https://chvdbhcx-del.github.io/pill/> (source in `docs/index.html`).
+
 ## Screenshots
 
 The command bar (`Alt+Shift+Space`) finds applications, files and folders with their real icons, calculates, converts and runs commands. It hangs just under the island instead of covering it. A query starting with `? `, `ии ` or `ai ` asks the chat model configured in Settings > AI; the microphone button (F4) dictates into the bar.
