@@ -31,7 +31,7 @@
   --amber: #c8b46a;
   --red: #ff6b6b;
   --green: #86d3bc;
-  --font: "Nunito", "PillUI", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font: "Inter", "PillUI", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   --mono: "Cascadia Mono", Consolas, monospace;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   /* typographic scale + 4/8 spacing: same names/values as theme.css; this page does not load theme.css */

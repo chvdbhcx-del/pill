@@ -1,6 +1,8 @@
-/* Nunito (OFL, Latin+Cyrillic subset). Ascent/descent overrides centre caps in the line box, same idea as PillUI in theme.css (Nunito caps 0.705em, content 1.364em). */
-@font-face { font-family: "Nunito"; font-weight: 300; font-style: normal; font-display: block; src: url(fonts/Nunito-Light.ttf) format("truetype"); ascent-override: 103.5%; descent-override: 33%; line-gap-override: 0%; }
-@font-face { font-family: "Nunito"; font-weight: 400; font-style: normal; font-display: block; src: url(fonts/Nunito-Regular.ttf) format("truetype"); ascent-override: 103.5%; descent-override: 33%; line-gap-override: 0%; }
-@font-face { font-family: "Nunito"; font-weight: 500; font-style: normal; font-display: block; src: url(fonts/Nunito-Medium.ttf) format("truetype"); ascent-override: 103.5%; descent-override: 33%; line-gap-override: 0%; }
-@font-face { font-family: "Nunito"; font-weight: 600; font-style: normal; font-display: block; src: url(fonts/Nunito-SemiBold.ttf) format("truetype"); ascent-override: 103.5%; descent-override: 33%; line-gap-override: 0%; }
-@font-face { font-family: "Nunito"; font-weight: 700; font-style: normal; font-display: block; src: url(fonts/Nunito-Bold.ttf) format("truetype"); ascent-override: 103.5%; descent-override: 33%; line-gap-override: 0%; }
+/* Inter (SIL OFL, Latin+Cyrillic subset, hinted statics). Inter's own metrics already centre capitals in the line box (ascent 96.9 %, descent 24.1 %). */
+@font-face { font-family: "Inter"; font-weight: 300; font-style: normal; font-display: block; src: url(fonts/Inter-Light.ttf) format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: block; src: url(fonts/Inter-Regular.ttf) format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 500; font-style: normal; font-display: block; src: url(fonts/Inter-Medium.ttf) format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 600; font-style: normal; font-display: block; src: url(fonts/Inter-SemiBold.ttf) format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 700; font-style: normal; font-display: block; src: url(fonts/Inter-Bold.ttf) format("truetype"); }
+/* smooth, unhinted outlines with subpixel positioning instead of pixel-snapped stems */
+html, body { text-rendering: geometricPrecision; -webkit-font-smoothing: antialiased; font-kerning: normal; }

@@ -5,7 +5,7 @@
 .lp.lp-rec { width: 258px; min-width: 0; box-sizing: border-box; padding: 0 2px 2px 14px; gap: 0; justify-content: flex-start; font-variant-numeric: tabular-nums; }
 .rec-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #ff423a; box-shadow: 0 0 4px 1px rgba(255, 66, 58, .35); animation: rec-pulse 2s var(--ease-in-out, ease-in-out) infinite; }
 @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-.rec-t { margin-left: 11px; min-width: 30px; font: 700 var(--fs-md, 13px) / 1 var(--font, Nunito, "Segoe UI", system-ui, sans-serif); color: var(--text, #fff); font-variant-numeric: tabular-nums; }
+.rec-t { margin-left: 11px; min-width: 30px; font: 700 var(--fs-md, 13px) / 1 var(--font, Inter, "Segoe UI", system-ui, sans-serif); color: var(--text, #fff); font-variant-numeric: tabular-nums; }
 .rec-sp { flex: 1; }
 .rec-fmt { font: 700 var(--fs-xs, 11px) / 1 var(--font, system-ui); color: #626262; letter-spacing: .01em; }
 .rec-area { flex: none; width: 12px; height: 12px; margin-left: 17px; display: grid; place-items: center; color: #a0a0a0; }
