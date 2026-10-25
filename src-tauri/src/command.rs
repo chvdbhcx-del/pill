@@ -132,7 +132,9 @@ fn place(app: &AppHandle, win: &WebviewWindow) {
     let _ = win.set_size(LogicalSize::new(WIN_W, WIN_H));
     let w = win.outer_size().map(|s| s.width as i32).unwrap_or((WIN_W * mon.scale_factor()) as i32);
     let x = mp.x + (ms.width as i32 - w) / 2;
-    let y = mp.y + (7.0 * mon.scale_factor()) as i32; // hangs just below the top edge, like the vendor's command bar
+    // hangs just below the top edge, like the vendor's command bar - but never over the pill: under its body when it is showing
+    let top = mp.y + (7.0 * mon.scale_factor()) as i32;
+    let y = crate::pill::body_bottom(mp.x, mp.y).map_or(top, |b| top.max(b + (8.0 * mon.scale_factor()) as i32));
     let _ = win.set_position(PhysicalPosition::new(x, y));
 }
 
@@ -162,6 +164,17 @@ pub fn cmd_toggle(app: AppHandle) {
 #[tauri::command]
 pub async fn cmd_query(text: String) -> Vec<Res> {
     tauri::async_runtime::spawn_blocking(move || query(&text)).await.unwrap_or_default()
+}
+
+/// Shell icon (PNG data URL) of an app / file / folder row. Looked up by the id of a result of the current query, never by a path from
+/// the page; the page asks per row after rendering, so slow shell calls never delay the list itself.
+#[tauri::command]
+pub async fn cmd_icon(id: String) -> Option<String> {
+    let path = {
+        let g = STORE.lock().unwrap();
+        g.as_ref()?.get(&id).filter(|r| matches!(r.kind, "app" | "file" | "folder")).map(|r| r.payload.clone())?
+    };
+    tauri::async_runtime::spawn_blocking(move || crate::shelf::bar_icon(&path)).await.ok().flatten()
 }
 
 // ---- query ----

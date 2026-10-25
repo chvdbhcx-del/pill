@@ -4,6 +4,14 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-25
+
+### Added
+- The command bar shows real icons: an application's own icon, the type icon of a file, the folder icon of a folder.
+
+### Changed
+- The command bar opens under the island instead of covering it.
+
 ## [0.1.3] - 2026-10-25
 
 ### Changed

@@ -31,6 +31,8 @@ body { font: 14px / 18px var(--font); color: var(--text); -webkit-font-smoothing
 .row.confirm { background: var(--red-bg); }
 .row .ico { width: 20px; height: 20px; flex: none; display: grid; place-items: center; color: var(--text-2); }
 .row .ico svg { width: 20px; height: 20px; }
+.row .ico.shell { width: 26px; height: 26px; margin: 0 -3px; }
+.row .ico.shell img { width: 26px; height: 26px; object-fit: contain; pointer-events: none; }
 .row .txt { min-width: 0; flex: 1; display: flex; align-items: baseline; gap: 12px; }
 .row .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-base, 14px); line-height: 20px; color: var(--text); }
 .row .s { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-sm, 12px); line-height: 20px; color: var(--text-faint); }

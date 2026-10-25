@@ -274,6 +274,14 @@ fn affinity() {
     }
 }
 
+/// Physical y just below the pill's body when it is on screen on the monitor at `(mon_x, mon_y)` (None while hidden / not measured):
+/// the command bar hangs under it instead of covering it.
+pub fn body_bottom(mon_x: i32, mon_y: i32) -> Option<i32> {
+    let s = st();
+    let on_screen = s.hidden == 0 && s.shown && s.rect[3] > 0.0 && s.mon[0] == mon_x && s.mon[1] == mon_y;
+    on_screen.then(|| s.layout[1] + ((s.rect[1] + s.rect[3]) * s.scale).round() as i32)
+}
+
 // ---- commands ----
 
 #[tauri::command]

@@ -59,7 +59,7 @@ fn main() {
             shelf::shelf_add, shelf::shelf_list, shelf::shelf_remove, shelf::shelf_clear,
             shelf::shelf_open, shelf::shelf_reveal, shelf::shelf_copy_path, shelf::shelf_drag_out,
             // @shelf-commands
-            command::cmd_toggle, command::cmd_query, command::cmd_run,
+            command::cmd_toggle, command::cmd_query, command::cmd_run, command::cmd_icon,
             // @command-commands
             settings::settings_get, settings::settings_set,
             settings_backup::settings_export, settings_backup::settings_import,

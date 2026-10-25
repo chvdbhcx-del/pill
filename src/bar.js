@@ -108,6 +108,14 @@
     return { title, sub, icon, label };
   }
 
+  // app / file / folder rows show the real shell icon (an app's own icon, a file type's icon, the folder icon); the glyph stays until it loads
+  const ICONS = new Map(); // result id -> data URL ('' = none), kept for the session
+  function shellIcon(it, ico) {
+    const put = (u) => { if (!u) return; const im = new Image(); im.src = u; im.alt = ''; im.draggable = false; ico.classList.add('shell'); ico.replaceChildren(im); };
+    if (ICONS.has(it.id)) return put(ICONS.get(it.id));
+    invoke('cmd_icon', { id: it.id }).then((u) => { ICONS.set(it.id, u || ''); put(u); });
+  }
+
   function row(it, i) {
     const v = view(it), el = document.createElement('div');
     el.className = `row ${it.kind}` + (fresh ? ' stag' : '') + (i === sel ? ' sel' : '');
@@ -116,6 +124,7 @@
     el.dataset.id = it.id; // FLIP key: rows that survive a keystroke slide instead of jumping
     if (it.kind === 'app' || it.kind === 'file' || it.kind === 'folder') el.title = t(L.openTip);
     const ico = document.createElement('span'); ico.className = 'ico'; ico.innerHTML = ic(v.icon, { size: 20, sw: 1.6 }); // static markup, never user text
+    if (it.kind === 'app' || it.kind === 'file' || it.kind === 'folder') shellIcon(it, ico);
     const txt = document.createElement('div'); txt.className = 'txt';
     const tt = document.createElement('div'); tt.className = 't';
     if (!PLAIN.has(it.kind) && it.kind !== 'system') hl(tt, v.title); else tt.textContent = v.title;

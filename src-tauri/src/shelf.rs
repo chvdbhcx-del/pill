@@ -17,7 +17,7 @@ use windows::Win32::System::SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS};
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
     ILFree, IShellItemImageFactory, SHCreateDataObject, SHCreateItemFromParsingName, SHParseDisplayName, ShellExecuteW,
-    SIIGBF_BIGGERSIZEOK,
+    SIIGBF, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -269,7 +269,7 @@ fn icon_data_url(path: &str, meta: &std::fs::Metadata) -> Option<String> {
     let png = match std::fs::read(&cache) {
         Ok(b) => b,
         Err(_) => {
-            let b = icon_png(path)?;
+            let b = icon_png(path, SIIGBF_BIGGERSIZEOK)?;
             if let Some(d) = cache.parent() {
                 let _ = std::fs::create_dir_all(d);
             }
@@ -280,11 +280,40 @@ fn icon_data_url(path: &str, meta: &std::fs::Metadata) -> Option<String> {
     Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png)))
 }
 
-fn icon_png(path: &str) -> Option<Vec<u8>> {
+/// Command-bar row icon: the plain shell ICON (never a thumbnail): an app's own icon (`.lnk`, exe or `shell:AppsFolder\...`), the type
+/// icon of a file, the folder icon of a folder. `path` is a parsing name, so it need not exist on disk (UWP apps); disk-cached.
+pub(crate) fn bar_icon(path: &str) -> Option<String> {
+    use std::hash::{Hash, Hasher};
+    let st = std::fs::metadata(path).ok().map(|m| (m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs()), m.len(), m.is_dir()));
+    // file types share one icon per extension: key those by extension so a folder of 500 PNGs costs one shell call
+    let key = match (&st, Path::new(path).extension()) {
+        (Some((_, _, false)), Some(e)) if !matches!(e.to_string_lossy().to_lowercase().as_str(), "exe" | "lnk" | "ico" | "url" | "scr" | "msi") => format!("ext:{}", e.to_string_lossy().to_lowercase()),
+        (Some((_, _, true)), _) => "folder".to_string(),
+        _ => path.to_lowercase(),
+    };
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    ("bar", key, st.map(|s| s.0)).hash(&mut h);
+    let cache = crate::store::dir().join("shelf-icons").join(format!("{:016x}.png", h.finish()));
+    let png = match std::fs::read(&cache) {
+        Ok(b) => b,
+        Err(_) => {
+            // some shell items refuse the icon-only request (protected folders, odd associations): fall back to any image the shell gives
+            let b = icon_png(path, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK).or_else(|| icon_png(path, SIIGBF_ICONONLY)).or_else(|| icon_png(path, SIIGBF_BIGGERSIZEOK))?;
+            if let Some(d) = cache.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            let _ = std::fs::write(&cache, &b);
+            b
+        }
+    };
+    Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png)))
+}
+
+fn icon_png(path: &str, flags: SIIGBF) -> Option<Vec<u8>> {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         let factory: IShellItemImageFactory = SHCreateItemFromParsingName(&HSTRING::from(path), None).ok()?;
-        let hbmp = factory.GetImage(SIZE { cx: 64, cy: 64 }, SIIGBF_BIGGERSIZEOK).ok()?;
+        let hbmp = factory.GetImage(SIZE { cx: 64, cy: 64 }, flags).ok()?;
         let mut bm = BITMAP::default();
         GetObjectW(hbmp, std::mem::size_of::<BITMAP>() as i32, Some(&mut bm as *mut _ as *mut std::ffi::c_void));
         let (w, h) = (bm.bmWidth, bm.bmHeight);
