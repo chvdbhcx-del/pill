@@ -1,6 +1,8 @@
 // Command bar page. Talks to Rust only through cmd_toggle / cmd_query / cmd_run (+ settings_get for language and theme);
 // events bar:shown, bar:hidden. Owner: pill agent (restyle) over the command agent's logic.
-// `? question` / `ии question` / `ai question` goes to cmd_ask (the chat model from Settings > AI); the mic button / F4 drives the same
+// `? question` / `ии question` / `ai question` goes to cmd_ask (the chat model from Settings > AI); the answer is drawn by md-lite.js (safe markdown subset).
+// After an answer the bar stays in a dialogue: the next line is a follow-up, sent with the last 6 turns as `history` (memory only; ended by Esc / close / «Новый разговор»).
+// The mic button / F4 drives the same
 // voice_* commands as the Text tab (voice.rs, voice:state events) and types the transcript into the input.
 (() => {
   const T = window.__TAURI__;
@@ -22,7 +24,9 @@
     again: { ru: 'Ещё раз Enter', en: 'Press Enter again' },
     ask: { ru: 'Спросить ИИ', en: 'Ask AI' }, askTip: { ru: 'Напиши вопрос после «? », «ии » или «ai »', en: 'Type your question after "? ", "ии " or "ai "' },
     askGo: { ru: 'Enter — отправить', en: 'Enter: send' }, think: { ru: 'Думаю…', en: 'Thinking…' }, copied: { ru: 'Скопировано', en: 'Copied' },
-    copyAns: { ru: 'Копировать ответ', en: 'Copy the answer' },
+    copyAns: { ru: 'Копировать ответ', en: 'Copy the answer' }, copyCode: { ru: 'Копировать', en: 'Copy' },
+    dlg: { ru: 'Диалог · Esc — закончить', en: 'Dialogue · Esc to end' }, dlgPh: { ru: 'Продолжить разговор…', en: 'Continue the conversation…' },
+    newConv: { ru: 'Новый разговор', en: 'New conversation' }, newConvSub: { ru: 'забыть историю и искать как обычно', en: 'forget the history and search as usual' },
     askOff: { ru: 'ИИ выключен. Enter — открыть Настройки → ИИ и включить', en: 'AI is off. Enter: open Settings > AI to turn it on' },
     askNoUrl: { ru: 'Не указан адрес. Enter — открыть Настройки → ИИ', en: 'No API address. Enter: open Settings > AI' },
     askNoModel: { ru: 'Не выбрана модель. Enter — открыть Настройки → ИИ', en: 'No model chosen. Enter: open Settings > AI' },
@@ -42,16 +46,16 @@
 
   const GROUP = { calc: 'Result', convert: 'Result', shell: 'Command', system: 'System', app: 'Applications', folder: 'Folders', file: 'Files', web: 'Web' };
   const ICON = { app: 'apps', file: 'file', folder: 'folder', calc: 'calc', convert: 'convert', web: 'globe', system: 'power', shell: 'terminal', hint: 'sparkles',
-    ask: 'sparkles', askcopy: 'copy', clip: 'clipboard', note: 'note', shelf: 'shelf', reminder: 'bell', tab: 'home', setting: 'settings', action: 'bolt' };
-  const PLAIN = new Set(['calc', 'convert', 'shell', 'web', 'ask', 'askcopy']); // titles that are not searchable text: no match highlight
+    ask: 'sparkles', askcopy: 'copy', newconv: 'refresh', clip: 'clipboard', note: 'note', shelf: 'shelf', reminder: 'bell', tab: 'home', setting: 'settings', action: 'bolt' };
+  const PLAIN = new Set(['calc', 'convert', 'shell', 'web', 'ask', 'askcopy', 'newconv']); // titles that are not searchable text: no match highlight
 
   const root = document.getElementById('bar-root');
   root.innerHTML = `<div class="body"><div class="clipbox"><div class="sf"><span class="mag">${ic('search', { size: 20, sw: 1.8 })}</span>` +
     '<input id="q" type="text" spellcheck="false" autocomplete="off"><button type="button" id="mic" tabindex="-1">' + ic('mic', { size: 18, sw: 1.7 }) + '</button>' +
     '<kbd id="hk">Alt+Shift+Space</kbd></div><div id="ans" hidden></div>' +
-    '<div id="list"></div><div class="msg" id="msg"></div></div><div class="wv"></div></div>';
+    '<div id="dlg" hidden></div><div id="list"></div><div class="msg" id="msg"></div></div><div class="wv"></div></div>';
   const body = root.firstChild, q = document.getElementById('q'), list = document.getElementById('list');
-  const msg = document.getElementById('msg'), wv = body.querySelector('.wv'), ans = document.getElementById('ans'), mic = document.getElementById('mic');
+  const msg = document.getElementById('msg'), wv = body.querySelector('.wv'), ans = document.getElementById('ans'), dlgHint = document.getElementById('dlg'), mic = document.getElementById('mic');
 
   // wavy outline along the bottom edge (decoration, same idea as the pill)
   function wave() {
@@ -74,8 +78,9 @@
   new ResizeObserver(wave).observe(body);
 
   let items = [], sel = 0, seq = 0, timer = 0, words = [], confirmTimer = 0, fresh = false, cfg = {}, asking = 0, askId = 0, dictHere = false, copiedTimer = 0;
+  let conv = [], lastAns = ''; // dialogue: earlier {role, content} messages (max 6 turns) and the last answer's source text; memory only
 
-  const applyLang = () => { q.placeholder = t(L.ph); };
+  const applyLang = () => { q.placeholder = t(conv.length ? L.dlgPh : L.ph); dlgHint.textContent = t(L.dlg); };
   async function loadCfg() {
     const s = await invoke('settings_get');
     if (!s) return;
@@ -118,6 +123,7 @@
     else if (it.kind === 'calc' || it.kind === 'convert') { label = t(L.copy); sub = it.subtitle.replace(/\s+-\s+Enter copies$/, ''); }
     else if (it.kind === 'ask') { title = `${t(L.ask)}: ${it.payload}`; sub = askStatus(); label = 'ИИ'; }
     else if (it.kind === 'askcopy') { title = t(L.copyAns); sub = ''; label = t(L.copy); }
+    else if (it.kind === 'newconv') { title = t(L.newConv); sub = t(L.newConvSub); label = ''; }
     else if (it.kind === 'app') label = t(L.app);
     else if (it.kind === 'file' || it.kind === 'folder') label = t(L[it.kind]);
     else if (L[it.kind]) { label = t(L[it.kind]); if (SUBS[sub]) sub = t(SUBS[sub]); if (it.kind === 'tab') icon = it.payload; }
@@ -192,8 +198,39 @@
     if (asking) { asking = 0; invoke('ai_transform_cancel'); }
   }
 
+  function showAnswer(text) {
+    ans.className = 'md'; ans.replaceChildren(window.MdLite.render(document, text, copyCode, t(L.copyCode))); ans.hidden = false; ans.scrollTop = 0;
+  }
+  async function copyCode(text, btn) {
+    await copy(text);
+    btn.textContent = t(L.copied); clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = t(L.copyCode); }, 1800);
+    q.focus();
+  }
+  function endDialog() {
+    if (!conv.length && !lastAns) return;
+    conv = []; lastAns = ''; dlgHint.hidden = true; applyLang();
+  }
+  // rows under the answer while the dialogue is open: the typed follow-up (if any), copy, new conversation
+  function dlgRows(text) {
+    words = [];
+    render([...(text ? [{ kind: 'ask', id: 'ask:q', title: '', subtitle: '', payload: text }] : []),
+      { kind: 'askcopy', id: 'ask:copy', title: '', subtitle: '', payload: lastAns }, { kind: 'newconv', id: 'ask:new', title: '', subtitle: '', payload: '' }], false);
+  }
+  // typing while an answer is shown: a follow-up, no `? ` needed. A leading `>` or `=` ends the dialogue and searches as usual.
+  function dlgInput() {
+    const raw = q.value.replace(/^\s+/, '');
+    if (/^[>=]/.test(raw)) return search();
+    ++seq;
+    if (asking) { asking = 0; invoke('ai_transform_cancel'); } // a new keystroke abandons a pending follow-up; the previous answer comes back
+    msg.textContent = ''; delete msg.dataset.page;
+    if (ans.className !== 'md') showAnswer(lastAns);
+    const am = ASK.exec(raw);
+    dlgRows((am ? raw.slice(am[0].length) : raw).trim());
+  }
+
   async function search() {
     const text = q.value.replace(/^\s+/, ''), my = ++seq;
+    endDialog();
     clearAns();
     msg.textContent = ''; delete msg.dataset.page;
     const am = ASK.exec(text);
@@ -220,34 +257,38 @@
   async function ask(it) {
     if (asking) return;
     if (!askReady()) { invoke('settings_open', { page: 'ai' }); return; }
-    const id = ++askId, my = seq;
+    const id = ++askId, my = seq, hist = conv.slice();
     asking = id; msg.textContent = '';
     items = []; list.replaceChildren();
     const sp = document.createElement('span'); sp.className = 'spin';
     ans.className = 'think'; ans.hidden = false; ans.replaceChildren(sp, document.createTextNode(t(L.think)));
-    const r = await invoke('cmd_ask', { question: it.payload });
+    const r = await invoke('cmd_ask', hist.length ? { question: it.payload, history: hist } : { question: it.payload });
     if (asking !== id || my !== seq) return; // the query changed or the bar closed meanwhile
     asking = 0;
     if (r && r.ok) {
-      ans.className = ''; ans.textContent = r.text; ans.scrollTop = 0;
-      render([{ kind: 'askcopy', id: 'ask:copy', title: '', subtitle: '', payload: r.text }], false);
+      conv = [...hist, { role: 'user', content: it.payload }, { role: 'assistant', content: r.text }].slice(-12); // last 6 turns
+      lastAns = r.text; q.value = ''; dlgHint.hidden = false; applyLang();
+      showAnswer(r.text);
+      dlgRows('');
       return;
     }
     const e = r && r.error;
-    ans.hidden = true; ans.replaceChildren();
-    if (e === 'cancelled') return render([it], false);
+    if (hist.length) showAnswer(lastAns); else { ans.hidden = true; ans.replaceChildren(); }
+    const rows = (x) => (hist.length ? dlgRows(x.payload) : render([x], false));
+    if (e === 'cancelled') return rows(it);
     const go = e === 'net_off' || e === 'no_endpoint' || e === 'no_model';
     msg.textContent = go ? t(e === 'net_off' ? L.askOff : e === 'no_endpoint' ? L.askNoUrl : L.askNoModel) : String(e || t(L.askFail)).slice(0, 300);
     if (go) msg.dataset.page = 'ai';
-    render([it], false);
+    rows(it);
   }
 
   async function run(it, mode) {
     if (!it) return;
     if (it.kind === 'ask') return ask(it);
+    if (it.kind === 'newconv') { clearTimeout(timer); q.value = ''; return search(); } // search() ends the dialogue
     if (it.kind === 'askcopy') {
-      await copy(it.payload);
-      const lab = list.querySelector('.row .act');
+      await copy(window.MdLite.plain(it.payload)); // plain text, markdown markers stripped
+      const lab = list.querySelector(`.row[data-i="${items.indexOf(it)}"] .act`);
       if (lab) { lab.firstChild.textContent = t(L.copied); clearTimeout(copiedTimer); copiedTimer = setTimeout(() => { if (lab.isConnected) lab.firstChild.textContent = t(L.copy); }, 1800); }
       return;
     }
@@ -275,7 +316,7 @@
 
   const modeOf = (e) => (e.ctrlKey && e.shiftKey ? 'admin' : e.ctrlKey ? 'folder' : e.shiftKey ? 'copy' : 'open');
 
-  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 80); });
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => (conv.length ? dlgInput() : search()), 80); });
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); invoke('cmd_toggle'); }
@@ -354,6 +395,7 @@
   ans.addEventListener('mouseup', () => { if (getSelection().isCollapsed) q.focus(); });
 
   function reset() {
+    endDialog();
     q.value = '';
     msg.textContent = ''; delete msg.dataset.page;
     clearAns();
@@ -367,6 +409,6 @@
     search();
   }
   T.event.listen('bar:shown', reset);
-  T.event.listen('bar:hidden', () => { seq++; clearAns(); dictHere = false; setMic('idle'); clearTimeout(confirmTimer); q.value = ''; list.replaceChildren(); items = []; });
+  T.event.listen('bar:hidden', () => { seq++; endDialog(); clearAns(); dictHere = false; setMic('idle'); clearTimeout(confirmTimer); q.value = ''; list.replaceChildren(); items = []; });
   loadCfg();
 })();

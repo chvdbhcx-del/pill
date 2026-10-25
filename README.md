@@ -12,7 +12,7 @@ Project page: <https://chvdbhcx-del.github.io/pill/> (source in `docs/index.html
 
 ## Screenshots
 
-The command bar (`Alt+Shift+Space`) finds applications, files and folders with their real icons, calculates, converts and runs commands. It hangs just under the island instead of covering it. A query starting with `? `, `ии ` or `ai ` asks the chat model configured in Settings > AI; the microphone button (F4) dictates into the bar.
+The command bar (`Alt+Shift+Space`) finds applications, files and folders with their real icons, calculates, converts and runs commands. It hangs just under the island instead of covering it. A query starting with `? `, `ии ` or `ai ` asks the chat model configured in Settings > AI; the answer is formatted, and typing again continues the conversation (Esc ends it). The microphone button (F4) dictates into the bar.
 
 | Apps, folders and files | Calculator | File search (`f` filter) |
 | --- | --- | --- |

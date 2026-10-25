@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Added
+- Command bar: AI answers are formatted (paragraphs, lists, **bold**, *italic*, `code`, code blocks with a copy button; links stay plain text). Built from DOM nodes, never from raw HTML.
+- Command bar: after an answer the next line you type is a follow-up in the same conversation (last 6 turns, kept in memory only; Esc ends it, «Новый разговор» starts afresh). A line starting with `>` or `=` goes back to normal search.
+
 ## [0.2.0] - 2026-10-25
 
 ### Added
