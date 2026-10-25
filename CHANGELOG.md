@@ -2,7 +2,7 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
-## [Unreleased]
+## [0.2.0] - 2026-10-25
 
 ### Added
 - Command bar: a query starting with `? `, `ии ` or `ai ` is a question for the chat model from Settings > AI. Enter sends it, the answer appears under the input (selectable, scrollable), Enter again copies it.
