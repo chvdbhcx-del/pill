@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Added
+- Command bar: a query starting with `? `, `ии ` or `ai ` is a question for the chat model from Settings > AI. Enter sends it, the answer appears under the input (selectable, scrollable), Enter again copies it.
+- Command bar: a microphone button (and F4) dictates with the same voice-to-text pipeline as the Text tab; the transcript is typed into the input.
+
 ## [0.1.6] - 2026-10-25
 
 ### Changed

@@ -1,5 +1,7 @@
 // Command bar page. Talks to Rust only through cmd_toggle / cmd_query / cmd_run (+ settings_get for language and theme);
 // events bar:shown, bar:hidden. Owner: pill agent (restyle) over the command agent's logic.
+// `? question` / `ии question` / `ai question` goes to cmd_ask (the chat model from Settings > AI); the mic button / F4 drives the same
+// voice_* commands as the Text tab (voice.rs, voice:state events) and types the transcript into the input.
 (() => {
   const T = window.__TAURI__;
   const invoke = (c, a) => T.core.invoke(c, a).catch((e) => { console.error(c, e); return null; });
@@ -18,6 +20,16 @@
     app: { ru: 'Приложение', en: 'Application' }, file: { ru: 'Файл', en: 'File' }, folder: { ru: 'Папка', en: 'Folder' },
     shell: { ru: 'Команда', en: 'Command' }, copy: { ru: 'Скопировать', en: 'Copy' }, recent: { ru: 'Недавнее', en: 'Recent' },
     again: { ru: 'Ещё раз Enter', en: 'Press Enter again' },
+    ask: { ru: 'Спросить ИИ', en: 'Ask AI' }, askTip: { ru: 'Напиши вопрос после «? », «ии » или «ai »', en: 'Type your question after "? ", "ии " or "ai "' },
+    askGo: { ru: 'Enter — отправить', en: 'Enter: send' }, think: { ru: 'Думаю…', en: 'Thinking…' }, copied: { ru: 'Скопировано', en: 'Copied' },
+    copyAns: { ru: 'Копировать ответ', en: 'Copy the answer' },
+    askOff: { ru: 'ИИ выключен. Enter — открыть Настройки → ИИ и включить', en: 'AI is off. Enter: open Settings > AI to turn it on' },
+    askNoUrl: { ru: 'Не указан адрес. Enter — открыть Настройки → ИИ', en: 'No API address. Enter: open Settings > AI' },
+    askNoModel: { ru: 'Не выбрана модель. Enter — открыть Настройки → ИИ', en: 'No model chosen. Enter: open Settings > AI' },
+    askFail: { ru: 'ИИ не ответил', en: 'The AI did not answer' },
+    micTip: { ru: 'Диктовка (F4)', en: 'Dictate (F4)' }, micStop: { ru: 'Остановить диктовку (F4)', en: 'Stop dictation (F4)' }, micBusy: { ru: 'Распознаю…', en: 'Transcribing…' },
+    voiceOff: { ru: 'Голос в текст не настроен. Нажми здесь: Настройки → «Голос в текст»', en: 'Voice to text is not set up. Click here: Settings > Voice to text' },
+    voiceFail: { ru: 'Диктовка не удалась', en: 'Dictation failed' },
     openTip: { ru: 'Enter — открыть · Ctrl+Enter — показать в папке · Ctrl+Shift+Enter — от администратора', en: 'Enter: open · Ctrl+Enter: show in folder · Ctrl+Shift+Enter: as administrator' },
   };
   const SYS = {
@@ -30,15 +42,16 @@
 
   const GROUP = { calc: 'Result', convert: 'Result', shell: 'Command', system: 'System', app: 'Applications', folder: 'Folders', file: 'Files', web: 'Web' };
   const ICON = { app: 'apps', file: 'file', folder: 'folder', calc: 'calc', convert: 'convert', web: 'globe', system: 'power', shell: 'terminal', hint: 'sparkles',
-    clip: 'clipboard', note: 'note', shelf: 'shelf', reminder: 'bell', tab: 'home', setting: 'settings', action: 'bolt' };
-  const PLAIN = new Set(['calc', 'convert', 'shell', 'web']); // titles that are not searchable text: no match highlight
+    ask: 'sparkles', askcopy: 'copy', clip: 'clipboard', note: 'note', shelf: 'shelf', reminder: 'bell', tab: 'home', setting: 'settings', action: 'bolt' };
+  const PLAIN = new Set(['calc', 'convert', 'shell', 'web', 'ask', 'askcopy']); // titles that are not searchable text: no match highlight
 
   const root = document.getElementById('bar-root');
   root.innerHTML = `<div class="body"><div class="clipbox"><div class="sf"><span class="mag">${ic('search', { size: 20, sw: 1.8 })}</span>` +
-    '<input id="q" type="text" spellcheck="false" autocomplete="off"><kbd id="hk">Alt+Shift+Space</kbd></div>' +
+    '<input id="q" type="text" spellcheck="false" autocomplete="off"><button type="button" id="mic" tabindex="-1">' + ic('mic', { size: 18, sw: 1.7 }) + '</button>' +
+    '<kbd id="hk">Alt+Shift+Space</kbd></div><div id="ans" hidden></div>' +
     '<div id="list"></div><div class="msg" id="msg"></div></div><div class="wv"></div></div>';
   const body = root.firstChild, q = document.getElementById('q'), list = document.getElementById('list');
-  const msg = document.getElementById('msg'), wv = body.querySelector('.wv');
+  const msg = document.getElementById('msg'), wv = body.querySelector('.wv'), ans = document.getElementById('ans'), mic = document.getElementById('mic');
 
   // wavy outline along the bottom edge (decoration, same idea as the pill)
   function wave() {
@@ -60,18 +73,20 @@
   }
   new ResizeObserver(wave).observe(body);
 
-  let items = [], sel = 0, seq = 0, timer = 0, words = [], confirmTimer = 0, fresh = false;
+  let items = [], sel = 0, seq = 0, timer = 0, words = [], confirmTimer = 0, fresh = false, cfg = {}, asking = 0, askId = 0, dictHere = false, copiedTimer = 0;
 
   const applyLang = () => { q.placeholder = t(L.ph); };
   async function loadCfg() {
     const s = await invoke('settings_get');
     if (!s) return;
+    cfg = s;
     const want = s.language === 'ru' || s.language === 'en' ? s.language : nav();
     if (want !== lang) { lang = want; try { localStorage.setItem('pill.lang', lang); } catch (e) { /* ignore */ } }
     root0.classList.toggle('rm', !!s.reduceMotion || matchMedia('(prefers-reduced-motion: reduce)').matches);
     root0.dataset.theme = s.theme === 'light' || (s.theme === 'auto' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
     document.getElementById('hk').textContent = String(s['hotkey.command'] || 'Alt+Shift+Space');
     applyLang();
+    setMic(micState);
   }
   applyLang();
 
@@ -101,6 +116,8 @@
       label = m ? m[1] : 'Web'; sub = '';
     } else if (it.kind === 'shell') { title = it.title.replace(/^Run: /, lang === 'ru' ? 'Выполнить: ' : 'Run: '); label = t(L.shell); sub = SUBS[sub] ? t(SUBS[sub]) : sub; }
     else if (it.kind === 'calc' || it.kind === 'convert') { label = t(L.copy); sub = it.subtitle.replace(/\s+-\s+Enter copies$/, ''); }
+    else if (it.kind === 'ask') { title = `${t(L.ask)}: ${it.payload}`; sub = askStatus(); label = 'ИИ'; }
+    else if (it.kind === 'askcopy') { title = t(L.copyAns); sub = ''; label = t(L.copy); }
     else if (it.kind === 'app') label = t(L.app);
     else if (it.kind === 'file' || it.kind === 'folder') label = t(L[it.kind]);
     else if (L[it.kind]) { label = t(L[it.kind]); if (SUBS[sub]) sub = t(SUBS[sub]); if (it.kind === 'tab') icon = it.payload; }
@@ -165,12 +182,31 @@
     select(i);
   }
 
+  // `? question`, `ии question`, `ai question`: a question for the configured chat model instead of a search
+  const ASK = /^(?:\?|ии|ai)\s+/i;
+  const askReady = () => cfg['net.ai'] === true && String(cfg['ai.baseUrl'] || '').trim() && String(cfg['ai.model'] || '').trim();
+  const askStatus = () => (cfg['net.ai'] !== true ? t(L.askOff) : !String(cfg['ai.baseUrl'] || '').trim() ? t(L.askNoUrl) : !String(cfg['ai.model'] || '').trim() ? t(L.askNoModel) : t(L.askGo));
+
+  function clearAns() {
+    ans.hidden = true; ans.replaceChildren(); ans.className = '';
+    if (asking) { asking = 0; invoke('ai_transform_cancel'); }
+  }
+
   async function search() {
-    const text = q.value.replace(/^\s+/, ''), my = ++seq; // leading blanks go, a trailing one is kept: "c " already selects the clipboard filter
+    const text = q.value.replace(/^\s+/, ''), my = ++seq;
+    clearAns();
+    msg.textContent = ''; delete msg.dataset.page;
+    const am = ASK.exec(text);
+    if (am) {
+      const question = text.slice(am[0].length).trim();
+      words = [];
+      render(question ? [{ kind: 'ask', id: 'ask:q', title: '', subtitle: '', payload: question }] : [], false);
+      if (!question) { const d = document.createElement('div'); d.className = 'tip'; d.textContent = t(L.askTip); list.prepend(d); }
+      return;
+    } // leading blanks go, a trailing one is kept: "c " already selects the clipboard filter
     words = text[0] === '>' ? [] : text.replace(/^(=|[cnfas]\s)/i, '').toLowerCase().split(/\s+/).filter(Boolean);
     const res = await invoke('cmd_query', { text });
     if (my !== seq || !res) return;
-    msg.textContent = '';
     render(res, !text.trim());
   }
 
@@ -181,8 +217,40 @@
     ta.remove(); q.focus();
   }
 
+  async function ask(it) {
+    if (asking) return;
+    if (!askReady()) { invoke('settings_open', { page: 'ai' }); return; }
+    const id = ++askId, my = seq;
+    asking = id; msg.textContent = '';
+    items = []; list.replaceChildren();
+    const sp = document.createElement('span'); sp.className = 'spin';
+    ans.className = 'think'; ans.hidden = false; ans.replaceChildren(sp, document.createTextNode(t(L.think)));
+    const r = await invoke('cmd_ask', { question: it.payload });
+    if (asking !== id || my !== seq) return; // the query changed or the bar closed meanwhile
+    asking = 0;
+    if (r && r.ok) {
+      ans.className = ''; ans.textContent = r.text; ans.scrollTop = 0;
+      render([{ kind: 'askcopy', id: 'ask:copy', title: '', subtitle: '', payload: r.text }], false);
+      return;
+    }
+    const e = r && r.error;
+    ans.hidden = true; ans.replaceChildren();
+    if (e === 'cancelled') return render([it], false);
+    const go = e === 'net_off' || e === 'no_endpoint' || e === 'no_model';
+    msg.textContent = go ? t(e === 'net_off' ? L.askOff : e === 'no_endpoint' ? L.askNoUrl : L.askNoModel) : String(e || t(L.askFail)).slice(0, 300);
+    if (go) msg.dataset.page = 'ai';
+    render([it], false);
+  }
+
   async function run(it, mode) {
     if (!it) return;
+    if (it.kind === 'ask') return ask(it);
+    if (it.kind === 'askcopy') {
+      await copy(it.payload);
+      const lab = list.querySelector('.row .act');
+      if (lab) { lab.firstChild.textContent = t(L.copied); clearTimeout(copiedTimer); copiedTimer = setTimeout(() => { if (lab.isConnected) lab.firstChild.textContent = t(L.copy); }, 1800); }
+      return;
+    }
     if (it.kind === 'calc' || it.kind === 'convert') await copy(it.payload); // copy before Rust hides the window
     if (!['app', 'file', 'folder', 'shelf', 'clip'].includes(it.kind)) mode = 'open'; // reveal / admin / copy-only only mean something for these
     const r = await invoke('cmd_run', { id: it.id, mode });
@@ -213,6 +281,7 @@
     if (e.key === 'Escape') { e.preventDefault(); invoke('cmd_toggle'); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); select(sel + 1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); select(sel - 1); }
+    else if (e.key === 'F4' && !e.altKey) { e.preventDefault(); dictate(); }
     else if (e.key === 'Tab') { e.preventDefault(); nextGroup(e.shiftKey ? -1 : 1); }
     else if (e.key === 'Enter') {
       e.preventDefault();
@@ -232,9 +301,62 @@
   document.addEventListener('mousedown', (e) => { if (!e.target.closest('.body')) invoke('cmd_toggle'); });
   window.addEventListener('focus', () => q.focus());
 
+  // ---- dictation: same pipeline as the Text tab (voice_* commands, voice:state events from voice.rs) ----
+  let micState = 'idle';
+  function setMic(st) {
+    micState = st;
+    mic.classList.toggle('rec', st === 'recording'); mic.classList.toggle('busy', st === 'transcribing');
+    mic.title = t(st === 'recording' ? L.micStop : st === 'transcribing' ? L.micBusy : L.micTip);
+  }
+  function micMsg(text, page) { msg.textContent = text; if (page) msg.dataset.page = page; else delete msg.dataset.page; }
+  async function dictate() {
+    if (micState === 'recording') { invoke('voice_stop'); return; }
+    if (micState !== 'idle') return;
+    const s = await invoke('voice_state');
+    if (!s || s.state !== 'idle') return;
+    if (s.enabled === false) { micMsg(t(L.voiceOff), 'voice'); return; }
+    micMsg('');
+    dictHere = true; // only a take started from this bar is typed into it
+    const r = await invoke('voice_start');
+    if (r && r.ok === false) { dictHere = false; setMic('idle'); } // the error itself arrives as a voice:state event
+  }
+  mic.addEventListener('mousedown', (e) => e.preventDefault()); // keep the caret in the input
+  mic.addEventListener('click', dictate);
+  msg.addEventListener('click', () => { if (msg.dataset.page) invoke('settings_open', { page: msg.dataset.page }); });
+  const VERR = {
+    off: 'voiceOff', no_key: 'voiceOff', no_endpoint: 'voiceOff',
+    mic: { ru: 'Нет доступа к микрофону', en: 'Cannot use the microphone' },
+    too_short: { ru: 'Слишком короткая запись: скажи что-нибудь подольше', en: 'Recording too short: say something longer' },
+    silent: { ru: 'Микрофон ничего не услышал: проверь микрофон по умолчанию', en: 'The microphone heard nothing: check the default microphone' },
+    empty: { ru: 'Речь не распознана', en: 'No speech recognised' },
+  };
+  T.event.listen('voice:state', (e) => {
+    const p = e.payload;
+    if (!p || !dictHere) return;
+    if (p.state === 'recording' || p.state === 'transcribing') setMic(p.state);
+    else if (p.state === 'done') {
+      dictHere = false; setMic('idle');
+      const text = String(p.text || '').trim();
+      if (!text) return;
+      const a = q.selectionStart ?? q.value.length, b = q.selectionEnd ?? a, pre = q.value.slice(0, a), sp = pre && !/\s$/.test(pre) ? ' ' : '', end = a + sp.length + text.length;
+      q.value = pre + sp + text + q.value.slice(b);
+      q.focus(); q.setSelectionRange(end, end);
+      q.dispatchEvent(new Event('input'));
+    } else if (p.state === 'error') {
+      if (p.code === 'busy') return;
+      dictHere = false; setMic('idle');
+      const v = VERR[p.code];
+      if (v === 'voiceOff') micMsg(t(L.voiceOff), 'voice');
+      else micMsg(v ? t(v) : `${t(L.voiceFail)}${p.message ? ': ' + String(p.message).slice(0, 160) : ''}`);
+    } else if (p.state === 'idle') { dictHere = false; setMic('idle'); } // cancelled (Esc)
+  });
+  setMic('idle');
+  ans.addEventListener('mouseup', () => { if (getSelection().isCollapsed) q.focus(); });
+
   function reset() {
     q.value = '';
-    msg.textContent = '';
+    msg.textContent = ''; delete msg.dataset.page;
+    clearAns();
     clearTimeout(timer);
     body.classList.remove('in');
     void body.offsetWidth; // restart the pop animation
@@ -245,6 +367,6 @@
     search();
   }
   T.event.listen('bar:shown', reset);
-  T.event.listen('bar:hidden', () => { seq++; clearTimeout(confirmTimer); q.value = ''; list.replaceChildren(); items = []; });
+  T.event.listen('bar:hidden', () => { seq++; clearAns(); dictHere = false; setMic('idle'); clearTimeout(confirmTimer); q.value = ''; list.replaceChildren(); items = []; });
   loadCfg();
 })();

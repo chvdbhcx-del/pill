@@ -2,7 +2,7 @@
 // One non-streaming chat completion against the endpoint the user configured for the chat (`ai.baseUrl`, `ai.model`, key store
 // `ai.apiKeyEnc`; `ai.preset` only selects defaults in the settings UI). All sockets go through net::ai_chat, so the `net.ai`
 // switch and the host allow-list apply. System prompts are fixed here; the clipboard text is only ever the user message.
-// Nothing is logged or stored. Commands: ai_transform, ai_transform_cancel, ai_clip_text.
+// Nothing is logged or stored. Commands: ai_transform, ai_transform_cancel, ai_clip_text, cmd_ask (command bar question).
 use crate::net;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -146,6 +146,15 @@ pub fn ai_transform(text: String, action: String, instruction: Option<String>) -
         Ok(c) => c,
         Err(e) => return fail(e),
     };
+    let body = build_body(&cfg.model, act, &input, &instruction).to_string();
+    match chat_once(&cfg, &body) {
+        Ok(t) => json!({ "ok": true, "text": t, "clipped": clipped }),
+        Err(e) => fail(e),
+    }
+}
+
+/// Runs one request as THE current one (a newer request or ai_transform_cancel aborts it) and returns the model's text.
+fn chat_once(cfg: &net::AiCfg, body: &str) -> Result<String, String> {
     let run = SEQ.fetch_add(1, Ordering::Relaxed);
     let abort = net::Abort::new();
     {
@@ -154,8 +163,7 @@ pub fn ai_transform(text: String, action: String, instruction: Option<String>) -
             old.abort();
         }
     }
-    let body = build_body(&cfg.model, act, &input, &instruction).to_string();
-    let res = net::ai_chat(&cfg, body.as_bytes(), 120_000, Some(&abort), None);
+    let res = net::ai_chat(cfg, body.as_bytes(), 120_000, Some(&abort), None);
     {
         let mut g = CUR.lock().unwrap_or_else(|e| e.into_inner());
         if g.as_ref().is_some_and(|(id, _)| *id == run) {
@@ -163,14 +171,52 @@ pub fn ai_transform(text: String, action: String, instruction: Option<String>) -
         }
     }
     if abort.is_set() {
-        return fail("cancelled");
+        return Err("cancelled".into());
     }
     match res {
-        Ok(r) if r.status / 100 == 2 => match extract_text(&r.body) {
-            Ok(t) => json!({ "ok": true, "text": t, "clipped": clipped }),
-            Err(e) => fail(e),
-        },
-        Ok(r) => fail(crate::chat::http_error(&r)),
+        Ok(r) if r.status / 100 == 2 => extract_text(&r.body),
+        Ok(r) => Err(crate::chat::http_error(&r)),
+        Err(e) => Err(e),
+    }
+}
+
+const ASK_SYSTEM: &str = "You are a quick assistant inside a desktop command bar. Answer the question directly and briefly (a few sentences unless the user asks for detail), in the language of the question. Plain text: no markdown headings, no tables; short lists with '- ' are fine.";
+
+fn build_ask_body(model: &str, question: &str) -> Value {
+    json!({
+        "model": model,
+        "messages": [
+            { "role": "system", "content": ASK_SYSTEM },
+            { "role": "user", "content": question },
+        ],
+        "temperature": 0.5,
+        "stream": false,
+    })
+}
+
+/// Command bar `? question`: one plain chat answer from the configured model. {ok:true, text} or {ok:false, error}; error is
+/// "net_off" (net.ai switch off), "no_endpoint", "no_model", "empty", "cancelled" (ai_transform_cancel / a newer request) or a readable message.
+#[tauri::command(async)]
+pub fn cmd_ask(question: String) -> Value {
+    let (q, _) = clip_input(&question);
+    if q.is_empty() {
+        return fail("empty");
+    }
+    if !net::enabled(net::Feature::Ai) {
+        return fail("net_off");
+    }
+    if crate::settings::get_str("ai.baseUrl", "").trim().is_empty() {
+        return fail("no_endpoint");
+    }
+    if crate::settings::get_str("ai.model", "").trim().is_empty() {
+        return fail("no_model");
+    }
+    let cfg = match net::ai_cfg(None, true) {
+        Ok(c) => c,
+        Err(e) => return fail(e),
+    };
+    match chat_once(&cfg, &build_ask_body(&cfg.model, &q).to_string()) {
+        Ok(t) => json!({ "ok": true, "text": t }),
         Err(e) => fail(e),
     }
 }
@@ -234,6 +280,14 @@ mod tests {
         for a in ["formal", "friendly", "summarize", "bullets", "continue", "custom"] {
             assert!(parse_action(a).is_some(), "{a}");
         }
+    }
+
+    #[test]
+    fn aiactions_ask_body() {
+        let b = build_ask_body("m1", "why is the sky blue?");
+        assert_eq!(b["messages"][0]["content"], ASK_SYSTEM);
+        assert_eq!(b["messages"][1]["content"], "why is the sky blue?");
+        assert_eq!(b["stream"], false);
     }
 
     #[test]

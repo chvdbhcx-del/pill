@@ -70,7 +70,7 @@ fn main() {
             // @net-commands
             chat::chat_send, chat::chat_retry, chat::chat_stop, chat::chat_threads, chat::chat_messages, chat::chat_new,
             chat::chat_delete, chat::chat_open_link, chat::ai_test, chat::ai_models, chat::ai_probe, chat::ai_set_key, chat::ai_config,
-            aiactions::ai_transform, aiactions::ai_transform_cancel, aiactions::ai_clip_text,
+            aiactions::ai_transform, aiactions::ai_transform_cancel, aiactions::ai_clip_text, aiactions::cmd_ask,
             // @chat-commands
             notes::note_list, notes::note_get, notes::note_save, notes::note_delete,
             // @notes-commands
