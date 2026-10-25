@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Added
+- Live events: new-mail cards over IMAP («Новое письмо: sender — subject», «и ещё N»). Opt-in, off by default, own switch on the «Живые события» page. TLS only (port 993, plain IMAP is refused), read-only EXAMINE, only `BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)]` is fetched, so mail is never marked as read and no body or attachment is downloaded. The mailbox password is encrypted with Windows DPAPI, never shown again after saving; a «Проверить подключение» button reports the result in plain words. Polls every 2 minutes and when the settings change, with back-off after errors; only the highest seen UID is remembered (`mail-state.json`, no mail content).
+- Calendar: the .ics field also accepts an `https://` or `webcal://` subscription link (fetched every 30 minutes, 2 MB and 15 s limits, last good copy cached next to the settings so it works offline, only the host is ever logged; other schemes and plain `http://` are rejected).
+
 ## [0.2.0] - 2026-10-25
 
 ### Added
