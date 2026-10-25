@@ -257,12 +257,24 @@
     b64d: { ru: 'Это не Base64 (или не текст)', en: 'Not valid Base64 (or not text)' }, urld: { ru: 'Неверная URL-кодировка', en: 'Invalid URL encoding' },
   };
 
-  let ta, countEl, grid, toastEl, qrBox, toastT = 0;
+  // AI mode: the model rewrites the selection (or the whole text) through the same chat endpoint as the chat tab (Rust: aiactions.rs)
+  const AI = [
+    ['translate', { ru: 'Перевести', en: 'Translate' }, { ru: 'На английский, а английский на русский', en: 'To English; English text goes to Russian' }],
+    ['fix', { ru: 'Исправить ошибки', en: 'Fix errors' }, { ru: 'Орфография и грамматика', en: 'Spelling and grammar' }],
+    ['shorten', { ru: 'Сократить', en: 'Shorten' }, { ru: 'Примерно вдвое', en: 'To about half' }],
+    ['summarize', { ru: 'Кратко', en: 'Summarize' }, { ru: 'Суть в нескольких предложениях', en: 'The gist in a few sentences' }],
+    ['formal', { ru: 'Формально', en: 'Formal' }, { ru: 'Деловой тон', en: 'A professional tone' }],
+    ['friendly', { ru: 'Дружелюбно', en: 'Friendly' }, { ru: 'Тёплый, неформальный тон', en: 'A warm, relaxed tone' }],
+    ['bullets', { ru: 'Списком', en: 'As a list' }, { ru: 'Разбить на пункты', en: 'Split into bullet points' }],
+    ['explain', { ru: 'Объяснить', en: 'Explain' }, { ru: 'Простыми словами', en: 'In plain words' }],
+    ['continue', { ru: 'Продолжить', en: 'Continue' }, { ru: 'Дописать несколько предложений', en: 'Write a few more sentences' }],
+  ];
+  let ta, countEl, grid, aiGrid, toastEl, qrBox, toastT = 0, aiBusy = false;
   const labels = []; // [element, dict, attr] re-applied by applyLang()
 
-  function say(msg, bad) {
+  function say(msg, bad, sticky) {
     toastEl.textContent = msg; toastEl.classList.toggle('bad', !!bad); toastEl.classList.add('show');
-    clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('show'), 2200);
+    clearTimeout(toastT); if (!sticky) toastT = setTimeout(() => toastEl.classList.remove('show'), 2200);
   }
   function updateCount() {
     const s = stats(ta.value), r = ru();
@@ -299,6 +311,33 @@
     try { out = fn(src); } catch (e) { say(t(ERR[id] || { ru: 'Не получилось', en: 'Failed' }), true); return; }
     if (out === src) { say(t({ ru: 'Без изменений', en: 'No change' })); return; }
     if (sel) replaceRange(a, b, out); else replaceRange(0, ta.value.length, out);
+  }
+
+  /** One AI request on the selection (or the whole text); a second click while it runs cancels. The result goes in through the editing
+   *  pipeline, so Ctrl+Z brings the original back. */
+  async function aiRun(action, instruction, btn) {
+    if (aiBusy) { Pill.invoke('ai_transform_cancel'); return; }
+    const a = ta.selectionStart, b = ta.selectionEnd, sel = a !== b;
+    const src = sel ? ta.value.slice(a, b) : ta.value;
+    if (!src.trim()) { say(t({ ru: 'Сначала напиши или вставь текст', en: 'Type or paste some text first' }), true); return; }
+    aiBusy = true; btn.classList.add('run'); aiGrid.classList.add('busy');
+    say(t({ ru: 'ИИ думает… нажми ещё раз, чтобы отменить', en: 'AI is thinking… click again to cancel' }), false, true);
+    let r = null;
+    try { r = await Pill.invoke('ai_transform', { text: src, action, instruction: instruction || null }); } catch (e) { r = { ok: false, error: String(e) }; }
+    aiBusy = false; btn.classList.remove('run'); aiGrid.classList.remove('busy');
+    if (!r || !r.ok) {
+      const e = r && r.error;
+      if (e === 'cancelled') { say(t({ ru: 'Отменено', en: 'Cancelled' })); return; }
+      const msg = e === 'net_off' ? t({ ru: 'ИИ выключен: Настройки → Сеть → ИИ', en: 'AI is off: Settings → Network → AI' })
+        : e === 'empty' ? t({ ru: 'Нет текста', en: 'No text' }) : String(e || t({ ru: 'ИИ не ответил', en: 'The AI did not answer' })).slice(0, 140);
+      say(msg, true); return;
+    }
+    const still = sel ? ta.value.slice(a, b) === src : ta.value === src;
+    if (!still) { say(t({ ru: 'Текст изменился, пока ИИ думал', en: 'The text changed while the AI was working' }), true); return; }
+    const out = String(r.text);
+    if (action === 'continue') replaceRange(sel ? b : ta.value.length, sel ? b : ta.value.length, (/\s$/.test(src) ? '' : ' ') + out);
+    else if (sel) replaceRange(a, b, out); else replaceRange(0, ta.value.length, out);
+    say(t({ ru: 'Готово · Ctrl+Z вернёт как было', en: 'Done · Ctrl+Z restores the original' }));
   }
 
   function showQr(text) {
@@ -358,9 +397,7 @@
     bt.type = bai.type = 'button';
     L(bt, { ru: 'Инструменты', en: 'Tools' });
     bai.innerHTML = ICON.ai + '<span></span>'; L(bai.querySelector('span'), { ru: 'ИИ', en: 'AI' });
-    bai.setAttribute('aria-disabled', 'true');
-    L(bai, { ru: 'ИИ-действия появятся, когда подключится чат', en: 'AI actions arrive once the chat is connected' }, 'title');
-    bai.onclick = () => say(t({ ru: 'ИИ пока не подключён', en: 'AI is not connected yet' }));
+    L(bai, { ru: 'Переписать, перевести или сократить с помощью ИИ', en: 'Rewrite, translate or shorten with AI' }, 'title');
     seg.append(bt, bai);
 
     grid = el('div', 'tt-grid');
@@ -371,7 +408,26 @@
       b.onclick = () => run(tool);
       grid.append(b);
     });
-    right.append(seg, grid);
+    aiGrid = el('div', 'tt-grid tt-aigrid'); aiGrid.hidden = true;
+    AI.forEach(([id, label, tip]) => {
+      const b = el('button', 'tt-tool'); b.type = 'button';
+      L(b, label); L(b, tip, 'title');
+      b.onmousedown = (e) => e.preventDefault();
+      b.onclick = () => aiRun(id, '', b);
+      aiGrid.append(b);
+    });
+    const ask = el('div', 'tt-ask'), askIn = el('input'), askGo = el('button');
+    askIn.type = 'text'; askIn.spellcheck = false; askGo.type = 'button'; askGo.innerHTML = ICON.ai;
+    L(askIn, { ru: 'Свой запрос: «сделай бодрее», «на немецкий»…', en: 'Your own request: "make it punchier", "to German"…' }, 'placeholder');
+    L(askGo, { ru: 'Выполнить запрос', en: 'Run the request' }, 'title');
+    askGo.onmousedown = (e) => e.preventDefault();
+    const go = () => { const q = askIn.value.trim(); if (q) aiRun('custom', q, askGo); };
+    askIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } e.stopPropagation(); });
+    askGo.onclick = go;
+    ask.append(askIn, askGo); aiGrid.prepend(ask); // on top: the tile rows below may scroll, the request line must always be in reach
+    const setMode = (on) => { bt.classList.toggle('on', !on); bai.classList.toggle('on', on); grid.hidden = on; aiGrid.hidden = !on; };
+    bt.onclick = () => setMode(false); bai.onclick = () => setMode(true);
+    right.append(seg, grid, aiGrid);
     applyLang();
   }
 

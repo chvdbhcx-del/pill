@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Added
+- Text tab: the AI mode is connected. Translate, fix errors, shorten, summarize, formal / friendly tone, bullet list, explain, continue, or type your own request; it works on the selection (or the whole text) through the chat endpoint from Settings, and Ctrl+Z restores the original.
+
 ### Fixed
 - The command bar's key hint shows the real shortcut (`Alt+Shift+Space`) instead of dropping `Shift`.
 

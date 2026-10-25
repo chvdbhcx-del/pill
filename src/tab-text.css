@@ -45,7 +45,18 @@
   color: var(--dim); font-size: var(--fs-sm, 12px); font-weight: 700; line-height: normal; cursor: pointer; transition: background 0.15s, color 0.15s;
 }
 .tab-text .tt-seg button.on { background: var(--pn3); color: var(--fg); }
-.tab-text .tt-seg button.tt-ai { opacity: 0.55; cursor: not-allowed; }
+.tab-text [hidden] { display: none !important; }
+/* AI mode: the same tile grid; the last row is the free-form request */
+.tab-text .tt-ask { grid-column: 1 / -1; display: flex; gap: var(--sp-2, 8px); align-items: center; }
+.tab-text .tt-ask input { all: unset; box-sizing: border-box; flex: 1; min-width: 0; height: 32px; padding: 0 12px; border-radius: 10px; background: var(--pn); color: var(--fg); font-size: var(--fs-sm, 12px); }
+.tab-text .tt-ask input::placeholder { color: var(--dim); }
+.tab-text .tt-ask input:focus-visible, .tab-text .tt-ask button:focus-visible { outline: 2px solid var(--accent, #0a84ff); outline-offset: -2px; }
+.tab-text .tt-ask button { all: unset; flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--pn2); color: var(--fg); cursor: pointer; }
+.tab-text .tt-ask button:hover { background: var(--pn3); }
+.tab-text .tt-ask button svg { width: 14px; height: 14px; }
+.tab-text .tt-aigrid.busy .tt-tool:not(.run) { opacity: 0.45; }
+.tab-text .tt-tool.run, .tab-text .tt-ask button.run { background: var(--pn3); animation: tt-pulse 1.1s ease-in-out infinite; }
+@keyframes tt-pulse { 50% { opacity: 0.55; } }
 .tab-text .tt-seg svg { flex: none; width: 14px; height: 14px; }
 
 /* tool grid: the scrollbar gutter is reserved (5 px) and the padding is 9, so both columns are exactly 120 px wide on whole pixels (262 - 5 - 9 - 8 = 240) */
