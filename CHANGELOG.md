@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Added
+- Live events: a card «Загружено: file name» when a file finishes in Downloads (click opens the folder with the file selected), connected / removed removable drives, battery warnings at 20 % and 10 % plus «Charging» / «Fully charged» (laptops only), and «In 10 min: title» for the next event of a local .ics file (off by default; path in Settings > Live events). Each has its own switch; everything is local and read-only.
+
 ## [0.1.6] - 2026-10-25
 
 ### Changed

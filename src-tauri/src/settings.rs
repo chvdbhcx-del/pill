@@ -29,6 +29,7 @@ pub(crate) fn defaults() -> Cfg {
         "module.text": true, "module.chat": true, "module.note": true, "module.weather": true, "module.controls": true,
         "live.volume": true, "live.music": true, "live.micCam": true, "live.downloads": true, "live.recording": true, "live.notifications": true,
         "live.reminders": true, "live.keyboardLayout": true, "live.copy": true, "live.obs": false, "live.agents": true, "live.steam": true, "live.sysmon": true,
+        "live.dlDone": true, "live.usb": true, "live.battery": true, "live.calendar": false, "live.calendar.path": "",
         // screen capture (capture.rs)
         "capture.format": "mp4", "capture.fps": 30, "capture.encoder": "auto", "capture.shotAction": "both", "capture.revealAfterSave": false,
         // first-run AI setup wizard (aisetup.rs)

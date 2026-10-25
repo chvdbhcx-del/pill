@@ -302,7 +302,7 @@ fn set_privacy(app: &AppHandle, now: (bool, bool, Vec<String>)) {
 
 // ================= downloads =================
 
-fn downloads_dir() -> PathBuf {
+pub(crate) fn downloads_dir() -> PathBuf {
     unsafe {
         if let Ok(p) = SHGetKnownFolderPath(&FOLDERID_Downloads, KF_FLAG_DEFAULT, HANDLE::default()) {
             let s = p.to_string().ok();
