@@ -34,6 +34,8 @@
 .pet[data-where="cap"][data-side="left"] { left: calc(9px * var(--s, 1)); }
 :root[data-pet-side="right"] #live { padding-right: var(--pet-res, 0px); }
 :root[data-pet-side="left"] #live { padding-left: var(--pet-res, 0px); }
+:root[data-pet-side="right"] #live .lp { padding-right: calc(var(--sp-4) * 0.4); } /* the chip's own side padding doubled the gap to the pet */
+:root[data-pet-side="left"] #live .lp { padding-left: calc(var(--sp-4) * 0.4); }
 #live { transition: opacity 0.15s, padding 0.35s ease; } /* the clock slides aside while the capsule widens */
 #pet-slot { flex: 1; min-width: 0; height: 32px; position: relative; container: pet-slot / inline-size; pointer-events: none; }
 .pet[data-where="head"] { --pet-px: 28px; bottom: 0; }

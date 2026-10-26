@@ -367,7 +367,8 @@ ${ln('armL', 'M14.5 34.5L9.5 40.5', 3, '#a9bccf')}${ln('armR', 'M33.5 34.5L38.5 
     const s = Math.min(2, Math.max(0.8, parseFloat(getComputedStyle(root).getPropertyValue('--s')) || 1));
     let n = (cfg.id === 'claude8' ? CAP8 : CAP)[cfg.size];
     if (cfg.id === 'claude8') { const u = cfg.size === 'm' ? 7 : 14; n = Math.max(14, Math.round(n * s / u) * u) / s; } // the same nearest-step rounding as pets.css
-    const px = Math.ceil(n * PETS[cfg.id].ar + 12); // box (height x aspect ratio, wide pets up to 2.5:1) + 9 px inset from the end + 3 px gap
+    const slack = { eyes: 0.2 }[cfg.id] || 0; // share of the box that is empty on the side facing the clock (the eyes fill under half of their 60 x 40 box)
+    const px = Math.ceil(n * PETS[cfg.id].ar * (1 - slack) + 12); // box (height x aspect ratio, wide pets up to 2.5:1) + 9 px inset from the end + 3 px gap
     root.style.setProperty('--pet-res', px + 'px'); root.dataset.petSide = cfg.side;
     if (P.reserve) P.reserve(px);
   }

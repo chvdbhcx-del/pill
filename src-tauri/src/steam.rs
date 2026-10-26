@@ -204,17 +204,55 @@ pub fn classify(m: &Manifest, live: u64) -> St {
     }
 }
 
-/// Progress 0..100 of the phase `st`: the manifest counters, the downloading folder as a live second opinion (never lower than the counters).
-pub fn percent(m: &Manifest, st: St, live: u64) -> u32 {
+/// Progress 0..100 of the phase `st`, from the manifest counters only (the folder size is no progress: an update's downloading folder already
+/// holds copies of the unchanged files). While both run, Steam's own bottom bar follows the file update ("Обновление"), so once bytes are staged so do we.
+pub fn percent(m: &Manifest, st: St) -> u32 {
     let by = |a: u64, b: u64| if b > 0 { (a as f64 / b as f64 * 100.0).clamp(0.0, 100.0) } else { 0.0 };
     let net = by(m.downloaded, m.to_download);
-    let disk = if m.to_stage > 0 { by(m.staged.max(live), m.to_stage) } else { 0.0 };
+    let disk = by(m.staged, m.to_stage);
     let p = match st {
         St::Installing if m.to_stage > 0 => disk,
         St::Installing => net,
-        _ => net.max(disk),
+        _ if m.staged > 0 => disk,
+        _ => net,
     };
     p.floor() as u32
+}
+
+/// What Steam writes to logs\content_log.txt while it downloads. A big download leaves the manifest counters at 0 for hours and the downloading
+/// folder is preallocated to its full size, so the log is the only live source: the rate once a minute, the bytes received every few minutes.
+#[derive(Debug, Default, PartialEq)]
+pub struct LogInfo {
+    /// bytes received in the current download session (the "(Invalid, 0)" total of the last stats line)
+    pub bytes: Option<u64>,
+    /// bytes per second ("Current download rate: 94.8 Mbps")
+    pub rate: Option<f64>,
+}
+
+/// Only what follows the last "Downloading N chunks for depot" line counts: older lines belong to a finished download.
+pub fn log_info(tail: &str) -> LogInfo {
+    let from = tail.rfind("chunks for depot").unwrap_or(0);
+    let first = |s: &str| s.split_whitespace().next().map(str::to_string);
+    let mut out = LogInfo::default();
+    for line in tail[from..].lines() {
+        if let Some(r) = line.split("Current download rate:").nth(1) {
+            out.rate = first(r).and_then(|v| v.parse::<f64>().ok()).map(|mbps| mbps * 125_000.0);
+        } else if let Some(r) = line.split("stats: (Invalid, 0) :").nth(1) {
+            out.bytes = first(r).and_then(|v| v.parse::<u64>().ok());
+        }
+    }
+    out
+}
+
+/// The last `max` bytes of a file (read-only; Steam keeps writing to it).
+fn read_tail(p: &Path, max: u64) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(p).ok()?;
+    let len = f.metadata().ok()?.len();
+    f.seek(SeekFrom::Start(len.saturating_sub(max))).ok()?;
+    let mut buf = Vec::new();
+    f.take(max).read_to_end(&mut buf).ok()?;
+    Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
 /// Total size of a folder tree (read-only, capped so a pathological tree cannot stall the poll).
@@ -343,6 +381,7 @@ fn run(app: AppHandle, gen: u64) {
     let mut seen: HashMap<u64, Seen> = HashMap::new();
     let (mut last, mut shown, mut speed, mut prev_at) = (Value::Null, false, 0.0f64, Instant::now());
     let mut primary = 0u64;
+    let mut sent = Instant::now();
     let mut pmax: (u64, St, u32) = (0, St::Idle, 0);
     loop {
         if GEN.load(Ordering::SeqCst) != gen {
@@ -385,15 +424,25 @@ fn run(app: AppHandle, gen: u64) {
             }
         }
         let cur = best.map(|(_, m, st)| (m, st));
+        // a big download leaves the manifest counters at 0: Steam's own log has the live rate and the bytes received
+        let log = match cur {
+            Some((_, St::Downloading)) => read_tail(&steam.join("logs").join("content_log.txt"), 131_072).map(|t| log_info(&t)).unwrap_or_default(),
+            _ => LogInfo::default(),
+        };
         if let Some((m, _)) = cur {
             if m.appid != primary {
                 primary = m.appid;
                 speed = 0.0;
             }
             let (prev_dl, prev_live) = seen.get(&m.appid).map_or((m.downloaded, live_of(m.appid)), |p| (p.dl, p.live));
-            // the counters when Steam moved them, else the growth of the downloading folder
+            // the counters when Steam moved them, else the growth of the downloading folder, else the rate from the log
             let delta = m.downloaded.saturating_sub(prev_dl).max(live_of(m.appid).saturating_sub(prev_live)) as f64;
             speed = speed * 0.5 + delta / dt * 0.5;
+            if delta == 0.0 {
+                if let Some(r) = log.rate {
+                    speed = r;
+                }
+            }
         }
         seen = now.iter().map(|m| (m.appid, Seen { active: matches!(classify(m, live_of(m.appid)), St::Downloading | St::Installing), dl: m.downloaded, live: live_of(m.appid) })).collect();
         if let Some(done) = ev {
@@ -401,12 +450,16 @@ fn run(app: AppHandle, gen: u64) {
         }
         let p = match cur {
             Some((m, st)) => {
-                let live = live_of(m.appid);
-                // the figure never goes backwards inside one phase of one app (the counters and the folder are two noisy readings)
-                let raw = percent(m, st, live);
+                let mut m = m.clone();
+                if let Some(b) = log.bytes {
+                    m.downloaded = m.downloaded.max(b);
+                }
+                let m = &m;
+                // the figure never goes backwards inside one phase of one app (Steam rewrites the counters now and then)
+                let raw = percent(m, st);
                 let pct = if pmax.0 == m.appid && pmax.1 == st { raw.max(pmax.2) } else { raw };
                 pmax = (m.appid, st, pct);
-                let left = if m.to_stage > 0 && live > 0 { m.to_stage.saturating_sub(live) } else { m.to_download.saturating_sub(m.downloaded) };
+                let left = m.to_download.saturating_sub(m.downloaded);
                 let eta = if st == St::Downloading && speed > 1024.0 { (left as f64 / speed) as u64 } else { 0 };
                 let state = match st {
                     St::Downloading => "downloading",
@@ -417,8 +470,10 @@ fn run(app: AppHandle, gen: u64) {
             }
             None => json!({ "state": "idle" }),
         };
-        if p != last && (cur.is_some() || shown) {
+        // re-sent every 10 s even when unchanged: the page may have loaded after the first emit (island restarted mid-download)
+        if (p != last || sent.elapsed() > std::time::Duration::from_secs(10)) && (cur.is_some() || shown) {
             shown = cur.is_some();
+            sent = Instant::now();
             let _ = app.emit_to("pill", "live:steam", p.clone());
         }
         last = p;
@@ -475,15 +530,28 @@ mod tests {
     }
 
     #[test]
-    fn percent_uses_the_better_reading_and_never_exceeds_100() {
+    fn percent_follows_the_manifest_counters_like_steam() {
         let m = Manifest { appid: 1, to_download: 200, downloaded: 0, to_stage: 1000, staged: 0, ..Default::default() };
-        assert_eq!(percent(&m, St::Downloading, 0), 0);
-        assert_eq!(percent(&m, St::Downloading, 250), 25); // counters stale, the folder says 25 %
-        let m2 = Manifest { downloaded: 100, ..m.clone() };
-        assert_eq!(percent(&m2, St::Downloading, 250), 50); // the counters are ahead
-        assert_eq!(percent(&m2, St::Installing, 400), 40); // unpacking is measured against BytesToStage
-        assert_eq!(percent(&Manifest { to_stage: 0, ..m2.clone() }, St::Installing, 400), 50); // no stage counter: fall back to the network bytes
-        assert_eq!(percent(&m2, St::Downloading, 10_000), 100);
+        assert_eq!(percent(&m, St::Downloading), 0);
+        let m2 = Manifest { downloaded: 156, staged: 200, ..m.clone() };
+        assert_eq!(percent(&m2, St::Downloading), 20); // Steamworks case: 78 % of the data, 20 % of the files -> the bar Steam shows at the bottom
+        assert_eq!(percent(&Manifest { staged: 0, ..m2.clone() }, St::Downloading), 78); // nothing staged yet: the network bytes
+        assert_eq!(percent(&m2, St::Installing), 20); // unpacking is measured against BytesToStage
+        assert_eq!(percent(&Manifest { to_stage: 0, staged: 0, ..m2.clone() }, St::Installing), 78); // no stage counter: the network bytes
+        assert_eq!(percent(&Manifest { staged: 10_000, ..m2.clone() }, St::Downloading), 100);
+    }
+
+    #[test]
+    fn log_gives_rate_and_bytes_of_the_current_session_only() {
+        let log = "[2026-10-27 00:20:01] Current download rate: 50.0 Mbps\n[2026-10-27 00:20:05] stats: (Invalid, 0) : 141000000 Bytes, 20 sec (50.00 Mbps).\n\
+                   [2026-10-27 00:32:12] Downloading 94679 chunks for depot 236391 (8675133900244270658)\n";
+        assert_eq!(log_info(log), LogInfo::default()); // the new session has not logged anything yet: the old figures are not its own
+        let more = format!("{log}[2026-10-27 00:33:28] Current download rate: 95.026 Mbps\n[2026-10-27 00:33:36] stats: (SteamCache, 55) x.com: 680775947 Bytes, 245 sec (22.22 Mbps). 1 Hits\n\
+                   [2026-10-27 00:33:36] stats: (Invalid, 0) : 2887800176 Bytes, 246 sec (93.73 Mbps). 7587 Hits / 14 Misses\n[2026-10-27 00:34:29] Current download rate: 94.961 Mbps\n");
+        let i = log_info(&more);
+        assert_eq!(i.bytes, Some(2_887_800_176));
+        assert_eq!(i.rate.map(|r| r.round() as u64), Some(11_870_125)); // 94.961 Mbps
+        assert_eq!(log_info(""), LogInfo::default());
     }
 
     #[test]

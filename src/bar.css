@@ -61,10 +61,8 @@ mark { background: none; color: var(--text); font-weight: 600; }
 .msg { padding: 6px 26px 12px; font-size: var(--fs-sm, 12px); line-height: 18px; color: var(--red); }
 .msg:empty { display: none; }
 
-.wv { position: absolute; left: 30px; right: 30px; bottom: -6px; height: 16px; pointer-events: none; }
-.wv svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.wv path.u { stroke: var(--bg); }
-.wv path.l { stroke: var(--wave); }
+.wv { position: absolute; left: 24px; right: 24px; top: calc(100% - 4px); height: 16px; pointer-events: none; }
+.wv canvas { display: block; width: 100%; height: 100%; }
 
 /* ---------- smoothness layer: opacity on ease-out, move/scale on the spring (one cubic used to drive both) ---------- */
 .body.in { animation: pop-fade var(--dur-med) var(--ease-out) both, pop-move .45s var(--spring-pop, var(--ease-spring)) both; }

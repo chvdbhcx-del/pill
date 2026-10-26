@@ -61,7 +61,7 @@
     const right = p.state === 'paused' ? t({ ru: 'пауза', en: 'paused' }) : p.state === 'installing' ? t({ ru: 'установка', en: 'installing' }) : pct + '%';
     const extra = p.state === 'downloading' && p.speed > 0 ? `<span class="lx-sp">${esc(mbs(p.speed))}</span>` : '';
     const tip = [p.game, p.state === 'downloading' && p.speed > 0 ? mbs(p.speed) : '', p.etaSec > 0 ? t({ ru: 'осталось ', en: 'left ' }) + eta(p.etaSec) : ''].filter(Boolean).join(' · ');
-    return `<div class="lp lx lx-steam" title="${esc(tip)}">${ring}<span class="lx-g">${esc(p.game || 'Steam')}</span><b class="lx-p">${esc(right)}</b>${extra}</div>`;
+    return `<div class="lp lx lx-steam" title="${esc(tip)}">${ring}<span class="lx-g">${esc(p.game || 'Steam')}</span><span class="lx-pg"><b class="lx-p">${esc(right)}</b>${extra}</span></div>`;
   }
   on('live:steam', (p) => {
     if (!p || !P.liveOn('steam')) { P.setLive('steam', null); return; }

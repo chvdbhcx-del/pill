@@ -62,28 +62,81 @@
   const body = root.firstChild, q = document.getElementById('q'), list = document.getElementById('list');
   const msg = document.getElementById('msg'), wv = body.querySelector('.wv'), ans = document.getElementById('ans'), dlgHint = document.getElementById('dlg'), mic = document.getElementById('mic');
 
-  // wavy outline along the bottom edge (decoration, same idea as the pill)
-  let waveW = 0; // the path depends on the width only: the observer also fires on every height change (each keystroke that resizes the list)
-  function wave() {
-    const w = Math.max(40, Math.round(body.getBoundingClientRect().width - 60)), pts = [], taper = 40;
-    if (w === waveW) return;
-    waveW = w;
-    for (let x = 0; x <= w; x += 3) {
-      const e = Math.min(1, x / taper, (w - x) / taper), k = e * e * (3 - 2 * e);
-      pts.push(`${x} ${(8 + 2.4 * k * Math.sin((x / 56) * 6.2832)).toFixed(2)}`);
-    }
-    const d = 'M' + pts.join('L'), NS = 'http://www.w3.org/2000/svg';
-    wv.replaceChildren();
-    const svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('viewBox', `0 0 ${w} 16`); svg.setAttribute('preserveAspectRatio', 'none');
-    for (const [c, sw] of [['u', 5.2], ['l', 2.1]]) {
-      const p = document.createElementNS(NS, 'path');
-      p.setAttribute('class', c); p.setAttribute('d', d); p.setAttribute('fill', 'none'); p.setAttribute('stroke-width', sw); p.setAttribute('stroke-linecap', 'round');
-      svg.append(p);
-    }
-    wv.append(svg);
+  // liquid outline along the bottom edge, the pill's idea: two waves drift along it, a sag follows the cursor on a spring and every keystroke kicks it.
+  // Runs only while the bar is shown (bar:shown / bar:hidden); reduced motion draws it once.
+  const lcv = document.createElement('canvas'), lg = lcv.getContext('2d');
+  wv.append(lcv);
+  const LW = { w: 0, dpr: 0, ph: 0, run: 0, last: 0, mx: 0, mv: 0, tx: 0, near: 0, in: 0, kick: 0, kv: 0, bg: '#000', fg: '#6e6e6e', rgb: '110,110,110', gr: null, grKey: '' };
+  const UP = 4, STRIP = 16, INSET = 24; // the canvas starts UP px above the body's bottom edge; INSET = the body's bottom corner radius (the straight part is the wave)
+  const pcx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  pcx.canvas.width = pcx.canvas.height = 1;
+  const rgbOf = (c) => { // any CSS colour -> "r,g,b" for the gradient stops
+    try { pcx.clearRect(0, 0, 1, 1); pcx.fillStyle = '#6e6e6e'; pcx.fillStyle = c; pcx.fillRect(0, 0, 1, 1); const d = pcx.getImageData(0, 0, 1, 1).data; return `${d[0]},${d[1]},${d[2]}`; } catch (e) { return '110,110,110'; }
+  };
+  const smooth = (e) => { e = Math.max(0, Math.min(1, e)); return e * e * (3 - 2 * e); };
+  function waveColors() {
+    const cs = getComputedStyle(root0);
+    LW.bg = cs.getPropertyValue('--bg').trim() || '#000'; LW.fg = cs.getPropertyValue('--wave').trim() || '#6e6e6e'; LW.rgb = rgbOf(LW.fg);
   }
-  new ResizeObserver(wave).observe(body);
+  function waveSize() { // width only: the observer also fires on every height change (each keystroke that resizes the list)
+    const w = Math.max(40, Math.round(body.getBoundingClientRect().width - 2 * INSET)), d = window.devicePixelRatio || 1;
+    if (w === LW.w && d === LW.dpr) return;
+    LW.w = w; LW.dpr = d;
+    lcv.width = Math.round(w * d); lcv.height = Math.round(STRIP * d);
+    lg.setTransform(d, 0, 0, d, 0, 0);
+    waveDraw();
+  }
+  // Same construction as the pill's edge: the curve is the body's own bottom edge. It only ever bulges DOWN from the straight edge (soft max(y, 0)), the black
+  // body fill follows it, and it tapers to zero (zero slope) where the corner arcs take over; the outline dissolves over the last 15 % at both ends.
+  function waveDraw() {
+    const w = LW.w, A = 2.2 * (1 + Math.max(-0.4, Math.min(1.2, LW.kick * 0.1))), pts = [];
+    for (let i = 0, x = 0; x < w + 3; i++) {
+      x = Math.min(w, i * 3);
+      const u = (x - LW.mx) / 50;
+      const y = 2 + A * Math.sin((x / 56) * 6.2832 - LW.ph) + 1.1 * Math.sin((x / 170) * 6.2832 + LW.ph * 0.4) + LW.near * 3.4 * Math.exp(-u * u);
+      pts.push(x, UP + smooth(Math.min(x, w - x) / 40) * 0.5 * (y + Math.sqrt(y * y + 1.5)));
+      if (x >= w) break;
+    }
+    lg.clearRect(0, 0, w, STRIP);
+    lg.beginPath();
+    lg.moveTo(0, UP - 1);
+    for (let i = 0; i < pts.length; i += 2) lg.lineTo(pts[i], pts[i + 1]);
+    lg.lineTo(w, UP - 1);
+    lg.closePath();
+    lg.fillStyle = LW.bg; lg.fill();
+    lg.beginPath();
+    for (let i = 0; i < pts.length; i += 2) (i ? lg.lineTo(pts[i], pts[i + 1]) : lg.moveTo(pts[i], pts[i + 1]));
+    const key = w + '|' + LW.rgb;
+    if (LW.grKey !== key) {
+      const g = lg.createLinearGradient(0, 0, w, 0), c = LW.rgb;
+      g.addColorStop(0, `rgba(${c},0)`); g.addColorStop(0.075, `rgba(${c},0.3)`); g.addColorStop(0.15, `rgba(${c},1)`);
+      g.addColorStop(0.85, `rgba(${c},1)`); g.addColorStop(0.925, `rgba(${c},0.3)`); g.addColorStop(1, `rgba(${c},0)`);
+      LW.gr = g; LW.grKey = key;
+    }
+    lg.lineJoin = lg.lineCap = 'round'; lg.strokeStyle = LW.gr; lg.lineWidth = 2; lg.stroke();
+  }
+  function waveStep(now) {
+    if (!LW.run) return;
+    const dt = Math.min(0.05, (now - LW.last) / 1000 || 0.016);
+    LW.last = now;
+    LW.ph += dt * 3.6; // ~ 25 px/s at the 56 px wavelength
+    LW.mv += ((LW.tx - LW.mx) * 90 - LW.mv * 11) * dt; LW.mx += LW.mv * dt; // the sag has mass: it follows the cursor late and overshoots a little
+    LW.near += (LW.in - LW.near) * (1 - Math.exp(-dt * 7));
+    LW.kv += (-LW.kick * 160 - LW.kv * 9) * dt; LW.kick += LW.kv * dt;
+    waveDraw();
+    requestAnimationFrame(waveStep);
+  }
+  function waveStart() {
+    waveColors(); waveSize();
+    if (LW.run || root0.classList.contains('rm') || document.hidden) { waveDraw(); return; }
+    LW.run = 1; LW.last = performance.now();
+    requestAnimationFrame(waveStep);
+  }
+  const waveStop = () => { LW.run = 0; };
+  new ResizeObserver(waveSize).observe(body);
+  body.addEventListener('mousemove', (e) => { LW.tx = e.clientX - wv.getBoundingClientRect().left; LW.in = 1; });
+  body.addEventListener('mouseleave', () => { LW.in = 0; });
+  document.addEventListener('visibilitychange', () => (document.hidden ? waveStop() : waveStart()));
 
   let items = [], sel = 0, seq = 0, timer = 0, words = [], confirmTimer = 0, fresh = false, cfg = {}, asking = 0, askId = 0, dictHere = false, copiedTimer = 0;
   let conv = [], lastAns = ''; // dialogue: earlier {role, content} messages (max 6 turns) and the last answer's source text; memory only
@@ -336,7 +389,7 @@
 
   const modeOf = (e) => (e.ctrlKey && e.shiftKey ? 'admin' : e.ctrlKey ? 'folder' : e.shiftKey ? 'copy' : 'open');
 
-  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => (conv.length ? dlgInput() : search()), 80); });
+  q.addEventListener('input', () => { LW.kv += 45; clearTimeout(timer); timer = setTimeout(() => (conv.length ? dlgInput() : search()), 80); });
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); if (ctx) closeCtx(); else invoke('cmd_toggle'); }
@@ -464,10 +517,10 @@
     body.classList.add('in');
     fresh = true;
     q.focus();
-    loadCfg();
+    loadCfg().then(waveStart);
     search();
   }
   T.event.listen('bar:shown', reset);
-  T.event.listen('bar:hidden', () => { closeCtx(); seq++; endDialog(); clearAns(); dictHere = false; setMic('idle'); clearTimeout(confirmTimer); q.value = ''; list.replaceChildren(); items = []; });
+  T.event.listen('bar:hidden', () => { waveStop(); closeCtx(); seq++; endDialog(); clearAns(); dictHere = false; setMic('idle'); clearTimeout(confirmTimer); q.value = ''; list.replaceChildren(); items = []; });
   loadCfg();
 })();

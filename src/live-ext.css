@@ -15,7 +15,8 @@
 .lx-ring .fg { stroke: var(--accent, #8f96ff); stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
 .lx-g { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 var(--fs-md, 13px) / 18px var(--font, system-ui); color: var(--text, #fff); }
 .lx-p { font: 600 var(--fs-md, 13px) / 18px var(--font, system-ui); color: var(--accent, #8f96ff); white-space: nowrap; }
-.lx-sp { font: 500 var(--fs-xs, 11px) / 16px var(--font, system-ui); color: var(--text-dim, #7c7c7c); white-space: nowrap; }
+.lx-pg { display: flex; align-items: baseline; gap: var(--sp-2, 6px); }   /* percent and speed share one baseline (different sizes centred separately sat at different heights) */
+.lx-sp { font: 500 var(--fs-xs, 11px) / 1 var(--font, system-ui); color: var(--text-dim, #7c7c7c); white-space: nowrap; }
 
 .tc .ti .lx-ico { font: var(--fw-bold, 700) var(--fs-lg, 16px) / 20px var(--font, system-ui); color: var(--text, #fff); }
 /* Windows notification card (.tc.tn): grows with its text (title <= 2 lines, body <= 3, trimmed by live-ext.js to the room the OS frame leaves).
