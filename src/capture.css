@@ -59,7 +59,7 @@ body[data-mode="text"] #sel i, body[data-mode="qr"] #sel i, body[data-mode="reco
 #lensc { display: block; width: 135px; height: 135px; border-radius: 10px; image-rendering: pixelated; }
 #lensinfo { display: grid; grid-template-columns: 22px 1fr; column-gap: 8px; align-items: center; margin-top: 8px; }
 #lenssw { grid-row: span 2; width: 22px; height: 22px; border-radius: 7px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .25); }
-#lenshex { font: 700 var(--fs-md, 13px) / 16px var(--mono, Consolas, monospace); letter-spacing: .02em; }
+#lenshex { font: 600 var(--fs-md, 13px) / 16px var(--mono, Consolas, monospace); letter-spacing: .02em; }
 #lensrgb { font: 500 var(--fs-xs, 11px) / 14px var(--font, system-ui); color: #9a9a9a; font-variant-numeric: tabular-nums; }
 #lenskeys { margin-top: 8px; font: 500 var(--fs-xs, 11px) / 14px var(--font, system-ui); color: #7a7a7a; }
 #pix { position: fixed; z-index: 6; width: 14px; height: 14px; margin: -7px 0 0 -7px; box-sizing: border-box; border: 1.5px solid #fff; border-radius: 3px; box-shadow: 0 0 0 1px #000, inset 0 0 0 1px #000; pointer-events: none; }

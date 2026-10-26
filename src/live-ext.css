@@ -3,8 +3,8 @@
 .lp.lx { justify-content: center; gap: 8px; min-width: 0; font-variant-numeric: tabular-nums; }
 .lx-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #ff423a; box-shadow: 0 0 4px 1px rgba(255, 66, 58, .35); animation: lx-pulse 2s ease-in-out infinite; }
 .lx-dot.live { background: #ff6a3a; }
-.lx-lab { font: 700 var(--fs-sm, 12px) / 16px var(--font, system-ui); letter-spacing: .04em; color: #ff6b63; }
-.lx-rt { font: 700 var(--fs-md, 13px) / 18px var(--font, system-ui); color: var(--text, #fff); min-width: 30px; }
+.lx-lab { font: 600 var(--fs-sm, 12px) / 16px var(--font, system-ui); letter-spacing: .04em; color: #ff6b63; }
+.lx-rt { font: 600 var(--fs-md, 13px) / 18px var(--font, system-ui); color: var(--text, #fff); min-width: 30px; }
 .lx-sep { flex: none; width: 1px; height: 14px; margin: 0 4px; background: rgba(255, 255, 255, .18); }
 @keyframes lx-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 .rm .lx-dot { animation: none; }
@@ -14,7 +14,7 @@
 .lx-ring .bg { stroke: rgba(255, 255, 255, .16); }
 .lx-ring .fg { stroke: var(--accent, #8f96ff); stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
 .lx-g { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 var(--fs-md, 13px) / 18px var(--font, system-ui); color: var(--text, #fff); }
-.lx-p { font: 700 var(--fs-md, 13px) / 18px var(--font, system-ui); color: var(--accent, #8f96ff); white-space: nowrap; }
+.lx-p { font: 600 var(--fs-md, 13px) / 18px var(--font, system-ui); color: var(--accent, #8f96ff); white-space: nowrap; }
 .lx-sp { font: 500 var(--fs-xs, 11px) / 16px var(--font, system-ui); color: var(--text-dim, #7c7c7c); white-space: nowrap; }
 
 .tc .ti .lx-ico { font: var(--fw-bold, 700) var(--fs-lg, 16px) / 20px var(--font, system-ui); color: var(--text, #fff); }

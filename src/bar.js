@@ -34,7 +34,12 @@
     micTip: { ru: 'Диктовка (F4)', en: 'Dictate (F4)' }, micStop: { ru: 'Остановить диктовку (F4)', en: 'Stop dictation (F4)' }, micBusy: { ru: 'Распознаю…', en: 'Transcribing…' },
     voiceOff: { ru: 'Голос в текст не настроен. Нажми здесь: Настройки → «Голос в текст»', en: 'Voice to text is not set up. Click here: Settings > Voice to text' },
     voiceFail: { ru: 'Диктовка не удалась', en: 'Dictation failed' },
-    openTip: { ru: 'Enter — открыть · Ctrl+Enter — показать в папке · Ctrl+Shift+Enter — от администратора', en: 'Enter: open · Ctrl+Enter: show in folder · Ctrl+Shift+Enter: as administrator' },
+    openTip: { ru: 'Enter — открыть · Ctrl+Enter — показать в папке · Ctrl+Shift+Enter — от администратора · Ctrl+Shift+C — скопировать путь', en: 'Enter: open · Ctrl+Enter: show in folder · Ctrl+Shift+Enter: as administrator · Ctrl+Shift+C: copy path' },
+    pathTip: { ru: 'Скопировать путь (Ctrl+Shift+C)', en: 'Copy path (Ctrl+Shift+C)' },
+    adminTip: { ru: 'Запустить от имени администратора (Ctrl+Shift+Enter)', en: 'Run as administrator (Ctrl+Shift+Enter)' },
+    folderTip: { ru: 'Показать в папке (Ctrl+Enter)', en: 'Show in folder (Ctrl+Enter)' },
+    ctxOpen: { ru: 'Открыть', en: 'Open' }, ctxFolder: { ru: 'Показать в папке', en: 'Show in folder' },
+    ctxPath: { ru: 'Скопировать путь', en: 'Copy path' }, ctxAdmin: { ru: 'Запустить от имени администратора', en: 'Run as administrator' },
   };
   const SYS = {
     lock: [{ ru: 'Заблокировать компьютер', en: 'Lock the computer' }, 'lock'], sleep: [{ ru: 'Спящий режим', en: 'Sleep' }, 'moon'],
@@ -153,10 +158,21 @@
     if (!PLAIN.has(it.kind) && it.kind !== 'system') hl(tt, v.title); else tt.textContent = v.title;
     txt.append(tt);
     if (v.sub && it.kind !== 'app') { const s = document.createElement('div'); s.className = 's'; s.textContent = v.sub; txt.append(s); }
+    // app / file / folder: buttons (visible on the selected row) for copy path, run as administrator (not for folders), show in the folder
+    let acts = null;
+    if (it.kind === 'app' || it.kind === 'file' || it.kind === 'folder') {
+      acts = document.createElement('span'); acts.className = 'acts';
+      for (const [m, icon, tip] of [['path', 'copy', L.pathTip], ...(it.kind === 'folder' ? [] : [['admin', 'shield', L.adminTip]]), ['folder', 'folderOpen', L.folderTip]]) {
+        const b = document.createElement('button'); b.className = 'ab'; b.dataset.m = m; b.title = t(tip); b.tabIndex = -1;
+        b.innerHTML = ic(icon, { size: 16, sw: 1.6 }); // static markup
+        acts.append(b);
+      }
+    }
     const act = document.createElement('span'); act.className = 'act'; act.append(document.createTextNode(v.label));
     act.insertAdjacentHTML('beforeend', ic('enter', { size: 16, sw: 1.7 }));
     el._sub = v.sub;
     el.append(ico, txt, act);
+    if (acts) act.before(acts);
     return el;
   }
 
@@ -294,6 +310,7 @@
     }
     if (it.kind === 'calc' || it.kind === 'convert') await copy(it.payload); // copy before Rust hides the window
     if (!['app', 'file', 'folder', 'shelf', 'clip'].includes(it.kind)) mode = 'open'; // reveal / admin / copy-only only mean something for these
+    else if (it.kind === 'clip' && mode === 'path') mode = 'copy'; // "copy the path" of a clipboard item is its plain copy
     const r = await invoke('cmd_run', { id: it.id, mode });
     if (!r) return;
     const el = list.querySelector(`.row[data-i="${items.indexOf(it)}"]`);
@@ -319,11 +336,12 @@
   q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => (conv.length ? dlgInput() : search()), 80); });
 
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); invoke('cmd_toggle'); }
+    if (e.key === 'Escape') { e.preventDefault(); if (ctx) closeCtx(); else invoke('cmd_toggle'); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); select(sel + 1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); select(sel - 1); }
     else if (e.key === 'F4' && !e.altKey) { e.preventDefault(); dictate(); }
     else if (e.key === 'Tab') { e.preventDefault(); nextGroup(e.shiftKey ? -1 : 1); }
+    else if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') { e.preventDefault(); run(items[sel], 'path'); } // copy the path of the selected file / folder / app
     else if (e.key === 'Enter') {
       e.preventDefault();
       run(items[sel], modeOf(e));
@@ -332,14 +350,52 @@
 
   list.addEventListener('click', (e) => {
     const r = e.target.closest('.row');
-    if (r) run(items[+r.dataset.i], modeOf(e));
+    if (!r) return;
+    const b = e.target.closest('.ab'); // one of the row's own action buttons
+    run(items[+r.dataset.i], b ? b.dataset.m : modeOf(e));
   });
   list.addEventListener('mousemove', (e) => {
     const r = e.target.closest('.row');
     if (r && +r.dataset.i !== sel) select(+r.dataset.i);
   });
+  // Our own right-click menu for app / file / folder rows (open, show in folder, copy path, run as administrator). The WebView's default one
+  // (Back / Reload / Save as / Print / Inspect) is suppressed everywhere except in the search field, where Cut / Copy / Paste are useful.
+  let ctx = null;
+  const closeCtx = () => { if (ctx) { ctx.remove(); ctx = null; } };
+  function openCtx(it, x, y) {
+    closeCtx();
+    ctx = document.createElement('div'); ctx.className = 'ctx'; ctx.setAttribute('role', 'menu');
+    const defs = [['open', 'enter', L.ctxOpen, 'Enter'], ['folder', 'folderOpen', L.ctxFolder, 'Ctrl+Enter'], ['path', 'copy', L.ctxPath, 'Ctrl+Shift+C'],
+      ...(it.kind === 'folder' ? [] : [['admin', 'shield', L.ctxAdmin, 'Ctrl+Shift+Enter']])];
+    for (const [m, icon, label, key] of defs) {
+      const b = document.createElement('button'); b.className = 'it'; b.setAttribute('role', 'menuitem');
+      b.innerHTML = ic(icon, { size: 16, sw: 1.6 }); // static markup
+      const s = document.createElement('span'); s.textContent = t(label);
+      const k = document.createElement('kbd'); k.textContent = key;
+      b.append(s, k);
+      b.addEventListener('click', () => { closeCtx(); run(it, m); });
+      ctx.append(b);
+    }
+    root.append(ctx);
+    const r = ctx.getBoundingClientRect();
+    ctx.style.left = Math.max(6, Math.min(x, window.innerWidth - r.width - 6)) + 'px';
+    ctx.style.top = Math.max(6, Math.min(y, window.innerHeight - r.height - 6)) + 'px';
+  }
+  document.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('#q')) return;
+    e.preventDefault();
+    const r = e.target.closest('.row');
+    if (!r) return closeCtx();
+    const i = +r.dataset.i, it = items[i];
+    if (!it) return;
+    select(i);
+    if (it.kind === 'app' || it.kind === 'file' || it.kind === 'folder') openCtx(it, e.clientX, e.clientY); else closeCtx();
+  });
   // A click on the transparent margin around the body counts as "outside": close.
-  document.addEventListener('mousedown', (e) => { if (!e.target.closest('.body')) invoke('cmd_toggle'); });
+  document.addEventListener('mousedown', (e) => {
+    if (!e.target.closest('.ctx')) closeCtx();
+    if (!e.target.closest('.body, .ctx')) invoke('cmd_toggle');
+  });
   window.addEventListener('focus', () => q.focus());
 
   // ---- dictation: same pipeline as the Text tab (voice_* commands, voice:state events from voice.rs) ----
@@ -409,6 +465,6 @@
     search();
   }
   T.event.listen('bar:shown', reset);
-  T.event.listen('bar:hidden', () => { seq++; endDialog(); clearAns(); dictHere = false; setMic('idle'); clearTimeout(confirmTimer); q.value = ''; list.replaceChildren(); items = []; });
+  T.event.listen('bar:hidden', () => { closeCtx(); seq++; endDialog(); clearAns(); dictHere = false; setMic('idle'); clearTimeout(confirmTimer); q.value = ''; list.replaceChildren(); items = []; });
   loadCfg();
 })();

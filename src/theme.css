@@ -51,13 +51,13 @@
   /* ONE type scale (px) + weights + line heights + caps tracking. Use these, never ad-hoc 12.5 / 11.5 / 13.5.
      2xs caps labels | xs meta, captions, times | sm chrome labels (tabs, tiles, small buttons) | md body, rows, inputs | base capsule time, card titles | lg track title | xl big numerals */
   --fs-2xs: 10px; --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-base: 14px; --fs-lg: 16px; --fs-xl: 20px;
-  --fw-regular: 400; --fw-medium: 500; --fw-semi: 600; --fw-bold: 700;
+  --fw-regular: 400; --fw-medium: 500; --fw-semi: 600; --fw-bold: 600;
   --lh-tight: 1.2; --lh-text: 1.4;   /* ratios; ellipsised / clipped lines use an INTEGER px line-height >= 1.25 x size so descenders stay inside the clip box */
   --ls-caps: .06em;
   /* ONE spacing scale: paddings, gaps, insets */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35);
-  --font: "Inter", "PillUI", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font: "PillUI", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", "NotoUI", "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --mono: "Cascadia Mono", "SF Mono", Consolas, monospace;
   /* motion tokens: ONE system. Transitions use transform / opacity only; springs live in pill.js (Pill.raf) */
   --ease: cubic-bezier(0.2, 0.9, 0.3, 1);

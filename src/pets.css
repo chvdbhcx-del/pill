@@ -52,7 +52,7 @@
 /* Settings > Character: a live preview card = a 2x mock of the collapsed capsule (black, round bottom, a clock) with the pet standing inside at its right end */
 .pet-stage { position: relative; height: 92px; border-radius: 8px; background: #141316; overflow: hidden; }
 .pet-stage::before { content: ""; position: absolute; top: 0; left: 50%; width: 148px; margin-left: -74px; height: 60px; background: #000; border-radius: 0 0 30px 30px; }
-.pet-stage:not(.none)::after { content: "12:34"; position: absolute; top: 0; left: 50%; margin-left: -58px; height: 56px; display: flex; align-items: center; color: #9a9aa4; font: 700 15px / 1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.pet-stage:not(.none)::after { content: "12:34"; position: absolute; top: 0; left: 50%; margin-left: -58px; height: 56px; display: flex; align-items: center; color: #9a9aa4; font: 600 15px / 1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 .pet-stage .pet { --pet-px: min(48px, calc(100px / var(--ar, 1))); position: absolute; top: calc(56px - var(--pet-px)); right: calc(50% - 62px); }
 .pet-stage .pet[data-side="left"] { right: auto; left: calc(50% - 62px); }
 .pet-stage .pet[data-pet="claude8"] { --pet-px: 56px; }

@@ -76,9 +76,19 @@
     return w;
   }
   function seg(opts, getter, setter) {
-    const w = h('div', 'seg');
-    const draw = () => [...w.children].forEach((b, i) => b.classList.toggle('on', String(opts[i][0]) === String(getter())));
-    opts.forEach(([v, l]) => { const b = h('button', '', l); b.type = 'button'; b.onclick = () => { setter(v); draw(); }; w.append(b); });
+    const w = h('div', 'seg'), ind = h('i', 'ind'), bs = [];
+    // the selected pill is one element that slides to the chosen button (first placement without the glide)
+    let placed = false;
+    const place = () => {
+      const b = bs.find((x) => x.classList.contains('on'));
+      if (!b || !b.offsetWidth) return;
+      ind.style.width = b.offsetWidth + 'px'; ind.style.transform = `translateX(${b.offsetLeft}px)`;
+      if (!placed) { placed = true; requestAnimationFrame(() => w.classList.add('anim')); }
+    };
+    const draw = () => { bs.forEach((b, i) => b.classList.toggle('on', String(opts[i][0]) === String(getter()))); place(); };
+    w.append(ind);
+    opts.forEach(([v, l]) => { const b = h('button', '', l); b.type = 'button'; b.onclick = () => { setter(v); draw(); }; bs.push(b); w.append(b); });
+    if (window.ResizeObserver) new ResizeObserver(place).observe(w);
     syncs.push(draw); draw();
     return w;
   }
@@ -883,7 +893,11 @@
     const page = $('#page');
     const next = h('div');
     next.append(h('h1', '', t(pg.head || pg.name)));
-    page.replaceChildren(next);     // hard cut: the old page is gone in the same frame
+    page.replaceChildren(next);
+    // the new page rises and fades in (WAAPI, no stylesheet needed; skipped with reduced motion)
+    if (next.animate && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      next.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    }
     $('#content').scrollTop = 0;
     await safe(pg.build, next);
   }

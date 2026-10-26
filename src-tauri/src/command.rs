@@ -21,8 +21,8 @@ use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow, SW_SHOWNORMAL};
 
 const LABEL: &str = "bar";
-const WIN_W: f64 = 680.0;
-const WIN_H: f64 = 420.0;
+const WIN_W: f64 = 560.0;
+const WIN_H: f64 = 350.0;
 const LIMIT: usize = 6;
 const NO_WINDOW: u32 = 0x0800_0000;
 const APPS_PREFIX: &str = r"shell:AppsFolder\";
@@ -110,6 +110,21 @@ pub fn init(app: &tauri::App) {
     // the command-bar hotkey is registered (and re-registered live) by hotkeys.rs
 }
 
+/// tao makes a transparent window by switching DWM blur-behind on with an empty region, once, when the window is created (it even has a FIXME
+/// about redoing it). Whatever switches blur-behind off afterwards leaves the window an opaque black slab until it is recreated: a Windhawk mod
+/// such as Translucent Windows restoring every window it touched when it is unloaded, a DWM restart. So the windows re-assert it (it is idempotent).
+pub fn keep_transparent(win: &WebviewWindow) {
+    use windows::Win32::Graphics::Dwm::{DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND};
+    use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject};
+    let Ok(h) = win.hwnd() else { return };
+    unsafe {
+        let region = CreateRectRgn(0, 0, -1, -1);
+        let bb = DWM_BLURBEHIND { dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION, fEnable: true.into(), hRgnBlur: region, fTransitionOnMaximized: false.into() };
+        let _ = DwmEnableBlurBehindWindow(HWND(h.0 as isize as *mut std::ffi::c_void), &bb);
+        let _ = DeleteObject(windows::Win32::Graphics::Gdi::HGDIOBJ(region.0));
+    }
+}
+
 fn hide(app: &AppHandle) {
     *STORE.lock().unwrap() = None; // in-app rows (clipboard text, notes) live in memory only while the bar is open
     if let Some(win) = app.get_webview_window(LABEL) {
@@ -151,6 +166,7 @@ fn toggle(app: &AppHandle) {
     PREV_FG.store(unsafe { GetForegroundWindow() }.0 as isize, Ordering::Relaxed);
     place(app, &win);
     index_apps_async();
+    keep_transparent(&win);
     let _ = win.show();
     let _ = win.set_focus();
     let _ = app.emit_to(LABEL, "bar:shown", ());
@@ -659,6 +675,7 @@ pub fn cmd_run(app: AppHandle, id: String, mode: String) -> Outcome {
                     Ok(_) => ok(),
                     Err(e) => err(e.to_string()),
                 },
+                "path" => Outcome { status: "copy", message: t.clone() }, // the page puts the path on the clipboard and closes the bar
                 "admin" => shell_execute(w!("runas"), &t), // UAC prompt is the user's; the app never elevates itself
                 _ => shell_execute(w!("open"), &t),
             };

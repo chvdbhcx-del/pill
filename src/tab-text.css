@@ -42,7 +42,7 @@
 .tab-text .tt-seg { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-1, 4px); padding: var(--sp-1, 4px); background: var(--pn); border-radius: 12px; flex: none; }
 .tab-text .tt-seg button {
   all: unset; box-sizing: border-box; height: 26px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px;
-  color: var(--dim); font-size: var(--fs-sm, 12px); font-weight: 700; line-height: normal; cursor: pointer; transition: background 0.15s, color 0.15s;
+  color: var(--dim); font-size: var(--fs-sm, 12px); font-weight: 600; line-height: normal; cursor: pointer; transition: background 0.15s, color 0.15s;
 }
 .tab-text .tt-seg button.on { background: var(--pn3); color: var(--fg); }
 .tab-text [hidden] { display: none !important; }
@@ -65,7 +65,7 @@
 .tab-text .tt-grid::-webkit-scrollbar-thumb { background: var(--pn3); border-radius: 3px; }
 .tab-text .tt-tool {
   all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 0 var(--sp-2, 8px); border-radius: 12px; background: var(--pn);
-  color: var(--fg); font-size: var(--fs-sm, 12px); font-weight: 700; line-height: normal; text-align: center; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--fg); font-size: var(--fs-sm, 12px); font-weight: 600; line-height: normal; text-align: center; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   transition: background 0.12s, transform 0.08s;
 }
 .tab-text .tt-tool:hover { background: var(--pn2); }

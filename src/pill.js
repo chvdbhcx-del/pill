@@ -798,7 +798,7 @@
       btn.innerHTML = `${o.icon || ''}<span class="tl"></span><span class="tb"></span>`;
       btn.querySelector('.tl').textContent = rec.title;
       // whole-pixel label width (--tw, used by .tab .tl in pill.css): a fractional width put every tab after the active one on x.39 and blurred their icons
-      const fitTl = () => { const c = fitTl.c || (fitTl.c = document.createElement('canvas').getContext('2d')); c.font = '700 12px Inter, PillUI, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif'; btn.style.setProperty('--tw', Math.ceil(c.measureText(rec.title).width + 0.5) + 'px'); };
+      const fitTl = () => { const c = fitTl.c || (fitTl.c = document.createElement('canvas').getContext('2d')); c.font = '600 12px PillUI, "Segoe UI Variable Text", "Segoe UI", NotoUI, Inter, system-ui, sans-serif'; btn.style.setProperty('--tw', Math.ceil(c.measureText(rec.title).width + 0.5) + 'px'); };
       fitTl(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTl);
       btn.title = rec.title;
       btn.onclick = () => { chosen = true; activate(o.id, true); };

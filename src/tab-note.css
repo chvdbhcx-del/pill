@@ -12,7 +12,7 @@
 .tab-note .tn-chips { flex: none; height: 24px; display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
 .tab-note .tn-chips::-webkit-scrollbar { display: none; }
 .tab-note .tn-chip { all: unset; box-sizing: border-box; flex: none; max-width: 130px; height: 24px; padding: 0 12px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: var(--pn); color: var(--dim);
-  font: 700 var(--fs-xs, 11px) / 1 var(--font); white-space: nowrap; cursor: pointer; transition: background 0.12s, color 0.12s; }
+  font: 600 var(--fs-xs, 11px) / 1 var(--font); white-space: nowrap; cursor: pointer; transition: background 0.12s, color 0.12s; }
 .tab-note .tn-chip .tn-tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tab-note .tn-chip:hover { color: var(--fg); }
 .tab-note .tn-chip.on { background: var(--pn3); color: var(--fg); }
@@ -77,7 +77,7 @@
 .tab-note .tn-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2, 8px); padding-top: 0; }
 /* 36 + 8 + 24 = 68 = the ring's height */
 .tab-note .tn-start { all: unset; box-sizing: border-box; height: 36px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 12px; background: var(--tm); color: #1b1200; cursor: pointer;
-  font: 700 var(--fs-md, 13px) var(--font); transition: filter 0.12s, transform 0.08s; }
+  font: 600 var(--fs-md, 13px) var(--font); transition: filter 0.12s, transform 0.08s; }
 .tab-note .tn-start:hover { filter: brightness(1.08); }
 .tab-note .tn-start:active { transform: scale(0.97); }
 .tab-note .tn-start svg { width: 12px; height: 12px; }
@@ -92,12 +92,12 @@
 .tab-note .tn-presets { flex: none; display: grid; grid-template-columns: repeat(5, 32px) minmax(0, 1fr); align-items: center; gap: var(--sp-1, 4px); margin-top: var(--sp-3, 12px); }
 .tab-note .tn-p { all: unset; box-sizing: border-box; min-width: 32px; height: 24px; padding: 0 4px; display: grid; place-items: center; border-radius: 12px; background: var(--pn2); color: var(--fg2); cursor: pointer; font: 600 var(--fs-xs, 11px) var(--font); font-variant-numeric: tabular-nums; transition: background 0.12s, color 0.12s; }
 .tab-note .tn-p:hover { color: var(--fg); }
-.tab-note .tn-p.on { background: var(--pn3); color: var(--fg); font-weight: 700; }
+.tab-note .tn-p.on { background: var(--pn3); color: var(--fg); font-weight: 600; }
 .tab-note .tn-unit { margin-left: 2px; color: var(--dim); font-size: var(--fs-xs, 11px); }
 .tab-note hr { flex: none; width: 100%; height: 0; margin: var(--sp-3, 12px) 0 var(--sp-2, 8px); border: 0; border-top: 1px solid var(--line, rgba(255, 255, 255, 0.08)); }
 
 /* reminders: header icon and row icon share one centre (x = 6 + 7 = 13 px from the list edge), header text and row text share one left edge (28 px) */
-.tab-note .tn-rhead { flex: none; display: flex; align-items: center; gap: var(--sp-2, 8px); margin: 0 0 4px 6px; font: 700 var(--fs-sm, 12px) var(--font); color: var(--fg2); }
+.tab-note .tn-rhead { flex: none; display: flex; align-items: center; gap: var(--sp-2, 8px); margin: 0 0 4px 6px; font: 600 var(--fs-sm, 12px) var(--font); color: var(--fg2); }
 .tab-note .tn-rhead svg { width: 14px; height: 14px; color: var(--dim); }
 .tab-note .tn-rhead:not([data-n=""])::after { content: attr(data-n); padding: 1px 6px; border-radius: 8px; background: var(--pn3); color: var(--fg2); font-size: var(--fs-2xs, 10px); font-variant-numeric: tabular-nums; }
 .tab-note .tn-rlist { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; scrollbar-color: var(--pn3) transparent; }
@@ -110,7 +110,7 @@
 .tab-note .tn-r-text { font: 600 var(--fs-sm, 12px) / 16px var(--font); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tab-note .tn-r-meta { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs, 11px); line-height: 16px; color: var(--dim); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
 .tab-note .tn-r.od .tn-r-meta, .tab-note .tn-r.od .tn-r-ic { color: var(--red, #ff453a); }
-.tab-note .tn-badge { padding: 0 6px; border-radius: 8px; background: var(--amber-bg, rgba(255, 179, 64, 0.16)); color: var(--tm); font-size: var(--fs-2xs, 10px); font-weight: 700; line-height: 16px; flex: none; }
+.tab-note .tn-badge { padding: 0 6px; border-radius: 8px; background: var(--amber-bg, rgba(255, 179, 64, 0.16)); color: var(--tm); font-size: var(--fs-2xs, 10px); font-weight: 600; line-height: 16px; flex: none; }
 .tab-note .tn-r-act { display: none; flex: none; align-items: center; gap: 0; background: linear-gradient(90deg, transparent, var(--pn2) 14px); padding-left: 14px; }
 .tab-note .tn-r:hover .tn-r-act { display: flex; position: absolute; right: 2px; top: 50%; transform: translateY(-50%); height: 100%; }
 .tab-note .tn-r-act button { all: unset; box-sizing: border-box; width: 24px; height: 24px; align-self: center; display: grid; place-items: center; border-radius: 8px; color: var(--fg2); cursor: pointer; }
@@ -136,7 +136,7 @@
   .tab-note .tn-tx, .tab-note .tn-start > span, .tab-note .tn-ctime > span, .tab-note .tn-remind > span, .tab-note .tn-rhead > span, .tab-note .tn-unit, .tab-note .tn-t > b, .tab-note .tn-t > i, .tab-note .tn-t > s { text-box: trim-both cap alphabetic; }
 }
 .tab-note .tn-t > b, .tab-note .tn-t > i, .tab-note .tn-t > s { line-height: 1; }
-.tab-note .tn-time { position: absolute; inset: 0; display: grid; place-items: center; --tf: var(--fs-lg, 16px); font: 700 var(--tf) / 1 var(--font); font-variant-numeric: tabular-nums; color: var(--fg); pointer-events: none; }
+.tab-note .tn-time { position: absolute; inset: 0; display: grid; place-items: center; --tf: var(--fs-lg, 16px); font: 600 var(--tf) / 1 var(--font); font-variant-numeric: tabular-nums; color: var(--fg); pointer-events: none; }
 .tab-note .tn-time[data-len="5"] { --tf: var(--fs-base, 14px); }
 .tab-note .tn-time[data-len="6"] { --tf: var(--fs-md, 13px); }
 .tab-note .tn-time[data-len="7"], .tab-note .tn-time[data-len="8"] { --tf: var(--fs-sm, 12px); }

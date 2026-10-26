@@ -2,8 +2,8 @@
    loaded by pill.html; user request: "keyboard layout indicator and copy reaction for the pill"). Scoped to .lv. */
 .lp.lv { justify-content: center; gap: 8px; min-width: 0; }
 .lv .lv-ico { display: grid; place-items: center; width: 18px; height: 18px; color: var(--text-dim, #9a9a9a); }
-.lv .lv-code { font-size: var(--fs-base, 14px); line-height: 18px; font-weight: 700; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; color: var(--text, #fff); }
-.lv .lv-txt { font-size: var(--fs-base, 14px); line-height: 18px; font-weight: 700; color: var(--text, #fff); }
+.lv .lv-code { font-size: var(--fs-base, 14px); line-height: 18px; font-weight: 600; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; color: var(--text, #fff); }
+.lv .lv-txt { font-size: var(--fs-base, 14px); line-height: 18px; font-weight: 600; color: var(--text, #fff); }
 .lv .lv-dim { font-size: var(--fs-md, 13px); line-height: 18px; font-weight: 500; color: var(--text-dim, #9a9a9a); }
 .lv-copy .lv-ico { color: var(--accent, #fff); }
 .lv-kbd, .lv-copy { animation: lv-fade var(--dur-med, .22s) var(--ease-out, ease-out), lv-scale .4s var(--spring-pop, var(--ease-spring, ease-out)); }
@@ -42,7 +42,7 @@
 .lv-dl .dl-ring .bg { stroke: var(--raised-2, #292929); }
 .lv-dl .dl-ring .fg { stroke: var(--accent, #8f96ff); stroke-linecap: round; transition: stroke-dasharray .4s var(--ease-out, ease-out); }
 .lv-dl .dl-ring.ind { animation: dl-spin 1s linear infinite; }
-.lv-dl .dl-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-base, 14px); line-height: 18px; font-weight: 700; color: var(--text, #fff); }
+.lv-dl .dl-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-base, 14px); line-height: 18px; font-weight: 600; color: var(--text, #fff); }
 .lv-dl .dl-more:empty { display: none; }
 @keyframes dl-spin { to { transform: rotate(270deg); } }
 .lv-vol { animation: lv-fade var(--dur-med, .22s) var(--ease-out, ease-out), lv-scale .4s var(--spring-pop, var(--ease-spring, ease-out)); }
