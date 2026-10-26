@@ -2,6 +2,20 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.3.1] - 2026-10-26
+
+### Added
+- Command bar: the selected app / file / folder row has buttons, and a right-click menu of its own: open, show in folder, copy the path (Ctrl+Shift+C), run as administrator (Ctrl+Shift+Enter). The WebView's default context menu (Back / Reload / Save as / Print) is gone from the bar.
+
+### Changed
+- Command bar is smaller (560 x 350, compact rows, 15 px input).
+- Type: Segoe UI Variable first (the metrics the layout is built on), Noto Sans bundled as a fallback; every bold label is weight 600; smaller text in the collapsed island, the temperature sits on the clock's line, "Agent working" is lighter.
+- Settings window: a page fades in on change, the selected segment pill slides, dependent rows fade.
+
+### Fixed
+- A transparent window could turn into an opaque black slab when something switched DWM blur-behind off after it was created (for example a Windhawk mod unloading); the bar re-asserts it every time it opens and the island every 10 s.
+- Steam downloads: the chip follows the app-state phases (downloading / staging / committing) and the live size of steamapps\downloading, so it no longer sits at 0 % while Steam has not rewritten the manifest yet.
+
 ## [0.3.0] - 2026-10-25
 
 ### Added
