@@ -1025,7 +1025,7 @@ fn pick_encoder(ffmpeg: &Path) -> Enc {
 }
 
 /// Kill-on-close job: if the pill dies, ffmpeg dies with it instead of recording forever.
-fn job_for(child: &Child) -> isize {
+pub(crate) fn job_for(child: &Child) -> isize {
     unsafe {
         let Ok(job) = CreateJobObjectW(None, PCWSTR::null()) else { return 0 };
         let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();

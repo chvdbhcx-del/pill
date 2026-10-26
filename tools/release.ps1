@@ -30,7 +30,8 @@ Write-Host "Building Pill $ver ..."
 npm run tauri build -- --bundles nsis
 if ($LASTEXITCODE -ne 0) { throw 'tauri build failed' }
 
-$dir = Join-Path $root 'src-tauri\target\release\bundle\nsis'
+$tgt = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root 'src-tauri\target' }
+$dir = Join-Path $tgt 'release\bundle\nsis'
 $exe = Join-Path $dir "Pill_${ver}_x64-setup.exe"
 $sig = "$exe.sig"
 if (-not (Test-Path $exe) -or -not (Test-Path $sig)) { throw "Missing $exe or its .sig (is bundle.createUpdaterArtifacts on and the key readable?)" }

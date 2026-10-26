@@ -53,41 +53,17 @@
   // ---- wavy outline along the bottom edge (pure decoration; accent coloured while a live widget asks for it) ----
   const SVGNS = 'http://www.w3.org/2000/svg';
   // ---- ONE shared rAF scheduler: Pill.raf(fn) registers fn(dt, now) and keeps it running while it returns truthy. Paused while the pill is hidden or the window is occluded. ----
-  const rafSet = new Set();
+  const rafSet = new Set(), rafBuf = []; // rafBuf: per-frame snapshot of rafSet, reused
   let rafId = 0, rafLast = 0;
-  // display refresh: average of 60-90 rAF deltas (outliers dropped), measured when the loop first runs and again on a DPI / screen change; snapped to a real panel rate
-  const HZ = [30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 180, 240, 360];
-  let hz = 60, hzProbe = { d: [], last: 0 }, fpsCap = 0; // fpsCap: setting `fps` (30 | 60 | 120 | 144 | 240), 0 = auto = no cap
-  let hzKey = '';
-  const hzSig = () => `${window.devicePixelRatio || 1}|${screen.width}x${screen.height}|${screen.availLeft ?? ''}`;
-  let hzBusy = false, hzAt = 0;
-  // standalone burst of 75 rAF frames: the shared scheduler sleeps when nothing animates, so it cannot measure reliably
-  function measureHz() {
-    if (hzBusy) return;
-    hzBusy = true; hzProbe = null;
-    const d = []; let last = 0, n = 0;
-    const step = (now) => {
-      if (document.hidden || hidden) { hzBusy = false; return; } // rAF is throttled while hidden: try again on the next show
-      if (last) d.push(now - last);
-      last = now;
-      if (++n < 76) { requestAnimationFrame(step); return; }
-      hzBusy = false; hzKey = hzSig(); hzAt = performance.now();
-      const s = [...d].sort((a, b) => a - b), med = s[s.length >> 1], ok = d.filter((x) => x < med * 1.5);
-      const f = 1000 / (ok.reduce((a, b) => a + b, 0) / ok.length);
-      if (isFinite(f) && f > 20) hz = HZ.reduce((b, c) => (Math.abs(c - f) < Math.abs(b - f) ? c : b), HZ[0]);
-    };
-    requestAnimationFrame(step);
-  }
-  const hzSample = () => {}; // kept so the scheduler hook below stays a no-op
-  setTimeout(measureHz, 1500); // first measurement once the page has settled
-  const rafWake = () => { if (!rafId && rafSet.size && !hidden && !document.hidden) { rafLast = performance.now(); if (hzProbe) hzProbe.last = 0; rafId = requestAnimationFrame(rafStep); } };
+  let fpsCap = 0; // fpsCap: setting `fps` (30 | 60 | 120 | 144 | 240), 0 = auto = no cap
+  const rafWake = () => { if (!rafId && rafSet.size && !hidden && !document.hidden) { rafLast = performance.now(); rafId = requestAnimationFrame(rafStep); } };
   function rafStep(now) {
     rafId = 0;
-    if (hzProbe) hzSample(now);
     if (fpsCap && now - rafLast < 1000 / fpsCap - 1.5) { rafId = requestAnimationFrame(rafStep); return; } // user frame cap: skip this display frame, dt stays measured from the last executed one
     const t0 = Pill.perf ? performance.now() : 0, dt = Math.max(0, Math.min((now - rafLast) / 1000, 1 / 20));
     rafLast = now;
-    for (const f of [...rafSet]) { let keep = false; try { keep = !!f(dt, now); } catch (e) { console.error(e); } if (!keep) rafSet.delete(f); }
+    rafBuf.length = 0; for (const f of rafSet) rafBuf.push(f);
+    for (const f of rafBuf) { let keep = false; try { keep = !!f(dt, now); } catch (e) { console.error(e); } if (!keep) rafSet.delete(f); }
     if (Pill.perf) { Pill.perf.n++; Pill.perf.ms += performance.now() - t0; }
     rafWake();
   }
@@ -271,10 +247,14 @@
     lctx.beginPath();
     for (let k = 0; k < n; k++) (k ? lctx.lineTo(o + PX[k], up + PY[k]) : lctx.moveTo(o + PX[0], up + PY[0])); // the very same polyline as the fill edge
     lctx.lineJoin = 'round'; lctx.lineCap = 'round';
-    const gr = lctx.createLinearGradient(o - half, 0, o + half, 0), rgb = rp.noline ? '30,30,30' : LQ.rgb, fd = 0.15; // the stroke dissolves over the last 15 % at both ends
-    gr.addColorStop(0, `rgba(${rgb},0)`); gr.addColorStop(fd * 0.5, `rgba(${rgb},0.3)`); gr.addColorStop(fd, `rgba(${rgb},1)`);
-    gr.addColorStop(1 - fd, `rgba(${rgb},1)`); gr.addColorStop(1 - fd * 0.5, `rgba(${rgb},0.3)`); gr.addColorStop(1, `rgba(${rgb},0)`);
-    lctx.strokeStyle = gr;
+    const rgb = rp.noline ? '30,30,30' : LQ.rgb, fd = 0.15, gk = `${half}|${rgb}`; // the stroke dissolves over the last 15 % at both ends; the gradient is rebuilt only when its span / colour changes
+    if (LQ.grKey !== gk) {
+      const gr = lctx.createLinearGradient(o - half, 0, o + half, 0);
+      gr.addColorStop(0, `rgba(${rgb},0)`); gr.addColorStop(fd * 0.5, `rgba(${rgb},0.3)`); gr.addColorStop(fd, `rgba(${rgb},1)`);
+      gr.addColorStop(1 - fd, `rgba(${rgb},1)`); gr.addColorStop(1 - fd * 0.5, `rgba(${rgb},0.3)`); gr.addColorStop(1, `rgba(${rgb},0)`);
+      LQ.gr = gr; LQ.grKey = gk;
+    }
+    lctx.strokeStyle = LQ.gr;
     if (rp.noline) { lctx.lineWidth = 1.2; lctx.stroke(); } // sleep: just a dark bowl edge
     else {
       // glow: two wider, translucent passes under the line (cheaper than shadowBlur every frame) so the edge also reads on light / grey wallpapers
@@ -406,7 +386,7 @@
     // Band values are dB (0..1 = -60..0 dB), so most bands sit high all the time. Level = distance below ONE running peak shared by all bands, seen through a
     // ~23 dB window: the frequencies that are really loud reach the top, quiet ones stay flat, and a few dB of beat movement is a visible swing.
     // The tilt (+6 dB at the top) makes up for music's natural treble roll-off.
-    const W = 0.38, adj = new Float32Array(32);
+    const W = 0.38, adj = LQ.adj || (LQ.adj = new Float32Array(32));
     let mx = 0;
     for (let k = 0; k < 32; k++) { const raw = Math.max(0, Math.min(1, +p.b[k] || 0)); sum += raw; adj[k] = raw + 0.1 * k / 31; mx = Math.max(mx, adj[k]); }
     LQ.gpk = Math.max(mx, (LQ.gpk || 0.5) * kd);
@@ -543,9 +523,9 @@
     LQ.lastH = sp.h.x;
     if (imp && Math.abs(d) > 0.02 && !reduce() && !hidden) liqImpulse(d);
   }
-  const onResize = () => { applyOffsets(); paintBody(false); liqSize(); if (!rafSet.has(tick)) liqStatic(); if (!hzProbe && hzKey && hzKey !== hzSig()) measureHz(); };
+  const onResize = () => { applyOffsets(); paintBody(false); liqSize(); if (!rafSet.has(tick)) liqStatic(); };
   window.addEventListener('resize', onResize);
-  (function watchDpr() { const mq = matchMedia(`(resolution: ${dpr()}dppx)`); mq.addEventListener('change', () => { onResize(); measureHz(); watchDpr(); }, { once: true }); })(); // monitor / DPI change: layout + refresh rate again
+  (function watchDpr() { const mq = matchMedia(`(resolution: ${dpr()}dppx)`); mq.addEventListener('change', () => { onResize(); watchDpr(); }, { once: true }); })(); // monitor / DPI change: layout again
   function finish() {
     const fs = pending.splice(0);
     fs.forEach((f) => safe(f));
@@ -705,7 +685,7 @@
       if (!best || v.p > best.p) { best = v; bid = id; }
     }
     if (best) {
-      const html = /class="lp[\s"]/.test(best.html) ? best.html : `<div class="lp">${best.html}</div>`, key = bid + '|' + html;
+      const html = /class="lp[\s"]/.test(best.html) ? best.html : `<div class="lp">${best.html}</div>`, key = bid + '|' + (best.key || html); // best.key: the caller edits the row in place, only a new key re-renders it
       if (key !== liveKey) { liveKey = key; clockSig = ''; clockTime = null; liveGhost(); liveIn.innerHTML = html; sizeLive(); swapFx(); }
     } else renderClock();
     const accent = best && best.accent ? best.accent : '';
@@ -1135,14 +1115,13 @@
     _lq: LQ, // debug / harness
     // edge colour override for the liquid outline (null = default / accent of the live widget)
     setEdgeColor(c) { LQ.override = c || ''; liqColors(); if (!rafSet.has(tick)) liqStatic(); },
-    get hz() { return hz; },   // measured display refresh (Hz), snapped to a real panel rate; 60 until the first measurement (75 rAF frames) is done
     get fps() { return fpsCap; }, // user frame cap of the shared loop (setting `fps`), 0 = auto = display rate
     perf: null, // set to { n: 0, ms: 0 } to measure the cost of the shared rAF loop
     // weather lane: Pill.setClockSlots({ left: '<span class="lp-ico lp-sun">…</span>', right: '<span class="lp-aux">16°</span>' }); null clears
     setClockSlots(o) { slots = { left: (o && o.left) || '', right: (o && o.right) || '' }; invalidateLive(); renderLive(); },
-    setLive(id, w) { // w: { priority, html, ttlMs, accent } ; accent colours (and animates) the wavy outline
+    setLive(id, w) { // w: { priority, html, key?, ttlMs, accent } ; key: the row is re-rendered only when it changes (the caller edits it in place) ; accent colours (and animates) the wavy outline
       if (!w) lives.delete(id);
-      else { lives.set(id, { p: w.priority || 0, html: w.html || '', until: w.ttlMs ? Date.now() + w.ttlMs : 0, accent: w.accent || '' }); reveal(); }
+      else { lives.set(id, { p: w.priority || 0, html: w.html || '', key: w.key || '', until: w.ttlMs ? Date.now() + w.ttlMs : 0, accent: w.accent || '' }); reveal(); }
       if (!hidden) renderLive();
     },
     toast,
@@ -1186,7 +1165,7 @@
     forceCollapse();
   });
   window.addEventListener('load', () => { if (wx) { invalidateLive(); renderLive(); } }); // tab-weather.js (PillWxIcon) is loaded by now: redraw the clock row with the coloured icon
-  on('pill:show', () => { hidden = false; syncPaused(); if (hzKey !== hzSig() || performance.now() - hzAt > 60000) setTimeout(measureHz, 400); rafWake(); wxOnShow(); away = false; body.classList.remove('away'); retarget(true); renderLive(); pollBattery(); scheduleAway(); next(); });
+  on('pill:show', () => { hidden = false; syncPaused(); rafWake(); wxOnShow(); away = false; body.classList.remove('away'); retarget(true); renderLive(); pollBattery(); scheduleAway(); next(); });
   on('settings:changed', (p) => {
     Object.assign(S, p); applySettings(); checkLang();
     if (wxWanted() !== wxNet) refreshWeather();

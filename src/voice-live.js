@@ -36,7 +36,7 @@
   document.head.append(css);
 
   const BARS = [0.55, 0.8, 1, 0.8, 0.55]; // centre bar follows the level most
-  let startedAt = 0, timer = 0, state = 'idle', lvl = 0, shown = 0;
+  let startedAt = 0, timer = 0, state = 'idle', lvl = 0, shown = 0, hid = false;
 
   function recChip() {
     return `<div class="lp vc-live" title="${esc(t({ ru: 'Диктовка: говорите', en: 'Dictating: speak now' }))}"><span class="vc-dot"></span><span class="vc-t">${clock(Date.now() - startedAt)}</span>`
@@ -51,6 +51,7 @@
     const s = clock(Date.now() - startedAt);
     document.querySelectorAll('.vc-t').forEach((e) => { if (e.textContent !== s) e.textContent = s; });
   }
+  const arm = () => { clearInterval(timer); timer = state === 'recording' && !hid ? setInterval(tick, 250) : 0; }; // no ticks while the island is hidden (nobody sees the text)
   function paintMeter() {
     shown += (lvl - shown) * 0.6; // light smoothing on top of Rust's 25 Hz
     document.querySelectorAll('.vc-meter').forEach((m) => {
@@ -80,8 +81,7 @@
       lvl = shown = 0;
       P.setLive('voice', { priority: 96, accent: '#ff5a4e', html: recChip(), ttlMs: null });
       P.react('voice', 'attention', { ttlMs: 1600 });
-      clearInterval(timer);
-      timer = setInterval(tick, 250);
+      arm();
     } else if (p.state === 'transcribing') {
       clearInterval(timer);
       P.setLive('voice', { priority: 96, html: busyChip(), ttlMs: null });
@@ -110,6 +110,8 @@
     }
   }
 
+  T.event.listen('pill:hide', () => { hid = true; arm(); });
+  T.event.listen('pill:show', () => { hid = false; tick(); arm(); });
   T.event.listen('voice:state', (e) => onState(e.payload));
   T.event.listen('voice:level', (e) => {
     const p = e.payload;

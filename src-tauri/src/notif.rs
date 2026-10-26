@@ -9,7 +9,6 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
 use tauri::{AppHandle, Emitter, Listener};
 use windows::UI::Notifications::Management::{UserNotificationListener, UserNotificationListenerAccessStatus};
 use windows::UI::Notifications::NotificationKinds;
@@ -60,7 +59,7 @@ fn sync(app: &AppHandle) {
         return;
     }
     *a = want;
-    let g = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let g = crate::wake::bump(&GEN);
     if want {
         let app = app.clone();
         std::thread::spawn(move || run(app, g));
@@ -120,13 +119,7 @@ fn poll(l: &UserNotificationListener, seen: &mut HashSet<u32>, primed: &mut bool
 }
 
 fn nap(gen: u64, ms: u64) -> bool {
-    for _ in 0..ms / 250 {
-        if GEN.load(Ordering::SeqCst) != gen {
-            return false;
-        }
-        std::thread::sleep(Duration::from_millis(250));
-    }
-    GEN.load(Ordering::SeqCst) == gen
+    crate::wake::nap(&GEN, gen, ms)
 }
 
 fn run(app: AppHandle, gen: u64) {
@@ -176,7 +169,7 @@ pub fn notif_request(app: AppHandle) -> Value {
     let st = access(true);
     if crate::settings::get_bool("live.notifications", true) {
         set_status(st);
-        let g = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+        let g = crate::wake::bump(&GEN);
         if st != "unsupported" {
             let app = app.clone();
             std::thread::spawn(move || run(app, g));

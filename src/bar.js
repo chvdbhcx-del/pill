@@ -63,8 +63,11 @@
   const msg = document.getElementById('msg'), wv = body.querySelector('.wv'), ans = document.getElementById('ans'), dlgHint = document.getElementById('dlg'), mic = document.getElementById('mic');
 
   // wavy outline along the bottom edge (decoration, same idea as the pill)
+  let waveW = 0; // the path depends on the width only: the observer also fires on every height change (each keystroke that resizes the list)
   function wave() {
     const w = Math.max(40, Math.round(body.getBoundingClientRect().width - 60)), pts = [], taper = 40;
+    if (w === waveW) return;
+    waveW = w;
     for (let x = 0; x <= w; x += 3) {
       const e = Math.min(1, x / taper, (w - x) / taper), k = e * e * (3 - 2 * e);
       pts.push(`${x} ${(8 + 2.4 * k * Math.sin((x / 56) * 6.2832)).toFixed(2)}`);
@@ -137,11 +140,11 @@
   }
 
   // app / file / folder rows show the real shell icon (an app's own icon, a file type's icon, the folder icon); the glyph stays until it loads
-  const ICONS = new Map(); // result id -> data URL ('' = none), kept for the session
+  const ICONS = new Map(), ICONS_MAX = 300; // result id -> data URL ('' = none), kept for the session; oldest entries drop out beyond ICONS_MAX
   function shellIcon(it, ico) {
     const put = (u) => { if (!u) return; const im = new Image(); im.src = u; im.alt = ''; im.draggable = false; ico.classList.add('shell'); ico.replaceChildren(im); };
     if (ICONS.has(it.id)) return put(ICONS.get(it.id));
-    invoke('cmd_icon', { id: it.id }).then((u) => { ICONS.set(it.id, u || ''); put(u); });
+    invoke('cmd_icon', { id: it.id }).then((u) => { ICONS.set(it.id, u || ''); if (ICONS.size > ICONS_MAX) ICONS.delete(ICONS.keys().next().value); put(u); });
   }
 
   function row(it, i) {

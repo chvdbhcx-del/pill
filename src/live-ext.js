@@ -21,6 +21,9 @@
 
   // ---------------------------------------------------------------- OBS
   const obs = { rec: 0, live: 0, tick: 0 }; // start times (epoch ms), 0 = not active
+  let obsHid = false;
+  const obsTick = () => document.querySelectorAll('.lx-rt').forEach((e) => { const s = clock(Date.now() - (+e.dataset.since || Date.now())); if (e.textContent !== s) e.textContent = s; });
+  const obsArm = () => { clearInterval(obs.tick); obs.tick = (obs.rec || obs.live) && !obsHid ? setInterval(obsTick, 500) : 0; }; // no ticks while the island is hidden (nobody sees the text)
   function obsRender() {
     if (!P.liveOn('obs') || (!obs.rec && !obs.live)) {
       P.setLive('obs', null);
@@ -30,8 +33,10 @@
     const part = (cls, label, since) => `<span class="lx-dot ${cls}"></span><b class="lx-lab ${cls}">${label}</b><span class="lx-rt" data-since="${since}">${clock(Date.now() - since)}</span>`;
     const html = [obs.rec && part('rec', 'REC', obs.rec), obs.live && part('live', 'LIVE', obs.live)].filter(Boolean).join('<span class="lx-sep"></span>');
     P.setLive('obs', { priority: 90, ttlMs: null, accent: '#ff423a', html: `<div class="lp lx lx-obs" title="${esc(t({ ru: 'OBS записывает или ведёт трансляцию', en: 'OBS is recording or streaming' }))}">${html}</div>` });
-    if (!obs.tick) obs.tick = setInterval(() => document.querySelectorAll('.lx-rt').forEach((e) => { const s = clock(Date.now() - (+e.dataset.since || Date.now())); if (e.textContent !== s) e.textContent = s; }), 500);
+    if (!obs.tick && !obsHid) obsArm();
   }
+  T.event.listen('pill:hide', () => { obsHid = true; obsArm(); });
+  T.event.listen('pill:show', () => { obsHid = false; obsTick(); obsArm(); });
   on('live:obs', (p) => {
     if (!p) return;
     obs.rec = p.recording ? (obs.rec || Date.now() - (+p.recMs || 0)) : 0; // a stream event must not restart a running REC timer

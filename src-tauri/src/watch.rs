@@ -1,6 +1,6 @@
 // Keyboard-layout watcher (GateGuard note: new file for the Pill app, used by main.rs + src/live-events.js;
 // user request: "keyboard layout indicator and copy reaction for the pill"). Owner: live-events lane.
-// One poller thread: 120 ms while the pill is visible, 500 ms while hidden (the page calls watch_pause / watch_resume from
+// One poller thread: 250 ms while the pill is visible, 1000 ms while hidden (the page calls watch_pause / watch_resume from
 // its pill:hide / pill:show handlers). Emits `kbd:layout` {lang:'RU', name:'Russian'} to window "pill" only when the layout of
 // the SAME foreground thread changed and stayed changed for 2 polls. Never on startup, never for a null layout.
 use serde_json::{json, Value};
@@ -103,7 +103,7 @@ fn run(app: AppHandle) {
         } else {
             t.step(0, 0);
         }
-        std::thread::sleep(std::time::Duration::from_millis(if HIDDEN.load(Ordering::Relaxed) { 500 } else { 120 }));
+        std::thread::sleep(std::time::Duration::from_millis(if HIDDEN.load(Ordering::Relaxed) { 1000 } else { 250 }));
     }
 }
 

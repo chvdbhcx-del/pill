@@ -27,6 +27,7 @@ mod aisetup;
 mod hotkeys;
 mod obs;
 mod steam;
+mod wake;
 mod notif;
 mod livesys;
 mod sysmon;

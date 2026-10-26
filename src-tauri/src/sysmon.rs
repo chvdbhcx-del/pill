@@ -1,24 +1,28 @@
 // System monitor of the island (CPU / RAM / NVIDIA GPUs). New file of the Pill app; user request: "давай делать все", item: system monitor.
 // Command `sysmon_get` -> { cpu: percent, ram: { usedMb, totalMb }, gpus: [{ index, name, util, tempC, memUsedMb, memTotalMb, powerW }] }.
 // The same payload goes to window "pill" as event `sysmon:tick` every 2 s, but only while `live.sysmon` is on AND the pill window is visible.
-// CPU: GetSystemTimes deltas. RAM: GlobalMemoryStatusEx. GPU: `nvidia-smi --query-gpu=... --format=csv,noheader,nounits` (no NVIDIA = `gpus: []`).
+// CPU: GetSystemTimes deltas. RAM: GlobalMemoryStatusEx. GPU: ONE persistent `nvidia-smi --query-gpu=... --format=csv,noheader,nounits -lms 2000` child
+// (a reader thread keeps the newest line per GPU), alive only while ticks are wanted, in a kill-on-close Job Object (no NVIDIA = `gpus: []`, looked for again every 60 s).
 // PRIVACY: reads only load counters, nothing is stored or sent anywhere.
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::io::Read;
+use std::ffi::c_void;
+use std::io::{BufRead, BufReader};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::Mutex;
+use std::process::{Child, Command, Stdio};
+use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
-use windows::Win32::Foundation::FILETIME;
+use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE};
 use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 use windows::Win32::System::Threading::GetSystemTimes;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const POLL_MS: u64 = 2000;
-const SMI_TIMEOUT: Duration = Duration::from_millis(2000);
+const SMI_TIMEOUT: Duration = Duration::from_millis(2000); // wait for the first line of a fresh child
+const SMI_STALE: Duration = Duration::from_millis(3 * POLL_MS); // no line for this long = the child hangs
+const SMI_RETRY: Duration = Duration::from_secs(60); // nvidia-smi missing / failing: look again this late
 const QUERY: &str = "--query-gpu=index,name,utilization.gpu,temperature.gpu,memory.used,memory.total,power.draw";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -55,10 +59,6 @@ pub fn parse_line(line: &str) -> Option<Gpu> {
         mem_total_mb: num(p[tail + 3]).map(|v| v.round() as u64),
         power_w: num(p[tail + 4]),
     })
-}
-
-pub fn parse_gpus(out: &str) -> Vec<Gpu> {
-    out.lines().filter_map(parse_line).collect()
 }
 
 // ---------------------------------------------------------------- CPU / RAM
@@ -110,32 +110,124 @@ fn find_smi() -> Option<PathBuf> {
     let on_path = std::env::var_os("PATH").into_iter().flat_map(|v| std::env::split_paths(&v).collect::<Vec<_>>()).map(|d| d.join("nvidia-smi.exe"));
     let fixed = [r"C:\Windows\System32\nvidia-smi.exe", r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe"].map(PathBuf::from);
     let found = on_path.chain(fixed).find(|p| p.is_file());
-    *cache = found.clone(); // None is not sticky: a driver installed later is found on the next poll
+    *cache = found.clone(); // None is retried after SMI_RETRY (see start): a driver installed later is found then
     found
 }
 
-fn gpus() -> Vec<Gpu> {
-    let Some(exe) = find_smi() else { return Vec::new() };
-    let Ok(mut child) = Command::new(exe).args([QUERY, "--format=csv,noheader,nounits"]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).creation_flags(CREATE_NO_WINDOW).spawn() else {
-        return Vec::new();
-    };
-    let t0 = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if t0.elapsed() < SMI_TIMEOUT => std::thread::sleep(Duration::from_millis(20)),
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Vec::new();
-            }
+/// The one persistent `nvidia-smi -lms` child and the newest line it printed per GPU.
+struct Smi {
+    child: Option<Child>,
+    job: isize, // kill-on-close Job Object: the child dies with Pill
+    id: u64,    // bumped on every start / stop: a reader thread of an older child sees the change and ends
+    gpus: Vec<Gpu>,
+    at: Option<Instant>,       // last line
+    retry_at: Option<Instant>, // no (re)start before this: nvidia-smi missing / failing
+}
+
+static FEED: Mutex<Smi> = Mutex::new(Smi { child: None, job: 0, id: 0, gpus: Vec::new(), at: None, retry_at: None });
+static DATA: Condvar = Condvar::new();
+
+fn feed() -> MutexGuard<'static, Smi> {
+    FEED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Newest value per GPU index (a loop-mode sample is one line per GPU).
+fn merge(gpus: &mut Vec<Gpu>, g: Gpu) {
+    match gpus.iter_mut().find(|x| x.index == g.index) {
+        Some(x) => *x = g,
+        None => {
+            gpus.push(g);
+            gpus.sort_by_key(|x| x.index);
         }
     }
-    let mut out = String::new();
-    if let Some(mut s) = child.stdout.take() {
-        let _ = s.read_to_string(&mut out);
+}
+
+/// Kills the child, closes its Job Object and drops the data.
+fn reap(f: &mut Smi) {
+    if let Some(mut c) = f.child.take() {
+        let _ = c.kill();
+        let _ = c.wait();
     }
-    parse_gpus(&out)
+    if f.job != 0 {
+        unsafe {
+            let _ = CloseHandle(HANDLE(f.job as *mut c_void));
+        }
+        f.job = 0;
+    }
+    f.id += 1;
+    f.gpus.clear();
+    f.at = None;
+}
+
+/// Nobody needs GPU data right now (switch off / pill hidden): no child at all.
+fn stop() {
+    let mut f = feed();
+    if f.child.is_some() {
+        reap(&mut f);
+        DATA.notify_all();
+    }
+}
+
+fn start(f: &mut Smi) {
+    let now = Instant::now();
+    if f.child.is_some() || f.retry_at.is_some_and(|t| now < t) {
+        return;
+    }
+    f.retry_at = Some(now + SMI_RETRY); // cleared on success below: a missing driver is looked for again after SMI_RETRY, not every tick
+    let Some(exe) = find_smi() else { return };
+    let Ok(mut child) = Command::new(exe)
+        .args([QUERY, "--format=csv,noheader,nounits", "-lms", &POLL_MS.to_string()])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+    else {
+        return;
+    };
+    let Some(out) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return;
+    };
+    f.job = crate::capture::job_for(&child);
+    f.child = Some(child);
+    f.id += 1;
+    f.retry_at = None;
+    let id = f.id;
+    std::thread::spawn(move || {
+        let mut got = false;
+        for g in BufReader::new(out).lines().map_while(Result::ok).filter_map(|l| parse_line(&l)) {
+            let mut f = feed();
+            if f.id != id {
+                return;
+            }
+            merge(&mut f.gpus, g);
+            f.at = Some(Instant::now());
+            got = true;
+            DATA.notify_all();
+        }
+        // end of output: the child exited (or stop() killed it)
+        let mut f = feed();
+        if f.id == id {
+            reap(&mut f);
+            f.retry_at = Some(Instant::now() + if got { Duration::from_secs(5) } else { SMI_RETRY });
+            DATA.notify_all();
+        }
+    });
+}
+
+fn gpus() -> Vec<Gpu> {
+    let mut f = feed();
+    if f.at.is_some_and(|t| t.elapsed() >= SMI_STALE) {
+        reap(&mut f); // the child hangs: start a new one
+    }
+    start(&mut f);
+    // the first sample after a start waits for the child's first line (tens of ms), like the old one-shot call did
+    if f.child.is_some() && f.at.is_none() {
+        f = DATA.wait_timeout_while(f, SMI_TIMEOUT, |f| f.child.is_some() && f.at.is_none()).unwrap_or_else(|e| e.into_inner()).0;
+    }
+    f.gpus.clone()
 }
 
 // ---------------------------------------------------------------- sampling
@@ -171,6 +263,7 @@ pub fn init(app: &tauri::App) {
             std::thread::sleep(Duration::from_millis(POLL_MS));
         } else {
             *CPU_PREV.lock().unwrap_or_else(|e| e.into_inner()) = None; // the next delta must not span the pause
+            stop(); // no tick consumer: no nvidia-smi child either
             std::thread::sleep(Duration::from_millis(1000));
         }
     });
@@ -198,8 +291,27 @@ mod tests {
     fn comma_in_name_and_garbage() {
         assert_eq!(parse_line("0, A, B, 1, 2, 3, 4, 5").unwrap().name, "A, B");
         assert!(parse_line("").is_none() && parse_line("garbage").is_none() && parse_line("x, N, 1, 2, 3, 4, 5").is_none());
-        assert_eq!(parse_gpus("0, A, 1, 2, 3, 4, 5\n1, B, 1, 2, 3, 4, 5\n").len(), 2);
-        assert!(parse_gpus("NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver.").is_empty());
+        assert!(parse_line("NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver.").is_none());
+    }
+
+    #[test]
+    fn merge_keeps_newest_per_index() {
+        let (a, b) = (parse_line("1, B, 1, 2, 3, 4, 5").unwrap(), parse_line("0, A, 1, 2, 3, 4, 5").unwrap());
+        let mut v = Vec::new();
+        merge(&mut v, a);
+        merge(&mut v, b);
+        assert_eq!(v.iter().map(|g| g.index).collect::<Vec<_>>(), [0, 1]); // sorted by index
+        merge(&mut v, parse_line("0, A, 99, 2, 3, 4, 5").unwrap());
+        assert_eq!((v.len(), v[0].util), (2, Some(99))); // replaced, not appended
+    }
+
+    #[test]
+    fn persistent_child_starts_and_stops() {
+        let g = gpus(); // empty without NVIDIA; with it the first sample already has data
+        assert_eq!(g.is_empty(), feed().child.is_none() || feed().at.is_none());
+        stop();
+        let f = feed();
+        assert!(f.child.is_none() && f.gpus.is_empty() && f.job == 0);
     }
 
     #[test]

@@ -426,10 +426,21 @@ fn gaze_wait(hz: u32, moved: bool) -> Duration {
     if moved { period(hz).max(Duration::from_millis(16)) } else { Duration::from_millis(50) }
 }
 
+/// Poll wait while the cursor rests in the zone with the pill folded: `still` = consecutive loop frames with the same cursor / window / pill state.
+fn rest_wait(still: u32, expanded: bool) -> Option<Duration> {
+    (still >= 3 && !expanded).then(|| Duration::from_millis(30))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{gaze_wait, near_rect, period};
+    use super::{gaze_wait, near_rect, period, rest_wait};
     use std::time::Duration;
+    #[test]
+    fn rest() {
+        assert_eq!(rest_wait(2, false), None); // still moving / just stopped: display-rate pacing
+        assert_eq!(rest_wait(3, false), Some(Duration::from_millis(30)));
+        assert_eq!(rest_wait(99, true), None); // expanded: always fast
+    }
     #[test]
     fn gaze() {
         assert_eq!(gaze_wait(144, true), Duration::from_millis(16)); // floor: far cursor is polled at <= 60 Hz
@@ -465,10 +476,11 @@ fn cursor_loop(app: AppHandle) {
     let nap = |ms| std::thread::sleep(Duration::from_millis(ms));
     let (mut hz, mut hz_at, mut page_up) = (60u32, Instant::now(), false); // HZ_DIRTY starts true -> first pass detects
     let mut next = Instant::now(); // frame deadline for the fast cadence
+    let (mut seen, mut still) = (None, 0u32); // rest backoff: last frame state + consecutive frames it did not change
     loop {
-        let (hidden, rect, mon, sc, hwnd) = {
+        let (hidden, rect, mon, sc, hwnd, expanded) = {
             let s = st();
-            (s.hidden, s.rect, s.mon, s.scale, s.hwnd)
+            (s.hidden, s.rect, s.mon, s.scale, s.hwnd, s.expanded)
         };
         // Refresh-rate watch: ~1/s, plus on place() and once when the page first reports a rect (it is listening then).
         let dirty = HZ_DIRTY.swap(false, Ordering::Relaxed);
@@ -574,7 +586,14 @@ fn cursor_loop(app: AppHandle) {
         } else {
             gaze_last = (i32::MIN, i32::MIN);
         }
-        if inside || zone {
+        let key = Some((p.x, p.y, inside, hidden, expanded, rect, wr.left, wr.top, wr.right, wr.bottom));
+        still = if key == seen { still.saturating_add(1) } else { 0 };
+        seen = key;
+        if let Some(w) = rest_wait(still, expanded).filter(|_| inside || zone) {
+            // Cursor resting folded: a relaxed poll, the first movement / state change resets `still` and the fast cadence resumes.
+            std::thread::sleep(w);
+            next = Instant::now();
+        } else if inside || zone {
             // Deadline pacing: next frame = previous deadline + period, sleep only the remainder; if we are late
             // (or just woke from the slow cadence) resync to now instead of bursting to catch up.
             next += period(hz);

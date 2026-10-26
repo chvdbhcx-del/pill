@@ -174,7 +174,7 @@ fn sync(app: &AppHandle, force: bool) {
     if *a == want && !force {
         return;
     }
-    let g = GEN.fetch_add(1, Ordering::SeqCst) + 1; // the old worker sees the new generation and ends by itself
+    let g = crate::wake::bump(&GEN); // the old worker sees the new generation and ends by itself
     *a = want;
     match want {
         Some(port) => {
@@ -362,11 +362,8 @@ fn run(app: AppHandle, gen: u64, port: u16) {
             }
             End::Auth => 30,
         };
-        for _ in 0..delay * 4 {
-            if GEN.load(Ordering::SeqCst) != gen {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(250));
+        if !crate::wake::nap(&GEN, gen, delay * 1000) {
+            return;
         }
     }
 }

@@ -22,7 +22,7 @@ const F_HI: f32 = 14000.0;
 const NOISE_FLOOR: f32 = 0.0005; // rms, about -66 dBFS
 const SILENCE_AFTER: Duration = Duration::from_millis(1500);
 const FRAME_EVERY: Duration = Duration::from_millis(16); // ~60 Hz
-const POLL: Duration = Duration::from_millis(4); // capture drain granularity; sleeps never overshoot the frame deadline
+const POLL: Duration = Duration::from_millis(16); // capture drain granularity (the shared buffer holds 200 ms); sleeps never overshoot the frame deadline
 const BUFFERFLAGS_SILENT: u32 = 2;
 // Time constants matching the old per-33-ms-frame feel: attack 0.7, release 0.15 per 33 ms.
 const TAU_ATTACK_MS: f32 = 27.4; // -33 / ln(1 - 0.7)

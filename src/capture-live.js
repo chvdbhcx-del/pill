@@ -15,7 +15,7 @@
   const inv = (c, a) => P.invoke(c, a);
   const act = (action, value) => inv('capture_action', { action, value });
 
-  let rec = null, timer = 0, tileHtml = null;
+  let rec = null, timer = 0, tileHtml = null, hid = false;
 
   // m:ss (no leading zero on minutes), h:mm:ss after an hour
   const clock = (ms) => {
@@ -36,6 +36,7 @@
     const s = clock(Date.now() - rec.startedAt);
     document.querySelectorAll('.rec-t').forEach((e) => { if (e.textContent !== s) e.textContent = s; });
   }
+  const arm = () => { clearInterval(timer); timer = rec && !hid ? setInterval(tick, 250) : 0; }; // no ticks while the island is hidden (nobody sees the text)
 
   // The Home "Record screen" tile becomes a red "Stop 0:NN" tile while recording.
   function syncTile() {
@@ -56,8 +57,7 @@
   function recStart(startedAt) {
     rec = { startedAt: +startedAt || Date.now() };
     if (P.liveOn('recording')) P.setLive('rec', { priority: 100, html: capsule(), ttlMs: null }); // Settings > Live events > Screen recording
-    clearInterval(timer);
-    timer = setInterval(tick, 250);
+    arm();
     syncTile();
   }
   function recStop() {
@@ -161,6 +161,8 @@
     },
   };
 
+  T.event.listen('pill:hide', () => { hid = true; arm(); });
+  T.event.listen('pill:show', () => { hid = false; tick(); arm(); });
   T.event.listen('rec:state', (e) => onRec(e.payload));
   T.event.listen('settings:changed', () => { if (rec) P.setLive('rec', P.liveOn('recording') ? { priority: 100, html: capsule(), ttlMs: null } : null); }); // the switch works while a recording runs
   T.event.listen('capture:done', (e) => card(e.payload));

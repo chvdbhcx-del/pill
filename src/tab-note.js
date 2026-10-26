@@ -93,7 +93,7 @@
   let selSec = Math.max(1, +store.get('pill.timer.sel', 300) || 300);
   const PM = window.PillMotion;
   let remKnown = false; // false until the first reminders draw of a visit (no enter animation then)
-  let tickI = 0, liveSec = -1, zeroSynced = false, visible = false, remI = 0, delArm = 0, toastT = 0;
+  let tickI = 0, liveSec = -1, zeroSynced = false, visible = false, hid = false, remI = 0, delArm = 0, toastT = 0;
 
   function say(msg, bad) {
     ui.toast.textContent = msg; ui.toast.classList.toggle('bad', !!bad); ui.toast.classList.add('show');
@@ -253,19 +253,30 @@
     const sec = run ? Math.ceil(rem) : -1;
     if (sec !== liveSec) { // collapsed pill shows the running timer
       liveSec = sec;
-      window.Pill.setLive('timer', run ? { priority: 60, html: `<span class="tn-live">${ICON.live}<b>${fmtClock(rem)}</b></span>` } : null);
+      // key = state + clock length: the chip is built once per run (and when the clock gains / loses a digit), the seconds are then written into it in place
+      window.Pill.setLive('timer', run ? { priority: 60, key: 'run' + clock.length, html: `<span class="tn-live">${ICON.live}<b>${clock}</b></span>` } : null);
+      const b = run && document.querySelector('#live-in .tn-live b'); // a new html string would replay the blur swap every second
+      if (b && b.textContent !== clock) b.textContent = clock;
     }
   }
+  function armTick() { // 4 Hz while the Note tab shows the ring (its stroke eases over .26 s), else once per displayed second; nothing while the pill is hidden
+    clearTimeout(tickI); tickI = 0;
+    if (!timer.active || hid) return;
+    const left = timer.dueAt - Date.now();
+    tickI = setTimeout(tick, visible || left <= 0 ? 250 : (left % 1000 || 1000) + 20);
+  }
   function tick() {
-    if (!timer.active) { clearInterval(tickI); tickI = 0; return; }
+    tickI = 0;
+    if (!timer.active) return;
     paintTimer();
     if (remainingS() <= 0 && !zeroSynced) { zeroSynced = true; setTimeout(syncTimer, 1500); } // Rust fires timer:done; resync if the event was missed
+    armTick();
   }
   function applyTimer(s) {
     timer = s && s.active ? { active: true, id: s.id, dueAt: s.due_at, totalS: s.total_s } : { active: false, id: 0, dueAt: 0, totalS: 0 };
     zeroSynced = false;
-    if (timer.active && !tickI) tickI = setInterval(tick, 250);
     paintTimer();
+    armTick();
   }
   async function syncTimer() { const r = await call('timer_state'); if (r.ok) applyTimer(r.v); }
   async function startStop() {
@@ -512,6 +523,8 @@
     onShow() { visible = true; remKnown = false; if (wantRem) setTimeout(revealReminders, 380); syncTimer(); drawReminders(); clearInterval(remI); remI = setInterval(drawReminders, 30000); syncTools(); },
     onHide() { visible = false; clearInterval(remI); remI = 0; save(); },
   });
+  window.Pill.on('pill:hide', () => { hid = true; armTick(); }); // nobody sees the chip or the ring: no ticks while the island is hidden
+  window.Pill.on('pill:show', () => { hid = false; tick(); }); // tick() repaints at once and re-arms
   // Command bar: `pill:open-tab` {tab:'note', noteId} selects that note (remembered for the first mount too).
   window.Pill.on('pill:open-tab', (p) => {
     if (!p || p.tab !== 'note') return;

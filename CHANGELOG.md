@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.3.2] - 2026-10-26
+
+### Changed
+- Lower idle cost: GPU stats come from one long-lived `nvidia-smi` process (stopped when nobody needs them) instead of a new process every 2 s; the cursor loop backs off while the pointer rests on the folded island; the Steam, notification, OBS, window-watch and audio pollers wake far less often (shared condvar naps, 250 ms / 1 s / 16 ms); the running-timer chip is edited in place once a second instead of being re-rendered; tickers of the hidden island are paused and resume on show; fewer per-frame allocations, a size-limited icon cache in the command bar and an unused refresh-rate probe removed.
+
 ## [0.3.1] - 2026-10-26
 
 ### Added

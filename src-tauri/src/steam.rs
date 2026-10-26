@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Listener};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::CloseHandle;
@@ -313,7 +313,7 @@ fn sync(app: &AppHandle) {
         return;
     }
     *a = want;
-    let g = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let g = crate::wake::bump(&GEN);
     if want {
         let app = app.clone();
         std::thread::spawn(move || run(app, g));
@@ -336,15 +336,7 @@ struct Seen {
 }
 
 fn nap(gen: u64, ms: u64) -> bool {
-    let mut left = ms / 250;
-    while left > 0 {
-        if GEN.load(Ordering::SeqCst) != gen {
-            return false;
-        }
-        std::thread::sleep(Duration::from_millis(250));
-        left -= 1;
-    }
-    GEN.load(Ordering::SeqCst) == gen
+    crate::wake::nap(&GEN, gen, ms)
 }
 
 fn run(app: AppHandle, gen: u64) {
