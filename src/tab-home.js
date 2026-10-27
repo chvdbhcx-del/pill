@@ -12,7 +12,10 @@
   let base = { pos: 0, at: 0 };        // position at time `at` (performance.now)
   let vol = { volume: 0, muted: false };
   let shown = false, dragging = false, raf = 0, hidden = false;
-  let mode = 'standard', liveKey = '', sessTimer = 0, volTimer = 0, sessions = [];
+  let mode = 'standard', liveKey = '', sessTimer = 0, sessions = [];
+  // volume slider: the knob / fill / number glide to the goal (eased, ~150 ms), the system volume is written at once in 1 % steps
+  let volGoal = 0, volShown = 0, volRaf = 0, volT = 0, volHold = false, volUserAt = -1e9;
+  let volSent = -1, volWant = -1, volBusy = false;
   let el = {};
 
   const accent = () => (st && st.accent) || '';
@@ -97,7 +100,7 @@
         }).join('')}</div>
         <div class="th-vol card">
           <button class="th-mute" type="button" title="${esc(t({ ru: 'Без звука', en: 'Mute' }))}"></button>
-          <input class="slider white thin th-v" type="range" min="0" max="100" value="0" aria-label="${esc(t({ ru: 'Громкость', en: 'Volume' }))}">
+          <input class="slider white thin th-v" type="range" min="0" max="100" step="any" value="0" aria-label="${esc(t({ ru: 'Громкость', en: 'Volume' }))}">
           <output class="th-vn">0</output>
           <button class="th-dev" type="button" title="${esc(t({ ru: 'Устройство вывода', en: 'Output device' }))}" aria-haspopup="listbox" aria-expanded="false">${ic('device', { size: 15, sw: 1.6 })}<span>${esc(t({ ru: 'По умолчанию', en: 'Default' }))}</span>${ic('chevron', { size: 14, sw: 1.8 })}</button>
           <div class="th-devmenu" role="listbox"></div>
@@ -129,23 +132,40 @@
       base = { pos: +el.pos.value, at: performance.now() };
       inv('media_seek', { ms: Math.round(+el.pos.value) });
     });
-    el.v.addEventListener('input', () => {
-      vol.volume = +el.v.value; vol.muted = false; fill(el.v); drawVol();
-      clearTimeout(volTimer);
-      volTimer = setTimeout(() => { inv('media_mute', { muted: false }); inv('media_volume_set', { v: vol.volume }); }, 30);
+    // The thumb is driven here, not by the browser: a click or drag sets the goal under the pointer (short lag, no jitter), the wheel,
+    // the keys, mute and outside changes glide. Native mousedown (thumb drag, focus) is turned off; keys and focus are handled below.
+    const volAt = (e) => { // pointer x -> 0..100 over the thumb's travel (the 12 px thumb: 6 px inset at each end, in scaled px)
+      const r = el.v.getBoundingClientRect(), h = 6 * r.width / (el.v.offsetWidth || r.width || 1);
+      return Math.max(0, Math.min(100, ((e.clientX - r.left - h) / Math.max(1, r.width - 2 * h)) * 100));
+    };
+    el.v.addEventListener('mousedown', (e) => e.preventDefault());
+    el.v.addEventListener('pointerdown', (e) => {
+      if (e.button) return;
+      volHold = true;
+      try { el.v.setPointerCapture(e.pointerId); } catch (_) {}
+      el.v.focus({ preventScroll: true });
+      volUser(volAt(e));
     });
-    el.mute.addEventListener('click', () => { vol.muted = !vol.muted; drawVol(); inv('media_mute', { muted: vol.muted }); });
-    // mouse wheel over the volume row: 5 % per notch (a touchpad's small deltas add up), then the same path as dragging the slider
+    el.v.addEventListener('pointermove', (e) => { if (volHold) volUser(volAt(e)); });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) el.v.addEventListener(ev, () => { volHold = false; });
+    el.v.addEventListener('keydown', (e) => {
+      const d = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -10, PageUp: 10 }[e.key];
+      const g = d ? volRound(volGoal) + d : e.key === 'Home' ? 0 : e.key === 'End' ? 100 : null;
+      if (g === null) return;
+      e.preventDefault();
+      volUser(g);
+    });
+    el.mute.addEventListener('click', () => { vol.muted = !vol.muted; volUserAt = performance.now(); drawVol(true); inv('media_mute', { muted: vol.muted }); });
+    // mouse wheel over the volume row: 2 % per notch (a touchpad's small deltas add up, 1 % steps), eased like every other change
     let wheelAcc = 0;
     q('.th-vol').addEventListener('wheel', (e) => {
       if (!e.deltaY) return;
       e.preventDefault();
-      wheelAcc += e.deltaMode === 0 ? e.deltaY / 20 : e.deltaY * 5 / 3; // pixels: 100 per notch; lines: 3 per notch
-      const steps = Math.trunc(wheelAcc / 5);
+      wheelAcc -= (e.deltaMode === 0 ? e.deltaY / 100 : e.deltaY / 3) * 2; // pixels: 100 per notch; lines: 3 per notch; wheel up = louder
+      const steps = Math.trunc(wheelAcc);
       if (!steps) return;
-      wheelAcc -= steps * 5;
-      el.v.value = Math.max(0, Math.min(100, (vol.muted ? 0 : vol.volume) - steps * 5));
-      el.v.dispatchEvent(new Event('input'));
+      wheelAcc -= steps;
+      volUser(volRound(volGoal) + steps);
     }, { passive: false });
     render();
     drawVol();
@@ -154,12 +174,62 @@
 
   function fill(r) { r.style.setProperty('--p', (r.max > 0 ? (r.value / r.max) * 100 : 0) + '%'); }
 
-  function drawVol() {
+  const volRound = (x) => Math.round(Math.max(0, Math.min(100, x)));
+  const volBusyNow = () => volHold || volBusy || performance.now() - volUserAt < 600; // a drag / write / own change in flight: outside readings wait
+
+  /// Show the state of `vol` (icon at once, knob / fill / number glide). `force` = a change of our own (mute click), not an outside reading.
+  function drawVol(force) {
     if (!el.v) return;
-    el.v.value = vol.muted ? 0 : vol.volume;
-    fill(el.v);
-    el.vn.textContent = vol.muted ? 0 : vol.volume;
     el.mute.innerHTML = ic(vol.muted || !vol.volume ? 'mute' : 'volume', { size: 18, sw: 1.6 });
+    if (force || !volBusyNow()) volGo(vol.muted ? 0 : vol.volume);
+  }
+
+  function volPaint() {
+    el.v.value = volShown;
+    fill(el.v);
+    el.vn.textContent = volRound(volShown);
+  }
+
+  /// Move the shown value to `g`: eased (25 ms time constant while dragged, 55 ms otherwise = ~150 ms to settle); at once for the very first
+  /// reading, while the panel is hidden and with reduced motion.
+  let volInit = false;
+  function volGo(g) {
+    volGoal = g;
+    if (!volInit || !shown || hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) { volInit = true; volShown = g; volPaint(); return; }
+    if (!volRaf) { volT = performance.now(); volRaf = requestAnimationFrame(volStep); }
+  }
+  function volStep(now) {
+    volRaf = 0;
+    const dt = Math.min(0.05, (now - volT) / 1000);
+    volT = now;
+    volShown += (volGoal - volShown) * (1 - Math.exp(-dt / (volHold ? 0.025 : 0.055)));
+    if (Math.abs(volGoal - volShown) < 0.05) volShown = volGoal;
+    volPaint();
+    if (volShown !== volGoal) volRaf = requestAnimationFrame(volStep);
+  }
+
+  /// The user moved the volume (drag, click, wheel, keys): goal + system write. Muted + louder = unmute.
+  function volUser(v) {
+    v = Math.max(0, Math.min(100, v));
+    const wasMuted = vol.muted;
+    vol.muted = false;
+    vol.volume = volRound(v);
+    volUserAt = performance.now();
+    el.mute.innerHTML = ic(vol.volume ? 'volume' : 'mute', { size: 18, sw: 1.6 });
+    volGo(v);
+    if (wasMuted) inv('media_mute', { muted: false });
+    volWant = vol.volume;
+    if (!volBusy) volFlush();
+  }
+  /// One write in flight, the newest value follows it: every 1 % the pointer passes reaches the system, with no pile-up of calls.
+  async function volFlush() {
+    volBusy = true;
+    while (volWant !== volSent) {
+      const v = volWant;
+      volSent = v;
+      try { await inv('media_volume_set', { v }); } catch (_) {}
+    }
+    volBusy = false;
   }
 
   // ---------- cover gradient: two colours sampled from the cover (data URL -> canvas is not tainted), cached per cover ----------
@@ -302,7 +372,7 @@
 
   async function loadVol() {
     const v = await inv('media_volume_get');
-    if (v) { vol = v; drawVol(); }
+    if (v) { vol = v; volSent = -1; drawVol(); }
   }
 
   // ---------- collapsed pill widget: cover left, equalizer right (vendor "music" pill); wavy outline takes the cover accent ----------
@@ -509,6 +579,14 @@
 
   if (tauri && tauri.event) {
     tauri.event.listen('media:changed', (e) => apply(e.payload));
+    // the volume changed somewhere else (keys, the mixer, the wheel over the capsule) while the panel is open: the slider glides there
+    tauri.event.listen('live:volume', (e) => {
+      const p = e.payload;
+      if (!p || !shown || volBusyNow()) return;
+      vol = { volume: volRound(p.level), muted: !!p.muted };
+      volSent = -1;
+      drawVol();
+    });
     tauri.event.listen('pill:hide', () => { hidden = true; cancelAnimationFrame(raf); inv('media_pause_updates'); });
     tauri.event.listen('pill:show', () => { hidden = false; inv('media_resume_updates'); loadMode(); paintCover(); loop(); });
     tauri.event.listen('settings:changed', loadMode);
