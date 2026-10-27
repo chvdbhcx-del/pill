@@ -399,7 +399,10 @@ fn read_small(p: &Path) -> Option<String> {
     (std::fs::metadata(p).ok()?.len() <= MAX_ACF).then(|| std::fs::read_to_string(p).ok()).flatten()
 }
 
-fn manifests(steam: &Path) -> Vec<Manifest> {
+/// Parsed manifests by path; an entry is reused while the file's mtime and length are unchanged.
+type AcfCache = HashMap<PathBuf, (std::time::SystemTime, u64, Manifest)>;
+
+fn manifests(steam: &Path, cache: &mut AcfCache) -> Vec<Manifest> {
     let mut libs = vec![steam.to_path_buf()];
     let list = read_small(&steam.join("steamapps").join("libraryfolders.vdf")).or_else(|| read_small(&steam.join("config").join("libraryfolders.vdf")));
     for l in list.map(|t| library_paths(&t)).unwrap_or_default() {
@@ -408,20 +411,26 @@ fn manifests(steam: &Path) -> Vec<Manifest> {
             libs.push(p);
         }
     }
-    // ponytail: every acf is re-read each poll (a few hundred tiny files per 3 s at worst); cache by mtime if that ever shows up in a profile
     let mut out = Vec::new();
+    let mut keep: AcfCache = HashMap::new();
     for lib in libs {
         let Ok(rd) = std::fs::read_dir(lib.join("steamapps")) else { continue };
         for e in rd.flatten() {
             let n = e.file_name().to_string_lossy().to_ascii_lowercase();
             if n.starts_with("appmanifest_") && n.ends_with(".acf") {
-                if let Some(mut m) = read_small(&e.path()).and_then(|t| parse_manifest(&t)) {
+                let p = e.path();
+                let Ok(md) = e.metadata() else { continue };
+                let stamp = (md.modified().unwrap_or(std::time::UNIX_EPOCH), md.len());
+                let hit = cache.remove(&p).filter(|c| (c.0, c.1) == stamp).map(|c| c.2);
+                if let Some(mut m) = hit.or_else(|| read_small(&p).and_then(|t| parse_manifest(&t))) {
                     m.lib = lib.clone();
+                    keep.insert(p, (stamp.0, stamp.1, m.clone()));
                     out.push(m);
                 }
             }
         }
     }
+    *cache = keep; // files that vanished drop out of the cache
     out.sort_by_key(|m| m.appid);
     out
 }
@@ -470,6 +479,7 @@ fn run(app: AppHandle, gen: u64) {
     let mut sent = Instant::now();
     let mut pmax: (u64, St, u32) = (0, St::Idle, 0);
     let mut logc: (u64, String) = (0, String::new());
+    let mut acf = AcfCache::new();
     loop {
         if GEN.load(Ordering::SeqCst) != gen {
             return;
@@ -482,12 +492,13 @@ fn run(app: AppHandle, gen: u64) {
                 let _ = app.emit_to("pill", "live:steam", json!({ "state": "idle" }));
             }
             seen.clear();
+            acf.clear();
             if !nap(gen, 10_000) {
                 return;
             }
             continue;
         };
-        let now = manifests(&steam);
+        let now = manifests(&steam, &mut acf);
         // the downloading folder is only looked at for apps that Steam marks as busy (a handful of stat calls per poll)
         let lives: HashMap<u64, u64> = now
             .iter()

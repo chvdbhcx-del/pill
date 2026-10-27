@@ -122,6 +122,7 @@ pub fn init(_app: &tauri::App) {
         }
     };
     let _ = conn.pragma_update(None, "journal_mode", "WAL");
+    let _ = conn.pragma_update(None, "synchronous", "NORMAL"); // safe with WAL: a power cut can lose the last commits, never corrupt the file
     let _ = conn.pragma_update(None, "foreign_keys", "ON");
     migrate(&conn);
     let _ = DB.set(Mutex::new(conn));
