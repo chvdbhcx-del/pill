@@ -2,6 +2,21 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.3.3] - 2026-10-27
+
+### Added
+- Notifications tab: a history of the toasts of other apps (cap 200 entries / 14 days; OCR and QR content is never stored; mail previews off by default). Switches in Settings: module and "keep history".
+- Shelf is a first-class feature: dragging files towards the island shows a drop card, the island shows a file-count badge, the same files can be dropped again, dragging away cancels.
+- Steam: the percent of a big download is read from the Steam content log when the manifest does not move yet; the chip is re-sent every 10 s so a restarted island picks it up.
+
+### Changed
+- Command bar is faster: one file-search process per query with a result cap, timeout and cancel, cached settings, notes index, app list and icons. Files are not searched for fewer than 2 characters unless the `f ` filter is used.
+- Home tab: the volume slider eases to its target, the wheel steps 2 %, the arrows 1 %, a drag writes every percent, and an outside change moves the slider.
+- Liquid edge of the command bar and the closer eyes pet.
+
+### Fixed
+- The command bar now takes the OS foreground and the WebView focus (with a retry), so the keyboard layout hotkeys switch the layout inside the search field.
+- Updates: the code comment said the check was off by default; it is on by default and only checks, installing is always your click.
 ## [0.3.2] - 2026-10-26
 
 ### Changed
