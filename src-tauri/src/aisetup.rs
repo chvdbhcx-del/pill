@@ -596,6 +596,11 @@ pub fn aisetup_whisper_remove(app: AppHandle) -> Value {
 
 /// GET {base}/models on a loopback server -> (up, model ids). 401/403 counts as up (wants a key).
 fn probe(base: &str) -> (bool, Vec<String>) {
+    // A live loopback server accepts in milliseconds; WinHTTP would wait 8 s on a port that hangs instead of refusing.
+    let port = base.split("127.0.0.1:").nth(1).and_then(|r| r.split('/').next()).and_then(|p| p.parse::<u16>().ok());
+    if port.is_some_and(|p| std::net::TcpStream::connect_timeout(&std::net::SocketAddr::from(([127, 0, 0, 1], p)), Duration::from_millis(300)).is_err()) {
+        return (false, Vec::new());
+    }
     let url = format!("{base}/models");
     let o = Opts { feature: Feature::Setup, method: "GET", url: &url, headers: &[("Accept", "application/json")], body: None, max_body: 1 << 20, recv_ms: 2500, decompress: false, abort: None };
     match net::request_checked(&o, &mut None, &["127.0.0.1".to_string()]) {
