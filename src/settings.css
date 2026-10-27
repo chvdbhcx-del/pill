@@ -52,6 +52,7 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 input, textarea, select { font: inherit; color: inherit; user-select: text; -webkit-user-select: text; }
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }   /* classes below set display (.inline, .chip, ...), which would otherwise beat the hidden attribute */
 
 #win { height: 100%; display: flex; flex-direction: column; background: var(--bg); border: 1px solid #3e3a43; opacity: 0; transform: translateY(14px); }
 #win.ready { opacity: 1; transform: none; transition: opacity 0.14s var(--ease-out), transform 0.14s var(--ease-out); }
@@ -124,6 +125,9 @@ h1 + .cap { margin-top: 0; }
 .row .l { flex: 1; min-width: 0; padding: 11px 0; }
 .row .l b { display: block; font-weight: 500; font-size: var(--fs-md); line-height: 18px; color: #fff; }
 .row .l span { display: block; margin-top: 2px; font-size: var(--fs-xs); line-height: 16px; color: var(--text-dim); }
+.row .l span span { display: inline; margin: 0; }   /* a status word appended inside a description stays on its line */
+.row .l span:empty, .note:empty, .footnote:empty { display: none; }   /* an empty message line takes no space */
+.row .l span, .note, .updmsg { overflow-wrap: anywhere; }   /* long paths / errors wrap instead of widening the card */
 .row .l span.warn { color: var(--amber); }
 .row .l span.bad { color: var(--red); }
 .row .l span.ok { color: var(--green); }
@@ -142,8 +146,9 @@ h1 + .cap { margin-top: 0; }
 .note a:hover, .link:hover { text-decoration: underline; }
 .txt { font-size: var(--fs-sm); line-height: 18px; color: var(--text-dim); }
 .footnote { font-size: var(--fs-xs); color: var(--text-faint); margin: 4px 4px 0; line-height: 16px; }
-/* the update check's result line inside the card: same inset as the rows, the size of a row description */
-.updmsg { padding: 12px 16px 14px; font-size: var(--fs-sm); line-height: 18px; box-shadow: inset 0 1px 0 var(--row-line); }
+.card .footnote { margin: 8px 0 0; }   /* inside a card the text already sits on the card padding */
+/* the update check's result line inside the card: same inset as the rows, the size of a row description (.note) */
+.updmsg { padding: 12px 16px 14px; font-size: var(--fs-xs); line-height: 16px; box-shadow: inset 0 1px 0 var(--row-line); }
 .updmsg:empty { display: none; }
 
 /* ---- controls ---- */
@@ -182,7 +187,8 @@ input[type=range]:active::-webkit-slider-thumb { transform: scale(1.15); }
 select.field { min-width: 230px; max-width: 250px; -webkit-appearance: none; appearance: none; padding-right: 30px; cursor: default; background: var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%23a0a0a8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 12px center; }
 select.field option { background: #1b1a1d; color: #fff; }
 textarea.field { height: auto; width: 100%; min-height: 80px; padding: 8px 12px; resize: vertical; line-height: 20px; border-radius: 10px; display: block; }
-textarea.mono { font-family: var(--mono); font-size: var(--fs-sm); line-height: 18px; }
+.field.mono { font-family: var(--mono); font-size: var(--fs-sm); }
+textarea.mono { line-height: 18px; }
 .btn { height: 32px; padding: 0 16px; border-radius: 8px; background: var(--btn); color: #fff; font-size: var(--fs-md); line-height: 32px; white-space: nowrap; transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform 0.4s var(--spring-pop); }
 .btn:hover { background: var(--btn-hover); }
 .btn:active { transform: scale(0.97); transition-duration: var(--dur-xs), var(--dur-xs), var(--dur-xs); transition-timing-function: var(--ease-out); }
@@ -237,7 +243,7 @@ textarea.mono { font-family: var(--mono); font-size: var(--fs-sm); line-height: 
 .dis-banner { margin-bottom: 12px; padding: 12px 16px; border-radius: 10px; background: rgba(200, 180, 106, 0.08); border: 1px solid rgba(200, 180, 106, 0.22); color: var(--amber); font-size: var(--fs-sm); line-height: 18px; }
 pre.snip { margin: 8px 0 0; padding: 12px; border-radius: 8px; background: var(--field); font: var(--fs-xs)/16px var(--mono); color: #cfcfd2; white-space: pre-wrap; word-break: break-all; user-select: text; -webkit-user-select: text; max-height: 160px; overflow: auto; }
 details.disc { padding: 0 16px; }
-.row + details.disc, .pad + details.disc { box-shadow: inset 0 1px 0 var(--row-line); }
+.row + details.disc, .pad + details.disc, .updmsg + details.disc { box-shadow: inset 0 1px 0 var(--row-line); }
 details.disc summary { cursor: default; font-weight: 500; list-style: none; display: flex; align-items: center; gap: var(--sp-2); min-height: 56px; }
 details.disc summary::-webkit-details-marker { display: none; }
 details.disc summary::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid #8e8c93; border-bottom: 1.5px solid #8e8c93; transform: rotate(-45deg); transition: transform 0.12s; }

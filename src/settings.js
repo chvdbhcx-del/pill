@@ -593,7 +593,7 @@
     const ar = h('div', 'row block');
     ar.append(h('div', 'l', [h('b', '', t({ ru: 'Адрес API и модель', en: 'API address and model' }))]));
     const urlIn = h('input', 'field'); urlIn.value = cfg.baseUrl || ''; urlIn.placeholder = 'http://127.0.0.1:11434/v1'; urlIn.spellcheck = false;
-    const mdl = h('input', 'field'); mdl.value = cfg.model || ''; mdl.placeholder = t({ ru: 'имя модели', en: 'model name' }); mdl.spellcheck = false; mdl.setAttribute('list', 'st-models'); mdl.style.fontFamily = 'var(--mono)'; mdl.style.fontSize = '12px';
+    const mdl = h('input', 'field mono'); mdl.value = cfg.model || ''; mdl.placeholder = t({ ru: 'имя модели', en: 'model name' }); mdl.spellcheck = false; mdl.setAttribute('list', 'st-models');
     const dl = h('datalist'); dl.id = 'st-models';
     const listB = btn(t({ ru: 'Список', en: 'List' }), async () => {
       await put({ 'ai.baseUrl': urlIn.value.trim() });
@@ -644,8 +644,8 @@
     top.append(chips, h('div', 'note', t({ ru: 'Бесплатно, без карты: до 8 часов речи в день, ответ за секунду. Хорошо понимает русский.', en: 'Free, no card: up to 8 hours of speech a day, answers within a second. Understands Russian well.' })));
     top.lastChild.style.marginTop = '12px'; c.append(top);
     const ar = h('div', 'row block'); ar.append(h('div', 'l', [h('b', '', t({ ru: 'Адрес API и модель', en: 'API address and model' }))]));
-    const i1 = Object.assign(h('input', 'field'), { value: 'https://api.groq.com/openai/v1', disabled: true }), i2 = Object.assign(h('input', 'field'), { value: 'whisper-large-v3-turbo', disabled: true });
-    i2.style.fontFamily = 'var(--mono)'; i2.style.fontSize = '12px'; i2.style.flex = '0 0 38%';
+    const i1 = Object.assign(h('input', 'field'), { value: 'https://api.groq.com/openai/v1', disabled: true }), i2 = Object.assign(h('input', 'field mono'), { value: 'whisper-large-v3-turbo', disabled: true });
+    i2.style.flex = '0 0 38%';
     const il = h('div', 'inline'); il.append(i1, i2); ar.append(il); c.append(ar);
     row(c, t({ ru: 'Язык речи', en: 'Spoken language' }), t({ ru: 'Подсказка сервису: так он реже путает языки', en: 'A hint for the service: it mixes languages up less often' }), seg([['auto', t({ ru: 'Авто', en: 'Detect' })], ['ru', 'Русский'], ['en', 'English']], () => 'auto', () => {}));
     row(c, t({ ru: 'Вставлять текст сразу', en: 'Paste the text at once' }), t({ ru: 'В окно, где стоял курсор. Текст остаётся в буфере в любом случае', en: 'Into the window where the caret was. The text stays on the clipboard either way' }), (() => { const s = sw('', { read: () => false, set: () => {} }); s.input.disabled = true; return s; })());
@@ -747,7 +747,8 @@
         const pre = h('pre', 'snip'); pre.hidden = true;
         const note = h('div', 'note', t({ ru: 'Pill ничего не дописывает в настройки агентов сам. Нажми «Показать», скопируй фрагменты и вставь в настройки Claude Code (хуки в ~/.claude/settings.json) и Codex (notify в ~/.codex/config.toml). Действует для новых сессий.', en: 'Pill never edits agent settings by itself. Press “Show”, copy the snippets and paste them into the settings of Claude Code (hooks in ~/.claude/settings.json) and Codex (notify in ~/.codex/config.toml). Applies to new sessions.' }));
         const show = btn(t({ ru: 'Показать', en: 'Show' }), async () => {
-          const r = await inv('agents_hook_snippets'); if (!r) return;
+          const r = await inv('agents_hook_snippets');
+          if (!r) { pre.textContent = t({ ru: 'Не удалось получить фрагменты', en: 'Could not get the snippets' }); pre.hidden = false; return; }
           pre.textContent = 'Claude Code - ' + (r.claude_code_where || '') + '\n' + (r.claude_code || '') + '\n\nCodex - ' + (r.codex_where || '') + '\n' + (r.codex || '');
           pre.hidden = false;
         }, 'sm');

@@ -68,8 +68,8 @@
     const ar = h('div', 'row block');
     ar.append(h('div', 'l', [h('b', '', t({ ru: 'Адрес API и модель', en: 'API address and model' }))]));
     const urlIn = h('input', 'field'); urlIn.value = url(); urlIn.placeholder = 'https://api.groq.com/openai/v1'; urlIn.spellcheck = false;
-    const mdl = h('input', 'field'); mdl.value = get('voice.model') || ''; mdl.placeholder = t({ ru: 'имя модели', en: 'model name' }); mdl.spellcheck = false;
-    mdl.style.fontFamily = 'var(--mono)'; mdl.style.fontSize = '12px'; mdl.style.flex = '0 0 38%';
+    const mdl = h('input', 'field mono'); mdl.value = get('voice.model') || ''; mdl.placeholder = t({ ru: 'имя модели', en: 'model name' }); mdl.spellcheck = false;
+    mdl.style.flex = '0 0 38%';
     const il = h('div', 'inline'); il.append(urlIn, mdl); ar.append(il); c.append(ar);
 
     const hosts = h('div', 'footnote'); p.append(hosts);
