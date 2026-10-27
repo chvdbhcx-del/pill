@@ -6,11 +6,14 @@
 use crate::{settings, store};
 use serde::Serialize;
 use serde_json::json;
+use std::cell::Cell;
 use std::collections::HashMap;
+use std::io::Read;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
-use std::sync::Mutex;
+use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
 
@@ -18,7 +21,8 @@ use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Globalization::{MultiByteToWideChar, CP_OEMCP, MULTI_BYTE_TO_WIDE_CHAR_FLAGS};
 use windows::Win32::UI::Shell::ShellExecuteW;
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow, SW_SHOWNORMAL};
+use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, SW_SHOWNORMAL};
 
 const LABEL: &str = "bar";
 const WIN_W: f64 = 560.0;
@@ -58,15 +62,30 @@ fn err(m: impl Into<String>) -> Outcome {
 // Results of recent queries by id: cmd_run only ever acts on these, never on paths sent by the page.
 static STORE: Mutex<Option<HashMap<String, Res>>> = Mutex::new(None);
 static RECENT: Mutex<Vec<Res>> = Mutex::new(Vec::new()); // memory only, never persisted
-static APPS: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new()); // (name, lnk path | shell:AppsFolder\id)
+static APPS: Mutex<Vec<(String, String, String)>> = Mutex::new(Vec::new()); // (name, lnk path | shell:AppsFolder\id, lowercase name)
 static APPS_STORE_AT: Mutex<Option<Instant>> = Mutex::new(None);
+static APPS_SCAN_AT: Mutex<Option<Instant>> = Mutex::new(None); // end of the last Start Menu walk
 static INDEXING: AtomicBool = AtomicBool::new(false);
 static LAST_BLUR_HIDE: Mutex<Option<Instant>> = Mutex::new(None);
 static PENDING: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 static PREV_FG: AtomicIsize = AtomicIsize::new(0); // window that had focus before the bar opened (paste target)
+static ICONS: Mutex<Option<Lru>> = Mutex::new(None); // path -> shell icon data URL, bounded; the page also keeps its own per-session map
+// Id of the newest cmd_query (and bumped when the bar hides). A query running on an older id sees it moved on and stops early.
+static CUR_SEQ: AtomicU64 = AtomicU64::new(0);
+thread_local! { static MY_SEQ: Cell<u64> = const { Cell::new(0) }; } // the id the current blocking worker was started with
+
+/// Poison-tolerant lock: one panicking query must not leave the bar empty until restart.
+fn lk<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// True once a newer query (or a hide) superseded the one running on this thread.
+fn stale() -> bool {
+    CUR_SEQ.load(Ordering::Relaxed) != MY_SEQ.with(Cell::get)
+}
 
 fn register(list: &[Res]) {
-    let mut g = STORE.lock().unwrap();
+    let mut g = lk(&STORE);
     let m = g.get_or_insert_with(HashMap::new);
     if m.len() > 500 {
         m.clear();
@@ -76,17 +95,30 @@ fn register(list: &[Res]) {
     }
 }
 
-// ---- settings (swap the body for settings::get_str once settings.rs lands) ----
+/// Tiny bounded LRU (most recent last). 64 icons x ~10 KB data URL stays under a megabyte.
+struct Lru {
+    cap: usize,
+    v: Vec<(String, String)>,
+}
 
-fn setting(key: &str, default: &str) -> String {
-    let read = || -> Option<String> {
-        let p = Path::new(&std::env::var_os("APPDATA")?).join("pill").join("settings.json");
-        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()?;
-        let flat = v.get(key).and_then(|x| x.as_str());
-        let nested = key.split('.').try_fold(&v, |c, k| c.get(k)).and_then(|x| x.as_str());
-        flat.or(nested).map(str::to_string)
-    };
-    read().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| default.to_string())
+impl Lru {
+    fn new(cap: usize) -> Self {
+        Lru { cap, v: Vec::new() }
+    }
+    fn get(&mut self, k: &str) -> Option<String> {
+        let i = self.v.iter().position(|e| e.0 == k)?;
+        let e = self.v.remove(i);
+        let val = e.1.clone();
+        self.v.push(e);
+        Some(val)
+    }
+    fn put(&mut self, k: String, val: String) {
+        self.v.retain(|e| e.0 != k);
+        if self.v.len() >= self.cap {
+            self.v.remove(0);
+        }
+        self.v.push((k, val));
+    }
 }
 
 // ---- init, hotkey, window ----
@@ -97,7 +129,7 @@ pub fn init(app: &tauri::App) {
         let (w2, h) = (win.clone(), app.handle().clone());
         win.on_window_event(move |e| match e {
             WindowEvent::Focused(false) if w2.is_visible().unwrap_or(false) => {
-                *LAST_BLUR_HIDE.lock().unwrap() = Some(Instant::now());
+                *lk(&LAST_BLUR_HIDE) = Some(Instant::now());
                 hide(&h);
             }
             WindowEvent::CloseRequested { api, .. } => {
@@ -126,7 +158,9 @@ pub fn keep_transparent(win: &WebviewWindow) {
 }
 
 fn hide(app: &AppHandle) {
-    *STORE.lock().unwrap() = None; // in-app rows (clipboard text, notes) live in memory only while the bar is open
+    CUR_SEQ.fetch_add(1, Ordering::Relaxed); // a query still running for the closed bar stops early and registers nothing
+    *lk(&STORE) = None; // in-app rows (clipboard text, notes) live in memory only while the bar is open
+    crate::notes::search_cache_drop(); // so does the note text index
     if let Some(win) = app.get_webview_window(LABEL) {
         let _ = win.hide();
         let _ = app.emit_to(LABEL, "bar:hidden", ());
@@ -160,7 +194,7 @@ fn toggle(app: &AppHandle) {
         return;
     }
     // The click that blurred (and hid) the bar must not re-open it.
-    if LAST_BLUR_HIDE.lock().unwrap().is_some_and(|t| t.elapsed() < Duration::from_millis(300)) {
+    if lk(&LAST_BLUR_HIDE).is_some_and(|t| t.elapsed() < Duration::from_millis(300)) {
         return;
     }
     PREV_FG.store(unsafe { GetForegroundWindow() }.0 as isize, Ordering::Relaxed);
@@ -168,8 +202,41 @@ fn toggle(app: &AppHandle) {
     index_apps_async();
     keep_transparent(&win);
     let _ = win.show();
-    let _ = win.set_focus();
+    grab_keyboard(app);
     let _ = app.emit_to(LABEL, "bar:shown", ());
+    // the first SetForegroundWindow can lose to the app that still owns the keyboard (the hotkey's own keys are barely released)
+    let a = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(120));
+        let a2 = a.clone();
+        let _ = a.run_on_main_thread(move || {
+            if a2.get_webview_window(LABEL).is_some_and(|w| w.is_visible().unwrap_or(false)) {
+                grab_keyboard(&a2);
+            }
+        });
+    });
+}
+
+/// Keyboard for the bar: the OS foreground (borrowing the old foreground thread's input state, like pill_activate) AND the WebView2
+/// control inside the window. Without both, the layout hotkeys (Alt+Shift, Ctrl+Shift, Win+Space) keep acting on the app that was in front.
+fn grab_keyboard(app: &AppHandle) {
+    let Some(win) = app.get_webview_window(LABEL) else { return };
+    if let Ok(h) = win.hwnd() {
+        let me = HWND(h.0 as isize as *mut std::ffi::c_void);
+        unsafe {
+            let fg = GetForegroundWindow();
+            if fg.0 != me.0 {
+                let (mine, theirs) = (GetCurrentThreadId(), GetWindowThreadProcessId(fg, None));
+                let attached = theirs != 0 && theirs != mine && AttachThreadInput(mine, theirs, true).as_bool();
+                let _ = SetForegroundWindow(me);
+                if attached {
+                    let _ = AttachThreadInput(mine, theirs, false);
+                }
+            }
+        }
+    }
+    let _ = win.set_focus();
+    let _ = tauri::Webview::set_focus(win.as_ref());
 }
 
 #[tauri::command]
@@ -179,7 +246,13 @@ pub fn cmd_toggle(app: AppHandle) {
 
 #[tauri::command]
 pub async fn cmd_query(text: String) -> Vec<Res> {
-    tauri::async_runtime::spawn_blocking(move || query(&text)).await.unwrap_or_default()
+    let my = CUR_SEQ.fetch_add(1, Ordering::Relaxed) + 1; // supersedes every query still running
+    tauri::async_runtime::spawn_blocking(move || {
+        MY_SEQ.with(|c| c.set(my));
+        query(&text)
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Shell icon (PNG data URL) of an app / file / folder row. Looked up by the id of a result of the current query, never by a path from
@@ -187,20 +260,31 @@ pub async fn cmd_query(text: String) -> Vec<Res> {
 #[tauri::command]
 pub async fn cmd_icon(id: String) -> Option<String> {
     let path = {
-        let g = STORE.lock().unwrap();
+        let g = lk(&STORE);
         g.as_ref()?.get(&id).filter(|r| matches!(r.kind, "app" | "file" | "folder")).map(|r| r.payload.clone())?
     };
-    tauri::async_runtime::spawn_blocking(move || crate::shelf::bar_icon(&path)).await.ok().flatten()
+    if let Some(u) = lk(&ICONS).get_or_insert_with(|| Lru::new(64)).get(&path) {
+        return Some(u);
+    }
+    let u = tauri::async_runtime::spawn_blocking({
+        let path = path.clone();
+        move || crate::shelf::bar_icon(&path)
+    })
+    .await
+    .ok()
+    .flatten()?;
+    lk(&ICONS).get_or_insert_with(|| Lru::new(64)).put(path, u.clone());
+    Some(u)
 }
 
 // ---- query ----
 
 fn query(text: &str) -> Vec<Res> {
-    *PENDING.lock().unwrap() = None;
+    *lk(&PENDING) = None;
     let q0 = text.trim_start();
     let mut out: Vec<Res> = Vec::new();
     if q0.is_empty() {
-        out = RECENT.lock().unwrap().clone();
+        out = lk(&RECENT).clone();
     } else if let Some(cmd) = q0.strip_prefix('>') {
         let cmd = cmd.trim_start();
         out.push(if cmd.is_empty() {
@@ -235,11 +319,16 @@ fn query(text: &str) -> Vec<Res> {
         if all || scope == Scope::Apps {
             out.extend(match_apps(&words));
             if scope == Scope::Apps && words.is_empty() {
-                out.extend(RECENT.lock().unwrap().iter().filter(|r| r.kind == "app").cloned());
+                out.extend(lk(&RECENT).iter().filter(|r| r.kind == "app").cloned());
             }
         }
+        if stale() {
+            return vec![];
+        }
         out.extend(app_data(scope, &lw));
-        if (all && !special || scope == Scope::Files) && !words.is_empty() && mod_on("module.fileSearch") {
+        // a single character matches half the disk: wait for a second one, unless the `f ` filter asked for files explicitly
+        let long_enough = scope == Scope::Files || words.iter().map(|w| w.chars().count()).sum::<usize>() >= 2;
+        if (all && !special || scope == Scope::Files) && !words.is_empty() && long_enough && !stale() && mod_on("module.fileSearch") {
             out.extend(files(&words));
         }
         if all && !rest.is_empty() {
@@ -248,6 +337,9 @@ fn query(text: &str) -> Vec<Res> {
         if all {
             out.sort_by_key(|r| rank(r, rest)); // stable: order inside a kind is kept
         }
+    }
+    if stale() {
+        return vec![]; // superseded: the page drops this answer anyway, and it must not overwrite the newer rows in STORE
     }
     register(&out);
     out
@@ -258,16 +350,14 @@ fn match_apps(words: &[String]) -> Vec<Res> {
     if ws.is_empty() {
         return vec![];
     }
-    let mut hits: Vec<(u8, usize, Res)> = APPS
-        .lock()
-        .unwrap()
+    let after_space = format!(" {}", ws[0]);
+    let mut hits: Vec<(u8, usize, Res)> = lk(&APPS)
         .iter()
-        .filter_map(|(name, target)| {
-            let n = name.to_lowercase();
+        .filter_map(|(name, target, n)| {
             if !ws.iter().all(|w| n.contains(w.as_str())) {
                 return None;
             }
-            let rank = if n.starts_with(ws[0].as_str()) { 0 } else if n.contains(&format!(" {}", ws[0])) { 1 } else { 2 };
+            let rank = if n.starts_with(ws[0].as_str()) { 0 } else if n.contains(&after_space) { 1 } else { 2 };
             let sub = if target.starts_with(APPS_PREFIX) { "App" } else { "Application" };
             Some((rank, n.len(), res("app", format!("app:{target}"), name.clone(), sub.into(), target.clone())))
         })
@@ -276,25 +366,60 @@ fn match_apps(words: &[String]) -> Vec<Res> {
     hits.into_iter().take(LIMIT).map(|h| h.2).collect()
 }
 
+/// One es.exe run for both kinds: the first ES_CAP hits are split into folders and files (LIMIT each, es order kept), exactly the rows the
+/// two filtered runs (`/ad`, `/a-d`) used to give. Only when the cap was hit and a kind is still short does that kind get its own run.
 fn files(words: &[String]) -> Vec<Res> {
-    let (f, d) = std::thread::scope(|s| {
-        let f = s.spawn(|| es(words, "/a-d"));
-        let d = s.spawn(|| es(words, "/ad"));
-        (f.join().unwrap_or(Err("Everything search failed")), d.join().unwrap_or(Err("Everything search failed")))
-    });
     let mk = |kind: &'static str, p: String| {
         let name = Path::new(&p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.clone());
         res(kind, format!("{kind}:{p}"), name, p.clone(), p)
     };
-    match (f, d) {
-        (Ok(f), Ok(d)) => d.into_iter().map(|p| mk("folder", p)).chain(f.into_iter().map(|p| mk("file", p))).collect(),
-        (Err(e), _) | (_, Err(e)) => vec![res("hint", "hint:es".into(), e.into(), "Files and folders need Everything".into(), String::new())],
+    let hint = |e: &str| vec![res("hint", "hint:es".into(), e.into(), "Files and folders need Everything".into(), String::new())];
+    let all = match es(words, None, ES_CAP) {
+        Ok(v) => v,
+        Err(e) => return hint(e),
+    };
+    let capped = all.len() >= ES_CAP;
+    let (mut d, mut f): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+    for p in all {
+        if d.len() >= LIMIT && f.len() >= LIMIT {
+            break;
+        }
+        let v = if Path::new(&p).is_dir() { &mut d } else { &mut f };
+        if v.len() < LIMIT {
+            v.push(p);
+        }
     }
+    if capped {
+        for (v, attr) in [(&mut d, "/ad"), (&mut f, "/a-d")] {
+            if v.len() < LIMIT {
+                match es(words, Some(attr), LIMIT) {
+                    Ok(r) => *v = r,
+                    Err(e) => return hint(e),
+                }
+            }
+        }
+    }
+    d.into_iter().map(|p| mk("folder", p)).chain(f.into_iter().map(|p| mk("file", p))).collect()
 }
 
 // ---- Everything (es.exe) ----
 
+// Where es.exe lives: found once (a miss is remembered for 30 s so typing on a PC without it does not re-scan PATH every keystroke).
+static ES_PATH: Mutex<Option<(Option<PathBuf>, Instant)>> = Mutex::new(None);
+
 fn find_es() -> Option<PathBuf> {
+    let mut g = lk(&ES_PATH);
+    match g.as_ref() {
+        Some((Some(p), _)) if p.is_file() => return Some(p.clone()),
+        Some((None, at)) if at.elapsed() < Duration::from_secs(30) => return None,
+        _ => {}
+    }
+    let p = scan_es();
+    *g = Some((p.clone(), Instant::now()));
+    p
+}
+
+fn scan_es() -> Option<PathBuf> {
     let mut dirs: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
     for var in ["ProgramFiles", "ProgramFiles(x86)"] {
         if let Some(pf) = std::env::var_os(var) {
@@ -367,20 +492,48 @@ fn ensure_everything(es_exe: &Path) {
     });
 }
 
-/// `es.exe -n LIMIT <attr> words...`, one full path per line.
-fn es(words: &[String], attr: &str) -> Result<Vec<String>, &'static str> {
+const ES_CAP: usize = 64; // hard cap of hits per es.exe run
+const ES_TIMEOUT: Duration = Duration::from_millis(1500);
+
+/// Runs `cmd` with piped stdout; kills it when `cancel()` turns true or `timeout` passes. Ok((exit success, stdout)).
+fn run_capped(mut cmd: std::process::Command, cancel: impl Fn() -> bool, timeout: Duration) -> Result<(bool, Vec<u8>), &'static str> {
+    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().map_err(|_| "es.exe failed to start")?;
+    let mut so = child.stdout.take().ok_or("es.exe failed to start")?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    // the reader ends at EOF (process exit or kill); capped at 1 MB, the child then dies on the closed pipe
+    std::thread::spawn(move || {
+        let mut b = Vec::new();
+        let _ = so.by_ref().take(1 << 20).read_to_end(&mut b);
+        let _ = tx.send(b);
+    });
+    let t = Instant::now();
+    loop {
+        match rx.recv_timeout(Duration::from_millis(5)) {
+            Ok(b) => return Ok((child.wait().is_ok_and(|s| s.success()), b)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let why = if cancel() { Some("Search superseded") } else if t.elapsed() > timeout { Some("Everything did not answer in time") } else { None };
+                if let Some(why) = why {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(why);
+                }
+            }
+            Err(_) => return Ok((child.wait().is_ok_and(|s| s.success()), Vec::new())),
+        }
+    }
+}
+
+/// `es.exe -n N [attr] words...`, one full path per line.
+fn es(words: &[String], attr: Option<&str>, n: usize) -> Result<Vec<String>, &'static str> {
     let exe = find_es().ok_or("Everything not found: install Everything + es.exe for file search")?;
     ensure_everything(&exe);
-    let out = std::process::Command::new(exe)
-        .args(["-n", &LIMIT.to_string(), attr])
-        .args(words)
-        .creation_flags(NO_WINDOW)
-        .output()
-        .map_err(|_| "es.exe failed to start")?;
-    if !out.status.success() {
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["-n", &n.to_string()]).args(attr).args(words).creation_flags(NO_WINDOW);
+    let (success, stdout) = run_capped(cmd, stale, ES_TIMEOUT)?;
+    if !success {
         return Err("Everything is not running: start it for file search");
     }
-    Ok(decode(&out.stdout).lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect())
+    Ok(decode(&stdout).lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect())
 }
 
 // es.exe writes the console OEM code page when piped, unless it already emits UTF-8.
@@ -399,11 +552,24 @@ fn decode(b: &[u8]) -> String {
 
 // ---- app index: Start Menu .lnk files + shell:AppsFolder (Store apps) ----
 
+/// Clears INDEXING when the indexing thread ends, also when it panics (otherwise the index would never be rebuilt).
+struct IndexingDone;
+impl Drop for IndexingDone {
+    fn drop(&mut self) {
+        INDEXING.store(false, Ordering::SeqCst);
+    }
+}
+
 fn index_apps_async() {
+    // opening the bar twice within 30 s does not walk the Start Menu again; typing never does
+    if lk(&APPS_SCAN_AT).is_some_and(|t| t.elapsed() < Duration::from_secs(30)) && !lk(&APPS).is_empty() {
+        return;
+    }
     if INDEXING.swap(true, Ordering::SeqCst) {
         return;
     }
     std::thread::spawn(|| {
+        let _done = IndexingDone;
         let mut apps: Vec<(String, String)> = Vec::new();
         for var in ["ProgramData", "APPDATA"] {
             if let Some(v) = std::env::var_os(var) {
@@ -411,19 +577,20 @@ fn index_apps_async() {
             }
         }
         // Get-StartApps is slow (~1 s): refresh it at most every 10 minutes. Constant script, no user input.
-        let stale = APPS_STORE_AT.lock().unwrap().is_none_or(|t| t.elapsed() > Duration::from_secs(600));
-        let mut store: Vec<(String, String)> = if stale {
-            *APPS_STORE_AT.lock().unwrap() = Some(Instant::now());
+        let due = lk(&APPS_STORE_AT).is_none_or(|t| t.elapsed() > Duration::from_secs(600));
+        let mut store: Vec<(String, String)> = if due {
+            *lk(&APPS_STORE_AT) = Some(Instant::now());
             start_apps()
         } else {
-            APPS.lock().unwrap().iter().filter(|a| a.1.starts_with(APPS_PREFIX)).cloned().collect()
+            lk(&APPS).iter().filter(|a| a.1.starts_with(APPS_PREFIX)).map(|a| (a.0.clone(), a.1.clone())).collect()
         };
         apps.sort_by_key(|a| a.0.to_lowercase()); // .lnk entries win the name dedupe below
         apps.append(&mut store);
         let mut seen = std::collections::HashSet::new();
         apps.retain(|a| seen.insert(a.0.to_lowercase()));
-        *APPS.lock().unwrap() = apps;
-        INDEXING.store(false, Ordering::SeqCst);
+        // the lowercase name is made once here, so a keystroke does not lowercase every app name again
+        *lk(&APPS) = apps.into_iter().map(|(n, t)| { let lc = n.to_lowercase(); (n, t, lc) }).collect();
+        *lk(&APPS_SCAN_AT) = Some(Instant::now());
     });
 }
 
@@ -449,7 +616,9 @@ fn walk(dir: &Path, out: &mut Vec<(String, String)>) {
     let Ok(rd) = std::fs::read_dir(dir) else { return };
     for e in rd.flatten() {
         let p = e.path();
-        if p.is_dir() {
+        // DirEntry::file_type comes with the listing (no stat per entry); only a link needs the stat that follows it
+        let dir = e.file_type().map_or_else(|_| p.is_dir(), |t| if t.is_symlink() { p.is_dir() } else { t.is_dir() });
+        if dir {
             walk(&p, out);
         } else if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("lnk")) {
             let name = p.file_stem().unwrap_or_default().to_string_lossy().into_owned();
@@ -475,7 +644,7 @@ fn pct_encode(s: &str) -> String {
 }
 
 fn web_row(q: &str) -> Res {
-    let (name, base) = match setting("search.engine", "google").to_lowercase().as_str() {
+    let (name, base) = match settings::get_str("search.engine", "google").to_lowercase().as_str() {
         "bing" => ("Bing", "https://www.bing.com/search?q="),
         "duckduckgo" => ("DuckDuckGo", "https://duckduckgo.com/?q="),
         _ => ("Google", "https://www.google.com/search?q="),
@@ -568,7 +737,7 @@ fn canonical(p: &str) -> Option<String> {
 }
 
 fn remember(r: &Res) {
-    let mut rc = RECENT.lock().unwrap();
+    let mut rc = lk(&RECENT);
     rc.retain(|x| x.id != r.id);
     rc.insert(0, r.clone());
     rc.truncate(8);
@@ -576,7 +745,7 @@ fn remember(r: &Res) {
 
 #[tauri::command]
 pub fn cmd_run(app: AppHandle, id: String, mode: String) -> Outcome {
-    let Some(r) = STORE.lock().unwrap().as_ref().and_then(|m| m.get(&id)).cloned() else {
+    let Some(r) = lk(&STORE).as_ref().and_then(|m| m.get(&id)).cloned() else {
         return err("Unknown result, type again");
     };
     let out = match r.kind {
@@ -765,7 +934,7 @@ fn hit_pre(hay: &str, lw: &[String]) -> bool {
     lw.iter().all(|w| h.split(|c: char| !c.is_alphanumeric()).any(|x| x.starts_with(w.as_str())))
 }
 
-fn strip_html(s: &str) -> String {
+pub(crate) fn strip_html(s: &str) -> String {
     let (mut o, mut tag, mut in_tag) = (String::new(), String::new(), false);
     for c in s.chars() {
         match c {
@@ -987,25 +1156,22 @@ fn clip_rows(lw: &[String], limit: usize) -> Vec<Res> {
 }
 
 fn note_rows(lw: &[String], limit: usize) -> Vec<Res> {
-    let rows = store::with(|c| {
-        let mut st = c.prepare("select id, title, substr(body_html,1,20000) from notes order by pinned desc, updated_at desc limit 200")?;
-        let v = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))?.collect::<Result<Vec<_>, _>>()?;
-        Ok(v)
-    })
-    .unwrap_or_default();
     let mut out = Vec::new();
-    for (id, title, html) in rows {
-        let body = strip_html(&html);
-        if !hit(&format!("{title} {body}"), lw) {
+    // notes.rs keeps each note's stripped, lowercased text: a keystroke only filters it (no DB read of the bodies, no HTML stripping)
+    for d in crate::notes::search_index() {
+        if stale() {
+            break;
+        }
+        if !lw.iter().all(|w| d.hay.contains(w.as_str())) {
             continue;
         }
-        let t = if title.trim().is_empty() {
-            let p = preview(&body, 40);
+        let t = if d.title.trim().is_empty() {
+            let p = preview(&d.body, 40);
             if p.is_empty() { "Untitled note".into() } else { p }
         } else {
-            title
+            d.title.clone()
         };
-        out.push(res("note", format!("note:{id}"), t, snippet(&body, lw.first(), 80), id.to_string()));
+        out.push(res("note", format!("note:{}", d.id), t, snippet(&d.body, lw.first(), 80), d.id.to_string()));
         if out.len() >= limit {
             break;
         }
@@ -1080,7 +1246,7 @@ fn app_data(scope: Scope, lw: &[String]) -> Vec<Res> {
 
 /// Second Enter within 3 s on the same row confirms (system commands, clearing the clipboard).
 fn confirmed(id: &str) -> bool {
-    let mut p = PENDING.lock().unwrap();
+    let mut p = lk(&PENDING);
     if p.as_ref().is_some_and(|(pid, t)| pid == id && t.elapsed() < Duration::from_millis(CONFIRM_MS)) {
         *p = None;
         true
@@ -1490,5 +1656,112 @@ mod tests {
         assert_eq!(rel_time(5 * 60_000), "in 5 min");
         assert_eq!(rel_time(-3 * 3_600_000), "overdue 3 h");
         assert_eq!(rel_time(10_000), "now");
+    }
+
+    #[test]
+    fn icon_lru_is_bounded_and_recency_ordered() {
+        let mut l = Lru::new(3);
+        for k in ["a", "b", "c"] {
+            l.put(k.into(), k.to_uppercase());
+        }
+        assert_eq!(l.get("a").as_deref(), Some("A")); // a is now the newest, b the oldest
+        l.put("d".into(), "D".into());
+        assert_eq!((l.get("b"), l.get("a").as_deref(), l.get("d").as_deref()), (None, Some("A"), Some("D")));
+        l.put("a".into(), "A2".into()); // replacing does not grow it
+        assert_eq!(l.v.len(), 3);
+        assert_eq!(l.get("a").as_deref(), Some("A2"));
+    }
+
+    #[test]
+    fn superseded_query_is_stale() {
+        // MY_SEQ is per thread, so this does not disturb other tests; CUR_SEQ is only read
+        let cur = CUR_SEQ.load(Ordering::Relaxed);
+        MY_SEQ.with(|c| c.set(cur));
+        assert!(!stale());
+        MY_SEQ.with(|c| c.set(cur.wrapping_sub(1)));
+        assert!(stale());
+    }
+
+    fn cmd_exe(args: &[&str]) -> std::process::Command {
+        let mut c = std::process::Command::new("cmd.exe");
+        c.args(args).creation_flags(NO_WINDOW);
+        c
+    }
+
+    #[test]
+    fn run_capped_returns_output_and_kills_on_cancel_or_timeout() {
+        let (ok, out) = run_capped(cmd_exe(&["/c", "echo", "hello"]), || false, Duration::from_secs(5)).unwrap();
+        assert!(ok && String::from_utf8_lossy(&out).trim() == "hello");
+        let (ok, _) = run_capped(cmd_exe(&["/c", "exit", "3"]), || false, Duration::from_secs(5)).unwrap();
+        assert!(!ok);
+        // a 5 s child (ping -n 6) is killed as soon as the query is superseded / the timeout passes
+        let slow = || {
+            let mut c = std::process::Command::new("ping.exe");
+            c.args(["-n", "6", "127.0.0.1"]).creation_flags(NO_WINDOW);
+            c
+        };
+        let t = Instant::now();
+        let n = std::cell::Cell::new(0);
+        let r = run_capped(slow(), || { n.set(n.get() + 1); n.get() > 10 }, Duration::from_secs(30));
+        assert_eq!(r.err(), Some("Search superseded"));
+        assert!(t.elapsed() < Duration::from_secs(2), "cancel took {:?}", t.elapsed());
+        let t = Instant::now();
+        let r = run_capped(slow(), || false, Duration::from_millis(100));
+        assert_eq!(r.err(), Some("Everything did not answer in time"));
+        assert!(t.elapsed() < Duration::from_secs(2));
+        assert_eq!(run_capped(std::process::Command::new("no-such-binary-xyz.exe"), || false, Duration::from_secs(1)).err(), Some("es.exe failed to start"));
+    }
+
+    #[test]
+    fn app_walk_finds_nested_lnk_without_stat_per_entry() {
+        let root = std::env::temp_dir().join(format!("pill-walk-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("Sub").join("Deep")).unwrap();
+        for f in ["Alpha.lnk", "Sub/Beta.LNK", "Sub/Deep/Gamma.lnk", "Sub/Uninstall Beta.lnk", "Sub/readme.txt"] {
+            std::fs::write(root.join(f), b"").unwrap();
+        }
+        let mut v = Vec::new();
+        walk(&root, &mut v);
+        let mut names: Vec<_> = v.into_iter().map(|a| a.0).collect();
+        names.sort();
+        assert_eq!(names, ["Alpha", "Beta", "Gamma"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn match_apps_uses_the_prebuilt_lowercase_name() {
+        let app = |n: &str, t: &str| (n.to_string(), t.to_string(), n.to_lowercase());
+        *lk(&APPS) = vec![app("Google Chrome", "g.lnk"), app("Chrome", "c.lnk"), app("Notepad", &format!("{APPS_PREFIX}np")), app("Хром", "h.lnk")];
+        let names = |w: &str| match_apps(&[w.to_string()]).into_iter().map(|r| r.title).collect::<Vec<_>>();
+        assert_eq!(names("CHR"), ["Chrome", "Google Chrome"]); // prefix match first, then shorter name
+        assert_eq!(names("note"), ["Notepad"]);
+        assert_eq!(names("хр"), ["Хром"]);
+        assert!(match_apps(&[]).is_empty());
+        *lk(&APPS) = Vec::new();
+    }
+
+    // Timing, run with --nocapture: the old two parallel es.exe runs against the single capped run. Skipped without a working Everything.
+    #[test]
+    fn es_single_run_timing() {
+        let Some(exe) = scan_es() else { return eprintln!("es timing: es.exe not installed, skipped") };
+        let run = |args: &[&str]| {
+            let mut c = std::process::Command::new(&exe);
+            c.args(args).arg("windows").creation_flags(NO_WINDOW);
+            run_capped(c, || false, Duration::from_secs(5))
+        };
+        match run(&["-n", "1"]) {
+            Ok((true, _)) => {}
+            _ => return eprintln!("es timing: Everything is not running, skipped"),
+        }
+        let best = |f: &dyn Fn()| (0..5).map(|_| { let t = Instant::now(); f(); t.elapsed() }).min().unwrap();
+        let two = best(&|| {
+            std::thread::scope(|s| {
+                let a = s.spawn(|| run(&["-n", "6", "/a-d"]));
+                let b = s.spawn(|| run(&["-n", "6", "/ad"]));
+                let _ = (a.join(), b.join());
+            })
+        });
+        let one = best(&|| { let _ = run(&["-n", &ES_CAP.to_string()]); });
+        eprintln!("es.exe per keystroke (best of 5): old two parallel runs {two:?}, new single run {one:?}");
     }
 }

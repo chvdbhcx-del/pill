@@ -29,7 +29,7 @@ pub(crate) fn defaults() -> Cfg {
         "module.text": true, "module.chat": true, "module.note": true, "module.weather": true, "module.controls": true,
         "live.volume": true, "live.music": true, "live.micCam": true, "live.downloads": true, "live.recording": true, "live.notifications": true,
         "live.reminders": true, "live.keyboardLayout": true, "live.copy": true, "live.obs": false, "live.agents": true, "live.steam": true, "live.sysmon": true,
-        "live.dlDone": true, "live.usb": true, "live.battery": true, "live.calendar": false, "live.calendar.path": "",
+        "live.dlDone": true, "live.shelf": true, "live.usb": true, "live.battery": true, "live.calendar": false, "live.calendar.path": "",
         // screen capture (capture.rs)
         "capture.format": "mp4", "capture.fps": 30, "capture.encoder": "auto", "capture.shotAction": "both", "capture.revealAfterSave": false,
         // first-run AI setup wizard (aisetup.rs)
@@ -39,6 +39,9 @@ pub(crate) fn defaults() -> Cfg {
     // third literal (recursion limit again): mail notifications (mail.rs), opt-in; the password lives DPAPI-encrypted in mail.passwordEnc, never plain
     let Value::Object(mail) = json!({ "live.mail": false, "mail.host": "", "mail.port": 993, "mail.user": "", "mail.mailbox": "INBOX" }) else { unreachable!() };
     m.extend(mail);
+    // notification centre (notifhist.rs, tab-notifs.js): history.keep = store what the island showed; history.mail = also keep mail / Windows-notification bodies (off: title only)
+    let Value::Object(hist) = json!({ "module.notifs": true, "history.keep": true, "history.mail": false }) else { unreachable!() };
+    m.extend(hist);
     m
 }
 
@@ -188,5 +191,6 @@ mod tests {
         assert_eq!(d["pet"], "cat");
         assert_eq!(d["pet.side"], "right");
         assert_eq!(d["pet.size"], "m");
+        assert_eq!((&d["history.keep"], &d["history.mail"], &d["module.notifs"]), (&serde_json::json!(true), &serde_json::json!(false), &serde_json::json!(true)));
     }
 }

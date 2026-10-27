@@ -725,6 +725,7 @@
     ['live.steam', { ru: 'Загрузки Steam', en: 'Steam downloads' }, { ru: 'Игры и обновления, которые качает Steam: сколько осталось и скорость, а в конце карточка', en: 'Games and updates Steam downloads: time left and speed, and a card at the end' }, true],
     ['live.sysmon', { ru: 'Монитор системы', en: 'System monitor' }, { ru: 'Загрузка процессора, памяти и видеокарт NVIDIA (с температурой) на вкладке «Управление»; в пилюле предупреждение, если видеокарта горячая (от 85 °C) или процессор забит (от 95 % дольше 10 с)', en: 'CPU, memory and NVIDIA GPU load (with temperature) on the Controls tab; a warning in the pill when a GPU is hot (85 °C and up) or the CPU is pinned (95 % for over 10 s)' }, true],
     ['live.dlDone', { ru: 'Готовый файл в «Загрузках»', en: 'Finished file in Downloads' }, { ru: 'Карточка «Загружено: имя файла», когда файл докачался в папку «Загрузки»; клик по карточке открывает папку с выделенным файлом', en: 'A “Downloaded: file name” card when a file finishes in your Downloads folder; a click on the card opens the folder with the file selected' }, true],
+    ['live.shelf', { ru: 'Полка файлов', en: 'File shelf' }, { ru: 'Значок с числом файлов на свёрнутом острове, пока полка не пуста, и счётчик на 5 секунд, когда файлы добавили или убрали', en: 'A file-count badge on the folded pill while the shelf is not empty, and a 5-second counter when files are added or removed' }, true],
     ['live.usb', { ru: 'Флешки и съёмные диски', en: 'USB and removable drives' }, { ru: 'Карточка, когда съёмный диск подключили или отключили', en: 'A card when a removable drive is connected or removed' }, true],
     ['live.battery', { ru: 'Батарея', en: 'Battery' }, { ru: 'Предупреждение при заряде 20 % и 10 % на ноутбуке, а также «Заряжается» и «Заряжено»; на компьютере без батареи ничего не делает', en: 'A warning at 20 % and 10 % on a laptop, plus “Charging” and “Fully charged”; does nothing on a PC without a battery' }, true],
     ['live.calendar', { ru: 'Ближайшее событие календаря', en: 'Next calendar event' }, { ru: 'За 10 минут до начала события из файла .ics или из ссылки-подписки (https:// / webcal://): «Через 10 мин: название». Файл только читается; ссылка скачивается раз в 30 минут, без аккаунтов', en: 'Ten minutes before an event from an .ics file or a subscription link (https:// / webcal://): “In 10 min: title”. A file is only read; a link is downloaded every 30 minutes, no accounts' }, false],
@@ -813,10 +814,16 @@
     ['note', { ru: 'Заметки и таймер', en: 'Notes and timer' }, { ru: 'Вкладка «Заметка», напоминания', en: 'The Note tab, reminders' }],
     ['weather', { ru: 'Погода', en: 'Weather' }, { ru: 'Вкладка «Погода»', en: 'The Weather tab' }],
     ['controls', { ru: 'Управление системой', en: 'System controls' }, { ru: 'Вкладка «Управление»: сеть, Bluetooth, тема, питание', en: 'The Controls tab: network, Bluetooth, theme, power' }],
+    ['notifs', { ru: 'Центр уведомлений', en: 'Notification centre' }, { ru: 'Вкладка «Уведомления»: история карточек острова', en: 'The Notifications tab: history of the island cards' }],
   ];
   function pModules(p) {
     const c = card(p);
     MODS.forEach(([id, title, sub]) => { DEF['module.' + id] = true; row(c, t(title), t(sub), sw('module.' + id)); });
+    cap(p, t({ ru: 'История уведомлений', en: 'Notification history' }));
+    const hc = card(p);
+    DEF['history.keep'] = true; DEF['history.mail'] = false;
+    row(hc, t({ ru: 'Хранить историю', en: 'Keep history' }), t({ ru: 'Карточки острова запоминаются в центре уведомлений: 14 дней, до 200 записей, только на этом компьютере', en: 'Island cards are remembered in the notification centre: 14 days, up to 200 entries, on this computer only' }), sw('history.keep'));
+    row(hc, t({ ru: 'Хранить текст писем и уведомлений Windows', en: 'Keep mail and Windows notification text' }), t({ ru: 'Выключено: от письма остаётся только заголовок карточки (отправитель), от уведомления Windows только его заголовок. Текст и тема не сохраняются', en: 'Off: only the card title is kept (the sender of a mail, the title of a Windows notification). Body and subject are not stored' }), sw('history.mail'));
     p.append(h('div', 'footnote', t({ ru: 'Выключенный модуль сразу прячет свою вкладку и перестаёт работать в фоне: история буфера не пишется, плеер не опрашивается, погода не запрашивается. Сами данные (история, заметки, полка, ярлыки) остаются. Напоминания и таймеры срабатывают, даже если вкладка «Заметка» выключена.', en: 'A module that is off hides its tab at once and stops its background work: the clipboard history is not written, the player is not polled, the weather is not requested. The data itself (history, notes, shelf, shortcuts) stays. Reminders and timers still fire when the Note tab is off.' })));
   }
 

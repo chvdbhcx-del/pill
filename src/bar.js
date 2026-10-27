@@ -390,6 +390,8 @@
   const modeOf = (e) => (e.ctrlKey && e.shiftKey ? 'admin' : e.ctrlKey ? 'folder' : e.shiftKey ? 'copy' : 'open');
 
   q.addEventListener('input', () => { LW.kv += 45; clearTimeout(timer); timer = setTimeout(() => (conv.length ? dlgInput() : search()), 80); });
+  // the bar closed inside the 80 ms debounce: that query would only run against a hidden window (Rust also cancels any query already running)
+  T.event.listen('bar:hidden', () => clearTimeout(timer));
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); if (ctx) closeCtx(); else invoke('cmd_toggle'); }

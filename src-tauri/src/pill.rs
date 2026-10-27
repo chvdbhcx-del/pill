@@ -431,10 +431,77 @@ fn rest_wait(still: u32, expanded: bool) -> Option<Duration> {
     (still >= 3 && !expanded).then(|| Duration::from_millis(30))
 }
 
+/// Drag-to-shelf state. A file dragged in from another app reaches the pill only if the window is hit-testable where the cursor is
+/// (a click-through window is skipped by OLE), so while a left-button drag that STARTED elsewhere is inside the drop zone the
+/// cursor loop drops the click-through style (`engaged`); Tauri then delivers tauri://drag-enter and the page shows the drop target.
+#[derive(Default, Clone, Copy, PartialEq, Debug)]
+struct Drag {
+    armed: bool,   // the button is down and the cursor has been outside the zone since (the press did not start on the zone)
+    engaged: bool, // armed and inside the zone: window is hit-testable
+}
+
+/// One loop pass. `near` = cursor in the zone (with hysteresis once engaged), `eligible` = pill folded, visible, not pass-through.
+/// Nothing is polled for this: `held` is the same GetAsyncKeyState the loop already reads for the top-edge strip.
+fn drag_step(d: Drag, held: bool, near: bool, eligible: bool) -> Drag {
+    if !held || !eligible {
+        return Drag::default();
+    }
+    let armed = d.armed || !near;
+    Drag { armed, engaged: armed && near }
+}
+
+/// Drop zone in physical px: centred on the body, at least 140 logical px (at 100 % size) each way and 60 px wider than the body,
+/// from the window top down to 90 px; `win` = (left, top, width) of the folded frame (its width is 720 logical px), `body` = (left, right).
+/// Once engaged the zone grows by 16 px on every side so the border does not flicker.
+fn drag_near(px: i32, py: i32, win: (i32, i32, i32), body: (i32, i32), engaged: bool) -> bool {
+    let unit = win.2 as f64 / COLLAPSED.0;
+    let m = if engaged { 16.0 * unit } else { 0.0 };
+    let cx = (body.0 + body.1) as f64 / 2.0;
+    let half = (140.0 * unit).max((body.1 - body.0) as f64 / 2.0 + 60.0 * unit) + m;
+    let top = win.1 as f64;
+    (px as f64 - cx).abs() <= half && (py as f64) >= top - m && (py as f64) < top + 90.0 * unit + m
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{gaze_wait, near_rect, period, rest_wait};
+    use super::{drag_near, drag_step, gaze_wait, near_rect, period, rest_wait, Drag};
     use std::time::Duration;
+    #[test]
+    fn drag_state() {
+        let idle = Drag::default();
+        // press far away, drag into the zone: armed on the way, engaged inside
+        let d = drag_step(idle, true, false, true);
+        assert_eq!(d, Drag { armed: true, engaged: false });
+        let d = drag_step(d, true, true, true);
+        assert_eq!(d, Drag { armed: true, engaged: true });
+        // leaving the zone keeps it armed (coming back re-engages), release resets everything
+        let d = drag_step(d, true, false, true);
+        assert_eq!(d, Drag { armed: true, engaged: false });
+        assert!(drag_step(d, true, true, true).engaged);
+        assert_eq!(drag_step(d, false, true, true), idle);
+        // a press that starts inside the zone (an ordinary click / window drag on the title bar there) never engages
+        let p = drag_step(idle, true, true, true);
+        assert_eq!(p, idle);
+        assert_eq!(drag_step(p, true, true, true), idle);
+        // ...until the cursor has been outside once
+        assert!(drag_step(drag_step(p, true, false, true), true, true, true).engaged);
+        // expanded / hidden / pass-through: not eligible
+        assert_eq!(drag_step(Drag { armed: true, engaged: true }, true, true, false), idle);
+    }
+    #[test]
+    fn drag_zone() {
+        let win = (1000, 0, 720); // 100 % size: 1 logical px = 1 physical px
+        let body = (1000 + 290, 1000 + 430); // 140 px capsule, centre 1360
+        assert!(drag_near(1360, 10, win, body, false));
+        assert!(drag_near(1360 + 139, 89, win, body, false));
+        assert!(!drag_near(1360 + 141, 40, win, body, false)); // beyond 140 px
+        assert!(!drag_near(1360, 91, win, body, false)); // below 90 px
+        assert!(drag_near(1360 + 150, 100, win, body, true)); // hysteresis once engaged
+        assert!(drag_near(1360 + 250, 40, win, (1000 + 100, 1000 + 620), false)); // a wide body widens the zone (half 260 + 60)
+        let big = (2000, 0, 1440); // 200 % size: the zone scales with the frame
+        assert!(drag_near(2000 + 720 + 270, 170, big, (2000 + 580, 2000 + 860), false));
+        assert!(!drag_near(2000 + 720 + 290, 40, big, (2000 + 580, 2000 + 860), false));
+    }
     #[test]
     fn rest() {
         assert_eq!(rest_wait(2, false), None); // still moving / just stopped: display-rate pacing
@@ -477,6 +544,7 @@ fn cursor_loop(app: AppHandle) {
     let (mut hz, mut hz_at, mut page_up) = (60u32, Instant::now(), false); // HZ_DIRTY starts true -> first pass detects
     let mut next = Instant::now(); // frame deadline for the fast cadence
     let (mut seen, mut still) = (None, 0u32); // rest backoff: last frame state + consecutive frames it did not change
+    let (mut drag, mut no_hover) = (Drag::default(), false); // drag-to-shelf; no_hover: a drag just ended on the pill, no hover-open until the cursor leaves it
     loop {
         let (hidden, rect, mon, sc, hwnd, expanded) = {
             let s = st();
@@ -500,6 +568,7 @@ fn cursor_loop(app: AppHandle) {
             gaze_last = (i32::MIN, i32::MIN);
             left_at = None;
             edge_at = None;
+            drag = Drag::default();
             nap(100);
             continue;
         }
@@ -520,11 +589,21 @@ fn cursor_loop(app: AppHandle) {
         let in_rect = hidden == 0 && x_in && p.y >= t - pad && p.y < b + pad;
         // Click-through everywhere but on the pill itself (unless pass-through already covers the whole window): the cursor loop is
         // the hit test, a few px of slack so the edge pixels and the liquid strip stay grabbable.
-        if !PT.load(Ordering::Relaxed) {
-            set_ignore(!in_rect);
-        }        // Top-edge strip: cursor pinned on the monitor top inside the pill's x range for ~120 ms
-        // (ignored while a mouse button is held: dragging a window to the top must not pop the pill).
         let held = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0 };
+        let pt = PT.load(Ordering::Relaxed);
+        // Drag-to-shelf: a left-button drag that started elsewhere and is now over the drop zone makes the folded window hit-testable
+        // (see `Drag`), so OLE can hand it the files. Only the already-read `held` is used: no extra polling while the button is up.
+        let nd = drag_step(drag, held, drag_near(p.x, p.y, (wr.left, wr.top, wr.right - wr.left), (l, r), drag.engaged), !expanded && !pt && hidden == 0);
+        if drag.armed && !nd.armed && in_rect {
+            no_hover = true; // the drag ended on the pill (a drop): let the page show its confirmation instead of popping the island open
+        }
+        no_hover &= in_rect;
+        drag = nd;
+        if !pt {
+            set_ignore(!(in_rect || drag.engaged));
+        }
+        // Top-edge strip: cursor pinned on the monitor top inside the pill's x range for ~120 ms
+        // (ignored while a mouse button is held: dragging a window to the top must not pop the pill).
         let on_edge = x_in && p.y <= mon[1] + 1 && !held;
         edge_at = if on_edge { edge_at.or(Some(Instant::now())) } else { None };
         let edge_ok = edge_at.is_some_and(|t| t.elapsed() >= Duration::from_millis(120));
@@ -543,7 +622,8 @@ fn cursor_loop(app: AppHandle) {
         // pass-through (folded pill): no hover / top-edge opening, the pill opens by its hotkey only
         if !PT.load(Ordering::Relaxed) && (in_rect || edge_ok) {
             left_at = None;
-            if !inside {
+            if !inside && !drag.armed && !no_hover {
+                // (a button held since before the cursor got here is a drag: it must not open the island, see `Drag`)
                 inside = true;
                 emit(&app, "pill:hover");
             }

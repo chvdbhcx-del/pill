@@ -1,5 +1,5 @@
 // Cloud updates from GitHub Releases (tauri-plugin-updater, minisign-signed latest.json). Owner: updates lane.
-// The network is touched only when the user asks (update_check / update_install) or has switched `updateAuto` on (default off).
+// The network is touched only when the user asks (update_check / update_install) or `updateAuto` is on (default ON: one check ~20 s after launch, installing is always a click).
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};

@@ -79,7 +79,7 @@
   // A height field d(x) along the bottom edge (1 sample / 3 px, spring to a target shape + coupling of the deviation from it = damped wave equation),
   // drawn on a canvas strip under the body: black fill down to the curve + a thin outline. Music adds per-band spikes (audio:bands or a synthetic signal).
   const LQ = { dx: 3, span: CFG.expW + 40, strip: 46, up: 4, /* strip 46 = 24 px of wave + room for the expanded droplet (15 + 5 + drip 6 + bob) */ k: 220, c: 900, damp: 9, t: 0, cx: 0, cxs: 0, cxv: 0, want: 0, inn: 0, innV: 0, e: 0,
-               style: 'liquid', react: 'calm', rt: 0, rcol: '', rTimer: 0, acc: 0, bAmp: 14, playing: false, lastH: 0, edge: '#6e6e6e', fill: '#000', override: '', lastAudio: 0, playSince: 0, silent: false, spikeMove: false,
+               drag: false, /* Pill.setDragPull: files are dragged over the island, the edge sags harder + wider under the cursor */ style: 'liquid', react: 'calm', rt: 0, rcol: '', rTimer: 0, acc: 0, bAmp: 14, playing: false, lastH: 0, edge: '#6e6e6e', fill: '#000', override: '', lastAudio: 0, playSince: 0, silent: false, spikeMove: false,
                bx: 0, by: 0, bvx: 0, btg: 0, bnext: 0, bph: 0, bon: false, sizeKey: '', bmT: 0, bhf: 0, bb: 0, bs: 0, bsv: 0, bdp: 0, bdn: 0, bde: 0 };
   LQ.N = Math.ceil(LQ.span / LQ.dx / 2) * 2 + 1; LQ.mid = (LQ.N - 1) / 2;
   LQ.h = new Float32Array(LQ.N); LQ.v = new Float32Array(LQ.N); LQ.tg = new Float32Array(LQ.N); LQ.sp = new Float32Array(LQ.N);
@@ -157,7 +157,7 @@
     }
   }
   function liqTargets(rg) { // target shape = idle / reaction wave (+ the cursor bulge)
-    const { half, i0, i1 } = rg, dyn = Math.abs(LQ.inn) > 0.002, expd = Pill.state === 'expanded', sig2 = 2 * (expd ? 50 : 38) ** 2;
+    const { half, i0, i1 } = rg, dyn = Math.abs(LQ.inn) > 0.002, expd = Pill.state === 'expanded', sig2 = 2 * ((expd ? 50 : 38) * (LQ.drag ? 1.45 : 1)) ** 2;
     const bands = musicOn() && !LQ.silent && performance.now() - LQ.lastAudio < 1000 && effReact() === 'music';
     for (let i = i0; i <= i1; i++) {
       const x = (i - LQ.mid) * LQ.dx, env = smooth((half - Math.abs(x)) / 36);
@@ -431,6 +431,7 @@
     if (dyb > 0) { f = 1 - dyb / 25; A = expd ? 20 : 14; }
     else { const up = -dyb; f = 1; A = expd ? 11 * Math.max(0, 1 - up / 220) : 14 + 5 * smooth(up / 12); }
     f *= Math.max(0, 1 - Math.max(0, Math.abs(lx) - half) / 60);
+    if (LQ.drag) { A = Math.max(A, 21); f = Math.max(f, 0.9); } // a file drag hovers: the edge always reaches for it
     LQ.want = A > 0.5 ? smooth(f) : 0; LQ.bAmp = A;
     LQ.cx = Math.max(-half, Math.min(half, lx));
     if (LQ.want > 0 || LQ.inn !== 0) kick();
@@ -568,7 +569,7 @@
   const colTarget = () => {
     const s = scale(), hgt = CFG.colH * s;
     const ev = (x) => { x = Math.ceil(x); return x + (x % 2); };
-    if (cardLive && liveKey === 'card') { // the island grown to an event card: its own content height, round ends
+    if ((cardLive && liveKey === 'card') || liveTall) { // the island grown to an event card (or a tall live widget): its own content height, round ends
       const r = liveIn.getBoundingClientRect(), hh = ev(Math.max(hgt, r.height)), rr = Math.min(24 * s, hh / 2);
       return { w: ev(Math.min(CFG.colMaxW * s, Math.max(CFG.colMinW * s, r.width + petRes * s))), h: hh, r: rr, t: capsule() ? rr : 0 };
     }
@@ -599,6 +600,7 @@
 
   // ---- collapsed live row: highest priority widget, else the clock: [weather icon] time date [battery] temp ----
   const lives = new Map();
+  let liveTall = false; // the winning live widget asks to be sized by its own height (setLive { tall }): the shelf drop target
   let liveKey = '', liveT = 0, battery = null, slots = { left: '', right: '' }, wx = null, clockSig = '', clockTime = null;
   const invalidateLive = () => { liveKey = ''; clockSig = ''; };
   const loc = () => (lang === 'ru' ? 'ru-RU' : 'en-GB');
@@ -684,6 +686,9 @@
       if (v.until && v.until <= now) { lives.delete(id); continue; }
       if (!best || v.p > best.p) { best = v; bid = id; }
     }
+    const wantTall = !!(best && best.tall);
+    root.classList.toggle('tall', wantTall); // 'tall' = pill.css `.tall #live-in`: natural size, measured by colTarget (the card path above returns earlier and manages it itself)
+    if (wantTall !== liveTall) { liveTall = wantTall; liveIn.style.width = ''; }
     if (best) {
       const html = /class="lp[\s"]/.test(best.html) ? best.html : `<div class="lp">${best.html}</div>`, key = bid + '|' + (best.key || html); // best.key: the caller edits the row in place, only a new key re-renders it
       if (key !== liveKey) { liveKey = key; clockSig = ''; clockTime = null; liveGhost(); liveIn.innerHTML = html; sizeLive(); swapFx(); }
@@ -736,7 +741,7 @@
   let cur = null, prevTab = null, expWait = false; // expWait: doExpand waits for the OS frame to reach the expanded size before it starts the spring
   const visibleTabs = () => [...tabs.values()].filter((x) => !x.hidden && !x.off).sort((a, b) => a.order - b.order);
   // ---- Settings > Modules: a module that is off hides its tab (live, from settings:changed). Home stays while the player OR the launcher is on. ----
-  const MODTAB = { clipboard: 'module.clipboard', shelf: 'module.shelf', text: 'module.text', chat: 'module.chat', note: 'module.note', weather: 'module.weather', controls: 'module.controls' };
+  const MODTAB = { clipboard: 'module.clipboard', shelf: 'module.shelf', text: 'module.text', chat: 'module.chat', note: 'module.note', weather: 'module.weather', controls: 'module.controls', notifs: 'module.notifs' };
   const modOn = (k) => S[k] !== false;
   const tabOff = (id) => (id === 'home' ? !modOn('module.media') && !modOn('module.launcher') : MODTAB[id] ? !modOn(MODTAB[id]) : false);
   function applyModules() {
@@ -1106,7 +1111,8 @@
     setVpn,
     setPinned,
     setCursor,
-    react, unreact,            // Pill.react(source, name, { ttlMs, color }) / Pill.unreact(source): priority resolver (see PRIO), several sources never fight
+    setDragPull(on) { on = !!on; if (on === LQ.drag) return; LQ.drag = on; if (!on && LQ.inn !== 0) kick(); }, // tab-shelf.js: files are dragged over the island (the edge sags toward the cursor)
+    react, unreact,           // Pill.react(source, name, { ttlMs, color }) / Pill.unreact(source): priority resolver (see PRIO), several sources never fight
     setReaction,               // 'calm' | 'music' | 'thinking' | 'done' | 'attention' | 'file' | 'sleep', { ttlMs, color }
     reactions: ['calm', 'music', 'thinking', 'done', 'attention', 'file', 'sleep'],
     onReaction(fn) { rxL.add(fn); safe(fn, LQ.react, LQ.rcol); return () => rxL.delete(fn); }, // observer of the effective reaction; called immediately with the current one
@@ -1121,7 +1127,7 @@
     setClockSlots(o) { slots = { left: (o && o.left) || '', right: (o && o.right) || '' }; invalidateLive(); renderLive(); },
     setLive(id, w) { // w: { priority, html, key?, ttlMs, accent } ; key: the row is re-rendered only when it changes (the caller edits it in place) ; accent colours (and animates) the wavy outline
       if (!w) lives.delete(id);
-      else { lives.set(id, { p: w.priority || 0, html: w.html || '', key: w.key || '', until: w.ttlMs ? Date.now() + w.ttlMs : 0, accent: w.accent || '' }); reveal(); }
+      else { lives.set(id, { p: w.priority || 0, html: w.html || '', key: w.key || '', until: w.ttlMs ? Date.now() + w.ttlMs : 0, accent: w.accent || '', tall: !!w.tall }); reveal(); }
       if (!hidden) renderLive();
     },
     toast,

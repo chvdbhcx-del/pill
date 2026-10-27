@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter, Listener};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RRF_RT_REG_SZ};
+use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
 const MAX_ACF: u64 = 256 * 1024;
@@ -220,28 +221,99 @@ pub fn percent(m: &Manifest, st: St) -> u32 {
 }
 
 /// What Steam writes to logs\content_log.txt while it downloads. A big download leaves the manifest counters at 0 for hours and the downloading
-/// folder is preallocated to its full size, so the log is the only live source: the rate once a minute, the bytes received every few minutes.
+/// folder is preallocated to its full size, so the log is the only live source. Verified on a real log: `AppID N update started : download X/Y`
+/// opens a session (X = the counter at that moment, a resume starts from the bytes already got); `stats: (Invalid, 0) : B Bytes, S sec` is the
+/// traffic of the LAST S seconds (a ~5.5 min window, NOT a session total; windows run across pauses); `Current download rate` comes every ~61 s.
 #[derive(Debug, Default, PartialEq)]
 pub struct LogInfo {
-    /// bytes received in the current download session (the "(Invalid, 0)" total of the last stats line)
-    pub bytes: Option<u64>,
-    /// bytes per second ("Current download rate: 94.8 Mbps")
-    pub rate: Option<f64>,
+    /// BytesDownloaded when this update session started
+    pub base: u64,
+    /// bytes received since then, extrapolated to `now`
+    pub received: u64,
+    /// bytes per second; 0 when the download is stalled or cancelled
+    pub rate: f64,
 }
 
-/// Only what follows the last "Downloading N chunks for depot" line counts: older lines belong to a finished download.
-pub fn log_info(tail: &str) -> LogInfo {
-    let from = tail.rfind("chunks for depot").unwrap_or(0);
-    let first = |s: &str| s.split_whitespace().next().map(str::to_string);
-    let mut out = LogInfo::default();
-    for line in tail[from..].lines() {
-        if let Some(r) = line.split("Current download rate:").nth(1) {
-            out.rate = first(r).and_then(|v| v.parse::<f64>().ok()).map(|mbps| mbps * 125_000.0);
-        } else if let Some(r) = line.split("stats: (Invalid, 0) :").nth(1) {
-            out.bytes = first(r).and_then(|v| v.parse::<u64>().ok());
+/// Rate lines older than this (relative to `now`) mean a stall: the estimate stops growing instead of extrapolating across a pause.
+const RATE_STALE_S: i64 = 150;
+
+/// Seconds since 1970-01-01 of a civil date (Hinnant's days_from_civil) * 86400.
+fn epoch_days(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * ((m + 9) % 12) + 2) / 5 + d - 1;
+    era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468
+}
+
+/// `[2026-10-27 00:33:36] ...` -> seconds on a local wall-clock scale (no time zone: log and `now` are both local; a DST switch skews it for 1 h).
+pub fn line_time(l: &str) -> Option<i64> {
+    let b = l.as_bytes();
+    if b.len() < 21 || b[0] != b'[' || b[20] != b']' {
+        return None;
+    }
+    let n = |a: usize, z: usize| l.get(a..z)?.parse::<i64>().ok();
+    Some(epoch_days(n(1, 5)?, n(6, 8)?, n(9, 11)?) * 86_400 + n(12, 14)? * 3600 + n(15, 17)? * 60 + n(18, 20)?)
+}
+
+fn local_now() -> i64 {
+    let t = unsafe { GetLocalTime() };
+    epoch_days(t.wYear as i64, t.wMonth as i64, t.wDay as i64) * 86_400 + t.wHour as i64 * 3600 + t.wMinute as i64 * 60 + t.wSecond as i64
+}
+
+/// Bytes of app `appid` received in its current update session, from the log tail, at local time `now`. None = no session start in the tail.
+/// received = sum of the stats windows since the start + the rate lines after the last window + the last rate up to `now` (not past a stall).
+pub fn log_info(tail: &str, appid: u64, now: i64) -> Option<LogInfo> {
+    let lines: Vec<(i64, &str)> = tail.lines().filter_map(|l| Some((line_time(l)?, l))).collect();
+    let key = format!("AppID {appid} update started : download ");
+    let si = lines.iter().rposition(|(_, l)| l.contains(&key))?;
+    let (s, sl) = lines[si];
+    let base = sl.split(&key).nth(1)?.split('/').next()?.trim().parse::<u64>().ok()?;
+    let cancel_key = format!("AppID {appid} update canceled");
+    let after = &lines[si + 1..];
+    let ci = after.iter().position(|(_, l)| l.contains(&cancel_key));
+    let cancel = ci.map(|i| after[i].0);
+    let after = &after[..ci.unwrap_or(after.len())];
+    let mbps = |l: &str| l.split("Current download rate:").nth(1)?.split_whitespace().next()?.parse::<f64>().ok().map(|v| v * 125_000.0);
+    let window = |l: &str| {
+        let mut it = l.split("stats: (Invalid, 0) :").nth(1)?.split_whitespace();
+        let bytes = it.next()?.parse::<u64>().ok()?;
+        Some((bytes as f64, it.nth(1)?.parse::<i64>().ok()?))
+    };
+    // a window that began before the session start holds the old session's bytes too, but only when something was downloading then (a rate line)
+    let busy_before = |from: i64| lines[..si].iter().any(|(t, l)| *t >= from && *t < s && mbps(l).is_some());
+    let (mut got, mut at) = (0.0f64, s);
+    for (t, l) in after {
+        if let Some((b, secs)) = window(l) {
+            let start = t - secs.max(1);
+            got += if start < s && busy_before(start) { b * (*t - s) as f64 / secs as f64 } else { b };
+            at = *t;
         }
     }
-    out
+    let (mut prev, mut last, mut lt) = (at, 0.0f64, s);
+    for (t, l) in after {
+        if let Some(r) = mbps(l) {
+            if *t > at {
+                // the first interval of a session is the ramp-up: half the rate
+                got += r * (*t - prev) as f64 * if prev == s { 0.5 } else { 1.0 };
+                prev = *t;
+            }
+            last = r;
+            lt = *t;
+        }
+    }
+    let live = cancel.is_none() && now - lt <= RATE_STALE_S;
+    let end = cancel.unwrap_or(now).min(lt + RATE_STALE_S);
+    got += last * (end - prev).max(0) as f64;
+    Some(LogInfo { base, received: got.round() as u64, rate: if live { last } else { 0.0 } })
+}
+
+/// BytesDownloaded, or the log estimate while the counters still sit at the session start (stale); counters that moved (a small game) are Steam's own.
+pub fn downloaded_with_log(m: &Manifest, log: Option<&LogInfo>) -> u64 {
+    match log {
+        Some(l) if m.downloaded <= l.base => (l.base + l.received).min(m.to_download).max(m.downloaded),
+        _ => m.downloaded,
+    }
 }
 
 /// The last `max` bytes of a file (read-only; Steam keeps writing to it).
@@ -253,6 +325,20 @@ fn read_tail(p: &Path, max: u64) -> Option<String> {
     let mut buf = Vec::new();
     f.take(max).read_to_end(&mut buf).ok()?;
     Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// content_log.txt as text, re-read only when its length changed (Steam appends ~ once a minute; polls come every 3 s). The previous file, if Steam
+/// rotated the log, is put in front so a session that began before the rotation is still found.
+// ponytail: `content_log.previous.txt` follows Steam's `*.previous.txt` naming (seen for gameoverlay_ui only; no rotated content_log on this PC to verify)
+fn log_text<'a>(steam: &Path, cache: &'a mut (u64, String)) -> &'a str {
+    let dir = steam.join("logs");
+    let len = std::fs::metadata(dir.join("content_log.txt")).map_or(0, |m| m.len());
+    if len != cache.0 {
+        let cur = read_tail(&dir.join("content_log.txt"), 1 << 20).unwrap_or_default();
+        let old = if len < 1 << 20 { read_tail(&dir.join("content_log.previous.txt"), 1 << 20).unwrap_or_default() } else { String::new() };
+        *cache = (len, old + &cur);
+    }
+    &cache.1
 }
 
 /// Total size of a folder tree (read-only, capped so a pathological tree cannot stall the poll).
@@ -383,6 +469,7 @@ fn run(app: AppHandle, gen: u64) {
     let mut primary = 0u64;
     let mut sent = Instant::now();
     let mut pmax: (u64, St, u32) = (0, St::Idle, 0);
+    let mut logc: (u64, String) = (0, String::new());
     loop {
         if GEN.load(Ordering::SeqCst) != gen {
             return;
@@ -424,10 +511,10 @@ fn run(app: AppHandle, gen: u64) {
             }
         }
         let cur = best.map(|(_, m, st)| (m, st));
-        // a big download leaves the manifest counters at 0: Steam's own log has the live rate and the bytes received
+        // a big download leaves the manifest counters at 0: Steam's own log has the bytes received and the live rate
         let log = match cur {
-            Some((_, St::Downloading)) => read_tail(&steam.join("logs").join("content_log.txt"), 131_072).map(|t| log_info(&t)).unwrap_or_default(),
-            _ => LogInfo::default(),
+            Some((m, St::Downloading | St::Paused)) => log_info(log_text(&steam, &mut logc), m.appid, local_now()),
+            _ => None,
         };
         if let Some((m, _)) = cur {
             if m.appid != primary {
@@ -439,8 +526,8 @@ fn run(app: AppHandle, gen: u64) {
             let delta = m.downloaded.saturating_sub(prev_dl).max(live_of(m.appid).saturating_sub(prev_live)) as f64;
             speed = speed * 0.5 + delta / dt * 0.5;
             if delta == 0.0 {
-                if let Some(r) = log.rate {
-                    speed = r;
+                if let Some(l) = &log {
+                    speed = l.rate;
                 }
             }
         }
@@ -451,13 +538,12 @@ fn run(app: AppHandle, gen: u64) {
         let p = match cur {
             Some((m, st)) => {
                 let mut m = m.clone();
-                if let Some(b) = log.bytes {
-                    m.downloaded = m.downloaded.max(b);
-                }
+                m.downloaded = downloaded_with_log(&m, log.as_ref());
                 let m = &m;
-                // the figure never goes backwards inside one phase of one app (Steam rewrites the counters now and then)
+                // the figure never goes backwards inside one phase of one app (Steam rewrites the counters now and then); pausing is the same phase
                 let raw = percent(m, st);
-                let pct = if pmax.0 == m.appid && pmax.1 == st { raw.max(pmax.2) } else { raw };
+                let same = |a: St, b: St| (a == St::Installing) == (b == St::Installing);
+                let pct = if pmax.0 == m.appid && same(pmax.1, st) { raw.max(pmax.2) } else { raw };
                 pmax = (m.appid, st, pct);
                 let left = m.to_download.saturating_sub(m.downloaded);
                 let eta = if st == St::Downloading && speed > 1024.0 { (left as f64 / speed) as u64 } else { 0 };
@@ -541,17 +627,111 @@ mod tests {
         assert_eq!(percent(&Manifest { staged: 10_000, ..m2.clone() }, St::Downloading), 100);
     }
 
+    // real excerpt of Steam's content_log.txt (War Thunder, 2026-10-27), the cache lines of the stats block dropped
+    const WT: &str = "[2026-10-27 00:28:53] Current download rate: 83.915 Mbps
+[2026-10-27 00:30:17] AppID 236390 update started : download 0/90036629856, store 0/0, reuse 0/0, delta 0/0, stage 0/93104081798
+[2026-10-27 00:30:17] Downloading 2215 chunks for depot 236394 (444186442078958183)
+[2026-10-27 00:30:25] Current download rate: 60.106 Mbps
+[2026-10-27 00:31:26] Current download rate: 94.429 Mbps
+[2026-10-27 00:32:12] Downloading 94679 chunks for depot 236391 (8675133900244270658)
+[2026-10-27 00:32:27] Current download rate: 93.637 Mbps
+[2026-10-27 00:33:28] Current download rate: 95.026 Mbps
+[2026-10-27 00:33:36] stats: (SteamCache, 55) cache1-iev-datl.steamcontent.com: 680775947 Bytes, 245 sec (22.22 Mbps). 1620 Hits / 1 Misses (100 %, 100 % bytes), score 0.8082
+[2026-10-27 00:33:36] stats: (Invalid, 0) : 2887800176 Bytes, 246 sec (93.73 Mbps). 7587 Hits / 14 Misses (100 %, 100 % bytes), score 0.0000
+[2026-10-27 00:34:29] Current download rate: 94.961 Mbps
+[2026-10-27 00:35:30] Current download rate: 94.854 Mbps
+[2026-10-27 00:36:30] Current download rate: 94.337 Mbps
+";
+    const T: i64 = 86_400 * 20_753; // 2026-10-27 00:00:00
+    const MB: f64 = 125_000.0;
+
     #[test]
-    fn log_gives_rate_and_bytes_of_the_current_session_only() {
-        let log = "[2026-10-27 00:20:01] Current download rate: 50.0 Mbps\n[2026-10-27 00:20:05] stats: (Invalid, 0) : 141000000 Bytes, 20 sec (50.00 Mbps).\n\
-                   [2026-10-27 00:32:12] Downloading 94679 chunks for depot 236391 (8675133900244270658)\n";
-        assert_eq!(log_info(log), LogInfo::default()); // the new session has not logged anything yet: the old figures are not its own
-        let more = format!("{log}[2026-10-27 00:33:28] Current download rate: 95.026 Mbps\n[2026-10-27 00:33:36] stats: (SteamCache, 55) x.com: 680775947 Bytes, 245 sec (22.22 Mbps). 1 Hits\n\
-                   [2026-10-27 00:33:36] stats: (Invalid, 0) : 2887800176 Bytes, 246 sec (93.73 Mbps). 7587 Hits / 14 Misses\n[2026-10-27 00:34:29] Current download rate: 94.961 Mbps\n");
-        let i = log_info(&more);
-        assert_eq!(i.bytes, Some(2_887_800_176));
-        assert_eq!(i.rate.map(|r| r.round() as u64), Some(11_870_125)); // 94.961 Mbps
-        assert_eq!(log_info(""), LogInfo::default());
+    fn log_timestamps() {
+        assert_eq!(line_time("[2026-10-27 00:33:36] x"), Some(T + 33 * 60 + 36));
+        assert_eq!(line_time("[2026-10-28 01:00:00] x"), Some(T + 86_400 + 3600));
+        assert_eq!(line_time("[1970-01-01 00:00:01] x"), Some(1));
+        assert_eq!(line_time("[2024-03-01 00:00:00] x").zip(line_time("[2024-02-28 00:00:00] x")).map(|(a, b)| a - b), Some(2 * 86_400)); // leap year
+        assert_eq!(line_time("HTTPS (SteamCache,55) - cache1"), None);
+        assert_eq!(line_time("[garbage-garbage-garb] x"), None);
+        assert!(local_now() > T); // the Win32 clock is on the same scale
+    }
+
+    #[test]
+    fn log_extrapolates_from_stats_and_rate_lines() {
+        // 10 s after the last rate line: window total + 3 rate intervals + 10 s at the last rate
+        let now = T + 36 * 60 + 40;
+        let i = log_info(WT, 236390, now).unwrap();
+        assert_eq!(i.base, 0);
+        let want = 2_887_800_176.0 + 94.961 * MB * 53.0 + 94.854 * MB * 61.0 + 94.337 * MB * 60.0 + 94.337 * MB * 10.0;
+        assert!((i.received as f64 - want).abs() < 1.0, "{} vs {}", i.received, want);
+        assert_eq!(i.rate, 94.337 * MB);
+        // a 90.0 GB download: ~ 4.5 %, the window total alone (what the old code showed) would be 3.2 %
+        assert!(i.received as f64 / 90_036_629_856.0 > 0.044);
+        // another app's session is not ours
+        assert_eq!(log_info(WT, 730, now), None);
+        assert_eq!(log_info("", 236390, now), None);
+    }
+
+    #[test]
+    fn log_before_the_first_stats_window_integrates_the_rates() {
+        let head: String = WT.lines().take(5).map(|l| format!("{l}\n")).collect(); // up to the 00:31:26 rate line
+        let i = log_info(&head, 236390, T + 31 * 60 + 36).unwrap();
+        // ramp-up interval at half rate, then 61 s at 94.429, then 10 s extrapolated
+        let want = 60.106 * MB * 8.0 * 0.5 + 94.429 * MB * 61.0 + 94.429 * MB * 10.0;
+        assert!((i.received as f64 - want).abs() < 1.0, "{} vs {}", i.received, want);
+        // nothing since the session start, not even a rate line yet
+        let none = log_info(&head.lines().take(3).collect::<Vec<_>>().join("\n"), 236390, T + 30 * 60 + 20).unwrap();
+        assert_eq!(none.received, 0);
+    }
+
+    #[test]
+    fn log_stall_does_not_extrapolate_across_a_pause() {
+        let at_rate = log_info(WT, 236390, T + 36 * 60 + 30).unwrap();
+        let later = log_info(WT, 236390, T + 40 * 60).unwrap(); // 210 s after the last rate line
+        assert_eq!(later.rate, 0.0);
+        // grows by 150 s of the last rate at most (the stale horizon), then stops
+        assert!((later.received as f64 - at_rate.received as f64 - 94.337 * MB * 150.0).abs() < 1.0);
+        assert_eq!(log_info(WT, 236390, T + 90 * 60).unwrap().received, later.received);
+    }
+
+    #[test]
+    fn log_cancel_pauses_and_resume_starts_from_the_manifest_counter() {
+        // a real pause of another game: cancelled at 00:28:46, the trailing rate line is not its own
+        let log = "[2026-10-27 00:22:35] AppID 2073850 update started : download 2969063152/55120902704, store 0/0, reuse 0/0, delta 0/0, stage 3052596112/96722615316
+[2026-10-27 00:27:06] AppID 2073850 update canceled : Disabled (Suspended)
+[2026-10-27 00:27:08] AppID 2073850 update started : download 6151959664/55120902704, store 0/0, reuse 0/0, delta 0/0, stage 6241894568/96722615316
+[2026-10-27 00:27:08] Downloading 86956 chunks for depot 2073851 (4263762589855354033)
+[2026-10-27 00:27:52] Current download rate: 94.905 Mbps
+[2026-10-27 00:28:06] stats: (Invalid, 0) : 3891505440 Bytes, 331 sec (94.19 Mbps). 3822 Hits / 11 Misses (100 %, 100 % bytes), score 0.0000
+[2026-10-27 00:28:46] AppID 2073850 update canceled : Disabled (Suspended)
+[2026-10-27 00:28:53] Current download rate: 83.915 Mbps
+";
+        let now = T + 29 * 60;
+        let i = log_info(log, 2073850, now).unwrap();
+        assert_eq!(i.base, 6_151_959_664); // the last session start wins
+        assert_eq!(i.rate, 0.0);
+        // no traffic before the start inside the window (this excerpt has no earlier rate line): the whole window counts; then 40 s at the last rate
+        // until the cancel (the rate line is 14 s old at the cancel, the stale horizon is not reached)
+        let want = 3_891_505_440.0 + 94.905 * MB * 40.0;
+        assert!((i.received as f64 - want).abs() < 1.0, "{} vs {}", i.received, want);
+        // with a rate line of the old session inside the window only its share after the start counts: 58/331 ~ 0.68 GB (real: the next
+        // resume counter of the old session says 0.71 GB)
+        let busy = format!("[2026-10-27 00:25:00] Current download rate: 94.0 Mbps\n{log}");
+        let j = log_info(&busy, 2073850, now).unwrap();
+        let share = 3_891_505_440.0 * 58.0 / 331.0;
+        assert!((j.received as f64 - share - 94.905 * MB * 40.0).abs() < 1.0, "{}", j.received);
+    }
+
+    #[test]
+    fn stale_counters_are_replaced_by_the_estimate_but_live_ones_are_kept() {
+        let est = |m: &Manifest, l: &LogInfo| downloaded_with_log(m, Some(l));
+        let l = LogInfo { base: 0, received: 31_000_000_000, rate: 1.0 };
+        let big = Manifest { appid: 236390, to_download: 90_036_629_856, to_stage: 93_104_081_798, ..Default::default() };
+        let p = |d| percent(&Manifest { downloaded: d, ..big.clone() }, St::Downloading);
+        assert_eq!(p(est(&big, &l)), 34); // 31.0 / 90.04 GB
+        let small = Manifest { downloaded: 400, to_download: 1000, ..Default::default() };
+        assert_eq!(est(&small, &l), 400); // moved past the session start: Steam's own number
+        assert_eq!(est(&Manifest { to_download: 20_000_000_000, ..big.clone() }, &l), 20_000_000_000); // never above BytesToDownload
     }
 
     #[test]

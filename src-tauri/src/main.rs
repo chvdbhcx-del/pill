@@ -35,6 +35,7 @@ mod updater;
 mod aiactions;
 mod liveplus;
 mod mail;
+mod notifhist;
 
 fn main() {
     tauri::Builder::default()
@@ -104,6 +105,7 @@ fn main() {
             aisetup::aisetup_cancel,
             hotkeys::hotkeys_reload,
             obs::obs_status, obs::obs_set_password, obs::obs_reveal, steam::steam_status, notif::notif_status, notif::notif_request,
+            notifhist::notif_history_add, notifhist::notif_history_list, notifhist::notif_history_clear, notifhist::notif_history_mark_read, notifhist::notif_history_remove,
         ])
         .setup(|app| {
             store::init(app);
@@ -135,6 +137,7 @@ fn main() {
             sysmon::init(app);
             liveplus::init(app);
             mail::init(app);
+            notifhist::init(app);
             hotkeys::init(app); // last: every module's init() has run, so the actions it triggers exist
             Ok(())
         })

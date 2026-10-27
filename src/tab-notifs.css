@@ -1,0 +1,59 @@
+/* Notification centre tab (648 x 260): head 32, rows 44, day labels 22, footer 18. Logic: tab-notifs.js. Tokens and motion curves from theme.css. */
+.nf-root { height: 100%; flex-direction: column; min-height: 0; color: var(--text); }
+.view.on.nf-root, .view.out.nf-root:not(.on) { display: flex !important; }   /* .view.on is display:block: a tab root that wants flex has to out-rank it (like .clip) */
+.nf-head { flex: none; height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-1) 0 var(--sp-3); }
+.nf-count { white-space: nowrap; }
+.nf-root.off .nf-count { color: var(--amber); }
+.nf-clear { height: 28px; padding: 0 var(--sp-3) 0 var(--sp-2); border-radius: 10px; font-size: var(--fs-sm); }
+.nf-clear[hidden] { display: none; }
+.nf-clear.armed { background: var(--red-bg); color: var(--red); }
+
+.nf-list { flex: 1; min-height: 0; padding-right: var(--sp-2); margin-right: -4px; }
+.nf-root.empty .nf-list { display: none; }
+.nf-day { position: sticky; top: 0; z-index: 1; height: 22px; display: flex; align-items: center; padding: 0 var(--sp-3); background: var(--bg); }
+
+.nf-row { position: relative; display: flex; align-items: center; gap: var(--sp-3); box-sizing: border-box; min-height: 44px; padding: 6px var(--sp-2) 6px 18px; border-radius: 12px; transition: background var(--dur-fast) var(--ease-out); }
+.nf-row:hover { background: var(--raised); }
+.nf-tile { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 9px; background: var(--raised); color: var(--text-2); transition: background var(--dur-fast) var(--ease-out); }
+.nf-row:hover .nf-tile { background: var(--raised-2); }
+.nf-row[data-tone="green"] .nf-tile { background: var(--green-bg); color: var(--green); }
+.nf-row[data-tone="amber"] .nf-tile { background: var(--amber-bg); color: var(--amber); }
+.nf-row[data-tone="red"] .nf-tile { background: var(--red-bg); color: var(--red); }
+.nf-row[data-tone="accent"] .nf-tile { background: var(--accent-soft); color: var(--accent); }
+.nf-body { flex: 1; min-width: 0; }
+.nf-t, .nf-s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nf-t { font-size: var(--fs-md); font-weight: var(--fw-regular); line-height: 18px; }
+.nf-s { margin-top: 2px; font-size: var(--fs-xs); font-weight: var(--fw-medium); line-height: 14px; color: var(--text-dim); }
+.nf-row.unread .nf-t { font-weight: var(--fw-semi); }
+
+/* time and the remove button share one cell: hover swaps them */
+.nf-end { flex: none; display: grid; align-items: center; justify-items: end; min-width: 84px; }
+.nf-time { grid-area: 1 / 1; font-size: var(--fs-xs); line-height: 14px; color: var(--text-faint); white-space: nowrap; transition: opacity var(--dur-fast) var(--ease-out); }
+.nf-x { all: unset; grid-area: 1 / 1; box-sizing: border-box; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; color: var(--text-dim); cursor: pointer; opacity: 0; transform: scale(.85);
+  transition: opacity var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.nf-row:hover .nf-x, .nf-x:focus-visible { opacity: 1; transform: none; }
+.nf-row:hover .nf-time { opacity: 0; }
+.nf-x:hover { background: var(--raised-2); color: var(--text); }
+.nf-x:active { transform: scale(.9); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+.nf-x:focus-visible { outline: 2px solid var(--accent); }
+
+.nf-dot { display: none; position: absolute; left: 6px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); }
+.nf-row.unread .nf-dot { display: block; animation: nf-pop .4s var(--spring-pop, var(--ease-spring)) .12s backwards; }
+@keyframes nf-pop { from { transform: scale(0); } }
+
+.nf-empty { display: none; flex: 1; min-height: 0; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-2); text-align: center; color: var(--text-dim); }
+.nf-root.empty .nf-empty { display: flex; }
+.nf-eico { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 16px; background: var(--card); color: var(--text-2); }
+.nf-empty b { font: var(--fw-bold) var(--fs-md) / 18px var(--font); color: var(--text); }
+.nf-empty span:not(.nf-eico) { max-width: 300px; font: var(--fw-regular) var(--fs-sm) / 18px var(--font); color: var(--text-faint); }
+
+.nf-foot { flex: none; height: 18px; display: flex; align-items: center; padding: 0 var(--sp-3); margin-top: var(--sp-1); font-size: var(--fs-xs); line-height: 14px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nf-root.off .nf-foot { color: var(--amber); }
+
+/* unread count on the tab icon while another tab is open (pill.css shows .tb only inside the active tab) */
+.tab:has(.nf-ic) { position: relative; }
+.tab:has(.nf-ic):not(.on) .tb:not(:empty) { display: grid; place-items: center; position: absolute; top: 1px; right: 1px; max-width: none; min-width: 14px; height: 14px; margin: 0; padding: 0 4px; box-sizing: border-box; overflow: visible;
+  border-radius: 7px; opacity: 1; background: var(--accent); color: var(--on-accent); font-size: var(--fs-2xs); font-weight: var(--fw-semi); line-height: 14px; pointer-events: none; animation: nf-pop .4s var(--spring-pop, var(--ease-spring)) backwards; }
+
+.rm .nf-row.unread .nf-dot, .rm .tab:has(.nf-ic) .tb { animation: none; }
+@media (prefers-reduced-motion: reduce) { .nf-row.unread .nf-dot, .tab:has(.nf-ic) .tb { animation: none; } .nf-x { transform: none; } }

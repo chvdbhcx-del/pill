@@ -96,6 +96,18 @@ create index chat_thread_idx on chat_messages(thread_id, id);",
     // reminders/timers (timers.rs): fired = a one-shot already announced, waiting for Done/Snooze; total_s = timer length
     "alter table reminders add column fired integer not null default 0;
 alter table reminders add column total_s integer not null default 0;",
+    // notification centre history (notifhist.rs): what the island showed; capped and expired there
+    "create table notif_history (
+  id integer primary key,
+  ts integer not null,
+  kind text not null default '',
+  icon text not null default '',
+  tone text not null default '',
+  title text not null default '',
+  sub text not null default '',
+  read integer not null default 0 check (read in (0,1))
+);
+create index notif_history_ts_idx on notif_history(ts desc);",
     // @migrations
 ];
 
@@ -115,7 +127,7 @@ pub fn init(_app: &tauri::App) {
     let _ = DB.set(Mutex::new(conn));
 }
 
-fn migrate(c: &Connection) {
+pub(crate) fn migrate(c: &Connection) {
     let have: usize = c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap_or(0).max(0) as usize;
     for (i, sql) in MIGRATIONS.iter().enumerate().skip(have) {
         let script = format!("BEGIN;\n{sql}\nPRAGMA user_version = {};\nCOMMIT;", i + 1);
