@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.3.4] - 2026-10-27
+
+### Fixed
+- Command bar no longer closes right after it opens (the focus hand-over blur is ignored for 400 ms) and no longer flashes the previous frame before its pop animation.
+- Smoother side flares of the collapsed island: they are drawn from an anti-aliased vector mask instead of a hard gradient edge, so the curve no longer stair-steps on light wallpapers.
+
 ## [0.3.3] - 2026-10-27
 
 ### Added

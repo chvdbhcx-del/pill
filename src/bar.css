@@ -10,6 +10,7 @@ body { font: 14px / 18px var(--font); color: var(--text); -webkit-font-smoothing
 }
 :root[data-theme="light"] .body { box-shadow: var(--shadow); }
 .body.in { animation: pop var(--dur-slow) var(--ease-spring) both; transform-origin: top center; }
+.body.off { opacity: 0; }
 @keyframes pop { from { opacity: 0; transform: translateY(-18px) scale(.96, .9); } 60% { opacity: 1; } to { opacity: 1; transform: none; } }
 .clipbox { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-radius: inherit; }
 

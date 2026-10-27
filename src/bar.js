@@ -514,7 +514,7 @@
     msg.textContent = ''; delete msg.dataset.page;
     clearAns();
     clearTimeout(timer);
-    body.classList.remove('in');
+    body.classList.remove('in', 'off');
     void body.offsetWidth; // restart the pop animation
     body.classList.add('in');
     fresh = true;
@@ -522,6 +522,10 @@
     loadCfg().then(waveStart);
     search();
   }
+  // A hidden bar is fully transparent, so the first frame after the OS shows the window is empty and the pop animation fades in from there (no flash of the old content).
+  const park = () => { body.classList.remove('in'); body.classList.add('off'); };
+  document.addEventListener('visibilitychange', () => { if (document.hidden) park(); });
+  T.event.listen('bar:hidden', park);
   T.event.listen('bar:shown', reset);
   T.event.listen('bar:hidden', () => { waveStop(); closeCtx(); seq++; endDialog(); clearAns(); dictHere = false; setMic('idle'); clearTimeout(confirmTimer); q.value = ''; list.replaceChildren(); items = []; });
   loadCfg();

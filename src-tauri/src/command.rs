@@ -67,6 +67,8 @@ static APPS_STORE_AT: Mutex<Option<Instant>> = Mutex::new(None);
 static APPS_SCAN_AT: Mutex<Option<Instant>> = Mutex::new(None); // end of the last Start Menu walk
 static INDEXING: AtomicBool = AtomicBool::new(false);
 static LAST_BLUR_HIDE: Mutex<Option<Instant>> = Mutex::new(None);
+/// When the bar was last shown: grab_keyboard moves focus between the window and its WebView, which reports a transient Focused(false).
+static SHOWN_AT: Mutex<Option<Instant>> = Mutex::new(None);
 static PENDING: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 static PREV_FG: AtomicIsize = AtomicIsize::new(0); // window that had focus before the bar opened (paste target)
 static ICONS: Mutex<Option<Lru>> = Mutex::new(None); // path -> shell icon data URL, bounded; the page also keeps its own per-session map
@@ -129,6 +131,9 @@ pub fn init(app: &tauri::App) {
         let (w2, h) = (win.clone(), app.handle().clone());
         win.on_window_event(move |e| match e {
             WindowEvent::Focused(false) if w2.is_visible().unwrap_or(false) => {
+                if lk(&SHOWN_AT).is_some_and(|t| t.elapsed() < Duration::from_millis(400)) {
+                    return; // our own focus hand-over (grab_keyboard), not the user clicking away
+                }
                 *lk(&LAST_BLUR_HIDE) = Some(Instant::now());
                 hide(&h);
             }
@@ -201,9 +206,10 @@ fn toggle(app: &AppHandle) {
     place(app, &win);
     index_apps_async();
     keep_transparent(&win);
+    *lk(&SHOWN_AT) = Some(Instant::now());
     let _ = win.show();
+    let _ = app.emit_to(LABEL, "bar:shown", ()); // first: the pop animation must not wait for the focus hand-over below
     grab_keyboard(app);
-    let _ = app.emit_to(LABEL, "bar:shown", ());
     // the first SetForegroundWindow can lose to the app that still owns the keyboard (the hotkey's own keys are barely released)
     let a = app.clone();
     std::thread::spawn(move || {
