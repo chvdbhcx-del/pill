@@ -37,6 +37,31 @@ struct Session {
     title: String,
     cwd: String,
     ts: i64,
+    /// the session's transcript file (from the hook payload): only its modification time is read, to notice that a prompt was answered
+    transcript: String,
+}
+
+/// A transcript written this long after the "waiting" mark means the prompt was answered (the tool result / the answer is appended).
+const RESUME_GAP_MS: i64 = 2_000;
+
+/// Claude Code has no "resumed" hook: a session marked waiting whose transcript changed afterwards is working again.
+fn resume_if_answered(s: &mut Session, transcript_mtime: Option<i64>) {
+    if let (State::Waiting, Some(m)) = (s.state, transcript_mtime) {
+        if m > s.ts + RESUME_GAP_MS {
+            s.state = State::Working;
+            s.ts = m;
+        }
+    }
+}
+
+/// mtime (ms) of a regular `.jsonl` file; nothing else is ever stat-ed.
+fn transcript_mtime(path: &str) -> Option<i64> {
+    let p = std::path::Path::new(path);
+    if !p.extension().map_or(false, |x| x.eq_ignore_ascii_case("jsonl")) {
+        return None;
+    }
+    let md = std::fs::metadata(p).ok().filter(|m| m.is_file())?;
+    Some(md.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis() as i64)
 }
 
 /// Text only: control characters become spaces, runs of whitespace collapse, capped at `max` chars.
@@ -83,7 +108,7 @@ fn parse_status(bytes: &[u8], mtime: i64, now: i64) -> Option<Session> {
         _ => "other".to_string(),
     };
     let ts = o.get("ts").and_then(Value::as_i64).filter(|t| *t > 0 && *t <= now + 300_000).unwrap_or(mtime);
-    Some(Session { tool, session, state, title: clean_text(st("title"), TITLE_MAX), cwd: clean_text(st("cwd"), CWD_MAX), ts })
+    Some(Session { tool, session, state, title: clean_text(st("title"), TITLE_MAX), cwd: clean_text(st("cwd"), CWD_MAX), ts, transcript: st("transcript").chars().take(CWD_MAX).collect() })
 }
 
 fn key(s: &Session) -> String {
@@ -236,7 +261,12 @@ fn scan(dir: &std::path::Path, now: i64) -> Vec<(PathBuf, Option<Session>)> {
                 let mtime = md.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis() as i64;
                 let mut buf = Vec::new();
                 f.take(MAX_FILE + 1).read_to_end(&mut buf).ok()?;
-                parse_status(&buf, mtime, now)
+                let mut s = parse_status(&buf, mtime, now)?;
+                if s.state == State::Waiting && !s.transcript.is_empty() {
+                    let m = transcript_mtime(&s.transcript);
+                    resume_if_answered(&mut s, m);
+                }
+                Some(s)
             })();
             (p, parsed)
         })
@@ -302,6 +332,7 @@ fn run(app: AppHandle) {
         for p in out.delete {
             let _ = std::fs::remove_file(p);
         }
+        let idle_ms = if snap["waiting"].as_i64().unwrap_or(0) > 0 { 2_000 } else { 10_000 };
         let txt = snap.to_string();
         if txt != last {
             last = txt;
@@ -310,10 +341,10 @@ fn run(app: AppHandle) {
         for s in out.done {
             let _ = app.emit_to("pill", "agents:done", json!({ "session": s.session, "tool": s.tool, "title": s.title, "cwd": s.cwd }));
         }
-        // 10 s tick with the watcher (stale expiry is time based), 1.5 s when it failed
+        // 10 s tick with the watcher (stale expiry is time based), 2 s while a session waits (its transcript is not watched), 1.5 s when the watcher failed
         match &watcher {
             Some(w) => {
-                if w.wait(10_000).is_err() {
+                if w.wait(idle_ms).is_err() {
                     watcher = None;
                 }
             }
@@ -358,7 +389,9 @@ try {
   if ($title.Length -gt 80) { $title = $title.Substring(0, 79) + '...' }
   $cwd = ''
   if ($j -and $j.cwd) { $cwd = [string]$j.cwd } elseif ($old) { $cwd = [string]$old.cwd }
-  $o = [ordered]@{ tool = $Tool; session = $sid; state = $State; title = $title; cwd = $cwd; ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
+  $tp = ''
+  if ($j -and $j.transcript_path) { $tp = [string]$j.transcript_path } elseif ($old -and $old.transcript) { $tp = [string]$old.transcript }
+  $o = [ordered]@{ tool = $Tool; session = $sid; state = $State; title = $title; cwd = $cwd; transcript = $tp; ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
   $tmp = "$file.tmp"
   [IO.File]::WriteAllText($tmp, ($o | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding($false)))
   Move-Item -LiteralPath $tmp -Destination $file -Force
@@ -450,10 +483,26 @@ mod tests {
         parse_status(s.as_bytes(), NOW - 1000, NOW)
     }
     fn sess(id: &str, state: State, ts: i64) -> Session {
-        Session { tool: "claude-code".into(), session: id.into(), state, title: "t".into(), cwd: String::new(), ts }
+        Session { tool: "claude-code".into(), session: id.into(), state, title: "t".into(), cwd: String::new(), ts, transcript: String::new() }
     }
     fn file(id: &str) -> PathBuf {
         PathBuf::from(format!("{id}.json"))
+    }
+
+    #[test]
+    fn answered_prompt_resumes_working() {
+        let mut s = sess("a", State::Waiting, 10_000);
+        resume_if_answered(&mut s, Some(10_000 + RESUME_GAP_MS)); // written at once after the hook: not an answer
+        assert_eq!(s.state, State::Waiting);
+        resume_if_answered(&mut s, None);
+        assert_eq!(s.state, State::Waiting);
+        resume_if_answered(&mut s, Some(20_000));
+        assert_eq!((s.state, s.ts), (State::Working, 20_000));
+        let mut d = sess("b", State::Done, 10_000);
+        resume_if_answered(&mut d, Some(99_000)); // only a waiting session is touched
+        assert_eq!(d.state, State::Done);
+        assert_eq!(transcript_mtime("C:/nope/x.txt"), None);
+        assert_eq!(transcript_mtime("C:/definitely/missing.jsonl"), None);
     }
 
     #[test]

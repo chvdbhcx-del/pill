@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.3.5] - 2026-10-27
+
+### Fixed
+- "Needs your input" no longer stays on the island after you answered: while a session waits, the island watches the modification time of that session's transcript (its content is never read) and goes back to "working" once it changes. The status helper now also records the transcript path.
+- Settings > Updates: the result line ("You are up to date") sits inside the card with the same inset and text size as the rows, and a failed install is shown in red.
+
 ## [0.3.4] - 2026-10-27
 
 ### Fixed

@@ -63,7 +63,7 @@
     c.append(r);
     return r;
   }
-  function msg(el, text, kind) { if (!el) return; el.textContent = text || ''; el.className = kind || ''; }
+  function msg(el, text, kind) { if (!el) return; el.textContent = text || ''; el.className = [el.dataset.base, kind].filter(Boolean).join(' '); } // data-base: a class the element keeps under every message (its padding / size)
 
   function sw(key, opt = {}) {
     const w = h('label', 'sw'), i = h('input'), k = h('i');
@@ -833,14 +833,14 @@
     const v = info.version || ver || '';
     const c = card(p);
     const r = row(c, t({ ru: 'Версия ', en: 'Version ' }) + v, t({ ru: 'Pill ищет обновления по кнопке и один раз при запуске (это можно выключить ниже). Устанавливается новая версия только по вашему нажатию: она скачивается с GitHub и проверяется подписью.', en: 'Pill looks for updates when you press the button and once at launch (you can turn that off below). A new version is installed only when you click it: it is downloaded from GitHub and its signature is verified.' }), null);
-    const out = h('div', 'footnote');
+    const out = h('div', 'updmsg'); out.dataset.base = 'updmsg';
     let found = false;
     const b = btn(t({ ru: 'Проверить сейчас', en: 'Check now' }), async () => {
       if (found) { // second step: download, verify, install, restart
         b.disabled = true; msg(out, t({ ru: 'Скачиваю и устанавливаю…', en: 'Downloading and installing…' }), 'note');
         const res = (await inv('update_install')) || {};
         b.disabled = false;
-        if (res.status === 'error') msg(out, t({ ru: 'Не удалось установить: ', en: 'Install failed: ' }) + (res.error || ''), 'note err');
+        if (res.status === 'error') msg(out, t({ ru: 'Не удалось установить: ', en: 'Install failed: ' }) + (res.error || ''), 'note bad');
         return;
       }
       b.disabled = true; msg(out, t({ ru: 'Проверяю…', en: 'Checking…' }), 'note');
@@ -850,7 +850,7 @@
         found = true; b.textContent = t({ ru: 'Установить и перезапустить', en: 'Install and restart' });
         msg(out, t({ ru: 'Доступна версия ', en: 'Version available: ' }) + res.version + (res.notes ? '. ' + String(res.notes).slice(0, 300) : ''), 'note ok');
       } else if (res.status === 'none') msg(out, t({ ru: 'У вас последняя версия.', en: 'You are up to date.' }), 'note ok');
-      else msg(out, t({ ru: 'Не удалось проверить: ', en: 'Could not check: ' }) + (res.error || ''), 'note err');
+      else msg(out, t({ ru: 'Не удалось проверить: ', en: 'Could not check: ' }) + (res.error || ''), 'note bad');
     });
     r.append(h('div', 'c', b));
     row(c, t({ ru: 'Проверять при запуске', en: 'Check on start' }), t({ ru: 'Через ~20 секунд после старта один запрос к GitHub. Установить обновление всё равно нужно вручную.', en: 'One request to GitHub ~20 s after launch. Installing is still up to you.' }), sw('updateAuto'));
