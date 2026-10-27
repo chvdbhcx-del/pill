@@ -2,7 +2,7 @@
    "agent completion reports in the pill"). Scoped to .ag. Tokens come from theme.css, every var has a fallback. */
 /* every status icon sits in an 18 px slot (spinner 13 + 2x2.5, dot 10 + 2x4, check 18), so the label starts at the same x in all three states */
 .lp.ag { justify-content: center; gap: var(--sp-2, 8px); min-width: 0; animation: ag-fade var(--dur-med, .22s) var(--ease-out, ease-out), ag-scale .4s var(--spring-pop, var(--ease-spring, ease-out)); }
-.ag .ag-txt { font-size: var(--fs-md, 13px); line-height: 18px; font-weight: 500; color: var(--text, #fff); white-space: nowrap; }
+.ag .ag-txt { font-size: var(--fs-md, 13px); line-height: 18px; font-weight: 500; color: var(--text, #fff); white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* a long project name is cut, not wrapped */
 
 /* working: small ring spinner */
 .ag-spin { flex: none; width: 13px; height: 13px; margin: 0 2.5px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--accent-soft, rgba(143, 150, 255, .22)); border-top-color: var(--accent, #8f96ff); animation: ag-spin .8s linear infinite; }

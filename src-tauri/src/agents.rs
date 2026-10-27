@@ -111,6 +111,11 @@ fn parse_status(bytes: &[u8], mtime: i64, now: i64) -> Option<Session> {
     Some(Session { tool, session, state, title: clean_text(st("title"), TITLE_MAX), cwd: clean_text(st("cwd"), CWD_MAX), ts, transcript: st("transcript").chars().take(CWD_MAX).collect() })
 }
 
+/// Last folder name of a working directory (either separator, trailing ones ignored): the project a session belongs to.
+fn project_name(cwd: &str) -> &str {
+    cwd.rsplit(['/', '\\']).find(|p| !p.is_empty()).unwrap_or("")
+}
+
 fn key(s: &Session) -> String {
     format!("{}/{}", s.tool, s.session)
 }
@@ -207,7 +212,7 @@ impl Tracker {
         let (working, waiting) = (v.iter().filter(|s| state(s) == "working").count(), v.iter().filter(|s| state(s) == "waiting").count());
         let sessions: Vec<Value> = v
             .iter()
-            .map(|s| json!({ "tool": s.tool, "session": s.session, "state": state(s), "title": s.title, "cwd": s.cwd, "ts": s.ts }))
+            .map(|s| json!({ "tool": s.tool, "session": s.session, "state": state(s), "title": s.title, "cwd": s.cwd, "project": project_name(&s.cwd), "ts": s.ts }))
             .collect();
         json!({ "sessions": sessions, "working": working, "waiting": waiting })
     }
@@ -487,6 +492,14 @@ mod tests {
     }
     fn file(id: &str) -> PathBuf {
         PathBuf::from(format!("{id}.json"))
+    }
+
+    #[test]
+    fn project_is_the_last_folder() {
+        assert_eq!(project_name(r"C:\Users\usr\island-replica"), "island-replica");
+        assert_eq!(project_name("/home/me/app/"), "app");
+        assert_eq!(project_name(r"D:\"), "D:");
+        assert_eq!(project_name(""), "");
     }
 
     #[test]

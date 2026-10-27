@@ -19,7 +19,10 @@
     const n = (k) => Math.max(0, (snap && snap[k]) | 0);
     const waiting = n('waiting'), working = n('working');
     if (waiting > 0) {
-      const txt = waiting === 1 ? t({ ru: 'Нужен ваш ответ', en: 'Needs your input' }) : t({ ru: `Ждут вас: ${waiting}`, en: `${waiting} need your input` });
+      // which session: the project (cwd folder) of the waiting ones, newest first; "+N" when they belong to different projects
+      const projects = [...new Set(((snap && snap.sessions) || []).filter((s) => s.state === 'waiting' && s.project).map((s) => s.project))];
+      const which = projects.length ? ' · ' + projects[0] + (projects.length > 1 ? ` +${projects.length - 1}` : '') : '';
+      const txt = (waiting === 1 ? t({ ru: 'Нужен ваш ответ', en: 'Needs your input' }) : t({ ru: `Ждут вас: ${waiting}`, en: `${waiting} need your input` })) + which;
       P.setLive('agents', { priority: 70, accent: 'var(--amber, #ffb340)', html: `<div class="lp ag ag-wait"><span class="ag-dot"></span><span class="ag-txt">${esc(txt)}</span></div>` });
       P.react('agents', 'attention'); // edge: stays while any agent waits for input
     } else if (working > 0) {
