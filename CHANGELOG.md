@@ -2,6 +2,15 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Changed
+- Accessibility: every setting row names its control for screen readers, toggles expose a switch role, icon-only buttons have names, and keyboard focus is visible everywhere. Settings follows the island's Reduce motion switch, not only the system setting.
+
+### Internal
+- A CI self-check fails when the front end calls a command that is not registered in Rust.
+- The calculator and unit conversion live in `command/calc.rs`.
+
 ## [0.3.5] - 2026-10-27
 
 ### Added
