@@ -53,5 +53,8 @@ jobs:
       - name: Quiet hours check
         run: node src/quiet.test.mjs
 
+      - name: Settings search check
+        run: node src/settings-search.test.mjs
+
       - name: Command contract check
         run: node src/contract.test.mjs

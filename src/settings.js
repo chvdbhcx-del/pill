@@ -3,10 +3,11 @@
 // media.rs (media_devices), launcher.rs (launcher_list), agents.rs (agents_hook_snippets). Language: i18n-lite.js (window.t, window.I18n).
 (() => {
   'use strict';
-  const T = window.__TAURI__ || {};
+  let T = window.__TAURI__ || {};
+  let indexing = false; // the search index runs the page builders with every Tauri call off
   const win = T.window && T.window.getCurrentWindow ? T.window.getCurrentWindow() : null;
   async function inv(cmd, args) {
-    if (!(T.core && T.core.invoke)) return null;
+    if (indexing || !(T.core && T.core.invoke)) return null;
     try { return await T.core.invoke(cmd, args); } catch (e) { console.error('invoke', cmd, e); return null; }
   }
   const safe = (f, ...a) => { try { return f && f(...a); } catch (e) { console.error(e); } };
@@ -1052,6 +1053,95 @@
     });
   }
 
+  // ---------------------------------------------------------------------------------------------------------- search (field above the sidebar, Ctrl+F)
+  // The index is built on the first focus: every page builder runs once into a detached box with all Tauri calls switched off (inv() answers null, T is empty,
+  // the page's syncs / cleanups are swapped out and cleaned afterwards). AI setup, Voice and Updates start their own listeners or servers, so they are indexed by name only.
+  // Matching is the pure PillSettingsSearch.match (settings-search.js).
+  let sIndex = null, sBuilding = null, sHits = [], sAct = -1, sHl = 0;
+  const NO_INDEX = new Set(['aisetup', 'voice', 'updates']);
+  async function buildIndex() {
+    if (sIndex) return sIndex;
+    if (sBuilding) return sBuilding;
+    sBuilding = (async () => {
+      const keep = { syncs, cleanups, T, cfg: aiState.cfg, models: aiState.models };
+      const out = [];
+      indexing = true; T = {}; syncs = []; cleanups = [];
+      try {
+        for (const pg of PAGES) {
+          if (pg.sep) continue;
+          const name = t(pg.name);
+          out.push({ page: pg.id, pageName: name, title: name, desc: '' });
+          if (NO_INDEX.has(pg.id)) continue;
+          const box = h('div');
+          try { await pg.build(box); } catch (e) { console.error('search index', pg.id, e); }
+          box.querySelectorAll('.row, .pcard').forEach((r) => {
+            const b = r.querySelector('b'), s = r.querySelector('.l span, span');
+            const title = b ? b.textContent.trim() : '';
+            if (title) out.push({ page: pg.id, pageName: name, title, desc: s ? s.textContent.trim() : '', row: true });
+          });
+          cleanups.forEach((f) => safe(f)); cleanups = []; syncs = [];
+        }
+      } finally {
+        indexing = false; T = keep.T; syncs = keep.syncs; cleanups = keep.cleanups; aiState.cfg = keep.cfg; aiState.models = keep.models;
+      }
+      sIndex = out; sBuilding = null;
+      return out;
+    })();
+    return sBuilding;
+  }
+  function highlightRow(e) {
+    if (!e.row) return;
+    const rows = [...document.querySelectorAll('#page .row, #page .pcard')];
+    const r = rows.find((x) => { const b = x.querySelector('b'); return b && b.textContent.trim() === e.title; });
+    if (!r) return;
+    r.scrollIntoView({ block: 'center', behavior: get('reduceMotion') || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'auto' : 'smooth' });
+    document.querySelectorAll('#page .hl').forEach((x) => x.classList.remove('hl'));
+    r.classList.add('hl');
+    clearTimeout(sHl); sHl = setTimeout(() => r.classList.remove('hl'), 1800);
+  }
+  function searchBox() {
+    const wrap = h('div', 'sb-search');
+    const lab = t({ ru: 'Поиск по настройкам', en: 'Search settings' });
+    const q = h('input', 'field sb-q'); q.type = 'text'; q.placeholder = lab + ' (Ctrl+F)'; q.spellcheck = false; q.autocomplete = 'off';
+    q.setAttribute('aria-label', lab); q.setAttribute('role', 'combobox'); q.setAttribute('aria-autocomplete', 'list'); q.setAttribute('aria-expanded', 'false'); q.setAttribute('aria-controls', 'sb-results');
+    const list = h('div', 'sb-results'); list.id = 'sb-results'; list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', lab); list.hidden = true;
+    const close = () => { list.hidden = true; q.setAttribute('aria-expanded', 'false'); q.removeAttribute('aria-activedescendant'); sHits = []; sAct = -1; };
+    const paint = () => {
+      list.replaceChildren();
+      if (!sHits.length) { list.append(h('div', 'sb-none', t({ ru: 'Ничего не найдено', en: 'Nothing found' }))); return; }
+      sHits.forEach((e, i) => {
+        const o = h('div', 'sb-res' + (i === sAct ? ' on' : ''), [h('b', '', e.title), h('span', '', e.row ? e.pageName : t({ ru: 'Страница', en: 'Page' }))]);
+        o.id = 'sb-res-' + i; o.setAttribute('role', 'option'); o.setAttribute('aria-selected', i === sAct ? 'true' : 'false');
+        o.onmousedown = (ev) => { ev.preventDefault(); go(e); };
+        list.append(o);
+      });
+      if (sAct >= 0) q.setAttribute('aria-activedescendant', 'sb-res-' + sAct); else q.removeAttribute('aria-activedescendant');
+    };
+    async function go(e) {
+      q.value = ''; close();
+      if (cur !== e.page) await show(e.page);
+      highlightRow(e);
+    }
+    q.onfocus = () => { buildIndex(); };
+    q.oninput = async () => {
+      const idx = await buildIndex();
+      const word = q.value;
+      if (!word.trim()) { close(); return; }
+      sHits = window.PillSettingsSearch ? window.PillSettingsSearch.match(idx, word, 8) : [];
+      sAct = sHits.length ? 0 : -1;
+      list.hidden = false; q.setAttribute('aria-expanded', 'true'); paint();
+    };
+    q.onkeydown = (ev) => {
+      if (ev.key === 'Escape') { if (q.value || !list.hidden) { q.value = ''; close(); } else q.blur(); ev.preventDefault(); return; }
+      if (!sHits.length) return;
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); sAct = (sAct + (ev.key === 'ArrowDown' ? 1 : -1) + sHits.length) % sHits.length; paint(); const a = list.querySelector('.on'); if (a && a.scrollIntoView) a.scrollIntoView({ block: 'nearest' }); }
+      else if (ev.key === 'Enter') { ev.preventDefault(); go(sHits[Math.max(0, sAct)]); }
+    };
+    q.onblur = () => setTimeout(close, 120);
+    wrap.append(q, list);
+    return wrap;
+  }
+
   // ---------------------------------------------------------------------------------------------------------- shell: sidebar, pages, window
   function buildSide() {
     const side = $('#side'); side.replaceChildren();
@@ -1070,7 +1160,7 @@
     const q = h('button', 'sb-item quit'); q.type = 'button'; q.innerHTML = svg(IC.power); q.append(t({ ru: 'Выйти из Pill', en: 'Quit Pill' }));
     q.onclick = () => inv('settings_quit');
     foot.append(q);
-    side.append(head, list, foot);
+    side.append(head, searchBox(), list, foot);
   }
   async function show(id) {
     const pg = PAGES.find((x) => x.id === id) || PAGES[0];
@@ -1089,7 +1179,7 @@
     $('#content').scrollTop = 0;
     await safe(pg.build, next);
   }
-  function renderAll() { buildSide(); return show(cur || 'character'); }
+  function renderAll() { sIndex = null; buildSide(); return show(cur || 'character'); }
 
   async function init() {
     const [s, info] = await Promise.all([inv('settings_get'), inv('settings_info')]);
@@ -1103,6 +1193,7 @@
     buildSide();
     await show(cur);
     // caption buttons
+    document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && String(e.key).toLowerCase() === 'f') { const q = $('.sb-q'); if (q) { e.preventDefault(); q.focus(); q.select(); } } });
     $('#b-min').onclick = () => win && win.minimize();
     $('#b-max').onclick = () => win && win.toggleMaximize();
     $('#b-close').onclick = () => inv('settings_close');
