@@ -71,10 +71,20 @@ fn rows() -> Vec<(i64, String, String)> {
     .unwrap_or_default()
 }
 
+/// Microsoft Store apps are not files: their target is the shell parsing name `shell:AppsFolder\<AppUserModelID>`.
+const STORE_PREFIX: &str = r"shell:AppsFolder\";
+
+fn is_store(target: &str) -> bool {
+    target.len() > STORE_PREFIX.len() && target.len() <= 300 && target.get(..STORE_PREFIX.len()).is_some_and(|p| p.eq_ignore_ascii_case(STORE_PREFIX)) && !target.chars().any(|c| c.is_control())
+}
+
 fn links() -> Vec<Link> {
     rows()
         .into_iter()
         .map(|(id, title, target)| {
+            if is_store(&target) {
+                return Link { id, title, missing: false, is_dir: false, icon: crate::shelf::bar_icon(&target), target };
+            }
             let meta = std::fs::metadata(&target).ok();
             Link { id, title, missing: meta.is_none(), is_dir: meta.as_ref().map_or(false, |m| m.is_dir()), icon: meta.and_then(|_| crate::shelf::icon_for(&target)), target }
         })
@@ -123,6 +133,30 @@ pub fn launcher_add(app: AppHandle, paths: Vec<String>) -> usize {
     added
 }
 
+/// Pins a Microsoft Store app (`shell:AppsFolder\...` as the command bar lists it) under the name the user saw. Same limits as `launcher_add`.
+pub(crate) fn add_store(app: &AppHandle, target: &str, title: &str) -> usize {
+    if !crate::settings::get_bool("module.launcher", true) || !is_store(target) {
+        return 0;
+    }
+    let Some(gid) = group_id() else { return 0 };
+    let title: String = title.chars().filter(|c| !c.is_control()).take(80).collect();
+    let title = if title.trim().is_empty() { "App".to_string() } else { title.trim().to_string() };
+    let ins = crate::store::with(|c| {
+        let n: i64 = c.query_row("select count(*) from launcher_links", [], |r| r.get(0))?;
+        let dup: i64 = c.query_row("select count(*) from launcher_links where target = ?1 collate nocase", [target], |r| r.get(0))?;
+        if dup > 0 || n as usize >= MAX_LINKS {
+            return Ok(0);
+        }
+        let next: i64 = c.query_row("select coalesce(max(sort) + 1, 0) from launcher_links", [], |r| r.get(0))?;
+        c.execute("insert into launcher_links (group_id, title, target, sort) values (?1, ?2, ?3, ?4)", rusqlite::params![gid, title, target, next])
+    });
+    let added = ins.unwrap_or(0);
+    if added > 0 {
+        changed(app);
+    }
+    added
+}
+
 #[tauri::command(async)]
 pub fn launcher_remove(app: AppHandle, id: i64) {
     crate::store::with(|c| c.execute("delete from launcher_links where id = ?1", [id]));
@@ -135,10 +169,10 @@ pub fn launcher_remove(app: AppHandle, id: i64) {
 pub fn launcher_open(id: i64) -> bool {
     let Some(t) = crate::store::with(|c| c.query_row("select target from launcher_links where id = ?1", [id], |r| r.get::<_, String>(0))) else { return false };
     let p = Path::new(&t);
-    if !p.exists() {
+    if !is_store(&t) && !p.exists() {
         return false;
     }
-    let dir = if p.is_dir() { None } else { p.parent().map(|d| d.to_string_lossy().into_owned()) };
+    let dir = if is_store(&t) || p.is_dir() { None } else { p.parent().map(|d| d.to_string_lossy().into_owned()) };
     unsafe {
         let dir_h = dir.as_deref().map(HSTRING::from);
         let dir_p = dir_h.as_ref().map_or(PCWSTR::null(), |h| PCWSTR(h.as_ptr()));
@@ -187,5 +221,15 @@ mod tests {
         assert!(clean(Path::new(r"C:\definitely\not\here\x.exe")).is_none());
         let c = clean(Path::new(&std::env::temp_dir())).unwrap();
         assert!(!c.starts_with(r"\\?\"));
+    }
+
+    #[test]
+    fn store_targets_are_recognised_strictly() {
+        assert!(is_store(r"shell:AppsFolder\Microsoft.WindowsNotepad_8wekyb3d8bbwe!App"));
+        assert!(is_store(r"SHELL:appsfolder\Some.App_abc!App"));
+        for bad in ["", r"shell:AppsFolder\", r"shell:AppsFolder", r"C:\Windows\notepad.exe", "shell:Startup\\x", "shell:AppsFolder\\a\nb", "приложение-приложение-приложение"] {
+            assert!(!is_store(bad), "{bad:?}");
+        }
+        assert!(!is_store(&format!(r"shell:AppsFolder\{}", "x".repeat(300)))); // too long
     }
 }

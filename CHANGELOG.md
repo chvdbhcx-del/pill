@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Changed
+- The pin button in a command-bar row (and the right-click menu and Ctrl+P) now also pins Microsoft Store apps to the island; they open and show their own icon like any other link.
+
 ## [0.4.0] - 2026-10-29
 
 ### Added

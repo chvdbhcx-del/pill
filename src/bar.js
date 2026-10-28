@@ -358,8 +358,8 @@
     rows(it);
   }
 
-  // app / file / folder rows can be pinned to the launcher strip; Microsoft Store apps (shell:AppsFolder\...) are not files, so not yet
-  function pinnable(it) { return !!it && ['app', 'file', 'folder'].includes(it.kind) && !String(it.payload || '').startsWith('shell:AppsFolder'); }
+  // app / file / folder rows (Microsoft Store apps too) can be pinned to the island's launcher strip
+  function pinnable(it) { return !!it && ['app', 'file', 'folder'].includes(it.kind); }
 
   async function run(it, mode) {
     if (!it) return;

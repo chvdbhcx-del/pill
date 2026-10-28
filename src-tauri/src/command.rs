@@ -765,13 +765,14 @@ fn remember(r: &Res) {
     rc.truncate(8);
 }
 
-/// Pins an existing file / shortcut / folder to the island's launcher strip (the strip itself skips duplicates and bad paths).
+/// Pins an existing file / shortcut / folder, or a Microsoft Store app (`shell:AppsFolder\...`, with the name shown in the bar), to the
+/// island's launcher strip (the strip itself skips duplicates and bad paths).
 /// "updated" keeps the bar open; the page turns the key in `message` into its own wording.
-fn pin_item(app: &AppHandle, target: &str) -> Outcome {
+fn pin_item(app: &AppHandle, target: &str, title: &str, store_app: bool) -> Outcome {
     if !settings::get_bool("module.launcher", true) {
         return err("Turn on the Launcher module in Settings > Modules");
     }
-    let added = crate::launcher::launcher_add(app.clone(), vec![target.to_string()]);
+    let added = if store_app { crate::launcher::add_store(app, target, title) } else { crate::launcher::launcher_add(app.clone(), vec![target.to_string()]) };
     Outcome { status: "updated", message: if added > 0 { "pinned" } else { "pinnedAlready" }.into() }
 }
 
@@ -871,8 +872,7 @@ pub fn cmd_run(app: AppHandle, id: String, mode: String) -> Outcome {
             let target = if store_app { Some(r.payload.clone()) } else { canonical(&r.payload) };
             let Some(t) = target else { return err("Path no longer exists") };
             let o = match mode.as_str() {
-                "pin" if store_app => err("Store apps cannot be pinned yet"),
-                "pin" => pin_item(&app, &t),
+                "pin" => pin_item(&app, &t, &r.title, store_app),
                 _ if store_app && mode != "open" => err("Store apps have no file location or admin mode"),
                 "folder" => match std::process::Command::new("explorer.exe").arg("/select,").arg(&t).creation_flags(NO_WINDOW).spawn() {
                     Ok(_) => ok(),
