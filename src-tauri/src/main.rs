@@ -37,17 +37,21 @@ mod aiactions;
 mod liveplus;
 mod mail;
 mod notifhist;
+mod whatsnew;
+mod report;
+mod openarg;
 
 fn main() {
     tauri::Builder::default()
         // @plugins-begin (add .plugin(...) lines here, one per line)
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| openarg::handle(app, args))) // first: a second launch is forwarded here and exits
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // @plugins-end
         .invoke_handler(tauri::generate_handler![
             pill::pill_rect, pill::pill_set_state, pill::pill_toggle, pill::pill_activate, pill::pill_auto_hide,
             pill::pill_monitors, pill::pill_set_gaze, pill::pill_cards, guard::pill_desktop_fg,
-            updater::update_check, updater::update_install,
+            updater::update_check, updater::update_install, whatsnew::whatsnew_check, report::report_problem,
             // @pill-commands
             // @guard-commands
             media::media_state, media::media_sessions, media::media_select, media::media_control,
@@ -90,6 +94,7 @@ fn main() {
             // @watch-commands
             settings::profile_save, settings::profile_apply, settings::profile_delete,
             agents::agents_list, agents::agents_dismiss, agents::agents_hook_snippets,
+            agents::agents_open_folder, agents::agents_open_code, agents::agents_tools,
             // @agents-commands
             launcher::launcher_list, launcher::launcher_add, launcher::launcher_remove, launcher::launcher_open, launcher::launcher_move,
             // @launcher-commands

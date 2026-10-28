@@ -18,7 +18,7 @@ pub(crate) fn defaults() -> Cfg {
         "reduceMotion": false, "showInCapture": true, "hideInApps": [],
         "hotkey.toggle": "Ctrl+Alt+I", "hotkey.command": "Alt+Shift+Space", "hotkey.clipboard": "Ctrl+Alt+V",
         // settings window (settingswin.rs / settings.js)
-        "language": "auto", "shape": "notch", "character": "liquid", "pet": "cat", "pet.side": "right", "pet.size": "m", "hideInFullscreen": true, "autoHideKeepDesktop": false, "updateAuto": true,
+        "language": "auto", "shape": "notch", "character": "liquid", "pet": "cat", "pet.side": "right", "pet.size": "m", "hideInFullscreen": true, "autoHideKeepDesktop": false, "updateAuto": true, "whatsNew": true,
         "underTaskbar": true, "passThrough": false, "passThroughOpacity": 50, "offsetX": 0, "musicPill": "title",
         "audio.reactive": true, "sound.reminders": true, "sound.reminderTone": "chime"
     }) else { unreachable!() };

@@ -30,7 +30,7 @@ pub fn is_secret(key: &str) -> bool {
 
 /// Machine or runtime state that must not travel between PCs.
 fn is_runtime(key: &str) -> bool {
-    key == "aiSetupDone" || key.starts_with("aisetup.") || key.starts_with("settingsWin.")
+    key == "aiSetupDone" || key == "lastSeenVersion" || key.starts_with("aisetup.") || key.starts_with("settingsWin.")
 }
 
 fn exportable(key: &str) -> bool {
@@ -77,7 +77,7 @@ pub fn filter_import(input: &Value, defs: &Cfg) -> (Cfg, usize) {
     (patch, skipped)
 }
 
-fn downloads_dir() -> PathBuf {
+pub(crate) fn downloads_dir() -> PathBuf {
     unsafe {
         if let Ok(p) = SHGetKnownFolderPath(&FOLDERID_Downloads, KF_FLAG_DEFAULT, HANDLE::default()) {
             let s = p.to_string().ok();
@@ -90,11 +90,9 @@ fn downloads_dir() -> PathBuf {
     std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("Downloads")
 }
 
-#[tauri::command]
-pub fn settings_export() -> Value {
-    let t = unsafe { GetLocalTime() };
+/// The export document (no secrets, no machine paths); the problem report reuses it.
+pub(crate) fn export_map() -> Cfg {
     let u = unsafe { GetSystemTime() };
-    let name = format!("pill-settings-{:04}{:02}{:02}-{:02}{:02}{:02}.json", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
     let iso = format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", u.wYear, u.wMonth, u.wDay, u.wHour, u.wMinute, u.wSecond);
     let mut out = Cfg::new();
     out.insert("_pill".into(), json!({ "version": env!("CARGO_PKG_VERSION"), "exported": iso }));
@@ -103,6 +101,14 @@ pub fn settings_export() -> Value {
             out.insert(k, v);
         }
     }
+    out
+}
+
+#[tauri::command]
+pub fn settings_export() -> Value {
+    let t = unsafe { GetLocalTime() };
+    let name = format!("pill-settings-{:04}{:02}{:02}-{:02}{:02}{:02}.json", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+    let out = export_map();
     let dir = downloads_dir();
     let path = dir.join(name);
     let written = serde_json::to_vec_pretty(&out).map_err(|e| e.to_string()).and_then(|b| {

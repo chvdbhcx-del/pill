@@ -1,7 +1,7 @@
 // Coding-agent status in the collapsed pill (GateGuard note: new file of the Pill app, loaded by pill.html; user request:
 // "agent completion reports in the pill"). Owner: agents lane (A7). Rust side: src-tauri/src/agents.rs.
 //  - agents:changed {sessions, working, waiting} -> live widget 'agents': waiting (amber, prio 70) beats working (spinner, prio 60)
-//  - agents:done {session, tool, title, cwd}      -> green check flash (prio 75, 1.6 s) + liquid ripple + card (Dismiss / Path)
+//  - agents:done {session, tool, title, cwd}      -> green check flash (prio 75, 1.6 s) + liquid ripple + card (Dismiss / Path / Folder / VS Code)
 // PRIVACY: titles come from files written by the user's own hooks; they are only ever shown as text (textContent / esc), never as HTML.
 // Extra: window.PillAgentsHookText() resolves to the ready-to-paste hook text for a Settings section.
 (() => {
@@ -54,7 +54,7 @@
   }
   // Session titles are the first words of a prompt / reply: drop markdown marks (# ** ` > _ [ ]) so the card reads as plain text.
   const plainTitle = (s) => String(s || '').replace(/[#*`>_\[\]]+/g, ' ').replace(/\s+/g, ' ').trim();
-  function done(p) {
+  async function done(p) {
     if (!p || !p.session || !P.liveOn('agents')) return;
     edge(0.9);
     P.react('agent-done', 'done', { ttlMs: 4000 });
@@ -64,7 +64,12 @@
     }
     const tool = TOOLS[p.tool] || '';
     const actions = [{ label: t({ ru: 'Скрыть', en: 'Dismiss' }), run: () => P.invoke('agents_dismiss', { session: p.session }) }];
-    if (p.cwd) actions.push({ label: t({ ru: 'Путь', en: 'Path' }), kind: 'white', run: () => copyText(String(p.cwd)) });
+    if (p.cwd) {
+      actions.push({ label: t({ ru: 'Путь', en: 'Path' }), kind: 'white', run: () => copyText(String(p.cwd)) });
+      actions.push({ label: t({ ru: 'Папка', en: 'Folder' }), kind: 'white', run: () => P.invoke('agents_open_folder', { session: p.session }) }); // the backend looks the folder up by session id
+      const tools = await P.invoke('agents_tools'); // the button is offered only when `code` is installed
+      if (tools && tools.code) actions.push({ label: 'VS Code', kind: 'white', run: () => P.invoke('agents_open_code', { session: p.session }) });
+    }
     P.toast({
       id: 'agent-done:' + p.session, icon: check, tone: 'green', ttlMs: CARD_MS,
       title: t({ ru: 'Агент закончил', en: 'Agent finished' }) + (proj ? ' · ' + proj : ''),

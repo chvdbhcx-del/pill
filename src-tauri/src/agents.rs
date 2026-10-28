@@ -6,6 +6,7 @@
 // Events to window "pill": `agents:changed` {sessions, working, waiting}, `agents:done` {session, tool, title, cwd} (once per transition).
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
 
@@ -18,6 +19,7 @@ const STALE_MS: i64 = 30 * 60_000; // working/waiting without an update -> "stal
 const STALE_DROP_MS: i64 = 24 * 3_600_000; // stale files are removed after a day
 const DONE_TTL_MS: i64 = 10 * 60_000; // done files are removed after 10 minutes
 const FRESH_MS: i64 = 120_000; // a done file that appears with no earlier state still fires if it is this young
+const NO_WINDOW: u32 = 0x0800_0000; // CREATE_NO_WINDOW
 const HELPER_NAME: &str = "agent-hook.ps1";
 
 // ---------- pure parts (unit-tested) ----------
@@ -222,6 +224,11 @@ impl Tracker {
             .map(|s| json!({ "tool": s.tool, "session": s.session, "state": state(s), "title": s.title, "cwd": s.cwd, "project": project_name(&s.cwd), "ts": s.ts }))
             .collect();
         json!({ "sessions": sessions, "working": working, "waiting": waiting })
+    }
+
+    /// The working folder the newest entry of this session id reports (empty = unknown).
+    fn cwd_of(&self, session: &str) -> Option<String> {
+        self.map.values().filter(|e| e.s.session == session && !e.s.cwd.is_empty()).max_by_key(|e| e.s.ts).map(|e| e.s.cwd.clone())
     }
 
     /// Forget every session with this id; returns the files to delete.
@@ -474,6 +481,62 @@ pub fn agents_dismiss(session: String) -> bool {
     any
 }
 
+/// A session's folder as an existing, canonical, LOCAL directory (`C:\...`): no relative path, no UNC / mapped network drive, no file.
+fn local_dir(cwd: &str) -> Option<PathBuf> {
+    let c = cwd.trim();
+    if c.is_empty() || !std::path::Path::new(c).is_absolute() || c.starts_with("\\\\") || c.starts_with("//") {
+        return None;
+    }
+    let canon = std::fs::canonicalize(c).ok()?;
+    let s = canon.to_string_lossy().into_owned();
+    let plain = s.strip_prefix("\\\\?\\").unwrap_or(&s); // canonicalize returns \\?\C:\...; a network share comes back as \\?\UNC\...
+    let b = plain.as_bytes();
+    (canon.is_dir() && b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':').then(|| PathBuf::from(plain))
+}
+
+/// First of `names` that exists as a file in a directory of the PATH-style list `path`.
+fn find_in_path(path: &std::ffi::OsStr, names: &[&str]) -> Option<PathBuf> {
+    std::env::split_paths(path).find_map(|d| names.iter().map(|n| d.join(n)).find(|p| p.is_file()))
+}
+
+/// VS Code's `code` launcher: PATH first, then the per-user install (%LOCALAPPDATA%\Programs\Microsoft VS Code\bin\code.cmd).
+fn find_code_in(path: Option<&std::ffi::OsStr>, local_appdata: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    path.and_then(|p| find_in_path(p, &["code.cmd", "code.exe"]))
+        .or_else(|| local_appdata.map(|l| PathBuf::from(l).join("Programs\\Microsoft VS Code\\bin\\code.cmd")).filter(|p| p.is_file()))
+}
+
+fn find_code() -> Option<PathBuf> {
+    find_code_in(std::env::var_os("PATH").as_deref(), std::env::var_os("LOCALAPPDATA").as_deref())
+}
+
+/// The folder of a tracked session; the front end only ever names the session, never a path.
+fn session_dir(session: &str) -> Option<PathBuf> {
+    let id = clean_id(session);
+    if id.is_empty() {
+        return None;
+    }
+    let cwd = lock().cwd_of(&id)?;
+    local_dir(&cwd)
+}
+
+#[tauri::command]
+pub fn agents_open_folder(session: String) -> bool {
+    let Some(dir) = session_dir(&session) else { return false };
+    std::process::Command::new("explorer.exe").arg(&dir).creation_flags(NO_WINDOW).spawn().is_ok() // dir = one argv element, no shell
+}
+
+#[tauri::command]
+pub fn agents_open_code(session: String) -> bool {
+    let (Some(dir), Some(code)) = (session_dir(&session), find_code()) else { return false };
+    std::process::Command::new(code).arg(&dir).creation_flags(NO_WINDOW).spawn().is_ok()
+}
+
+/// { code: bool }: whether the "VS Code" button on the finished card is offered.
+#[tauri::command]
+pub fn agents_tools() -> Value {
+    json!({ "code": find_code().is_some() })
+}
+
 #[tauri::command]
 pub fn agents_hook_snippets() -> Value {
     write_helper();
@@ -593,5 +656,56 @@ mod tests {
         assert!(!cmd.contains('$'));
         assert!(s["codex"].as_str().unwrap().starts_with("notify = [\"powershell\""));
         assert!(HELPER.is_ascii());
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("pill-agents-test-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn local_dir_accepts_only_existing_local_directories() {
+        let d = scratch("dir");
+        let got = local_dir(d.to_str().unwrap()).unwrap();
+        assert!(!got.to_string_lossy().starts_with("\\\\"), "verbatim prefix stripped: {got:?}");
+        assert!(got.is_dir());
+        let f = d.join("a.txt");
+        std::fs::write(&f, "x").unwrap();
+        for bad in ["", "  ", "relative\\dir", "\\\\server\\share\\x", "//server/share", "\\\\?\\UNC\\server\\share", d.join("missing").to_str().unwrap(), f.to_str().unwrap()] {
+            assert!(local_dir(bad).is_none(), "{bad}");
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn code_lookup_uses_path_then_local_install() {
+        let (a, b) = (scratch("path"), scratch("local"));
+        assert!(find_code_in(Some(a.as_os_str()), Some(b.as_os_str())).is_none());
+        let bin = b.join("Programs\\Microsoft VS Code\\bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("code.cmd"), "").unwrap();
+        assert_eq!(find_code_in(Some(a.as_os_str()), Some(b.as_os_str())), Some(bin.join("code.cmd")));
+        std::fs::write(a.join("code.cmd"), "").unwrap();
+        let both = std::env::join_paths([&a]).unwrap();
+        assert_eq!(find_code_in(Some(&both), Some(b.as_os_str())), Some(a.join("code.cmd"))); // PATH wins
+        assert!(find_code_in(None, None).is_none());
+        let _ = (std::fs::remove_dir_all(&a), std::fs::remove_dir_all(&b));
+    }
+
+    #[test]
+    fn cwd_of_picks_the_newest_known_folder() {
+        let mut t = Tracker::new();
+        let mut a = sess("s1", State::Done, 10);
+        a.cwd = "C:\\old".into();
+        let mut b = sess("s1", State::Done, 20);
+        b.cwd = "C:\\new".into();
+        t.map.insert("a".into(), Entry { s: a, file: PathBuf::new() });
+        t.map.insert("b".into(), Entry { s: b, file: PathBuf::new() });
+        t.map.insert("c".into(), Entry { s: sess("s2", State::Done, 30), file: PathBuf::new() }); // no cwd
+        assert_eq!(t.cwd_of("s1").as_deref(), Some("C:\\new"));
+        assert_eq!(t.cwd_of("s2"), None);
+        assert_eq!(t.cwd_of("nope"), None);
     }
 }

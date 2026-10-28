@@ -15,6 +15,7 @@ serde_json = "1"
 png = "0.18"
 base64 = "0.22"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2" # openarg.rs: a second `pill.exe --open agents` is forwarded to the running instance (first-party plugin)
 rusqlite = { version = "0.32", features = ["bundled"] }
 windows-core = "0.58"
 sha2 = "0.10" # clipboard dedupe hash; already in the tauri dependency tree, pure Rust, no network

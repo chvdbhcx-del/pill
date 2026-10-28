@@ -4,6 +4,12 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Added
+- After an update the island shows a "Pill <version>" card with that version's notes (taken from the changelog built into the app, no network) and an "All changes" button that opens Settings > Updates. Never on a fresh install; Settings > Updates has a switch for it.
+- Settings > Updates > Report a problem: creates `Pill-report-<date>` in Downloads (versions, enabled modules, the settings export without secrets, the end of the voice log) and opens it. Nothing is sent anywhere.
+- The "Agent finished" card has "Folder" (opens the session's folder in Explorer) and "VS Code" (only when `code` is installed) next to "Path". The app looks the folder up by session, and only an existing local directory is opened.
+- `pill.exe --open agents` (or `--open settings`) started a second time is forwarded to the running Pill, which opens the Agents tab (or Settings) and the second process exits; Pill is now single-instance. Other arguments are ignored.
+
 ### Changed
 - Settings pages are regrouped: General (language, autostart, backup), Appearance (the island's looks, folded-island content, motion, frame rate), Behavior (auto-hide, pass-through, screenshots) and a new File search page (Everything). "Pill during music" moved to Sound. Long descriptions are shorter.
 
