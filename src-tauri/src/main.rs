@@ -92,6 +92,7 @@ fn main() {
             // @watch-commands
             settings::profile_save, settings::profile_apply, settings::profile_delete,
             agents::agents_list, agents::agents_dismiss, agents::agents_hook_snippets,
+            agents::agents_open_folder, agents::agents_open_code, agents::agents_tools,
             // @agents-commands
             launcher::launcher_list, launcher::launcher_add, launcher::launcher_remove, launcher::launcher_open, launcher::launcher_move,
             // @launcher-commands
