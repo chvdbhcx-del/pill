@@ -755,6 +755,16 @@ fn remember(r: &Res) {
     rc.truncate(8);
 }
 
+/// Pins an existing file / shortcut / folder to the island's launcher strip (the strip itself skips duplicates and bad paths).
+/// "updated" keeps the bar open; the page turns the key in `message` into its own wording.
+fn pin_item(app: &AppHandle, target: &str) -> Outcome {
+    if !settings::get_bool("module.launcher", true) {
+        return err("Turn on the Launcher module in Settings > Modules");
+    }
+    let added = crate::launcher::launcher_add(app.clone(), vec![target.to_string()]);
+    Outcome { status: "updated", message: if added > 0 { "pinned" } else { "pinnedAlready" }.into() }
+}
+
 #[tauri::command]
 pub fn cmd_run(app: AppHandle, id: String, mode: String) -> Outcome {
     let Some(r) = lk(&STORE).as_ref().and_then(|m| m.get(&id)).cloned() else {
@@ -851,6 +861,8 @@ pub fn cmd_run(app: AppHandle, id: String, mode: String) -> Outcome {
             let target = if store_app { Some(r.payload.clone()) } else { canonical(&r.payload) };
             let Some(t) = target else { return err("Path no longer exists") };
             let o = match mode.as_str() {
+                "pin" if store_app => err("Store apps cannot be pinned yet"),
+                "pin" => pin_item(&app, &t),
                 _ if store_app && mode != "open" => err("Store apps have no file location or admin mode"),
                 "folder" => match std::process::Command::new("explorer.exe").arg("/select,").arg(&t).creation_flags(NO_WINDOW).spawn() {
                     Ok(_) => ok(),

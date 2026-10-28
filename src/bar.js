@@ -39,6 +39,8 @@
     adminTip: { ru: 'Запустить от имени администратора (Ctrl+Shift+Enter)', en: 'Run as administrator (Ctrl+Shift+Enter)' },
     folderTip: { ru: 'Показать в папке (Ctrl+Enter)', en: 'Show in folder (Ctrl+Enter)' },
     ctxOpen: { ru: 'Открыть', en: 'Open' }, ctxFolder: { ru: 'Показать в папке', en: 'Show in folder' },
+    pinTip: { ru: 'Закрепить в Pill (Ctrl+P)', en: 'Pin to Pill (Ctrl+P)' }, ctxPin: { ru: 'Закрепить в Pill', en: 'Pin to Pill' },
+    pinned: { ru: 'Закреплено в Pill', en: 'Pinned to Pill' }, pinnedAlready: { ru: 'Уже закреплено', en: 'Already pinned' },
     ctxPath: { ru: 'Скопировать путь', en: 'Copy path' }, ctxAdmin: { ru: 'Запустить от имени администратора', en: 'Run as administrator' },
   };
   const SYS = {
@@ -218,7 +220,7 @@
     let acts = null;
     if (it.kind === 'app' || it.kind === 'file' || it.kind === 'folder') {
       acts = document.createElement('span'); acts.className = 'acts';
-      for (const [m, icon, tip] of [['path', 'copy', L.pathTip], ...(it.kind === 'folder' ? [] : [['admin', 'shield', L.adminTip]]), ['folder', 'folderOpen', L.folderTip]]) {
+      for (const [m, icon, tip] of [['path', 'copy', L.pathTip], ...(it.kind === 'folder' ? [] : [['admin', 'shield', L.adminTip]]), ...(pinnable(it) ? [['pin', 'pin', L.pinTip]] : []), ['folder', 'folderOpen', L.folderTip]]) {
         const b = document.createElement('button'); b.className = 'ab'; b.dataset.m = m; b.title = t(tip); b.tabIndex = -1;
         b.innerHTML = ic(icon, { size: 16, sw: 1.6 }); // static markup
         acts.append(b);
@@ -354,6 +356,9 @@
     rows(it);
   }
 
+  // app / file / folder rows can be pinned to the launcher strip; Microsoft Store apps (shell:AppsFolder\...) are not files, so not yet
+  function pinnable(it) { return !!it && ['app', 'file', 'folder'].includes(it.kind) && !String(it.payload || '').startsWith('shell:AppsFolder'); }
+
   async function run(it, mode) {
     if (!it) return;
     if (it.kind === 'ask') return ask(it);
@@ -369,6 +374,7 @@
     else if (it.kind === 'clip' && mode === 'path') mode = 'copy'; // "copy the path" of a clipboard item is its plain copy
     const r = await invoke('cmd_run', { id: it.id, mode });
     if (!r) return;
+    if (mode === 'pin' && r.status === 'updated') r.message = t(L[r.message] || L.pinned); // Rust answers with a key: pinned / pinnedAlready
     const el = list.querySelector(`.row[data-i="${items.indexOf(it)}"]`);
     clearTimeout(confirmTimer);
     if (r.status === 'copy') { // clipboard item, Shift+Enter: copy only
@@ -399,6 +405,7 @@
     else if (e.key === 'ArrowUp') { e.preventDefault(); select(sel - 1); }
     else if (e.key === 'F4' && !e.altKey) { e.preventDefault(); dictate(); }
     else if (e.key === 'Tab') { e.preventDefault(); nextGroup(e.shiftKey ? -1 : 1); }
+    else if (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyP') { e.preventDefault(); if (pinnable(items[sel])) run(items[sel], 'pin'); } // pin the selected app / file / folder to the island's launcher strip
     else if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') { e.preventDefault(); run(items[sel], 'path'); } // copy the path of the selected file / folder / app
     else if (e.key === 'Enter') {
       e.preventDefault();
@@ -424,7 +431,7 @@
     closeCtx();
     ctx = document.createElement('div'); ctx.className = 'ctx'; ctx.setAttribute('role', 'menu');
     const defs = [['open', 'enter', L.ctxOpen, 'Enter'], ['folder', 'folderOpen', L.ctxFolder, 'Ctrl+Enter'], ['path', 'copy', L.ctxPath, 'Ctrl+Shift+C'],
-      ...(it.kind === 'folder' ? [] : [['admin', 'shield', L.ctxAdmin, 'Ctrl+Shift+Enter']])];
+      ...(it.kind === 'folder' ? [] : [['admin', 'shield', L.ctxAdmin, 'Ctrl+Shift+Enter']]), ...(pinnable(it) ? [['pin', 'pin', L.ctxPin, 'Ctrl+P']] : [])];
     for (const [m, icon, label, key] of defs) {
       const b = document.createElement('button'); b.className = 'it'; b.setAttribute('role', 'menuitem');
       b.innerHTML = ic(icon, { size: 16, sw: 1.6 }); // static markup
