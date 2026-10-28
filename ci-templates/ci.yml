@@ -46,3 +46,6 @@ jobs:
             if ($LASTEXITCODE -ne 0) { $failed++ }
           }
           if ($failed) { throw "$failed script(s) failed node --check" }
+
+      - name: Front-end self-checks
+        run: node src/tab-text.test.mjs
