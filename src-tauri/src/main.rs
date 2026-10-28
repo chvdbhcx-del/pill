@@ -38,6 +38,7 @@ mod liveplus;
 mod mail;
 mod notifhist;
 mod whatsnew;
+mod report;
 
 fn main() {
     tauri::Builder::default()
@@ -48,7 +49,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             pill::pill_rect, pill::pill_set_state, pill::pill_toggle, pill::pill_activate, pill::pill_auto_hide,
             pill::pill_monitors, pill::pill_set_gaze, pill::pill_cards, guard::pill_desktop_fg,
-            updater::update_check, updater::update_install, whatsnew::whatsnew_check,
+            updater::update_check, updater::update_install, whatsnew::whatsnew_check, report::report_problem,
             // @pill-commands
             // @guard-commands
             media::media_state, media::media_sessions, media::media_select, media::media_control,

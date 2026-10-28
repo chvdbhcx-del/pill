@@ -972,7 +972,16 @@
     row(c, t({ ru: 'Проверять при запуске', en: 'Check on start' }), t({ ru: 'Через ~20 секунд после старта один запрос к GitHub. Установить обновление всё равно нужно вручную.', en: 'One request to GitHub ~20 s after launch. Installing is still up to you.' }), sw('updateAuto'));
     DEF.whatsNew = true;
     row(c, t({ ru: 'Показывать «Что нового» после обновления', en: 'Show the what is new card after an update' }), t({ ru: 'Карточка с заметками версии один раз после обновления; сеть не используется', en: 'A card with the version notes, once after an update; no network' }), sw('whatsNew'));
-    c.append(out);
+    const rep = h('div', 'updmsg'); rep.dataset.base = 'updmsg';
+    const rb = btn(t({ ru: 'Сообщить о проблеме', en: 'Report a problem' }), async () => {
+      rb.disabled = true;
+      const res = (await inv('report_problem')) || {};
+      rb.disabled = false;
+      if (res.ok) msg(rep, t({ ru: 'Папка отчёта открыта в Загрузках. Версия, настройки без ключей и паролей' + (res.log ? ', хвост лога' : ', лога нет') + '. Ничего не отправляется: приложите файлы сами.', en: 'The report folder is open in Downloads: version, settings without keys or passwords' + (res.log ? ', the log tail' : ', no log') + '. Nothing is sent: attach the files yourself.' }), 'note ok');
+      else msg(rep, t({ ru: 'Не удалось создать отчёт: ', en: 'Could not create the report: ' }) + (res.error || ''), 'note bad');
+    });
+    row(c, t({ ru: 'Сообщить о проблеме', en: 'Report a problem' }), t({ ru: 'Создаёт папку в Загрузках: версия Pill и Windows, список включённых модулей, настройки без секретов и конец журнала. Буфер, заметки, почта и пути к вашим файлам не попадают.', en: 'Creates a folder in Downloads: Pill and Windows versions, the enabled modules, settings without secrets and the end of the log. Clipboard, notes, mail and your file paths are left out.' })).append(h('div', 'c', rb));
+    c.append(out, rep);
     const d = h('details', 'disc');
     d.append(h('summary', '', t({ ru: 'Что нового', en: 'What is new' })));
     d.append(h('ul', '', [t({ ru: 'Отдельное окно настроек, как у оригинала: персонаж, общее, клавиши, ИИ, погода, звук, живые события, буфер, модули.', en: 'A separate settings window: character, general, hotkeys, AI, weather, sound, live events, clipboard, modules.' })].map((x) => h('li', '', x))));
