@@ -192,6 +192,13 @@ fn place(app: &AppHandle, win: &WebviewWindow) {
     let _ = win.set_position(PhysicalPosition::new(x, y));
 }
 
+/// Opens the bar when it is closed (the uninstall flow brings it back when the uninstaller is done).
+pub(crate) fn show(app: &AppHandle) {
+    if app.get_webview_window(LABEL).is_some_and(|w| !w.is_visible().unwrap_or(false)) {
+        toggle(app);
+    }
+}
+
 fn toggle(app: &AppHandle) {
     let Some(win) = app.get_webview_window(LABEL) else { return };
     if win.is_visible().unwrap_or(false) {
@@ -298,6 +305,9 @@ fn query(text: &str) -> Vec<Res> {
         } else {
             res("shell", format!("shell:{cmd}"), format!("Run: {cmd}"), "cmd /c, hidden window".into(), cmd.to_string())
         });
+    } else if let Some(rest) = crate::uninstall::trigger(q0).filter(|_| mod_on("module.uninstall")) {
+        // `u foo` / `del foo` / `uninstall foo` / `удалить foo`: installed apps to uninstall completely (nothing runs before the confirm card)
+        out = crate::uninstall::rows(rest).into_iter().map(|r| res(r.kind, r.id, r.title, r.sub, r.payload)).collect();
     } else {
         let (scope, rest) = parse_scope(q0);
         let all = scope == Scope::All;
