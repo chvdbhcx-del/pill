@@ -148,6 +148,9 @@
     modules: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/>',
     updates: '<path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4"/>',
     aisetup: '<path d="M12 3.5v11M7.5 10.5l4.5 4.5 4.5-4.5M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/>',
+    appearance: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/>',
+    behavior: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+    search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/>',
     power: '<path d="M12 3v8"/><path d="M6.8 6.6a8 8 0 1 0 10.4 0"/>',
   };
 
@@ -356,16 +359,21 @@
   const PAGES = [
     { id: 'character', icon: 'character', name: { ru: 'Персонаж', en: 'Character' }, build: pCharacter },
     { sep: true },
-    { id: 'general', icon: 'general', name: { ru: 'Общее', en: 'General' }, build: pGeneral },
+    { id: 'general', icon: 'general', name: { ru: 'Основное', en: 'General' }, build: pGeneral },
+    { id: 'appearance', icon: 'appearance', name: { ru: 'Внешний вид', en: 'Appearance' }, build: pAppearance },
+    { id: 'behavior', icon: 'behavior', name: { ru: 'Поведение', en: 'Behavior' }, build: pBehavior },
     { id: 'hotkeys', icon: 'hotkeys', name: { ru: 'Клавиши', en: 'Hotkeys' }, head: { ru: 'Горячие клавиши', en: 'Hotkeys' }, build: pHotkeys },
-    { id: 'ai', icon: 'ai', name: { ru: 'ИИ', en: 'AI' }, build: pAi },
-    { id: 'voice', icon: 'voice', name: { ru: 'Голос в текст', en: 'Voice to text' }, build: pVoice },
-    { id: 'aisetup', icon: 'aisetup', name: { ru: 'Установка ИИ', en: 'AI setup' }, build: pAiSetup },
-    { id: 'weather', icon: 'weather', name: { ru: 'Погода', en: 'Weather' }, build: pWeather },
-    { id: 'sound', icon: 'sound', name: { ru: 'Звук', en: 'Sound' }, build: pSound },
+    { sep: true },
+    { id: 'modules', icon: 'modules', name: { ru: 'Модули', en: 'Modules' }, build: pModules },
     { id: 'live', icon: 'live', name: { ru: 'Живые события', en: 'Live events' }, build: pLive },
     { id: 'clipboard', icon: 'clipboard', name: { ru: 'Буфер обмена', en: 'Clipboard' }, build: pClipboard },
-    { id: 'modules', icon: 'modules', name: { ru: 'Модули', en: 'Modules' }, build: pModules },
+    { id: 'search', icon: 'search', name: { ru: 'Поиск файлов', en: 'File search' }, build: pSearch },
+    { id: 'sound', icon: 'sound', name: { ru: 'Звук', en: 'Sound' }, build: pSound },
+    { id: 'weather', icon: 'weather', name: { ru: 'Погода', en: 'Weather' }, build: pWeather },
+    { sep: true },
+    { id: 'ai', icon: 'ai', name: { ru: 'ИИ', en: 'AI' }, build: pAi },
+    { id: 'aisetup', icon: 'aisetup', name: { ru: 'Установка ИИ', en: 'AI setup' }, build: pAiSetup },
+    { id: 'voice', icon: 'voice', name: { ru: 'Голос в текст', en: 'Voice to text' }, build: pVoice },
     { sep: true },
     { id: 'updates', icon: 'updates', name: { ru: 'Обновления', en: 'Updates' }, build: pUpdates },
   ];
@@ -497,7 +505,7 @@
     p.append(h('div', 'footnote', t({ ru: 'Источник: только www.voidtools.com по https; размер и SHA-256 сверяются с записанными в Pill, при несовпадении файл удаляется. Pill сам ничего не устанавливает и не повышает права: установщик запускается вашим вторым нажатием.', en: 'Source: www.voidtools.com over https only; the size and SHA-256 are checked against the values pinned in Pill and a mismatch deletes the file. Pill installs nothing itself and never elevates: the installer starts on your second click.' })));
   }
 
-  // ---- General
+  // ---- General: language, autostart, settings backup
   function pGeneral(p) {
     let c = card(p);
     row(c, t({ ru: 'Язык', en: 'Language' }), t({ ru: 'По умолчанию — как в Windows', en: 'By default, the same as Windows' }),
@@ -511,64 +519,10 @@
     ar = row(c, t({ ru: 'Запускать вместе с Windows', en: 'Start with Windows' }), '', asw);
     if (!ar.sub) { ar.sub = h('span', ''); ar.querySelector('.l').append(ar.sub); }
     inv('autostart_get').then((v) => { auto = !!v; asw.input.checked = auto; });
-    row(c, t({ ru: 'Прятать в полноэкранных приложениях', en: 'Hide in full-screen apps' }), t({ ru: 'Игры, видео на весь экран, презентации', en: 'Games, full-screen video, presentations' }), sw('hideInFullscreen'));
-    row(c, t({ ru: 'Показывать остров на скриншотах и в записи экрана', en: 'Show the pill in screenshots and screen recordings' }),
-      t({ ru: 'Обычно его там нет: ни скриншоты, ни запись, ни трансляция остров не видят. Включи, если фоновая запись NVIDIA или другой программы пишет, что остров мешает записи рабочего стола', en: 'Normally it is not there: screenshots, recordings and streams do not see the pill. Turn it on if the background recording of NVIDIA or another program says the pill gets in the way of recording the desktop' }), sw('showInCapture'));
-    row(c, t({ ru: 'Прятать остров, пока он не нужен', en: 'Hide the pill until it is needed' }),
-      t({ ru: 'Свёрнутый остров уходит за край экрана и не мешает нажимать то, что под ним: вкладки браузера, кнопки окна. Задержи курсор у самого верхнего края экрана над ним, и он вернётся; с карточкой, записью или диктовкой он выходит сам', en: 'The folded pill slips behind the screen edge and does not block what is under it: browser tabs, window buttons. Rest the cursor at the very top edge of the screen above it and it comes back; with a card, a recording or dictation it comes out by itself' }), sw('autoHide'));
-    row(c, t({ ru: 'Не прятать на рабочем столе', en: 'Do not hide on the desktop' }),
-      t({ ru: 'Для автоскрытия: пока впереди сам рабочий стол, без окон программ, остров остаётся на виду', en: 'For auto-hide: while the desktop itself is in front, with no program windows, the pill stays in view' }), sw('autoHideKeepDesktop'));
-    row(c, t({ ru: 'Прятать остров в этих программах', en: 'Hide the pill in these programs' }),
-      t({ ru: 'По одной на строку, имя процесса: photoshop.exe, premiere.exe. Пока окно такой программы впереди, остров полностью скрыт, и возвращается, когда впереди другое окно.', en: 'One per line, the process name: photoshop.exe, premiere.exe. While a window of such a program is in front, the pill is hidden completely and comes back when another window is in front.' }),
-      area('hideInApps', { rows: 3 }), { block: true });
 
-    cap(p, t({ ru: 'Остров', en: 'Island' }));
+    cap(p, t({ ru: 'Копия настроек', en: 'Settings backup' }));
     c = card(p);
-    row(c, t({ ru: 'Форма острова', en: 'Island shape' }), '', segKey('shape', [['notch', t({ ru: 'Вырез', en: 'Notch' })], ['capsule', t({ ru: 'Капсула', en: 'Capsule' })]]));
-    row(c, t({ ru: 'Тема острова', en: 'Island theme' }), t({ ru: 'Цвета самого острова. Тему Windows переключает центр управления', en: 'The colours of the pill itself. The Windows theme is switched by the control centre' }),
-      segKey('theme', [['dark', t({ ru: 'Тёмная', en: 'Dark' })], ['light', t({ ru: 'Светлая', en: 'Light' })], ['auto', t({ ru: 'Как в Windows', en: 'Windows' })]]));
-    row(c, t({ ru: 'Размер острова', en: 'Island size' }), t({ ru: 'На большом мониторе остров можно сделать крупнее', en: 'On a large monitor the pill can be made bigger' }), range('size', 80, 200, 5, pct));
-    row(c, t({ ru: 'Прозрачность свёрнутого острова', en: 'Transparency of the folded island' }), t({ ru: 'Пилюля и её карточки', en: 'The pill and its cards' }), range('opacityCol', 0, 60, 5, pct));
-    row(c, t({ ru: 'Прозрачность раскрытого острова', en: 'Transparency of the open island' }), '', range('opacityExp', 0, 60, 5, pct));
-    row(c, t({ ru: 'Положение вдоль верхнего края', en: 'Position along the top edge' }),
-      t({ ru: '0 — посередине; минус — левее, плюс — правее. До края монитора доходит окно раскрытого острова, свёрнутый стоит над его серединой', en: '0 is the middle; minus is further left, plus further right. The window of the open pill reaches the monitor edge, the folded one stays above its middle' }), range('offsetX', -50, 50, 1, pct));
-    row(c, t({ ru: 'Под панелью задач, если она сверху', en: 'Below the taskbar if it is at the top' }), t({ ru: 'Остров встаёт под панель, а не поверх её кнопок', en: 'The pill sits below the bar, not over its buttons' }), sw('underTaskbar'));
-    const mon = h('div');
-    row(c, t({ ru: 'Монитор', en: 'Monitor' }), '', mon);
-    inv('pill_monitors').then((list) => { list = list || []; mon.replaceChildren(segKey('monitor', [['primary', t({ ru: 'Основной', en: 'Primary' })], ...list.map((_, i) => [String(i + 1), String(i + 1)])])); mon.title = list.join('\n'); });
-    row(c, t({ ru: 'Сквозной режим', en: 'Pass-through mode' }),
-      t({ ru: 'Свёрнутый остров пропускает клики и не раскрывается под курсором: он на виду и ничему не мешает. Открывается клавишами. Включить и выключить можно здесь, своей клавишей или командой «сквозной» в командной строке', en: 'The folded pill lets clicks through and does not open under the cursor: it stays in view and gets in nobody’s way. It opens with keys. Switch it here, with its own key or with the “pass-through” command in the command bar' }), sw('passThrough'));
-    row(c, t({ ru: 'Прозрачность в сквозном режиме', en: 'Transparency in pass-through mode' }), '', range('passThroughOpacity', 0, 80, 5, pct));
-    row(c, t({ ru: 'Жидкий край по частотам', en: 'Liquid edge by frequency' }),
-      t({ ru: 'При музыке край показывает звук как эквалайзер: слева низкие частоты, справа высокие. Работает только с персонажем «Жидкий край»', en: 'With music the edge shows the sound like an equaliser: low frequencies on the left, high on the right. Works only with the “Liquid edge” character' }), sw('audio.reactive'));
-    row(c, t({ ru: 'Пилюля во время музыки', en: 'Pill during music' }),
-      t({ ru: '«С названием» — трек и полоса времени. «Мини-плеер» — обложка, полоса и кнопки; открывается щелчком, а не наведением. «С текстом» — строка песни, которая звучит', en: '“Title” shows the track and a time bar. “Mini player” shows the cover, the bar and buttons; it opens with a click, not by hovering. “Lyrics” shows the line being sung' }),
-      segKey('musicPill', [['title', t({ ru: 'С названием', en: 'Title' })], ['mini', t({ ru: 'Мини-плеер', en: 'Mini player' })], ['lyrics', t({ ru: 'С текстом', en: 'Lyrics' })]]), { block: true });
-
-    cap(p, t({ ru: 'Свёрнутый остров', en: 'Folded island' }));
-    c = card(p);
-    row(c, t({ ru: 'Время', en: 'Time' }), t({ ru: 'Пока на острове ничего не происходит', en: 'While nothing else is happening on the pill' }), sw('showTime'));
-    row(c, t({ ru: 'Дата', en: 'Date' }), t({ ru: 'Рядом со временем', en: 'Next to the time' }), sw('showDate'));
-    row(c, t({ ru: 'Температура', en: 'Temperature' }), t({ ru: 'Нужна включённая погода', en: 'Needs the weather switched on' }), sw('showTemp'));
-    row(c, t({ ru: 'Секунды', en: 'Seconds' }), '', sw('showSeconds'));
-    row(c, t({ ru: 'Формат часов', en: 'Clock format' }), '', seg([[false, '12 h'], [true, '24 h']], () => !!get('clock24'), (v) => put({ clock24: v })));
-    row(c, t({ ru: 'Заряд батареи', en: 'Battery charge' }), t({ ru: 'На компьютере с батареей', en: 'On a computer that has a battery' }), sw('showBattery'));
-    row(c, t({ ru: 'Уменьшить анимацию', en: 'Reduce motion' }), '', sw('reduceMotion'));
-
-    // fps / edgeIdleFps are read by pill.js; an unset key means auto / 30
-    cap(p, t({ ru: 'Плавность', en: 'Smoothness' }));
-    c = card(p);
-    const fpsSeg = (key, vals) => seg(vals.map((v) => [v, v === 'auto' ? t({ ru: 'Авто', en: 'Auto' }) : String(v)]), () => get(key), (v) => put({ [key]: v === 'auto' ? v : +v }));
-    row(c, t({ ru: 'Частота кадров', en: 'Frame rate' }), t({ ru: 'Авто = частота монитора. Больше кадров — плавнее, но выше нагрузка на видеокарту', en: 'Auto = the monitor refresh rate. More frames are smoother but cost more GPU' }), fpsSeg('fps', ['auto', 30, 60, 120, 144, 240]));
-    row(c, t({ ru: 'Кадры в покое', en: 'Idle edge frame rate' }), t({ ru: 'Для спокойного края острова, когда ничего не происходит', en: 'For the calm island edge while nothing is happening' }), fpsSeg('edgeIdleFps', [15, 30, 60]));
-
-    everythingCard(p);
-
-    // file search + settings backup (settings_backup.rs: no keys/passwords in the export; import keeps only known settings)
-    cap(p, t({ ru: 'Поиск файлов и копия настроек', en: 'File search and settings backup' }));
-    c = card(p);
-    row(c, t({ ru: 'Запускать Everything сам', en: 'Start Everything by itself' }),
-      t({ ru: 'Если поиск файлов не отвечает, при первом поиске за сеанс запускается Everything (скрыто, в трее)', en: 'If file search does not answer, the first search of a session starts Everything (hidden in the tray)' }), sw('everything.autostart'));
+    // settings backup (settings_backup.rs: no keys/passwords in the export; import keeps only known settings)
     const bk = row(c, t({ ru: 'Резервная копия настроек', en: 'Settings backup' }),
       t({ ru: 'Экспорт кладёт файл в «Загрузки». Ключи и пароли в него не попадают', en: 'Export puts a file in Downloads. Keys and passwords are not included' }), null);
     const note = h('span', '');
@@ -601,6 +555,75 @@
     const imp = btn(t({ ru: 'Импорт', en: 'Import' }), () => pick.click());
     bk.querySelector('.l').append(note);
     bk.append(h('div', 'c', [exp, imp, pick]));
+  
+  }
+
+  // ---- Appearance: the island's looks (shape, theme, size, position, folded-island content, motion, frame rate)
+  function pAppearance(p) {
+    let c = card(p);
+    row(c, t({ ru: 'Форма острова', en: 'Island shape' }), '', segKey('shape', [['notch', t({ ru: 'Вырез', en: 'Notch' })], ['capsule', t({ ru: 'Капсула', en: 'Capsule' })]]));
+    row(c, t({ ru: 'Тема острова', en: 'Island theme' }), t({ ru: 'Цвета самого острова. Тему Windows переключает центр управления', en: 'The colours of the pill itself. The Windows theme is switched by the control centre' }),
+      segKey('theme', [['dark', t({ ru: 'Тёмная', en: 'Dark' })], ['light', t({ ru: 'Светлая', en: 'Light' })], ['auto', t({ ru: 'Как в Windows', en: 'Windows' })]]));
+    row(c, t({ ru: 'Размер острова', en: 'Island size' }), t({ ru: 'На большом мониторе остров можно сделать крупнее', en: 'On a large monitor the pill can be made bigger' }), range('size', 80, 200, 5, pct));
+    row(c, t({ ru: 'Прозрачность свёрнутого острова', en: 'Transparency of the folded island' }), t({ ru: 'Пилюля и её карточки', en: 'The pill and its cards' }), range('opacityCol', 0, 60, 5, pct));
+    row(c, t({ ru: 'Прозрачность раскрытого острова', en: 'Transparency of the open island' }), '', range('opacityExp', 0, 60, 5, pct));
+    row(c, t({ ru: 'Положение вдоль верхнего края', en: 'Position along the top edge' }),
+      t({ ru: '0 — посередине, минус — левее, плюс — правее. Свёрнутый остров стоит над серединой окна, раскрытый может дойти до края монитора', en: '0 is the middle, minus is further left, plus further right. The folded pill stays above the middle; the open one can reach the monitor edge' }), range('offsetX', -50, 50, 1, pct));
+    row(c, t({ ru: 'Под панелью задач, если она сверху', en: 'Below the taskbar if it is at the top' }), t({ ru: 'Остров встаёт под панель, а не поверх её кнопок', en: 'The pill sits below the bar, not over its buttons' }), sw('underTaskbar'));
+    const mon = h('div');
+    row(c, t({ ru: 'Монитор', en: 'Monitor' }), '', mon);
+    inv('pill_monitors').then((list) => { list = list || []; mon.replaceChildren(segKey('monitor', [['primary', t({ ru: 'Основной', en: 'Primary' })], ...list.map((_, i) => [String(i + 1), String(i + 1)])])); mon.title = list.join('\n'); });
+    cap(p, t({ ru: 'Свёрнутый остров', en: 'Folded island' }));
+    c = card(p);
+    row(c, t({ ru: 'Время', en: 'Time' }), t({ ru: 'Пока на острове ничего не происходит', en: 'While nothing else is happening on the pill' }), sw('showTime'));
+    row(c, t({ ru: 'Дата', en: 'Date' }), t({ ru: 'Рядом со временем', en: 'Next to the time' }), sw('showDate'));
+    row(c, t({ ru: 'Температура', en: 'Temperature' }), t({ ru: 'Нужна включённая погода', en: 'Needs the weather switched on' }), sw('showTemp'));
+    row(c, t({ ru: 'Секунды', en: 'Seconds' }), '', sw('showSeconds'));
+    row(c, t({ ru: 'Формат часов', en: 'Clock format' }), '', seg([[false, '12 h'], [true, '24 h']], () => !!get('clock24'), (v) => put({ clock24: v })));
+    row(c, t({ ru: 'Заряд батареи', en: 'Battery charge' }), t({ ru: 'На компьютере с батареей', en: 'On a computer that has a battery' }), sw('showBattery'));
+    row(c, t({ ru: 'Уменьшить анимацию', en: 'Reduce motion' }), '', sw('reduceMotion'));
+
+    // fps / edgeIdleFps are read by pill.js; an unset key means auto / 30
+    cap(p, t({ ru: 'Плавность', en: 'Smoothness' }));
+    c = card(p);
+    const fpsSeg = (key, vals) => seg(vals.map((v) => [v, v === 'auto' ? t({ ru: 'Авто', en: 'Auto' }) : String(v)]), () => get(key), (v) => put({ [key]: v === 'auto' ? v : +v }));
+    row(c, t({ ru: 'Частота кадров', en: 'Frame rate' }), t({ ru: 'Авто = частота монитора. Больше кадров — плавнее, но выше нагрузка на видеокарту', en: 'Auto = the monitor refresh rate. More frames are smoother but cost more GPU' }), fpsSeg('fps', ['auto', 30, 60, 120, 144, 240]));
+    row(c, t({ ru: 'Кадры в покое', en: 'Idle edge frame rate' }), t({ ru: 'Для спокойного края острова, когда ничего не происходит', en: 'For the calm island edge while nothing is happening' }), fpsSeg('edgeIdleFps', [15, 30, 60]));
+
+  }
+
+  // ---- Behavior: when the island hides, clicks pass through, screenshots
+  function pBehavior(p) {
+    let c = card(p);
+    row(c, t({ ru: 'Прятать в полноэкранных приложениях', en: 'Hide in full-screen apps' }), t({ ru: 'Игры, видео на весь экран, презентации', en: 'Games, full-screen video, presentations' }), sw('hideInFullscreen'));
+    row(c, t({ ru: 'Прятать остров, пока он не нужен', en: 'Hide the pill until it is needed' }),
+      t({ ru: 'Свёрнутый остров прячется за край экрана и не закрывает вкладки и кнопки окон. Подведите курсор к верхнему краю, и он вернётся. С карточкой, записью или диктовкой выходит сам', en: 'The folded pill hides behind the screen edge and stops covering tabs and window buttons. Move the cursor to the top edge to bring it back. It comes out by itself for a card, recording or dictation' }), sw('autoHide'));
+    row(c, t({ ru: 'Не прятать на рабочем столе', en: 'Do not hide on the desktop' }),
+      t({ ru: 'Для автоскрытия: пока впереди сам рабочий стол, без окон программ, остров остаётся на виду', en: 'For auto-hide: while the desktop itself is in front, with no program windows, the pill stays in view' }), sw('autoHideKeepDesktop'));
+    row(c, t({ ru: 'Прятать остров в этих программах', en: 'Hide the pill in these programs' }),
+      t({ ru: 'По одной на строку, имя процесса: photoshop.exe, premiere.exe. Пока такое окно впереди, остров скрыт полностью.', en: 'One per line, the process name: photoshop.exe, premiere.exe. While such a window is in front, the pill is hidden completely.' }),
+      area('hideInApps', { rows: 3 }), { block: true });
+
+
+    cap(p, t({ ru: 'Сквозной режим', en: 'Pass-through mode' }));
+    c = card(p);
+    row(c, t({ ru: 'Сквозной режим', en: 'Pass-through mode' }),
+      t({ ru: 'Свёрнутый остров пропускает клики и не раскрывается под курсором. Открывается клавишами. Включить: здесь, своей клавишей или командой «сквозной»', en: 'The folded pill lets clicks through and does not open under the cursor. It opens with keys. Turn it on here, with its own key or the “pass-through” command' }), sw('passThrough'));
+    row(c, t({ ru: 'Прозрачность в сквозном режиме', en: 'Transparency in pass-through mode' }), '', range('passThroughOpacity', 0, 80, 5, pct));
+
+    cap(p, t({ ru: 'Скриншоты и запись экрана', en: 'Screenshots and screen recording' }));
+    c = card(p);
+    row(c, t({ ru: 'Показывать остров на скриншотах и в записи экрана', en: 'Show the pill in screenshots and screen recordings' }),
+      t({ ru: 'Обычно остров не попадает в скриншоты, запись и трансляцию. Включите, если фоновая запись (например, NVIDIA) жалуется, что остров ей мешает', en: 'Normally the pill is left out of screenshots, recordings and streams. Turn it on if a background recorder (NVIDIA, for example) complains about it' }), sw('showInCapture'));
+  }
+
+  // ---- File search: Everything download + autostart
+  function pSearch(p) {
+    everythingCard(p);
+    cap(p, t({ ru: 'Запуск', en: 'Start' }));
+    const c = card(p);
+    row(c, t({ ru: 'Запускать Everything сам', en: 'Start Everything by itself' }),
+      t({ ru: 'Если поиск файлов не отвечает, при первом поиске за сеанс запускается Everything (скрыто, в трее)', en: 'If file search does not answer, the first search of a session starts Everything (hidden in the tray)' }), sw('everything.autostart'));
   }
 
   // ---- Hotkeys
@@ -647,7 +670,7 @@
       const x = PROV.find((q) => q.id === curProv);
       help.replaceChildren(t(x.help));
       if (x.keyUrl) { help.append(' '); help.append(link(t({ ru: 'Получить ключ', en: 'Get a key' }), x.keyUrl)); }
-      warn.textContent = x.region ? t({ ru: 'Groq, Gemini и OpenRouter доступны не во всех странах: если сервис не отвечает, включи VPN или выбери другой из списка.', en: 'Groq, Gemini and OpenRouter are not available in every country: if the service does not answer, turn on a VPN or pick another one from the list.' }) : '';
+      warn.textContent = x.region ? t({ ru: 'Groq, Gemini и OpenRouter работают не во всех странах: если сервис не отвечает, включите VPN или выберите другой.', en: 'Groq, Gemini and OpenRouter do not work in every country: if the service does not answer, turn on a VPN or pick another one.' }) : '';
       warn.hidden = !x.region;
     };
     top.append(chips, help, warn);
@@ -719,7 +742,7 @@
     p.append(h('div', 'dis-banner', t({ ru: 'Голос в текст ещё не встроен в Pill: страница показывает, как он будет выглядеть. Ничего отсюда не сохраняется и никуда не отправляется.', en: 'Voice to text is not built into Pill yet: this page shows how it will look. Nothing here is saved or sent anywhere.' })));
     const c = card(p, 'dis');
     c.style.opacity = '0.55'; c.style.pointerEvents = 'none';
-    c.append(h('div', 'pad txt', t({ ru: 'Нажми Ctrl+Alt+D, скажи и нажми ещё раз: текст окажется в буфере. В чате для этого есть кнопка с микрофоном. Запись отправляется в выбранный сервис распознавания.', en: 'Press Ctrl+Alt+D, speak and press again: the text lands on the clipboard. The chat has a microphone button for the same. The recording is sent to the recognition service you choose.' })));
+    c.append(h('div', 'pad txt', t({ ru: 'Нажмите Ctrl+Alt+D, скажите и нажмите ещё раз: текст попадёт в буфер. Запись уходит в выбранный сервис распознавания.', en: 'Press Ctrl+Alt+D, speak and press again: the text lands on the clipboard. The recording goes to the recognition service you choose.' })));
     const top = h('div', 'pad'); const chips = h('div', 'chips dis');
     [['Groq · Whisper', 1], ['Google Gemini', 1], ['OpenAI', 0]].forEach(([n, f], i) => { const b = h('button', 'chip' + (i === 0 ? ' on' : ''), n); b.type = 'button'; b.disabled = true; if (f) b.append(h('span', 'badge free', t({ ru: 'бесплатно', en: 'free' }))); chips.append(b); });
     top.append(chips, h('div', 'note', t({ ru: 'Бесплатно, без карты: до 8 часов речи в день, ответ за секунду. Хорошо понимает русский.', en: 'Free, no card: up to 8 hours of speech a day, answers within a second. Understands Russian well.' })));
@@ -740,7 +763,7 @@
     const title = h('b', ''); title.style.cssText = 'display:block;font-weight:500;font-size:13px;line-height:18px;margin-bottom:8px';
     const setTitle = () => { title.textContent = t({ ru: 'Город: ', en: 'City: ' }) + (get('weather.city') || t({ ru: 'не выбран', en: 'not chosen' })); };
     syncs.push(setTitle); setTitle();
-    body.append(title, h('div', 'txt', t({ ru: 'Прогноз — Норвежский метеорологический институт (MET Norway), поиск городов — OpenStreetMap. Ключ и регистрация не нужны. Город хранится только на этом компьютере; по адресу в сети он не определяется.', en: 'The forecast comes from the Norwegian Meteorological Institute (MET Norway), the city search from OpenStreetMap. No key or registration needed. The city is stored only on this computer; it is not detected from your network address.' })));
+    body.append(title, h('div', 'txt', t({ ru: 'Прогноз — MET Norway, поиск городов — OpenStreetMap. Ключ и регистрация не нужны. Город хранится только на этом компьютере.', en: 'Forecast: MET Norway; city search: OpenStreetMap. No key or registration. The city is stored only on this computer.' })));
     const q = Object.assign(h('input', 'field'), { placeholder: t({ ru: 'Город: Казань, Berlin, Алматы…', en: 'City: Kazan, Berlin, Almaty…' }) }); q.spellcheck = false;
     const found = h('div', 'found'); const st = h('div', 'note'); st.style.marginTop = '8px';
     const go = async () => {
@@ -778,11 +801,14 @@
     const mics = (await inv('media_capture_devices')) || [];
     let c = card(p);
     row(c, t({ ru: 'Чью громкость регулирует остров', en: 'Whose volume the pill controls' }),
-      t({ ru: 'Звук при этом никуда не переключается: меняется только то, чью громкость показывают и меняют ползунок, колесо и карточка. Куда идёт звук, выбирается в списке рядом с громкостью на вкладке «Главная»', en: 'The sound is not switched anywhere: only the device whose volume the slider, the wheel and the card show and change. Where the sound goes is chosen in the list next to the volume on the Home tab' }),
+      t({ ru: 'Звук не переключается: выбирается только устройство, чью громкость показывают ползунок, колесо и карточка. Выход звука выбирают на вкладке «Главная»', en: 'The sound is not switched: this only picks the device whose volume the slider, wheel and card show. Choose the sound output on the Home tab' }),
       select([['', t({ ru: 'Как в Windows', en: 'Same as Windows' })], ...devs.map((d) => [d.id, d.name])], () => get('sound.volumeDevice') || '', (v) => put({ 'sound.volumeDevice': v })));
     row(c, t({ ru: 'Какой микрофон выключает и запоминает остров', en: 'Which microphone the pill mutes and remembers' }), t({ ru: 'Его выключает клавиша «Микрофон» и переключатель в центре управления. Системный микрофон по умолчанию Pill не переключает', en: 'The “Microphone” key and the control-centre switch mute it. Pill does not change the Windows default microphone' }),
       select([['', t({ ru: 'Как в Windows', en: 'Same as Windows' })], ...mics.map((d) => [d.id, d.name])], () => get('sound.micDevice') || '', (v) => put({ 'sound.micDevice': v })));
     row(c, t({ ru: 'Жидкий край по частотам', en: 'Reactive edge' }), t({ ru: 'Край острова двигается под музыку: слева низкие частоты, справа высокие', en: 'The pill edge moves with the music: low frequencies on the left, high on the right' }), sw('audio.reactive'));
+    row(c, t({ ru: 'Пилюля во время музыки', en: 'Pill during music' }),
+      t({ ru: '«С названием» — трек и полоса времени. «Мини-плеер» — обложка и кнопки, открывается щелчком. «С текстом» — звучащая строка песни', en: '“Title”: the track and a time bar. “Mini player”: cover and buttons, opens with a click. “Lyrics”: the line being sung' }),
+      segKey('musicPill', [['title', t({ ru: 'С названием', en: 'Title' })], ['mini', t({ ru: 'Мини-плеер', en: 'Mini player' })], ['lyrics', t({ ru: 'С текстом', en: 'Lyrics' })]]), { block: true });
     cap(p, t({ ru: 'Напоминания', en: 'Reminders' }));
     c = card(p);
     row(c, t({ ru: 'Звук напоминаний', en: 'Sound for reminders' }), t({ ru: 'Короткий сигнал, когда срабатывает напоминание или таймер', en: 'A short signal when a reminder or a timer goes off' }), sw('sound.reminders'));
@@ -801,16 +827,16 @@
     ['live.reminders', { ru: 'Напоминания и таймеры', en: 'Reminders and timers' }, { ru: 'Карточка, когда напоминание или таймер сработали', en: 'A card when a reminder or a timer goes off' }, true],
     ['live.keyboardLayout', { ru: 'Раскладка клавиатуры', en: 'Keyboard layout' }, { ru: 'Короткая подсказка при смене языка ввода и Caps Lock', en: 'A short hint when the input language or Caps Lock changes' }, true],
     ['live.copy', { ru: 'Реакция на копирование', en: 'Reaction to copying' }, { ru: 'Остров слегка вздрагивает, когда в буфер попал новый текст', en: 'The pill twitches slightly when new text reaches the clipboard' }, true],
-    ['live.obs', { ru: 'OBS: запись и трансляция', en: 'OBS: recording and streaming' }, { ru: 'Пока OBS записывает или ведёт трансляцию, в пилюле горит REC или LIVE, а сохранённая запись приходит карточкой. Нужен сервер WebSocket самого OBS: Сервис → Настройки сервера WebSocket → «Включить сервер WebSocket»', en: 'While OBS records or streams, REC or LIVE shows in the pill and the saved recording arrives as a card. Needs the WebSocket server of OBS itself: Tools → WebSocket Server Settings → “Enable WebSocket server”' }, false],
+    ['live.obs', { ru: 'OBS: запись и трансляция', en: 'OBS: recording and streaming' }, { ru: 'Пока OBS пишет или транслирует, в пилюле горит REC или LIVE, готовая запись приходит карточкой. В OBS включите сервер WebSocket (Сервис → Настройки сервера WebSocket)', en: 'While OBS records or streams, the pill shows REC or LIVE and the finished recording arrives as a card. In OBS, enable the WebSocket server (Tools → WebSocket Server Settings)' }, false],
     ['live.agents', { ru: 'ИИ-агенты в терминале', en: 'AI agents in the terminal' }, { ru: 'Claude Code и Codex: в пилюле видно, что агент работает, ждёт ответа или закончил, а когда он ждёт или закончил — приходит карточка', en: 'Claude Code and Codex: the pill shows that an agent works, waits for an answer or has finished, and a card arrives when it waits or finishes' }, true],
     ['live.steam', { ru: 'Загрузки Steam', en: 'Steam downloads' }, { ru: 'Игры и обновления, которые качает Steam: сколько осталось и скорость, а в конце карточка', en: 'Games and updates Steam downloads: time left and speed, and a card at the end' }, true],
-    ['live.sysmon', { ru: 'Монитор системы', en: 'System monitor' }, { ru: 'Загрузка процессора, памяти и видеокарт NVIDIA (с температурой) на вкладке «Управление»; в пилюле предупреждение, если видеокарта горячая (от 85 °C) или процессор забит (от 95 % дольше 10 с)', en: 'CPU, memory and NVIDIA GPU load (with temperature) on the Controls tab; a warning in the pill when a GPU is hot (85 °C and up) or the CPU is pinned (95 % for over 10 s)' }, true],
+    ['live.sysmon', { ru: 'Монитор системы', en: 'System monitor' }, { ru: 'Загрузка процессора, памяти и видеокарт NVIDIA (с температурой) на вкладке «Управление». Предупреждение, если видеокарта от 85 °C или процессор от 95 % дольше 10 с', en: 'CPU, memory and NVIDIA GPU load (with temperature) on the Controls tab. A warning when a GPU is at 85 °C or more, or the CPU is at 95 % for over 10 s' }, true],
     ['live.dlDone', { ru: 'Готовый файл в «Загрузках»', en: 'Finished file in Downloads' }, { ru: 'Карточка «Загружено: имя файла», когда файл докачался в папку «Загрузки»; клик по карточке открывает папку с выделенным файлом', en: 'A “Downloaded: file name” card when a file finishes in your Downloads folder; a click on the card opens the folder with the file selected' }, true],
     ['live.shelf', { ru: 'Полка файлов', en: 'File shelf' }, { ru: 'Значок с числом файлов на свёрнутом острове, пока полка не пуста, и счётчик на 5 секунд, когда файлы добавили или убрали', en: 'A file-count badge on the folded pill while the shelf is not empty, and a 5-second counter when files are added or removed' }, true],
     ['live.usb', { ru: 'Флешки и съёмные диски', en: 'USB and removable drives' }, { ru: 'Карточка, когда съёмный диск подключили или отключили', en: 'A card when a removable drive is connected or removed' }, true],
     ['live.battery', { ru: 'Батарея', en: 'Battery' }, { ru: 'Предупреждение при заряде 20 % и 10 % на ноутбуке, а также «Заряжается» и «Заряжено»; на компьютере без батареи ничего не делает', en: 'A warning at 20 % and 10 % on a laptop, plus “Charging” and “Fully charged”; does nothing on a PC without a battery' }, true],
-    ['live.calendar', { ru: 'Ближайшее событие календаря', en: 'Next calendar event' }, { ru: 'За 10 минут до начала события из файла .ics или из ссылки-подписки (https:// / webcal://): «Через 10 мин: название». Файл только читается; ссылка скачивается раз в 30 минут, без аккаунтов', en: 'Ten minutes before an event from an .ics file or a subscription link (https:// / webcal://): “In 10 min: title”. A file is only read; a link is downloaded every 30 minutes, no accounts' }, false],
-    ['live.mail', { ru: 'Новые письма (IMAP)', en: 'New mail (IMAP)' }, { ru: 'Карточка «Новое письмо: отправитель — тема», когда в почтовом ящике появляется непрочитанное письмо. Только заголовки, письма не читаются и не помечаются прочитанными. Подключение только по TLS к вашему почтовому серверу, раз в 2 минуты', en: 'A “New mail: sender — subject” card when an unread message arrives. Headers only; messages are not read or marked as read. TLS-only connection to your own mail server every 2 minutes' }, false],
+    ['live.calendar', { ru: 'Ближайшее событие календаря', en: 'Next calendar event' }, { ru: 'За 10 минут до события из файла .ics или ссылки-подписки (https:// / webcal://). Файл только читается, ссылка скачивается раз в 30 минут, без аккаунтов', en: 'Ten minutes before an event from an .ics file or a subscription link (https:// / webcal://). A file is only read, a link is fetched every 30 minutes, no accounts' }, false],
+    ['live.mail', { ru: 'Новые письма (IMAP)', en: 'New mail (IMAP)' }, { ru: 'Карточка «Новое письмо» с отправителем и темой. Читаются только заголовки: письма не открываются и не помечаются прочитанными. Только TLS, раз в 2 минуты', en: 'A “New mail” card with sender and subject. Only headers are read: messages are not opened or marked as read. TLS only, every 2 minutes' }, false],
   ];
   // events Pill has no source for yet: the switch is shown but cannot be flipped (nothing would happen)
   const LIVE_NOSRC = new Set([]); // OBS, Steam and notifications are real now (obs.rs, steam.rs, notif.rs)
@@ -826,7 +852,7 @@
       if (key === 'live.agents') {
         const bl = h('div', 'pad');
         const pre = h('pre', 'snip'); pre.hidden = true;
-        const note = h('div', 'note', t({ ru: 'Pill ничего не дописывает в настройки агентов сам. Нажми «Показать», скопируй фрагменты и вставь в настройки Claude Code (хуки в ~/.claude/settings.json) и Codex (notify в ~/.codex/config.toml). Действует для новых сессий.', en: 'Pill never edits agent settings by itself. Press “Show”, copy the snippets and paste them into the settings of Claude Code (hooks in ~/.claude/settings.json) and Codex (notify in ~/.codex/config.toml). Applies to new sessions.' }));
+        const note = h('div', 'note', t({ ru: 'Pill сам не меняет настройки агентов. «Показать» выведет фрагменты: хуки для ~/.claude/settings.json (Claude Code) и notify для ~/.codex/config.toml (Codex). Для новых сессий.', en: 'Pill never edits agent settings itself. “Show” prints the snippets: hooks for ~/.claude/settings.json (Claude Code) and notify for ~/.codex/config.toml (Codex). For new sessions.' }));
         const show = btn(t({ ru: 'Показать', en: 'Show' }), async () => {
           const r = await inv('agents_hook_snippets');
           if (!r) { pre.textContent = t({ ru: 'Не удалось получить фрагменты', en: 'Could not get the snippets' }); pre.hidden = false; return; }
@@ -870,11 +896,11 @@
     p.append(cnt);
     cap(p, t({ ru: 'Скриншоты и запись экрана', en: 'Screenshots and screen recording' }));
     c = card(p);
-    row(c, t({ ru: 'Формат записи экрана', en: 'Screen recording format' }), t({ ru: 'MP4 — для длинных записей, GIF — короткие ролики в чат (до минуты, 15 кадров в секунду; после остановки GIF собирается несколько секунд)', en: 'MP4 for long recordings, GIF for short clips for a chat (up to a minute, 15 frames per second; the GIF takes a few seconds to build after you stop)' }), segKey('capture.format', [['mp4', 'MP4'], ['gif', 'GIF']]));
+    row(c, t({ ru: 'Формат записи экрана', en: 'Screen recording format' }), t({ ru: 'MP4 — для длинных записей, GIF — для коротких роликов в чат (до минуты, 15 кадров/с; после остановки GIF собирается несколько секунд)', en: 'MP4 for long recordings, GIF for short chat clips (up to a minute, 15 fps; a GIF takes a few seconds to build after you stop)' }), segKey('capture.format', [['mp4', 'MP4'], ['gif', 'GIF']]));
     row(c, t({ ru: 'Частота кадров записи', en: 'Recording frame rate' }), t({ ru: 'Для MP4. 60 кадров плавнее, но файл больше и компьютеру тяжелее', en: 'For MP4. 60 frames is smoother, but the file is bigger and the computer works harder' }), segKey('capture.fps', [[30, '30'], [60, '60']], true));
     row(c, t({ ru: 'Кодировщик видео', en: 'Video encoder' }), t({ ru: 'Авто берёт видеокарту NVIDIA (NVENC), если она работает, иначе процессор (x264)', en: 'Auto uses the NVIDIA card (NVENC) when it works, otherwise the processor (x264)' }),
       segKey('capture.encoder', [['auto', t({ ru: 'Авто', en: 'Auto' })], ['nvenc', 'NVENC'], ['x264', 'x264']]));
-    row(c, t({ ru: 'Скриншот по Enter и целого экрана', en: 'Screenshot on Enter and of the whole screen' }), t({ ru: 'Что делают Enter, двойной щелчок в выделении и скриншот всего экрана. Кнопки «Копировать» и «Сохранить» в панели делают ровно то, что написано', en: 'What Enter, a double click in the selection and the whole-screen shot do. The Copy and Save buttons of the panel do exactly what they say' }),
+    row(c, t({ ru: 'Скриншот по Enter и целого экрана', en: 'Screenshot on Enter and of the whole screen' }), t({ ru: 'Что делают Enter, двойной щелчок в выделении и скриншот всего экрана. Кнопки «Копировать» и «Сохранить» в панели работают как подписано', en: 'What Enter, a double click in the selection and the whole-screen shot do. The Copy and Save buttons in the panel do what they say' }),
       segKey('capture.shotAction', [['both', t({ ru: 'Копия и файл', en: 'Copy and file' })], ['copy', t({ ru: 'Только копия', en: 'Copy only' })], ['save', t({ ru: 'Только файл', en: 'File only' })]]));
     row(c, t({ ru: 'Показать файл в папке после сохранения', en: 'Show the file in its folder after saving' }), t({ ru: 'Открывает Проводник с выделенным скриншотом', en: 'Opens Explorer with the screenshot selected' }), sw('capture.revealAfterSave'));
     const pathField = (key, ph) => { const i = h('input', 'field'); i.placeholder = ph; i.spellcheck = false; i.onchange = () => put({ [key]: i.value.trim() }); syncs.push(() => { if (document.activeElement !== i) i.value = get(key) || ''; }); i.value = get(key) || ''; return i; };
@@ -939,7 +965,7 @@
     const hc = card(p);
     DEF['history.keep'] = true; DEF['history.mail'] = false;
     row(hc, t({ ru: 'Хранить историю', en: 'Keep history' }), t({ ru: 'Карточки острова запоминаются в центре уведомлений: 14 дней, до 200 записей, только на этом компьютере', en: 'Island cards are remembered in the notification centre: 14 days, up to 200 entries, on this computer only' }), sw('history.keep'));
-    row(hc, t({ ru: 'Хранить текст писем и уведомлений Windows', en: 'Keep mail and Windows notification text' }), t({ ru: 'Выключено: от письма остаётся только заголовок карточки (отправитель), от уведомления Windows только его заголовок. Текст и тема не сохраняются', en: 'Off: only the card title is kept (the sender of a mail, the title of a Windows notification). Body and subject are not stored' }), sw('history.mail'));
+    row(hc, t({ ru: 'Хранить текст писем и уведомлений Windows', en: 'Keep mail and Windows notification text' }), t({ ru: 'Выключено: хранится только заголовок карточки (отправитель письма, заголовок уведомления Windows). Текст и тема не сохраняются', en: 'Off: only the card title is kept (mail sender, Windows notification title). Body and subject are not stored' }), sw('history.mail'));
     p.append(h('div', 'footnote', t({ ru: 'Выключенный модуль сразу прячет свою вкладку и перестаёт работать в фоне: история буфера не пишется, плеер не опрашивается, погода не запрашивается. Сами данные (история, заметки, полка, ярлыки) остаются. Напоминания и таймеры срабатывают, даже если вкладка «Заметка» выключена.', en: 'A module that is off hides its tab at once and stops its background work: the clipboard history is not written, the player is not polled, the weather is not requested. The data itself (history, notes, shelf, shortcuts) stays. Reminders and timers still fire when the Note tab is off.' })));
   }
 
@@ -948,7 +974,7 @@
     const info = (await inv('settings_info')) || {};
     const v = info.version || ver || '';
     const c = card(p);
-    const r = row(c, t({ ru: 'Версия ', en: 'Version ' }) + v, t({ ru: 'Pill ищет обновления по кнопке и один раз при запуске (это можно выключить ниже). Устанавливается новая версия только по вашему нажатию: она скачивается с GitHub и проверяется подписью.', en: 'Pill looks for updates when you press the button and once at launch (you can turn that off below). A new version is installed only when you click it: it is downloaded from GitHub and its signature is verified.' }), null);
+    const r = row(c, t({ ru: 'Версия ', en: 'Version ' }) + v, t({ ru: 'Pill ищет обновления по кнопке и при запуске (можно выключить ниже). Новая версия ставится только по вашему нажатию, скачивается с GitHub и проверяется по подписи.', en: 'Pill looks for updates on the button and at launch (you can turn that off below). A new version is installed only on your click, comes from GitHub and is signature-verified.' }), null);
     const out = h('div', 'updmsg'); out.dataset.base = 'updmsg';
     let found = false;
     const b = btn(t({ ru: 'Проверить сейчас', en: 'Check now' }), async () => {

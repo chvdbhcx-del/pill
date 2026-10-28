@@ -818,7 +818,7 @@
   };
   pinBtn.onclick = () => setPinned(!S.pinned);
   // The settings live in their own window (settings_open { page }); the in-pill Settings tab stays only as a hidden fallback when the command is unavailable.
-  const PAGES = ['general', 'character', 'hotkeys', 'ai', 'voice', 'weather', 'sound', 'live', 'clipboard', 'modules', 'updates'];
+  const PAGES = ['general', 'appearance', 'behavior', 'search', 'character', 'hotkeys', 'ai', 'voice', 'weather', 'sound', 'live', 'clipboard', 'modules', 'updates'];
   async function openSettings(page) {
     page = PAGES.includes(page) ? page : 'general';
     try { if (!(T && T.core)) throw new Error('no tauri'); await T.core.invoke('settings_open', { page }); return true; } catch (e) { console.warn('settings_open unavailable, using the in-pill settings', e); return false; }

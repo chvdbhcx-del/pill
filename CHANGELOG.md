@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Changed
+- Settings pages are regrouped: General (language, autostart, backup), Appearance (the island's looks, folded-island content, motion, frame rate), Behavior (auto-hide, pass-through, screenshots) and a new File search page (Everything). "Pill during music" moved to Sound. Long descriptions are shorter.
+
 ## [0.3.7] - 2026-10-28
 
 ### Changed

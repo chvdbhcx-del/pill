@@ -379,7 +379,7 @@ fn files(words: &[String]) -> Vec<Res> {
         let name = Path::new(&p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.clone());
         res(kind, format!("{kind}:{p}"), name, p.clone(), p)
     };
-    let hint = |e: &str| vec![res("hint", "hint:es".into(), e.into(), "Files and folders need Everything: Settings > General can download it".into(), String::new())];
+    let hint = |e: &str| vec![res("hint", "hint:es".into(), e.into(), "Files and folders need Everything: Settings > File search can download it".into(), String::new())];
     let all = match es(words, None, ES_CAP) {
         Ok(v) => v,
         Err(e) => return hint(e),
@@ -447,7 +447,7 @@ fn scan_es() -> Option<PathBuf> {
     if let Some(la) = std::env::var_os("LOCALAPPDATA") {
         dirs.push(Path::new(&la).join("Microsoft").join("WinGet").join("Links")); // winget install voidtools.Everything.Cli
     }
-    dirs.push(crate::everything::dir()); // the es.exe Pill downloaded itself (Settings > General); a system-wide one wins
+    dirs.push(crate::everything::dir()); // the es.exe Pill downloaded itself (Settings > File search); a system-wide one wins
     dirs.into_iter().map(|d| d.join("es.exe")).find(|p| p.is_file())
 }
 
