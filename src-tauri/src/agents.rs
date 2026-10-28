@@ -116,6 +116,15 @@ fn project_name(cwd: &str) -> &str {
     cwd.rsplit(['/', '\\']).find(|p| !p.is_empty()).unwrap_or("")
 }
 
+/// Order of the sessions list: waiting first (they need you), then working, then the rest; newest first inside a group.
+fn list_rank(state: &str) -> u8 {
+    match state {
+        "waiting" => 0,
+        "working" => 1,
+        _ => 2,
+    }
+}
+
 fn key(s: &Session) -> String {
     format!("{}/{}", s.tool, s.session)
 }
@@ -207,8 +216,8 @@ impl Tracker {
 
     fn snapshot(&self, now: i64) -> Value {
         let mut v: Vec<&Session> = self.map.values().map(|e| &e.s).collect();
-        v.sort_by(|a, b| b.ts.cmp(&a.ts).then_with(|| a.session.cmp(&b.session)));
         let state = |s: &Session| eff_state(s, now);
+        v.sort_by(|a, b| list_rank(state(a)).cmp(&list_rank(state(b))).then_with(|| b.ts.cmp(&a.ts)).then_with(|| a.session.cmp(&b.session)));
         let (working, waiting) = (v.iter().filter(|s| state(s) == "working").count(), v.iter().filter(|s| state(s) == "waiting").count());
         let sessions: Vec<Value> = v
             .iter()
@@ -492,6 +501,21 @@ mod tests {
     }
     fn file(id: &str) -> PathBuf {
         PathBuf::from(format!("{id}.json"))
+    }
+
+    #[test]
+    fn snapshot_lists_waiting_first_then_working_then_newest() {
+        let mut t = Tracker::new();
+        let l = vec![
+            (file("d"), Some(sess("d", State::Done, NOW - 1_000))),
+            (file("w1"), Some(sess("w1", State::Working, NOW - 5_000))),
+            (file("p"), Some(sess("p", State::Waiting, NOW - 60_000))),
+            (file("w2"), Some(sess("w2", State::Working, NOW - 2_000))),
+        ];
+        t.update(l, NOW);
+        let snap = t.snapshot(NOW);
+        let ids: Vec<&str> = snap["sessions"].as_array().unwrap().iter().map(|s| s["session"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["p", "w2", "w1", "d"]);
     }
 
     #[test]

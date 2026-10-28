@@ -72,12 +72,49 @@
     });
   }
 
+  // ---- sessions tab (read-only): every tracked session, waiting first (the order comes from agents.rs), project = cwd folder ----
+  let snapAll = {}, listEl = null, tick = 0;
+  const dur = (ms) => {
+    const s = Math.max(0, Math.floor(ms / 1000)), m = Math.floor(s / 60), h = Math.floor(m / 60);
+    return s < 60 ? t({ ru: `${s} с`, en: `${s}s` }) : m < 60 ? t({ ru: `${m} мин`, en: `${m}m` }) : t({ ru: `${h} ч ${m % 60} мин`, en: `${h}h ${m % 60}m` });
+  };
+  const STATE = { waiting: { ru: 'ждёт ответа', en: 'waiting' }, working: { ru: 'работает', en: 'working' }, done: { ru: 'готово', en: 'done' }, stale: { ru: 'нет вестей', en: 'no news' } };
+  function paintList() {
+    const ss = (snapAll && snapAll.sessions) || [];
+    P.setBadge('agents', Math.max(0, (snapAll && snapAll.waiting) | 0) || '');
+    if (!listEl) return;
+    if (!ss.length) {
+      const e = document.createElement('div'); e.className = 'ag-empty';
+      e.textContent = t({ ru: 'Нет сеансов. Подключите хуки: Настройки → Живые события → ИИ-агенты в терминале', en: 'No sessions. Set up the hooks: Settings → Live events → AI agents in the terminal' });
+      listEl.replaceChildren(e);
+      return;
+    }
+    const now = Date.now();
+    listEl.replaceChildren(...ss.map((x) => {
+      const r = document.createElement('div'); r.className = 'ag-row'; r.dataset.state = x.state;
+      const nm = document.createElement('div'); nm.className = 'ag-name'; nm.textContent = x.project || TOOLS[x.tool] || x.tool;
+      const ti = document.createElement('div'); ti.className = 'ag-title'; ti.textContent = plainTitle(x.title);
+      const body = document.createElement('div'); body.className = 'ag-body'; body.append(nm, ti);
+      const st = document.createElement('div'); st.className = 'ag-state';
+      st.textContent = t(STATE[x.state] || STATE.stale) + ' · ' + dur(now - x.ts);
+      r.append(document.createElement('i'), body, st);
+      return r;
+    }));
+  }
+  const feed = (snap) => { snapAll = snap || {}; render(snapAll); paintList(); };
+  P.register({
+    id: 'agents', title: t({ ru: 'Агенты', en: 'Agents' }), order: 66, icon: P.icon('terminal'),
+    mount(root) { root.classList.add('ag-root'); listEl = document.createElement('div'); listEl.className = 'ag-list scroll'; root.append(listEl); paintList(); },
+    onShow() { paintList(); clearInterval(tick); tick = setInterval(paintList, 15000); },
+    onHide() { clearInterval(tick); },
+  });
+
   const on = (n, f) => T.event.listen(n, (e) => { try { f(e.payload); } catch (err) { console.error('agents-live', n, err); } });
-  on('agents:changed', render);
+  on('agents:changed', feed);
   on('agents:done', done);
   let agentsWas = P.liveOn('agents');
-  on('settings:changed', () => { const now = P.liveOn('agents'); if (now === agentsWas) return; agentsWas = now; P.invoke('agents_list').then((s) => render(s || {})); }); // the switch works at once, both ways
-  P.invoke('agents_list').then((s) => { if (s) render(s); }); // events sent before this script loaded are gone: ask once
+  on('settings:changed', () => { const now = P.liveOn('agents'); if (now === agentsWas) return; agentsWas = now; P.invoke('agents_list').then((s) => feed(s || {})); }); // the switch works at once, both ways
+  P.invoke('agents_list').then((s) => { if (s) feed(s); }); // events sent before this script loaded are gone: ask once
 
   // Settings sections are built inside pill.js and it has no extension point yet: the lead wires this text into a "Agent status" section.
   window.PillAgentsHookText = async () => {

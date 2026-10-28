@@ -741,7 +741,7 @@
   let cur = null, prevTab = null, expWait = false; // expWait: doExpand waits for the OS frame to reach the expanded size before it starts the spring
   const visibleTabs = () => [...tabs.values()].filter((x) => !x.hidden && !x.off).sort((a, b) => a.order - b.order);
   // ---- Settings > Modules: a module that is off hides its tab (live, from settings:changed). Home stays while the player OR the launcher is on. ----
-  const MODTAB = { clipboard: 'module.clipboard', shelf: 'module.shelf', text: 'module.text', chat: 'module.chat', note: 'module.note', weather: 'module.weather', controls: 'module.controls', notifs: 'module.notifs' };
+  const MODTAB = { clipboard: 'module.clipboard', shelf: 'module.shelf', text: 'module.text', chat: 'module.chat', note: 'module.note', weather: 'module.weather', controls: 'module.controls', notifs: 'module.notifs', agents: 'live.agents' };
   const modOn = (k) => S[k] !== false;
   const tabOff = (id) => (id === 'home' ? !modOn('module.media') && !modOn('module.launcher') : MODTAB[id] ? !modOn(MODTAB[id]) : false);
   function applyModules() {
