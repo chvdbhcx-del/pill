@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Added
+- Uninstall apps completely from the command bar: type `u`, `del`, `uninstall` or `удалить` and a name (switch: Settings > Modules > Complete app uninstall). Pill asks to confirm, runs the app's own uninstaller (its own window and Windows permission prompt; Pill never closes it), then scans for leftovers with strict exact-name matching and shows a checklist: the install folder, folders and Start Menu / Desktop shortcuts named like the app, HKCU keys and autostart entries. Files go to the Recycle Bin, registry keys are exported to a `.reg` backup under `%LOCALAPPDATA%\Pill\uninstall-backups` first, and a log is written beside it. Microsoft Store apps of the current user can be removed too. Anything in HKLM, services and scheduled tasks is only listed for you to remove by hand. System components, updates, runtimes and drivers stay hidden unless the query includes `all`.
+
 ### Fixed
 - Event cards (for example "Agent finished"): while a card is on screen, and for a moment after it closes, resting the cursor on the island no longer opens it, so pressing Dismiss does not pop the island open.
 

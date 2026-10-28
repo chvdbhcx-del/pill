@@ -26,7 +26,7 @@ pub(crate) fn defaults() -> Cfg {
     let Value::Object(more) = json!({
         // Settings > Modules (module.<id>) and > Live events (live.<id>): everything on except OBS, which needs its own WebSocket server
         "module.media": true, "module.shelf": true, "module.launcher": true, "module.fileSearch": true, "module.clipboard": true,
-        "module.text": true, "module.chat": true, "module.note": true, "module.weather": true, "module.controls": true,
+        "module.text": true, "module.chat": true, "module.note": true, "module.weather": true, "module.controls": true, "module.uninstall": true,
         "live.volume": true, "live.music": true, "live.micCam": true, "live.downloads": true, "live.recording": true, "live.notifications": true,
         "live.reminders": true, "live.keyboardLayout": true, "live.copy": true, "live.obs": false, "live.agents": true, "live.steam": true, "live.sysmon": true,
         "live.dlDone": true, "live.shelf": true, "live.usb": true, "live.battery": true, "live.calendar": false, "live.calendar.path": "",

@@ -161,6 +161,7 @@
     ['shotArea', { ru: 'Скриншот области', en: 'Screenshot of an area' }, null, 'Ctrl+Alt+S'],
     ['shotFull', { ru: 'Скриншот всего экрана', en: 'Screenshot of the whole screen' }, null, 'Ctrl+Alt+Shift+S'],
     ['ocr', { ru: 'Текст с экрана (OCR)', en: 'Text from the screen (OCR)' }, null, 'Ctrl+Alt+O'],
+    ['uninstall', { ru: 'Полное удаление программ', en: 'Complete app uninstall' }, { ru: 'В командной строке: u, del или «удалить» + название. Свой деинсталлятор, затем остатки (в Корзину)', en: 'In the command bar: u, del or "uninstall" + a name. Its own uninstaller, then leftovers (to the Recycle Bin)' }],
     ['clipboard', { ru: 'История буфера', en: 'Clipboard history' }, null, 'Ctrl+Alt+V'],
     ['pastePlain', { ru: 'Вставить без форматирования', en: 'Paste without formatting' }, { ru: 'Текст из Word или с сайта без шрифтов и цветов', en: 'Text from Word or a website without fonts and colours' }, 'Ctrl+Alt+Shift+V'],
     ['mic', { ru: 'Микрофон: выключить / включить', en: 'Microphone: mute / unmute' }, null, 'Ctrl+Alt+M'],

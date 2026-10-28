@@ -112,3 +112,26 @@ mark { background: none; color: var(--text); font-weight: 600; }
 #ans .lnk { text-decoration: underline dotted; text-underline-offset: 2px; color: var(--text-2); overflow-wrap: anywhere; } /* a link is only text here */
 #dlg { padding: 0 26px 6px; font-size: var(--fs-sm, 12px); line-height: 16px; color: var(--text-faint); flex: none; }
 #dlg[hidden] { display: none; }
+
+/* ---------- complete uninstall panel (uninstall-ui.js) ---------- */
+#uni { flex: 0 1 auto; min-height: 0; max-height: 262px; overflow-y: auto; margin: 0 8px 8px; padding: 6px 16px 12px; box-sizing: border-box; border-radius: 16px; background: var(--raised);
+  scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; color: var(--text); font-size: var(--fs-md, 13px); line-height: 18px; }
+#uni[hidden] { display: none; }
+#uni .u-h { margin: 6px 0 2px; font-size: var(--fs-base, 14px); line-height: 20px; font-weight: 600; overflow-wrap: anywhere; }
+#uni .u-s { font-size: var(--fs-xs, 11px); line-height: 16px; color: var(--text-faint); overflow-wrap: anywhere; }
+#uni .u-sub { margin-top: 8px; font-size: var(--fs-sm, 12px); color: var(--text-dim); }
+#uni .u-p { font-size: var(--fs-sm, 12px); line-height: 16px; color: var(--text-2); overflow-wrap: anywhere; user-select: text; }
+#uni .u-note, #uni .u-busy { margin-top: 8px; font-size: var(--fs-sm, 12px); line-height: 16px; color: var(--text-dim); }
+#uni .u-warn { margin-top: 8px; padding: 6px 10px; border-radius: 10px; font-size: var(--fs-sm, 12px); line-height: 16px; background: var(--amber-bg); color: var(--amber); }
+#uni .u-chk { display: flex; align-items: center; gap: 4px; margin-top: 8px; font-size: var(--fs-sm, 12px); color: var(--text-2); }
+#uni .u-item { display: flex; align-items: flex-start; gap: 10px; margin-top: 6px; padding: 4px 6px; border-radius: 10px; }
+#uni .u-item:hover { background: var(--raised-2); }
+#uni .u-item input { margin-top: 2px; accent-color: var(--accent); }
+#uni .u-it { min-width: 0; flex: 1; }
+#uni .u-btns { display: flex; gap: 8px; justify-content: flex-end; margin: 12px 0 -12px; padding: 8px 0 12px; position: sticky; bottom: -12px; background: var(--raised); }
+#uni .ubtn { all: unset; box-sizing: border-box; cursor: pointer; padding: 6px 14px; border-radius: 10px; font-size: var(--fs-sm, 12px); line-height: 16px; color: var(--text); background: var(--raised-2); }
+#uni .ubtn:hover { filter: brightness(1.15); }
+#uni .ubtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#uni .ubtn.dflt { background: var(--accent-soft); color: var(--accent); }
+#uni .ubtn.danger { background: var(--red-bg); color: var(--red); }
+#uni .ubtn:disabled { opacity: .4; cursor: default; }

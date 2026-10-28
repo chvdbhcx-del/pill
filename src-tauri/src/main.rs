@@ -37,6 +37,7 @@ mod aiactions;
 mod liveplus;
 mod mail;
 mod notifhist;
+mod uninstall;
 
 fn main() {
     tauri::Builder::default()
@@ -106,6 +107,7 @@ fn main() {
             aisetup::aisetup_status, aisetup::aisetup_whisper_install, aisetup::aisetup_whisper_set, aisetup::aisetup_whisper_remove,
             aisetup::aisetup_ollama_download, aisetup::aisetup_ollama_run_installer, aisetup::aisetup_ollama_pull, aisetup::aisetup_ai_use,
             aisetup::aisetup_cancel,
+            uninstall::uninstall_info, uninstall::uninstall_start, uninstall::uninstall_scan, uninstall::uninstall_delete, uninstall::uninstall_cancel, uninstall::uninstall_state,
             hotkeys::hotkeys_reload,
             obs::obs_status, obs::obs_set_password, obs::obs_reveal, steam::steam_status, notif::notif_status, notif::notif_request,
             notifhist::notif_history_add, notifhist::notif_history_list, notifhist::notif_history_clear, notifhist::notif_history_mark_read, notifhist::notif_history_remove,

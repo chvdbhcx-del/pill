@@ -22,6 +22,7 @@
     app: { ru: 'Приложение', en: 'Application' }, file: { ru: 'Файл', en: 'File' }, folder: { ru: 'Папка', en: 'Folder' },
     shell: { ru: 'Команда', en: 'Command' }, copy: { ru: 'Скопировать', en: 'Copy' }, recent: { ru: 'Недавнее', en: 'Recent' },
     again: { ru: 'Ещё раз Enter', en: 'Press Enter again' },
+    uninstall: { ru: 'Удалить', en: 'Uninstall' }, uninstallRisky: { ru: 'Системный компонент: от него могут зависеть другие программы', en: 'System component: other programs may depend on it' },
     ask: { ru: 'Спросить ИИ', en: 'Ask AI' }, askTip: { ru: 'Напиши вопрос после «? », «ии » или «ai »', en: 'Type your question after "? ", "ии " or "ai "' },
     askGo: { ru: 'Enter — отправить', en: 'Enter: send' }, think: { ru: 'Думаю…', en: 'Thinking…' }, copied: { ru: 'Скопировано', en: 'Copied' },
     copyAns: { ru: 'Копировать ответ', en: 'Copy the answer' }, copyCode: { ru: 'Копировать', en: 'Copy' },
@@ -50,7 +51,7 @@
     'Runs exactly what you type': { ru: 'Выполняется ровно то, что ты введёшь', en: 'Runs exactly what you type' }, 'cmd /c, hidden window': { ru: 'cmd /c, окно скрыто', en: 'cmd /c, hidden window' } };
 
   const GROUP = { calc: 'Result', convert: 'Result', shell: 'Command', system: 'System', app: 'Applications', folder: 'Folders', file: 'Files', web: 'Web' };
-  const ICON = { app: 'apps', file: 'file', folder: 'folder', calc: 'calc', convert: 'convert', web: 'globe', system: 'power', shell: 'terminal', hint: 'sparkles',
+  const ICON = { app: 'apps', uninstall: 'trash', file: 'file', folder: 'folder', calc: 'calc', convert: 'convert', web: 'globe', system: 'power', shell: 'terminal', hint: 'sparkles',
     ask: 'sparkles', askcopy: 'copy', newconv: 'refresh', clip: 'clipboard', note: 'note', shelf: 'shelf', reminder: 'bell', tab: 'home', setting: 'settings', action: 'bolt' };
   const PLAIN = new Set(['calc', 'convert', 'shell', 'web', 'ask', 'askcopy', 'newconv']); // titles that are not searchable text: no match highlight
 
@@ -185,6 +186,7 @@
     else if (it.kind === 'ask') { title = `${t(L.ask)}: ${it.payload}`; sub = askStatus(); label = 'ИИ'; }
     else if (it.kind === 'askcopy') { title = t(L.copyAns); sub = ''; label = t(L.copy); }
     else if (it.kind === 'newconv') { title = t(L.newConv); sub = t(L.newConvSub); label = ''; }
+    else if (it.kind === 'uninstall') { label = t(L.uninstall); if (it.payload.endsWith('!')) sub = t(L.uninstallRisky); }
     else if (it.kind === 'app') label = t(L.app);
     else if (it.kind === 'file' || it.kind === 'folder') label = t(L[it.kind]);
     else if (L[it.kind]) { label = t(L[it.kind]); if (SUBS[sub]) sub = t(SUBS[sub]); if (it.kind === 'tab') icon = it.payload; }
@@ -357,6 +359,7 @@
   async function run(it, mode) {
     if (!it) return;
     if (it.kind === 'ask') return ask(it);
+    if (it.kind === 'uninstall') return window.UninstallUI?.open(it); // confirm card first: nothing is removed by this keystroke
     if (it.kind === 'newconv') { clearTimeout(timer); q.value = ''; return search(); } // search() ends the dialogue
     if (it.kind === 'askcopy') {
       await copy(window.MdLite.plain(it.payload)); // plain text, markdown markers stripped
