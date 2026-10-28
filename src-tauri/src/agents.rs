@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
 const MAX_FILE: u64 = 4096;
@@ -23,6 +24,7 @@ const NO_WINDOW: u32 = 0x0800_0000; // CREATE_NO_WINDOW
 const HELPER_NAME: &str = "agent-hook.ps1";
 
 // ---------- pure parts (unit-tested) ----------
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
     Working,
     Waiting,
@@ -240,6 +242,11 @@ impl Tracker {
 
 static TRACKER: Mutex<Tracker> = Mutex::new(Tracker::new());
 
+fn lock() -> std::sync::MutexGuard<'static, Tracker> {
+    TRACKER.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+// ---------- disk ----------
 fn status_dir() -> PathBuf {
     let d = crate::store::dir().join("agents");
     let _ = std::fs::create_dir_all(&d);
@@ -607,6 +614,62 @@ mod tests {
         assert!(c.ends_with('\u{2026}'));
         assert_eq!(clean_text("  \u{202e}hi\u{200b}  there ", 80), "hi there"); // bidi override and zero-width removed
         assert_eq!(clean_id("../../etc/passwd"), "etcpasswd");
+        assert_eq!(clean_id("a b\\c:d*e"), "abcde");
+        assert_eq!(clean_id("..."), "");
+        assert_eq!(clean_id(&"z".repeat(300)).len(), 64);
+    }
+
+    #[test]
+    fn parse_validates() {
+        let ok = parse(r#"{"tool":"codex","session":"s1","state":"done","title":"Fix\nbug","cwd":"C:\\p","ts":1799999999000}"#).unwrap();
+        assert_eq!((ok.tool.as_str(), ok.state, ok.title.as_str(), ok.ts), ("codex", State::Done, "Fix bug", 1_799_999_999_000));
+        assert_eq!(parse(r#"{"tool":"evil","session":"s","state":"working"}"#).unwrap().tool, "other");
+        assert!(parse(r#"{"session":"s","state":"running"}"#).is_none()); // unknown state
+        assert!(parse(r#"{"session":"///","state":"done"}"#).is_none()); // id empty after cleaning
+        assert!(parse("not json").is_none());
+        assert!(parse("[1,2]").is_none());
+        assert!(parse("").is_none());
+        let big = format!(r#"{{"session":"s","state":"done","title":"{}"}}"#, "a".repeat(5000));
+        assert!(parse(&big).is_none()); // size cap
+        // missing / future ts falls back to the file time
+        assert_eq!(parse(r#"{"session":"s","state":"working"}"#).unwrap().ts, NOW - 1000);
+        assert_eq!(parse(&format!(r#"{{"session":"s","state":"working","ts":{}}}"#, NOW + 10_000_000)).unwrap().ts, NOW - 1000);
+        // wrong field types do not panic
+        assert!(parse(r#"{"session":5,"state":["done"],"title":{}}"#).is_none());
+    }
+
+    #[test]
+    fn done_fires_once() {
+        let mut t = Tracker::new();
+        // baseline: an old done file on startup is silent and then cleaned up
+        let o = t.update(vec![(file("old"), Some(sess("old", State::Done, NOW - 20 * 60_000)))], NOW);
+        assert!(o.done.is_empty());
+        assert_eq!(o.delete, vec![file("old")]);
+        assert!(t.map.is_empty());
+        // working -> done fires exactly once, however often the file is re-read
+        t.update(vec![(file("a"), Some(sess("a", State::Working, NOW)))], NOW);
+        let d = t.update(vec![(file("a"), Some(sess("a", State::Done, NOW + 1000)))], NOW + 1000);
+        assert_eq!(d.done.len(), 1);
+        assert!(t.update(vec![(file("a"), Some(sess("a", State::Done, NOW + 1000)))], NOW + 2000).done.is_empty());
+        assert!(t.update(vec![(file("a"), Some(sess("a", State::Done, NOW + 5000)))], NOW + 6000).done.is_empty()); // rewritten duplicate
+        // a new turn: working again, then done again fires again
+        t.update(vec![(file("a"), Some(sess("a", State::Working, NOW + 7000)))], NOW + 7000);
+        assert_eq!(t.update(vec![(file("a"), Some(sess("a", State::Done, NOW + 8000)))], NOW + 8000).done.len(), 1);
+    }
+
+    #[test]
+    fn done_without_earlier_state() {
+        let mut t = Tracker::new();
+        t.update(vec![], NOW); // baseline
+        let fresh = t.update(vec![(file("b"), Some(sess("b", State::Done, NOW - 5000)))], NOW);
+        assert_eq!(fresh.done.len(), 1); // Stop-only hook setup
+        let mut t2 = Tracker::new();
+        t2.update(vec![], NOW);
+        assert!(t2.update(vec![(file("c"), Some(sess("c", State::Done, NOW - 300_000)))], NOW).done.is_empty()); // too old to announce
+    }
+
+    #[test]
+    fn stale_and_expiry() {
         let mut t = Tracker::new();
         t.update(vec![(file("w"), Some(sess("w", State::Working, NOW)))], NOW);
         assert_eq!(t.snapshot(NOW + 60_000)["working"], 1);
