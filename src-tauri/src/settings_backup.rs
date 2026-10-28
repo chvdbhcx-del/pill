@@ -30,7 +30,7 @@ pub fn is_secret(key: &str) -> bool {
 
 /// Machine or runtime state that must not travel between PCs.
 fn is_runtime(key: &str) -> bool {
-    key == "aiSetupDone" || key.starts_with("aisetup.") || key.starts_with("settingsWin.")
+    key == "aiSetupDone" || key == "lastSeenVersion" || key.starts_with("aisetup.") || key.starts_with("settingsWin.")
 }
 
 fn exportable(key: &str) -> bool {

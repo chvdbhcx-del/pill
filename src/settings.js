@@ -970,6 +970,8 @@
     });
     r.append(h('div', 'c', b));
     row(c, t({ ru: 'Проверять при запуске', en: 'Check on start' }), t({ ru: 'Через ~20 секунд после старта один запрос к GitHub. Установить обновление всё равно нужно вручную.', en: 'One request to GitHub ~20 s after launch. Installing is still up to you.' }), sw('updateAuto'));
+    DEF.whatsNew = true;
+    row(c, t({ ru: 'Показывать «Что нового» после обновления', en: 'Show the what is new card after an update' }), t({ ru: 'Карточка с заметками версии один раз после обновления; сеть не используется', en: 'A card with the version notes, once after an update; no network' }), sw('whatsNew'));
     c.append(out);
     const d = h('details', 'disc');
     d.append(h('summary', '', t({ ru: 'Что нового', en: 'What is new' })));

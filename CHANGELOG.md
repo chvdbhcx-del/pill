@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Added
+- After an update the island shows a "Pill <version>" card with that version's notes (taken from the changelog built into the app, no network) and an "All changes" button that opens Settings > Updates. Never on a fresh install; Settings > Updates has a switch for it.
+
 ### Fixed
 - Event cards (for example "Agent finished"): while a card is on screen, and for a moment after it closes, resting the cursor on the island no longer opens it, so pressing Dismiss does not pop the island open.
 
