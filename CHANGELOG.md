@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Changed
+- Settings pages are regrouped: General (language, autostart, backup), Appearance (the island's looks, folded-island content, motion, frame rate), Behavior (auto-hide, pass-through, screenshots) and a new File search page (Everything). "Pill during music" moved to Sound. Long descriptions are shorter.
+
 ### Fixed
 - Event cards (for example "Agent finished"): while a card is on screen, and for a moment after it closes, resting the cursor on the island no longer opens it, so pressing Dismiss does not pop the island open.
 

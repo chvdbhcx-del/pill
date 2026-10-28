@@ -13,7 +13,7 @@
     { id: 'openai', name: 'OpenAI', url: 'https://api.openai.com/v1', model: 'whisper-1', keyUrl: 'https://platform.openai.com/api-keys',
       help: { ru: 'Платный сервис. Модель whisper-1 или gpt-4o-mini-transcribe.', en: 'A paid service. The whisper-1 or gpt-4o-mini-transcribe model.' } },
     { id: 'custom', name: { ru: 'Другой / локальный', en: 'Other / local' }, url: 'http://127.0.0.1:8000/v1', model: '',
-      help: { ru: 'Любой сервер с адресом …/audio/transcriptions: faster-whisper-server, LocalAI, whisper.cpp server. Для адреса 127.0.0.1 ключ не нужен, запись не покидает компьютер.', en: 'Any server with a …/audio/transcriptions route: faster-whisper-server, LocalAI, whisper.cpp server. A 127.0.0.1 address needs no key and the recording never leaves this computer.' } },
+      help: { ru: 'Любой сервер с маршрутом …/audio/transcriptions (faster-whisper-server, LocalAI, whisper.cpp). Для 127.0.0.1 ключ не нужен, запись остаётся на компьютере.', en: 'Any server with a …/audio/transcriptions route (faster-whisper-server, LocalAI, whisper.cpp). For 127.0.0.1 no key is needed and the recording stays here.' } },
   ];
 
   window.PillVoiceSettingsPage = function (p, X) {
@@ -43,7 +43,7 @@
 
     // ---- key
     const kr = h('div', 'row block');
-    kr.append(h('div', 'l', [h('b', '', t({ ru: 'Ключ API', en: 'API key' })), h('span', '', t({ ru: 'Хранится только на этом компьютере, зашифрован Windows, не вшит в приложение и никому не передаётся. Если для того же адреса уже есть ключ ИИ-помощника, он подходит и сюда.', en: 'Stored only on this computer, encrypted by Windows; it is not built into the app and not shared with anyone. If the AI assistant already has a key for the same address, it is used here too.' }))]));
+    kr.append(h('div', 'l', [h('b', '', t({ ru: 'Ключ API', en: 'API key' })), h('span', '', t({ ru: 'Хранится только на этом компьютере, зашифрован Windows и никому не передаётся. Если для этого адреса уже есть ключ ИИ-помощника, он подойдёт и здесь.', en: 'Stored only on this computer, encrypted by Windows and not shared with anyone. If the AI assistant already has a key for this address, it is used here too.' }))]));
     const key = h('input', 'field'); key.type = 'password'; key.autocomplete = 'off'; key.spellcheck = false; key.setAttribute('aria-label', t({ ru: 'Ключ API', en: 'API key' }));
     const keyMsg = h('div', 'note'); keyMsg.style.marginTop = '8px';
     let ks = { has: false, source: 'none' };
