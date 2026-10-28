@@ -2,7 +2,7 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
-## [Unreleased]
+## [0.3.7] - 2026-10-28
 
 ### Changed
 - The folder button on the "Agent finished" card is shortened to "Path" ("Путь").
