@@ -1,0 +1,124 @@
+# Builds the Pill NSIS installer, signs it for the updater and publishes it to the GitHub release of the tag.
+#
+# IMPORTANT: the repository owner must add the secret TAURI_SIGNING_PRIVATE_KEY (Settings -> Secrets and variables -> Actions)
+# with the CONTENT of the updater private key file (the one made by `npx tauri signer generate`, default
+# %USERPROFILE%\.tauri\pill-updater.key). If the key has a password, also add TAURI_SIGNING_PRIVATE_KEY_PASSWORD (may stay unset).
+# Without the secret this workflow does nothing useful: it stops at the first step. Never commit the key.
+#
+# Trigger: run it by hand (GitHub -> Actions -> Release -> Run workflow, also from the GitHub mobile app); the release is
+# v<version from src-tauri/tauri.conf.json>. No tag trigger: tools/release.ps1 / release-all create the tag themselves.
+# Mirrors tools/release.ps1 (same latest.json fields and URL pattern).
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: Release notes (empty = the matching CHANGELOG.md section, else "Pill <version>")
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Require the signing key
+        shell: pwsh
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            throw 'Secret TAURI_SIGNING_PRIVATE_KEY is not set: the repository owner must add it (see the top of this file).'
+          }
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Read version and check the tag
+        shell: pwsh
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $ver = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($env:REF_TYPE -eq 'tag' -and $env:REF_NAME -ne "v$ver") {
+            throw "Tag $($env:REF_NAME) does not match version $ver in src-tauri/tauri.conf.json"
+          }
+          "VER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - run: npm ci
+
+      - name: Build and sign
+        run: npm run tauri build -- --bundles nsis
+
+      # Once a code-signing service exists (docs/SIGNING.md), add its step HERE: after the build, before latest.json.
+      # Authenticode-signing changes the installer's bytes, so the updater .sig made by `tauri build` must be
+      # recreated for the signed file (`npx tauri signer sign`) before the next step reads it. See docs/SIGNING.md.
+
+      - name: Write latest.json
+        shell: pwsh
+        env:
+          INPUT_NOTES: ${{ github.event.inputs.notes }}
+        run: |
+          $ver = $env:VER
+          $dir = Join-Path $PWD 'src-tauri/target/release/bundle/nsis'
+          $exe = Join-Path $dir "Pill_${ver}_x64-setup.exe"
+          $sig = "$exe.sig"
+          if (-not (Test-Path $exe) -or -not (Test-Path $sig)) { throw "Missing $exe or its .sig" }
+
+          $notes = $env:INPUT_NOTES
+          if (-not $notes -and (Test-Path CHANGELOG.md)) {
+            $cl = Get-Content CHANGELOG.md -Raw
+            if ($cl -match "(?ms)^## \[$([regex]::Escape($ver))\][^\r\n]*\r?\n(.*?)(?=^## |\z)") { $notes = $Matches[1].Trim() }
+          }
+          if (-not $notes) { $notes = "Pill $ver" }
+
+          $latest = [ordered]@{
+              version  = $ver
+              notes    = $notes
+              pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+              platforms = [ordered]@{
+                  'windows-x86_64' = [ordered]@{
+                      signature = (Get-Content $sig -Raw).Trim()
+                      url       = "https://github.com/$($env:GITHUB_REPOSITORY)/releases/download/v$ver/Pill_${ver}_x64-setup.exe"
+                  }
+              }
+          }
+          [IO.File]::WriteAllText((Join-Path $dir 'latest.json'), ($latest | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding($false)))
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'notes.md'), $notes, (New-Object Text.UTF8Encoding($false)))
+          Get-Content (Join-Path $dir 'latest.json')
+
+      - name: Publish to the GitHub release
+        shell: pwsh
+        run: |
+          $ver = $env:VER
+          $tag = "v$ver"
+          $dir = Join-Path $PWD 'src-tauri/target/release/bundle/nsis'
+          $exe = Join-Path $dir "Pill_${ver}_x64-setup.exe"
+          $files = @($exe, "$exe.sig", (Join-Path $dir 'latest.json'))
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @files --clobber
+          } else {
+            gh release create $tag @files --title "Pill $ver" --notes-file (Join-Path $env:RUNNER_TEMP 'notes.md') --target $env:GITHUB_SHA
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'gh release failed' }
