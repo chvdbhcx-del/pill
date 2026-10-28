@@ -616,6 +616,33 @@
     c = card(p);
     row(c, t({ ru: 'Показывать остров на скриншотах и в записи экрана', en: 'Show the pill in screenshots and screen recordings' }),
       t({ ru: 'Обычно остров не попадает в скриншоты, запись и трансляцию. Включите, если фоновая запись (например, NVIDIA) жалуется, что остров ей мешает', en: 'Normally the pill is left out of screenshots, recordings and streams. Turn it on if a background recorder (NVIDIA, for example) complains about it' }), sw('showInCapture'));
+    quietCard(p);
+  }
+
+  // Quiet hours (quiet.js has the window logic, pill.js applies it): no cards / flashes / pulses meanwhile; timers and reminders you set still ring
+  function quietCard(p) {
+    cap(p, t({ ru: 'Тихие часы', en: 'Quiet hours' }));
+    const c = card(p);
+    row(c, t({ ru: 'Тихие часы', en: 'Quiet hours' }),
+      t({ ru: 'Пока тихо, карточки событий, вспышки агентов и импульсы не показываются и не копятся. Ваши таймеры, напоминания и срочное звучат всегда. «Фокусировку» Windows Pill не читает.', en: 'While it is quiet, event cards, agent flashes and pulses are not shown or queued. Your timers, reminders and anything urgent still ring. Pill does not read Windows Focus Assist.' }), sw('quiet.on'));
+    const tf = (key, def) => {
+      const i = h('input', 'field'); i.type = 'time'; i.step = 60; i.style.width = '110px';
+      i.onchange = () => { if (/^\d{2}:\d{2}$/.test(i.value)) put({ [key]: i.value }); };
+      syncs.push(() => { if (document.activeElement !== i) i.value = get(key) || def; });
+      i.value = get(key) || def;
+      return i;
+    };
+    row(c, t({ ru: 'С какого часа', en: 'From' }), '', tf('quiet.from', '22:00'));
+    row(c, t({ ru: 'До какого часа', en: 'Until' }), t({ ru: 'Можно через полночь: например, с 22:00 до 07:00', en: 'May cross midnight: for example 22:00 to 07:00' }), tf('quiet.to', '07:00'));
+    const days = () => (Array.isArray(get('quiet.days')) ? get('quiet.days').map(String) : ['0', '1', '2', '3', '4', '5', '6']);
+    const wk = h('div', 'chips'), bs = [['1', { ru: 'Пн', en: 'Mon' }], ['2', { ru: 'Вт', en: 'Tue' }], ['3', { ru: 'Ср', en: 'Wed' }], ['4', { ru: 'Чт', en: 'Thu' }], ['5', { ru: 'Пт', en: 'Fri' }], ['6', { ru: 'Сб', en: 'Sat' }], ['0', { ru: 'Вс', en: 'Sun' }]].map(([v, n]) => {
+      const b = h('button', 'chip', t(n)); b.type = 'button'; b.dataset.v = v;
+      b.onclick = () => { const cur = new Set(days()); if (cur.has(v)) cur.delete(v); else cur.add(v); put({ 'quiet.days': [...cur] }); };
+      wk.append(b); return b;
+    });
+    const draw = () => { const d = days(); bs.forEach((b) => { const on = d.includes(b.dataset.v); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); }); };
+    syncs.push(draw); draw();
+    row(c, t({ ru: 'Дни', en: 'Days' }), t({ ru: 'Окно, начавшееся в этот день, тянется и за полночь', en: 'A window that starts on a day runs on past midnight' }), wk, { block: true });
   }
 
   // ---- File search: Everything download + autostart

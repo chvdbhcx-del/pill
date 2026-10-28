@@ -66,7 +66,7 @@
     } else if (p.kind === 'full') {
       title = t({ ru: 'Заряжено', en: 'Fully charged' }); sub = t({ ru: 'Можно отключить зарядку', en: 'You can unplug the charger' }); tone = 'green';
     } else return;
-    P.toast({ id: 'battery', icon: P.icon(ico, { size: 20 }), tone, ttlMs: p.kind === 'low' ? 8000 : 5000, title, sub, actions: [close()] });
+    P.toast({ id: 'battery', icon: P.icon(ico, { size: 20 }), tone, ttlMs: p.kind === 'low' ? 8000 : 5000, urgent: p.kind === 'low', title, sub, actions: [close()] });
   }
 
   function calendar(p) {

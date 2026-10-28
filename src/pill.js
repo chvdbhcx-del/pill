@@ -28,6 +28,10 @@
   const S = { size: 100, theme: 'dark', clock24: true, autoHide: false, reduceMotion: false, hideInApps: [], language: 'auto', shape: 'capsule', edgeIdle: true, edgeCones: false, lastTab: '',
               showTime: true, showDate: false, showTemp: true, showSeconds: false, showBattery: true, opacityCol: 0, opacityExp: 0, vpnCountry: '', pinned: false,
               fps: 'auto', edgeIdleFps: 30 /* settings.json: fps = auto | 30 | 60 | 120 | 144 | 240 (cap of the shared rAF loop); edgeIdleFps = 15 | 30 | 60 (calm / sleep edge only) */ };
+  // ---- quiet hours (Settings > Behavior; quiet.js has the pure window logic): sources whose cards / pulses / chips are muted, and the toasts that always show ----
+  const QUIET_SRC = new Set(['agents', 'agent-done', 'copy', 'download', 'steam', 'sysmon', 'kbd']);
+  const quiet = () => !!(window.PillQuiet && window.PillQuiet.quietNow(S, new Date()));
+  const exemptToast = (o) => !!(o && (o.urgent || /^(timer|remind)/.test(String(o.id || '')))); // timers / reminders the user set, and anything marked urgent
   const mqTheme = matchMedia('(prefers-color-scheme: light)');
   const mqMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const scale = () => Math.min(2, Math.max(0.8, (+S.size || 100) / 100));
@@ -481,6 +485,7 @@
   }
   function react(source, name, o) {
     if (!source || !Object.prototype.hasOwnProperty.call(PRIO, name)) return;
+    if (QUIET_SRC.has(source) && quiet()) { unreact(source); return; }
     const ttl = (o && o.ttlMs) || 0, color = (o && o.color) || '', old = rx.get(source);
     if (old && !ttl && !old.until && old.name === name && old.color === color) return; // same standing state again (agents:changed, media:changed)
     if (name !== 'sleep') poke();
@@ -928,7 +933,7 @@
     const o = queue.shift(), { el } = buildCard(o);
     el.classList.remove('in'); el.classList.add('inpill');
     invoke('pill_cards', { on: true }); // pill.rs CARD_FRAME
-    curCard = { id: o.id, el, t: setTimeout(dismiss, o.ttlMs || 4000) };
+    curCard = { id: o.id, urgent: !!o.urgent, el, t: setTimeout(dismiss, o.ttlMs || 4000) };
     cardLive = el;
     root.classList.add('carding');
     renderLive();
@@ -950,6 +955,7 @@
   }
   function toast(o) {
     if (!o || hidden) return;
+    if (quiet() && !exemptToast(o)) return; // quiet hours: dropped, never shown later
     cancelAway();
     if (o.id != null) {
       for (let i = queue.length - 1; i >= 0; i--) if (queue[i].id === o.id) queue.splice(i, 1);
@@ -1131,11 +1137,13 @@
     // weather lane: Pill.setClockSlots({ left: '<span class="lp-ico lp-sun">…</span>', right: '<span class="lp-aux">16°</span>' }); null clears
     setClockSlots(o) { slots = { left: (o && o.left) || '', right: (o && o.right) || '' }; invalidateLive(); renderLive(); },
     setLive(id, w) { // w: { priority, html, key?, ttlMs, accent } ; key: the row is re-rendered only when it changes (the caller edits it in place) ; accent colours (and animates) the wavy outline
+      if (w && QUIET_SRC.has(id) && !w.urgent && quiet()) w = null; // quiet hours: event pulses and chips are not shown
       if (!w) lives.delete(id);
       else { lives.set(id, { p: w.priority || 0, html: w.html || '', key: w.key || '', until: w.ttlMs ? Date.now() + w.ttlMs : 0, accent: w.accent || '', tall: !!w.tall }); reveal(); }
       if (!hidden) renderLive();
     },
     toast,
+    quiet,
     expand(tab, via) {
       if (T && T.core) invoke('pill_set_state', { state: 'expanded', tab: tab || null, via: via || 'page' });
       else doExpand(tab); // plain browser preview
@@ -1145,6 +1153,15 @@
     relayoutLive() { if (hidden || cardLive) return; sizeLive(); if (Pill.state === 'collapsed') retarget(false, null, 'resize'); }, // the live row's CSS changed (characters.css keeps a slot for the legs' eyes): re-measure its fixed width and resize the capsule to it
     reserve(px) { px = Math.max(0, Math.round(+px || 0)); if (px === petRes) return; petRes = px; if (Pill.state === 'collapsed' && !hidden) retarget(false, null, 'resize'); }, // widen the collapsed capsule by px css px (a pet lives there); animated like any content resize
   };
+  // quiet hours: what was queued before the window began is dropped too (checked every 20 s)
+  setInterval(() => {
+    if (!quiet()) return;
+    for (let i = queue.length - 1; i >= 0; i--) if (!exemptToast(queue[i])) queue.splice(i, 1);
+    if (curCard && !exemptToast(curCard)) { clearTimeout(curCard.t); endCard(curCard); }
+    let ch = false;
+    QUIET_SRC.forEach((id) => { if (lives.delete(id)) ch = true; unreact(id); });
+    if (ch && !hidden) renderLive();
+  }, 20000);
   Object.defineProperty(Pill, 'lang', { get: () => lang, enumerable: true });
   retitle();
 

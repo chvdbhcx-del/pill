@@ -33,6 +33,7 @@
 
   // Liquid edge: the shell's edgePulse(strength) when it exists, else a CSS pulse on #wave.
   function edge(strength) {
+    if (P.quiet && P.quiet()) return; // quiet hours
     if (typeof P.edgePulse === 'function') { P.edgePulse(strength); return; }
     if (P.settings && P.settings.reduceMotion) return;
     const w = document.getElementById('wave');

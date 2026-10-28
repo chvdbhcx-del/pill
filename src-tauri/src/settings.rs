@@ -42,6 +42,9 @@ pub(crate) fn defaults() -> Cfg {
     // notification centre (notifhist.rs, tab-notifs.js): history.keep = store what the island showed; history.mail = also keep mail / Windows-notification bodies (off: title only)
     let Value::Object(hist) = json!({ "module.notifs": true, "history.keep": true, "history.mail": false }) else { unreachable!() };
     m.extend(hist);
+    // quiet hours (src/quiet.js, Settings > Behavior): days are strings "0" (Sunday) .. "6"
+    let Value::Object(quiet) = json!({ "quiet.on": false, "quiet.from": "22:00", "quiet.to": "07:00", "quiet.days": ["0", "1", "2", "3", "4", "5", "6"] }) else { unreachable!() };
+    m.extend(quiet);
     m
 }
 

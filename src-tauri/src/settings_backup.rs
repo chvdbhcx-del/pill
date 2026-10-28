@@ -17,7 +17,7 @@ type Cfg = Map<String, Value>;
 const MAX_IMPORT: usize = 1 << 20;
 /// Dynamic key families (hotkey.<action>, module.<id>, live.<id>, ...) that settings.rs does not list in its defaults.
 const PREFIXES: &[&str] = &[
-    "hotkey.", "module.", "live.", "capture.", "voice.", "ai.", "weather.", "net.", "obs.", "sound.", "pet.", "audio.", "clipboard.", "everything.",
+    "hotkey.", "module.", "live.", "capture.", "voice.", "ai.", "weather.", "net.", "obs.", "sound.", "pet.", "audio.", "clipboard.", "everything.", "quiet.",
 ];
 /// Exact keys written by the settings page that have no entry in the Rust defaults table.
 const EXTRA: &[&str] = &["showTime", "showDate", "showTemp", "showSeconds", "showBattery", "opacityCol", "opacityExp", "fps", "edgeIdleFps"];
