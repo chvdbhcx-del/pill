@@ -49,3 +49,6 @@ jobs:
 
       - name: Front-end self-checks
         run: node src/tab-text.test.mjs
+
+      - name: Command contract check
+        run: node src/contract.test.mjs
