@@ -16,11 +16,11 @@ async fn check(app: &AppHandle) -> Value {
     match updater.check().await {
         Ok(Some(u)) => {
             let r = json!({ "status": "available", "version": u.version, "notes": u.body });
-            *FOUND.lock().unwrap() = Some(u);
+            *FOUND.lock().unwrap_or_else(|e| e.into_inner()) = Some(u);
             r
         }
         Ok(None) => {
-            *FOUND.lock().unwrap() = None;
+            *FOUND.lock().unwrap_or_else(|e| e.into_inner()) = None;
             json!({ "status": "none" })
         }
         Err(e) => json!({ "status": "error", "error": e.to_string() }),
@@ -35,7 +35,7 @@ pub async fn update_check(app: AppHandle) -> Value {
 /// Downloads the update found by the last `update_check`, installs it and restarts the app.
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> Value {
-    let Some(u) = FOUND.lock().unwrap().clone() else { return json!({ "status": "error", "error": "no update checked" }) };
+    let Some(u) = FOUND.lock().unwrap_or_else(|e| e.into_inner()).clone() else { return json!({ "status": "error", "error": "no update checked" }) };
     match u.download_and_install(|_, _| {}, || {}).await {
         Ok(()) => app.restart(),
         Err(e) => json!({ "status": "error", "error": e.to_string() }),

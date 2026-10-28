@@ -170,7 +170,7 @@ fn bt_radio() -> Option<Radio> {
 }
 
 fn bt_devices() -> Vec<BtDevice> {
-    if let Some((t, v)) = &*BT_CACHE.lock().unwrap() {
+    if let Some((t, v)) = &*BT_CACHE.lock().unwrap_or_else(|e| e.into_inner()) {
         if t.elapsed() < Duration::from_secs(4) {
             return v.clone();
         }
@@ -191,7 +191,7 @@ fn bt_devices() -> Vec<BtDevice> {
         Ok(out)
     };
     let v = run().unwrap_or_default();
-    *BT_CACHE.lock().unwrap() = Some((Instant::now(), v.clone()));
+    *BT_CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), v.clone()));
     v
 }
 
@@ -233,7 +233,7 @@ fn set_bluetooth(on: bool) -> Value {
         return res("error", "radio access denied");
     }
     let ok = r.SetStateAsync(if on { RadioState::On } else { RadioState::Off }).and_then(|op| op.get()).is_ok();
-    *BT_CACHE.lock().unwrap() = None;
+    *BT_CACHE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     if ok { res("ok", "") } else { res("error", "set state failed") }
 }
 
@@ -384,7 +384,7 @@ pub fn sys_power(action: String, confirmed: bool) -> Value {
         return res("error", "unknown action");
     }
     let now = START.get_or_init(Instant::now).elapsed().as_millis() as u64;
-    if decide(&mut ARMED.lock().unwrap(), &action, confirmed, now) == Decision::Confirm {
+    if decide(&mut ARMED.lock().unwrap_or_else(|e| e.into_inner()), &action, confirmed, now) == Decision::Confirm {
         return json!({ "status": "confirm", "ms": CONFIRM_MS });
     }
     let ok = match action.as_str() {
