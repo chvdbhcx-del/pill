@@ -4,7 +4,17 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [0.3.5] - 2026-10-27
 
+### Added
+- Agents tab in the expanded island: every tracked Claude Code session with its project, state and time in that state, waiting ones first. The pill says which project needs your input ("2 need your input · project" when several wait).
+- Settings > Modules: named profiles. Save the current module and live-event switches under a name and apply them with one click (up to 8; network opt-ins, keys and paths are never part of a profile).
+
+### Changed
+- Steam manifests are re-read only when the file changed; the local database uses `synchronous=NORMAL` with WAL.
+- Settings message lines, hidden elements and long paths are laid out consistently.
+
 ### Fixed
+- The AI setup page opened slowly when a local server port hung instead of refusing; ports that do not accept within 300 ms are treated as off.
+- Remaining poison-panicking mutex locks in the system and updater code.
 - "Needs your input" no longer stays on the island after you answered: while a session waits, the island watches the modification time of that session's transcript (its content is never read) and goes back to "working" once it changes. The status helper now also records the transcript path.
 - Settings > Updates: the result line ("You are up to date") sits inside the card with the same inset and text size as the rows, and a failed install is shown in red.
 
