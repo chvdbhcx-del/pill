@@ -2,7 +2,7 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-29
 
 ### Added
 - Pin an app, file or folder to the island from the command bar: the pin button on the row, the right-click menu or Ctrl+P. It goes to the launcher strip (module "Launcher"); Microsoft Store apps cannot be pinned yet.
