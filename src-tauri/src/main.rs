@@ -87,6 +87,7 @@ fn main() {
             liveplus::liveplus_ics_status,
             mail::mail_status, mail::mail_set_password, mail::mail_test,
             // @watch-commands
+            settings::profile_save, settings::profile_apply, settings::profile_delete,
             agents::agents_list, agents::agents_dismiss, agents::agents_hook_snippets,
             // @agents-commands
             launcher::launcher_list, launcher::launcher_add, launcher::launcher_remove, launcher::launcher_open, launcher::launcher_move,

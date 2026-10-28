@@ -817,7 +817,41 @@
     ['controls', { ru: 'Управление системой', en: 'System controls' }, { ru: 'Вкладка «Управление»: сеть, Bluetooth, тема, питание', en: 'The Controls tab: network, Bluetooth, theme, power' }],
     ['notifs', { ru: 'Центр уведомлений', en: 'Notification centre' }, { ru: 'Вкладка «Уведомления»: история карточек острова', en: 'The Notifications tab: history of the island cards' }],
   ];
+  // Profiles: named on/off states of the modules and live events (settings.rs profile_*; never touches net.*, keys, paths, mail or calendar feeds)
+  function profilesCard(p) {
+    cap(p, t({ ru: 'Профили', en: 'Profiles' }));
+    const c = card(p);
+    const list = h('div', 'plist');
+    const nameIn = h('input', 'field'); nameIn.placeholder = t({ ru: 'Название: Работа, Игра…', en: 'Name: Work, Game…' }); nameIn.maxLength = 24; nameIn.spellcheck = false;
+    const say = h('div', 'updmsg'); say.dataset.base = 'updmsg';
+    const run = async (cmd, args, okText) => {
+      const r = await inv(cmd, args);
+      const all = await inv('settings_get'); if (all) { S = Object.assign({}, all); sync(); }
+      if (r && r.ok) msg(say, okText || '', 'note ok');
+      else msg(say, r && r.error === 'full' ? t({ ru: 'Не больше 8 профилей: удалите ненужный', en: 'At most 8 profiles: delete one first' }) : t({ ru: 'Не удалось', en: 'Failed' }), 'note bad');
+      return r && r.ok;
+    };
+    const draw = () => {
+      const all = S.profiles && typeof S.profiles === 'object' ? Object.keys(S.profiles) : [];
+      if (!all.length) { list.replaceChildren(h('div', 'pad txt', t({ ru: 'Профилей пока нет. Настройте модули и события ниже, введите название и сохраните.', en: 'No profiles yet. Set the modules and live events below, type a name and save.' }))); return; }
+      list.replaceChildren(...all.map((n) => {
+        const on = Object.values(S.profiles[n] || {}).filter((v) => v === true).length;
+        const r = h('div', 'row');
+        r.append(h('div', 'l', [h('b', '', n), h('span', '', t({ ru: `Включено: ${on}`, en: `On: ${on}` }))]),
+          h('div', 'c', [btn(t({ ru: 'Применить', en: 'Apply' }), () => run('profile_apply', { name: n }, t({ ru: 'Применён профиль «' + n + '»', en: 'Applied “' + n + '”' })), 'sm'),
+            btn(t({ ru: 'Удалить', en: 'Delete' }), () => run('profile_delete', { name: n }, ''), 'sm danger')]));
+        return r;
+      }));
+    };
+    syncs.push(draw); draw();
+    const save = btn(t({ ru: 'Сохранить текущее', en: 'Save current' }), async () => { const n = nameIn.value.trim(); if (!n) return; if (await run('profile_save', { name: n }, t({ ru: 'Сохранено', en: 'Saved' }))) nameIn.value = ''; }, 'sm');
+    const add = h('div', 'pad inline'); add.append(nameIn, save);
+    c.append(list, add, say);
+    p.append(h('div', 'footnote', t({ ru: 'В профиль входят только переключатели модулей и живых событий. Сеть (ИИ, погода, почта, календарь), ключи, пути и клавиши профиль не меняет.', en: 'A profile holds only the module and live-event switches. It never changes network features (AI, weather, mail, calendar), keys, paths or hotkeys.' })));
+  }
   function pModules(p) {
+    profilesCard(p);
+    cap(p, t({ ru: 'Модули', en: 'Modules' }));
     const c = card(p);
     MODS.forEach(([id, title, sub]) => { DEF['module.' + id] = true; row(c, t(title), t(sub), sw('module.' + id)); });
     cap(p, t({ ru: 'История уведомлений', en: 'Notification history' }));
