@@ -58,15 +58,16 @@
     if (!p || !p.session || !P.liveOn('agents')) return;
     edge(0.9);
     P.react('agent-done', 'done', { ttlMs: 4000 });
+    const proj = String(p.cwd || '').split(/[\\/]/).filter(Boolean).pop() || ''; // which session: the folder it works in
     if (P.state === 'collapsed') {
-      P.setLive('agent-done', { priority: 75, ttlMs: FLASH_MS, accent: 'var(--green, #58ddab)', html: `<div class="lp ag ag-done"><span class="ag-ok">${check}</span><span class="ag-txt">${esc(t({ ru: 'Готово', en: 'Done' }))}</span></div>` });
+      P.setLive('agent-done', { priority: 75, ttlMs: FLASH_MS, accent: 'var(--green, #58ddab)', html: `<div class="lp ag ag-done"><span class="ag-ok">${check}</span><span class="ag-txt">${esc(t({ ru: 'Готово', en: 'Done' }) + (proj ? ' · ' + proj : ''))}</span></div>` });
     }
     const tool = TOOLS[p.tool] || '';
     const actions = [{ label: t({ ru: 'Скрыть', en: 'Dismiss' }), run: () => P.invoke('agents_dismiss', { session: p.session }) }];
-    if (p.cwd) actions.push({ label: t({ ru: 'Копировать путь', en: 'Copy folder path' }), kind: 'white', run: () => copyText(String(p.cwd)) });
+    if (p.cwd) actions.push({ label: t({ ru: 'Копировать путь к папке', en: 'Copy folder path' }), kind: 'white', run: () => copyText(String(p.cwd)) });
     P.toast({
       id: 'agent-done:' + p.session, icon: check, tone: 'green', ttlMs: CARD_MS,
-      title: t({ ru: 'Агент закончил', en: 'Agent finished' }),
+      title: t({ ru: 'Агент закончил', en: 'Agent finished' }) + (proj ? ' · ' + proj : ''),
       sub: [plainTitle(p.title), tool].filter(Boolean).join(' · ') || t({ ru: 'Сеанс завершён', en: 'Session complete' }),
       actions,
     });

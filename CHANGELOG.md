@@ -5,6 +5,7 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 ## [0.3.6] - 2026-10-28
 
 ### Changed
+- The "Agent finished" card and the short "Done" flash name the project of the session that finished, and the folder button reads "Copy folder path" in Russian too.
 - Accessibility: every setting row names its control for screen readers, toggles expose a switch role, icon-only buttons have names, and keyboard focus is visible everywhere. Settings follows the island's Reduce motion switch, not only the system setting.
 
 ### Internal
