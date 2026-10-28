@@ -39,10 +39,12 @@ mod mail;
 mod notifhist;
 mod whatsnew;
 mod report;
+mod openarg;
 
 fn main() {
     tauri::Builder::default()
         // @plugins-begin (add .plugin(...) lines here, one per line)
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| openarg::handle(app, args))) // first: a second launch is forwarded here and exits
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // @plugins-end
