@@ -427,6 +427,76 @@
     p.append(h('div', 'footnote', t({ ru: 'Стиль края применяется к острову сразу. Реакции включаются сами: агенты, музыка, файлы, напоминания; через 5 минут тишины остров засыпает.', en: 'The edge style applies to the island at once. Reactions fire on their own: agents, music, files, reminders; after 5 quiet minutes the island falls asleep.' })));
   }
 
+  // Everything (voidtools): opt-in download of the official installer + es.exe (everything.rs). Nothing is fetched or started without a click:
+  // "Download" fetches and verifies, "Run installer" is a second click that hands the installer to Windows (its own UAC prompt).
+  function everythingCard(p) {
+    cap(p, t({ ru: 'Everything: поиск файлов', en: 'Everything: file search' }));
+    const c = card(p);
+    let st = null, busy = false, watch = 0;
+    const r = row(c, t({ ru: 'Everything и es.exe', en: 'Everything and es.exe' }), '', null);
+    if (!r.sub) { r.sub = h('span', ''); r.querySelector('.l').append(r.sub); }
+    const dl = btn(t({ ru: 'Скачать', en: 'Download' }), async () => {
+      msg(res, '');
+      const x = await inv('everything_download');
+      if (x && x.ok) { busy = true; draw(); } else msg(res, (x && x.error) || t({ ru: 'Не удалось начать', en: 'Could not start' }), 'note bad');
+    }, 'sm');
+    const run = btn(t({ ru: 'Запустить установщик', en: 'Run installer' }), async () => {
+      const x = await inv('everything_run_installer');
+      if (x && x.ok) { msg(res, t({ ru: 'Установщик запущен: Windows спросит разрешение. Когда он закончит, статус обновится сам.', en: 'The installer has started: Windows will ask for permission. This line updates when it finishes.' }), 'note ok'); poll(); }
+      else msg(res, (x && x.error) || t({ ru: 'Windows не смогла запустить установщик', en: 'Windows could not start the installer' }), 'note bad');
+    }, 'sm');
+    r.append(h('div', 'c', [dl, run]));
+    const line = h('div', 'as-ptxt'), fill = h('i'), bar = h('div', 'as-bar', [fill]);
+    const cancel = btn(t({ ru: 'Отмена', en: 'Cancel' }), () => { cancel.disabled = true; inv('aisetup_cancel'); }, 'sm danger');
+    const top = h('div', 'inline'); top.append(line, cancel);
+    const pr = h('div', 'pad as-prog'); pr.append(top, bar); pr.hidden = true;
+    const res = h('div', 'updmsg'); res.dataset.base = 'updmsg';
+    c.append(pr, res);
+    const mb = (b) => (b / 1e6).toFixed(1) + ' ' + t({ ru: 'МБ', en: 'MB' });
+    function draw() {
+      pr.hidden = !busy;
+      if (!st) { r.sub.textContent = ''; dl.hidden = run.hidden = true; return; }
+      const ok = st.installed && st.es;
+      r.sub.className = ok ? 'ok' : '';
+      r.sub.textContent = ok ? t({ ru: 'Установлено: Everything и es.exe найдены' + (st.running ? ', Everything запущен' : ''), en: 'Installed: Everything and es.exe found' + (st.running ? ', Everything is running' : '') })
+        : (st.installed ? t({ ru: 'Everything есть, нет es.exe (командной строки поиска)', en: 'Everything is there, es.exe (its command-line search) is missing' })
+          : t({ ru: 'Everything не установлен: командная строка ищет файлы через него. Официальные файлы с voidtools.com, ', en: 'Everything is not installed: the command bar searches files through it. Official files from voidtools.com, ' }) + mb(st.size) + '.');
+      dl.hidden = ok || (st.installed ? st.es : st.setupReady && st.es);
+      dl.disabled = busy;
+      run.hidden = st.installed || !st.setupReady;
+      run.disabled = busy;
+    }
+    async function refresh() { st = (await inv('everything_status')) || st; draw(); return st; }
+    function poll() { // after "Run installer": look again every 5 s for up to 3 minutes
+      clearInterval(watch); let n = 0;
+      watch = setInterval(async () => { const s = await refresh(); if ((s && s.installed) || ++n > 36) clearInterval(watch); }, 5000);
+    }
+    let off = null;
+    if (T.event && T.event.listen) {
+      T.event.listen('aisetup:progress', (e) => {
+        const q = e.payload;
+        if (!q || String(q.id).indexOf('everything-') !== 0) return;
+        if (q.phase === 'done' || q.phase === 'error' || q.phase === 'cancelled') {
+          busy = false; cancel.disabled = false;
+          if (q.phase === 'done') msg(res, t({ ru: 'Скачано и проверено (SHA-256). Нажмите «Запустить установщик»: Windows спросит разрешение.', en: 'Downloaded and verified (SHA-256). Press “Run installer”: Windows will ask for permission.' }), 'note ok');
+          else msg(res, q.phase === 'cancelled' ? t({ ru: 'Отменено. Недокачанный файл удалён.', en: 'Cancelled. The partial file was deleted.' }) : (q.message || 'error'), 'note bad');
+          refresh();
+          return;
+        }
+        busy = true; pr.hidden = false;
+        const total = q.total || 0, known = total > 0 && q.done <= total * 1.02, pc = known ? Math.min(100, Math.floor((q.done / total) * 100)) : 0;
+        const nm = q.item === 'es' ? 'es.exe' : t({ ru: 'установщик Everything', en: 'Everything installer' });
+        line.textContent = q.phase === 'verify' ? t({ ru: 'Проверяю SHA-256…', en: 'Verifying SHA-256…' }) : nm + ' · ' + mb(q.done) + (known ? ' / ' + mb(total) + ' · ' + pc + ' %' : '');
+        bar.classList.toggle('ind', !known || q.phase === 'verify');
+        fill.style.width = known && q.phase === 'download' ? pc + '%' : '0%';
+        dl.disabled = run.disabled = true;
+      }).then((u) => { off = u; });
+    }
+    cleanups.push(() => { clearInterval(watch); if (off) off(); off = null; });
+    refresh();
+    p.append(h('div', 'footnote', t({ ru: 'Источник: только www.voidtools.com по https; размер и SHA-256 сверяются с записанными в Pill, при несовпадении файл удаляется. Pill сам ничего не устанавливает и не повышает права: установщик запускается вашим вторым нажатием.', en: 'Source: www.voidtools.com over https only; the size and SHA-256 are checked against the values pinned in Pill and a mismatch deletes the file. Pill installs nothing itself and never elevates: the installer starts on your second click.' })));
+  }
+
   // ---- General
   function pGeneral(p) {
     let c = card(p);
@@ -491,6 +561,8 @@
     const fpsSeg = (key, vals) => seg(vals.map((v) => [v, v === 'auto' ? t({ ru: 'Авто', en: 'Auto' }) : String(v)]), () => get(key), (v) => put({ [key]: v === 'auto' ? v : +v }));
     row(c, t({ ru: 'Частота кадров', en: 'Frame rate' }), t({ ru: 'Авто = частота монитора. Больше кадров — плавнее, но выше нагрузка на видеокарту', en: 'Auto = the monitor refresh rate. More frames are smoother but cost more GPU' }), fpsSeg('fps', ['auto', 30, 60, 120, 144, 240]));
     row(c, t({ ru: 'Кадры в покое', en: 'Idle edge frame rate' }), t({ ru: 'Для спокойного края острова, когда ничего не происходит', en: 'For the calm island edge while nothing is happening' }), fpsSeg('edgeIdleFps', [15, 30, 60]));
+
+    everythingCard(p);
 
     // file search + settings backup (settings_backup.rs: no keys/passwords in the export; import keeps only known settings)
     cap(p, t({ ru: 'Поиск файлов и копия настроек', en: 'File search and settings backup' }));

@@ -24,6 +24,7 @@ mod settingswin;
 mod capture;
 mod voice;
 mod aisetup;
+mod everything;
 mod hotkeys;
 mod obs;
 mod steam;
@@ -94,6 +95,7 @@ fn main() {
             // @launcher-commands
             settingswin::settings_open, settingswin::settings_close, settingswin::settings_quit, settingswin::settings_info,
             settingswin::autostart_get, settingswin::autostart_set, settingswin::hotkey_check, settingswin::hotkey_set,
+            everything::everything_status, everything::everything_download, everything::everything_run_installer,
             // @settingswin-commands
             capture::capture_start, capture::capture_commit, capture::capture_cancel, capture::capture_stop, capture::capture_settings,
             capture::capture_session, capture::capture_frame, capture::capture_ready, capture::capture_action,

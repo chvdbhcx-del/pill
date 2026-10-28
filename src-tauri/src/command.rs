@@ -379,7 +379,7 @@ fn files(words: &[String]) -> Vec<Res> {
         let name = Path::new(&p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.clone());
         res(kind, format!("{kind}:{p}"), name, p.clone(), p)
     };
-    let hint = |e: &str| vec![res("hint", "hint:es".into(), e.into(), "Files and folders need Everything".into(), String::new())];
+    let hint = |e: &str| vec![res("hint", "hint:es".into(), e.into(), "Files and folders need Everything: Settings > General can download it".into(), String::new())];
     let all = match es(words, None, ES_CAP) {
         Ok(v) => v,
         Err(e) => return hint(e),
@@ -413,7 +413,7 @@ fn files(words: &[String]) -> Vec<Res> {
 // Where es.exe lives: found once (a miss is remembered for 30 s so typing on a PC without it does not re-scan PATH every keystroke).
 static ES_PATH: Mutex<Option<(Option<PathBuf>, Instant)>> = Mutex::new(None);
 
-fn find_es() -> Option<PathBuf> {
+pub(crate) fn find_es() -> Option<PathBuf> {
     let mut g = lk(&ES_PATH);
     match g.as_ref() {
         Some((Some(p), _)) if p.is_file() => return Some(p.clone()),
@@ -423,6 +423,11 @@ fn find_es() -> Option<PathBuf> {
     let p = scan_es();
     *g = Some((p.clone(), Instant::now()));
     p
+}
+
+/// Forget a remembered miss: es.exe has just been unpacked (everything.rs).
+pub(crate) fn forget_es() {
+    *lk(&ES_PATH) = None;
 }
 
 fn scan_es() -> Option<PathBuf> {
@@ -442,6 +447,7 @@ fn scan_es() -> Option<PathBuf> {
     if let Some(la) = std::env::var_os("LOCALAPPDATA") {
         dirs.push(Path::new(&la).join("Microsoft").join("WinGet").join("Links")); // winget install voidtools.Everything.Cli
     }
+    dirs.push(crate::everything::dir()); // the es.exe Pill downloaded itself (Settings > General); a system-wide one wins
     dirs.into_iter().map(|d| d.join("es.exe")).find(|p| p.is_file())
 }
 
@@ -450,7 +456,7 @@ fn es_answers(exe: &Path) -> bool {
 }
 
 /// The GUI exe of Everything (1.4: Everything.exe, 1.5a: Everything64.exe) in the usual install places.
-fn find_everything_gui() -> Option<PathBuf> {
+pub(crate) fn find_everything_gui() -> Option<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     for var in ["ProgramFiles", "ProgramFiles(x86)"] {
         if let Some(pf) = std::env::var_os(var) {
@@ -467,7 +473,7 @@ fn find_everything_gui() -> Option<PathBuf> {
     dirs.into_iter().flat_map(|d| [d.join("Everything.exe"), d.join("Everything64.exe")]).find(|p| p.is_file())
 }
 
-fn everything_running() -> bool {
+pub(crate) fn everything_running() -> bool {
     std::process::Command::new("tasklist").args(["/FI", "IMAGENAME eq Everything*", "/NH"]).creation_flags(NO_WINDOW).output()
         .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).to_ascii_lowercase().contains("everything"))
 }

@@ -54,14 +54,16 @@ const HOSTS: &[&str] = &[
     "*.cdn.hf.co", // Hugging Face's current CDN (us.aws.cdn.hf.co), seen in the live redirect chain
     "cas-bridge.xethub.hf.co",
     "ollama.com",
+    "www.voidtools.com", // Everything + es.exe (everything.rs); a redirect to any other host is refused
+    "voidtools.com",
 ];
 
-struct Item {
-    id: &'static str,
-    url: &'static str,
-    file: &'static str,
-    size: u64,
-    sha256: &'static str,
+pub(crate) struct Item {
+    pub(crate) id: &'static str,
+    pub(crate) url: &'static str,
+    pub(crate) file: &'static str,
+    pub(crate) size: u64,
+    pub(crate) sha256: &'static str,
 }
 
 const WHISPER_TAG: &str = "v1.9.2";
@@ -115,7 +117,7 @@ static SERVERS: [(&str, &str, &str, &str); 4] = [
 // Paths
 // ---------------------------------------------------------------------------------------------------------------
 
-fn ai_dir() -> PathBuf {
+pub(crate) fn ai_dir() -> PathBuf {
     crate::store::dir().join("ai")
 }
 fn whisper_dir() -> PathBuf {
@@ -273,7 +275,7 @@ fn emit(app: &AppHandle, id: &str, item: &str, done: u64, total: u64, phase: &st
 }
 
 /// Runs `f` on its own thread as the one active job; the outcome arrives as a progress event (done / error / cancelled).
-fn spawn_job(app: AppHandle, id: &'static str, f: impl FnOnce(&AppHandle, &Abort) -> Result<String, String> + Send + 'static) -> Value {
+pub(crate) fn spawn_job(app: AppHandle, id: &'static str, f: impl FnOnce(&AppHandle, &Abort) -> Result<String, String> + Send + 'static) -> Value {
     let abort = Abort::new();
     {
         let mut j = job_lock();
@@ -309,7 +311,7 @@ pub fn aisetup_cancel() -> Value {
     json!({ "ok": true })
 }
 
-fn host_list() -> Vec<String> {
+pub(crate) fn host_list() -> Vec<String> {
     HOSTS.iter().map(|s| s.to_string()).collect()
 }
 
@@ -322,7 +324,7 @@ fn part_path(dest: &Path) -> PathBuf {
 /// GET `url` into `dest` through the checked, redirect-aware client: `.part` file, running SHA-256, size and hash verified before
 /// the rename. `est` is the progress total when the real size is unknown. Err("cancelled") = the user pressed Cancel.
 #[allow(clippy::too_many_arguments)]
-fn download(app: &AppHandle, job: &str, item: &str, url: &str, dest: &Path, size: Option<u64>, sha: Option<&str>, est: u64, abort: &Abort) -> Result<String, String> {
+pub(crate) fn download(app: &AppHandle, job: &str, item: &str, url: &str, dest: &Path, size: Option<u64>, sha: Option<&str>, est: u64, abort: &Abort) -> Result<String, String> {
     if let Some(d) = dest.parent() {
         std::fs::create_dir_all(d).map_err(|e| format!("cannot create {}: {e}", d.display()))?;
     }
@@ -527,7 +529,7 @@ fn disable_whisper(app: &AppHandle) {
 // Commands: whisper
 // ---------------------------------------------------------------------------------------------------------------
 
-fn err(msg: &str) -> Value {
+pub(crate) fn err(msg: &str) -> Value {
     json!({ "ok": false, "error": msg })
 }
 
@@ -685,7 +687,11 @@ pub fn aisetup_ollama_download(app: AppHandle) -> Value {
 /// Second explicit click: start the downloaded installer through the shell (its own window, its own UAC prompt if it wants one).
 #[tauri::command]
 pub fn aisetup_ollama_run_installer() -> Value {
-    let p = ollama_setup_path();
+    run_installer(&ollama_setup_path())
+}
+
+/// ShellExecute "open" of a downloaded installer (it shows its own UAC prompt); never started without a click.
+pub(crate) fn run_installer(p: &Path) -> Value {
     if !p.exists() {
         return err("Download the installer first.");
     }
@@ -819,10 +825,10 @@ mod tests {
             assert!(it.sha256.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
             assert!(it.url.ends_with(it.file));
         }
-        for ok in ["github.com", "release-assets.githubusercontent.com", "cdn-lfs.huggingface.co", "cdn-lfs-us-1.huggingface.co", "us.aws.cdn.hf.co", "cas-bridge.xethub.hf.co", "ollama.com"] {
+        for ok in ["github.com", "release-assets.githubusercontent.com", "cdn-lfs.huggingface.co", "cdn-lfs-us-1.huggingface.co", "us.aws.cdn.hf.co", "cas-bridge.xethub.hf.co", "ollama.com", "www.voidtools.com", "voidtools.com"] {
             assert!(allowed(ok), "{ok}");
         }
-        for bad in ["evilgithub.com", "github.com.evil.io", "evilhuggingface.co", "cdn-lfs.huggingface.co.evil.io", "api.github.com", "hf.co", "evil.cdn.hf.co.x.io", "cdn-lfs/x.huggingface.co", "127.0.0.1", "ollama.com.evil.io"] {
+        for bad in ["evilgithub.com", "github.com.evil.io", "evilhuggingface.co", "cdn-lfs.huggingface.co.evil.io", "api.github.com", "hf.co", "evil.cdn.hf.co.x.io", "cdn-lfs/x.huggingface.co", "127.0.0.1", "ollama.com.evil.io", "evilvoidtools.com", "www.voidtools.com.evil.io", "cdn.voidtools.com"] {
             assert!(!allowed(bad), "{bad}");
         }
     }
