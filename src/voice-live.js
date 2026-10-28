@@ -20,7 +20,7 @@
 .lp.vc-live { width: 214px; min-width: 0; box-sizing: border-box; padding: 0 4px 2px 14px; gap: 9px; justify-content: flex-start; font-variant-numeric: tabular-nums; }
 .vc-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #ff5a4e; box-shadow: 0 0 4px 1px rgba(255, 90, 78, .35); animation: vc-pulse 2s ease-in-out infinite; }
 @keyframes vc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-.vc-t { min-width: 28px; font: 700 13px / 1 var(--font, Inter, "Segoe UI", system-ui, sans-serif); color: var(--text, #fff); }
+.vc-t { min-width: 28px; font: 700 13px / 1 var(--font, "Medeo Sans", "Segoe UI", system-ui, sans-serif); color: var(--text, #fff); }
 .vc-meter { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px; height: 18px; }
 .vc-meter i { display: block; width: 3px; height: 16px; border-radius: 2px; background: #ff7468; transform: scaleY(.14); transform-origin: 50% 50%; transition: transform 70ms linear; }
 .vc-stop { all: unset; flex: none; box-sizing: border-box; width: 52px; height: 24px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;

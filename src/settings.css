@@ -1,8 +1,5 @@
 /* Settings window (own page, own tokens). Measured from the video of the reference app at 100 %: background #111013, card #1a191c,
    accent #90a0ff, switch 44x24, 532 px card column, hard-cut page switch, ~150 ms card hover. Window 840 x 760, min 700 x 520. */
-@font-face { font-family: "PillUI"; font-weight: 100 499; src: local("Segoe UI Variable Text"), local("Segoe UI"); ascent-override: 101.5%; descent-override: 31.5%; line-gap-override: 0%; }
-@font-face { font-family: "PillUI"; font-weight: 500 699; src: local("Segoe UI Variable Text Semibold"), local("Segoe UI Semibold"); ascent-override: 101.5%; descent-override: 31.5%; line-gap-override: 0%; }
-@font-face { font-family: "PillUI"; font-weight: 700 900; src: local("Segoe UI Variable Text Bold"), local("Segoe UI Bold"); ascent-override: 101.5%; descent-override: 31.5%; line-gap-override: 0%; }
 :root {
   color-scheme: dark;
   --bg: #111013;
@@ -31,7 +28,7 @@
   --amber: #c8b46a;
   --red: #ff6b6b;
   --green: #86d3bc;
-  --font: "PillUI", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", "NotoUI", "Inter", system-ui, sans-serif;
+  --font: "Medeo Sans", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", "NotoUI", system-ui, sans-serif;
   --mono: "Cascadia Mono", Consolas, monospace;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   /* typographic scale + 4/8 spacing: same names/values as theme.css; this page does not load theme.css */

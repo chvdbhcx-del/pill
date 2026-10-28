@@ -1,10 +1,11 @@
-/* Inter (SIL OFL, Latin+Cyrillic subset, hinted statics). Inter's own metrics already centre capitals in the line box (ascent 96.9 %, descent 24.1 %). */
-@font-face { font-family: "Inter"; font-weight: 300; font-style: normal; font-display: block; src: url(fonts/Inter-Light.ttf) format("truetype"); }
-@font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: block; src: url(fonts/Inter-Regular.ttf) format("truetype"); }
-@font-face { font-family: "Inter"; font-weight: 500; font-style: normal; font-display: block; src: url(fonts/Inter-Medium.ttf) format("truetype"); }
-@font-face { font-family: "Inter"; font-weight: 600; font-style: normal; font-display: block; src: url(fonts/Inter-SemiBold.ttf) format("truetype"); }
-@font-face { font-family: "Inter"; font-weight: 700; font-style: normal; font-display: block; src: url(fonts/Inter-Bold.ttf) format("truetype"); }
-/* Noto Sans (SIL OFL, see fonts/OFL.txt), the UI face: Regular for weights up to 599, Bold from 600. Ascent / descent are overridden so that the middle of a line box sits on the middle of the CAPS
+/* Medeo Sans (SIL OFL, see fonts/OFL.txt), the UI face: Latin + Cyrillic subset (+ Kazakh / Ukrainian letters, tenge), static weights, kerning and tnum / case / ss01-ss11 kept.
+   Its own metrics (ascent 100.5 %, descent 29.5 %, cap height 71 %) already centre capitals in the line box, so no ascent / descent override is needed. */
+@font-face { font-family: "Medeo Sans"; font-weight: 300; font-style: normal; font-display: block; src: url(fonts/MedeoSans-Light.ttf) format("truetype"); }
+@font-face { font-family: "Medeo Sans"; font-weight: 400; font-style: normal; font-display: block; src: url(fonts/MedeoSans-Regular.ttf) format("truetype"); }
+@font-face { font-family: "Medeo Sans"; font-weight: 500; font-style: normal; font-display: block; src: url(fonts/MedeoSans-Medium.ttf) format("truetype"); }
+@font-face { font-family: "Medeo Sans"; font-weight: 600; font-style: normal; font-display: block; src: url(fonts/MedeoSans-SemiBold.ttf) format("truetype"); }
+@font-face { font-family: "Medeo Sans"; font-weight: 700; font-style: normal; font-display: block; src: url(fonts/MedeoSans-Bold.ttf) format("truetype"); }
+/* Noto Sans (SIL OFL, see fonts/OFL.txt), the fallback face: Regular for weights up to 599, Bold from 600. Ascent / descent are overridden so that the middle of a line box sits on the middle of the CAPS
    (cap height .714 em = ascent - descent), which the integer line heights of every label rely on. */
 @font-face { font-family: "NotoUI"; font-weight: 100 599; font-style: normal; font-display: block; src: url(fonts/NotoSans-Regular.ttf) format("truetype"); ascent-override: 101.4%; descent-override: 30%; line-gap-override: 0%; }
 @font-face { font-family: "NotoUI"; font-weight: 600 900; font-style: normal; font-display: block; src: url(fonts/NotoSans-Bold.ttf) format("truetype"); ascent-override: 101.4%; descent-override: 30%; line-gap-override: 0%; }

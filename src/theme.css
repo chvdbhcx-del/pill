@@ -2,12 +2,6 @@
    Dark (pure black notch body) is the default, light via <html data-theme="light">. Measured from live screenshots of the reference app at 100 %.
    --s is the user size (0.8 - 2.0) set by pill.js; pill.css applies it as CSS zoom on #live / #panel / #cards, so everything here is plain px.
    Building blocks for tabs: .card .btn .btn-primary .btn-ghost .seg .field .list-row .chip .switch .slider .icon-btn .label-caps .dim .scroll */
-/* Optical vertical centring for ALL text: the same installed font (Segoe UI Variable Text) with its ascent / descent redistributed so the middle of the line box sits on the middle of the CAPS
-   (asc' - desc' = cap height 0.70 em, asc' + desc' unchanged = 1.33 em). Labels in pills, buttons, tiles and badges then centre without per-element hacks, whoever writes them.
-   Falls back to the stock stack when the font is missing. */
-@font-face { font-family: "PillUI"; font-weight: 100 499; src: local("Segoe UI Variable Text"), local("Segoe UI"); ascent-override: 101.5%; descent-override: 31.5%; line-gap-override: 0%; }
-@font-face { font-family: "PillUI"; font-weight: 500 699; src: local("Segoe UI Variable Text Semibold"), local("Segoe UI Semibold"); ascent-override: 101.5%; descent-override: 31.5%; line-gap-override: 0%; }
-@font-face { font-family: "PillUI"; font-weight: 700 900; src: local("Segoe UI Variable Text Bold"), local("Segoe UI Bold"); ascent-override: 101.5%; descent-override: 31.5%; line-gap-override: 0%; }
 :root {
   --s: 1;
   /* surfaces */
@@ -57,7 +51,7 @@
   /* ONE spacing scale: paddings, gaps, insets */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35);
-  --font: "PillUI", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", "NotoUI", "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font: "Medeo Sans", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", "NotoUI", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --mono: "Cascadia Mono", "SF Mono", Consolas, monospace;
   /* motion tokens: ONE system. Transitions use transform / opacity only; springs live in pill.js (Pill.raf) */
   --ease: cubic-bezier(0.2, 0.9, 0.3, 1);
@@ -215,7 +209,7 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 .slider.white { --fill: #fff; }
 
 /* ---------- optical vertical centring ----------
-   The PillUI font metrics above already put the middle of every line box on the middle of the CAPS, so a label with an integer line-height inside an align-items:center box is centred
+   The Medeo Sans font metrics (fonts.css) already put the middle of every line box on the middle of the CAPS, so a label with an integer line-height inside an align-items:center box is centred
    to within 0.5 px (measured). Do NOT use `text-box: trim-*` on a line that is clipped (overflow / ellipsis / line-clamp): the trim cuts the descenders (у р д ц щ g p y) off. */
 svg { display: block; }
 .btn svg, .btn-primary svg, .btn-ghost svg, .chip svg, .icon-btn svg { flex: none; }

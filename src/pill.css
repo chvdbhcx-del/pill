@@ -35,7 +35,7 @@ button { font-family: inherit; }
 
 /* Liquid bottom edge (ferrofluid): a canvas strip under the body, drawn by pill.js (size / position set there). The event-card outline keeps the static SVG wave. */
 #liq { position: absolute; left: 50%; pointer-events: none; }
-/* No `text-box: trim-*` anywhere: it cut the descenders off every clipped / ellipsised line. PillUI font metrics (theme.css) centre raw text on its caps already; every label has an integer line-height. */
+/* No `text-box: trim-*` anywhere: it cut the descenders off every clipped / ellipsised line. Medeo Sans font metrics (fonts.css) centre raw text on its caps already; every label has an integer line-height. */
 
 /* ---------- collapsed live row ---------- */
 #live { position: absolute; inset: 0; zoom: var(--s); display: flex; align-items: center; justify-content: center; transition: opacity 0.15s; }
