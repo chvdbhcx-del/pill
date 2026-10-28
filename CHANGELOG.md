@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Changed
+- The folder button on the "Agent finished" card is shortened to "Path" ("Путь").
+
 ### Added
 - Settings > General can download the official Everything installer and es.exe from voidtools.com (size and SHA-256 checked, only on your click); the installer starts on a second click, with Windows' own permission prompt, and the command bar finds the downloaded es.exe.
 
