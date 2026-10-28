@@ -3,6 +3,7 @@
 // Keys: size (80-200), theme (dark|light|auto), clock24, autoHide, monitor ("primary"|"1".."n"), reduceMotion,
 // showInCapture, hideInApps (list of exe names), hotkey.<action> (live: hotkeys.rs), module.<id>, live.<id>, capture.*.
 use serde_json::{json, Map, Value};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 type Cfg = Map<String, Value>;
@@ -20,7 +21,7 @@ pub(crate) fn defaults() -> Cfg {
         // settings window (settingswin.rs / settings.js)
         "language": "auto", "shape": "notch", "character": "liquid", "pet": "cat", "pet.side": "right", "pet.size": "m", "hideInFullscreen": true, "autoHideKeepDesktop": false, "updateAuto": true, "whatsNew": true,
         "underTaskbar": true, "passThrough": false, "passThroughOpacity": 50, "offsetX": 0, "musicPill": "title",
-        "audio.reactive": true, "sound.reminders": true, "sound.reminderTone": "chime"
+        "audio.reactive": true, "sound.reminders": true, "sound.reminderTone": "chime", "firstRunDone": false
     }) else { unreachable!() };
     // second literal: one json! macro would hit the recursion limit
     let Value::Object(more) = json!({
@@ -48,8 +49,12 @@ pub(crate) fn defaults() -> Cfg {
     m
 }
 
+static EXISTED: AtomicBool = AtomicBool::new(true); // settings.json was there when Pill started (a corrupt file counts as there)
+static FIRST_RUN: AtomicBool = AtomicBool::new(false); // a genuinely new install whose first-run wizard has not finished
+
 fn load() -> Cfg {
     let p = path();
+    EXISTED.store(p.exists(), Ordering::Relaxed);
     let Ok(text) = std::fs::read_to_string(&p) else { return Cfg::new() }; // missing file = first run
     match serde_json::from_str::<Value>(&text) {
         Ok(Value::Object(m)) => m,
@@ -79,8 +84,45 @@ fn save(m: &Cfg) {
     }
 }
 
-pub fn init(_app: &tauri::App) {
+pub fn init(app: &tauri::App) {
     let _ = cache();
+    let gate = first_run_gate(EXISTED.load(Ordering::Relaxed), &lock());
+    match gate {
+        FirstRun::Done => {}
+        FirstRun::MarkExisting => set("firstRunDone", json!(true)), // an existing install never sees the wizard
+        FirstRun::Show => {
+            FIRST_RUN.store(true, Ordering::Relaxed);
+            let h = app.handle().clone();
+            let _ = std::thread::Builder::new().name("first-run".into()).spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(2500));
+                crate::settingswin::open(&h, Some("welcome"));
+            });
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum FirstRun {
+    Show,
+    MarkExisting,
+    Done,
+}
+
+/// First-run wizard gate. `file_existed`: settings.json was on disk at startup; `stored`: what it held (no defaults merged).
+/// Only a start with no settings file and nothing stored is a new install; anything else is an existing one and is marked done.
+fn first_run_gate(file_existed: bool, stored: &Cfg) -> FirstRun {
+    if stored.get("firstRunDone").and_then(Value::as_bool) == Some(true) {
+        FirstRun::Done
+    } else if file_existed || !stored.is_empty() {
+        FirstRun::MarkExisting
+    } else {
+        FirstRun::Show
+    }
+}
+
+/// True while the first-run wizard of a new install is still to be finished (the AI setup page then does not open by itself).
+pub fn first_run_pending() -> bool {
+    FIRST_RUN.load(Ordering::Relaxed) && !get_bool("firstRunDone", false)
 }
 
 fn raw(key: &str) -> Option<Value> {
@@ -260,6 +302,21 @@ pub fn profile_delete(app: tauri::AppHandle, name: String) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_run_wizard_gate() {
+        let none = Cfg::new();
+        let some = json!({ "theme": "dark", "lastTab": "home" }).as_object().unwrap().clone();
+        let done = json!({ "firstRunDone": true }).as_object().unwrap().clone();
+        let undone = json!({ "firstRunDone": false, "theme": "dark" }).as_object().unwrap().clone();
+        assert_eq!(first_run_gate(false, &none), FirstRun::Show); // no file, nothing stored: a new install
+        assert_eq!(first_run_gate(true, &none), FirstRun::MarkExisting); // an empty or corrupt file that was moved aside
+        assert_eq!(first_run_gate(true, &some), FirstRun::MarkExisting); // an existing install without the flag (every older version)
+        assert_eq!(first_run_gate(false, &some), FirstRun::MarkExisting);
+        assert_eq!(first_run_gate(true, &undone), FirstRun::MarkExisting);
+        assert_eq!(first_run_gate(true, &done), FirstRun::Done);
+        assert_eq!(first_run_gate(false, &done), FirstRun::Done);
+    }
 
     fn cfg() -> Cfg {
         let Value::Object(m) = json!({

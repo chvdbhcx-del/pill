@@ -77,6 +77,11 @@ body.max .cap-btn .g-max { display: none; }
 .sb-logo i::after { content: ""; position: absolute; left: 14px; top: 20px; width: 26px; height: 7px; border-radius: 4px; background: #2c2c30; }
 .sb-name { font-size: var(--fs-lg); font-weight: 600; line-height: 18px; }
 .sb-ver { font-size: var(--fs-xs); line-height: 14px; color: var(--text-faint); }
+body.wiz #side { display: none; }   /* first-run wizard: the page list stays hidden until it ends */
+.wz-top { justify-content: space-between; }
+.wz-top h1 { flex: 1; }
+.wz-note { margin: 0 4px 8px; }
+.wz-nav { justify-content: flex-end; margin-top: 12px; }
 /* search field above the page list (settings.js "search" block) */
 .sb-search { position: relative; flex: none; padding: 0 10px 6px; }
 .sb-q { height: 30px; font-size: var(--fs-sm); }

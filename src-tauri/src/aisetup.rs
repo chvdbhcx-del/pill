@@ -787,7 +787,7 @@ pub fn init(app: &tauri::App) {
         }
         std::thread::sleep(Duration::from_millis(3300));
         let configured = settings::get_bool("voice.enabled", false) && settings::get_bool("net.ai", false);
-        if !settings::get_bool("aiSetupDone", false) && !configured {
+        if !settings::get_bool("aiSetupDone", false) && !configured && !settings::first_run_pending() { // a new install gets the first-run wizard, which ends by pointing here
             crate::settingswin::open(&h, Some("aisetup"));
         }
     });

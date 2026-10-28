@@ -521,6 +521,7 @@
     ar = row(c, t({ ru: 'Запускать вместе с Windows', en: 'Start with Windows' }), '', asw);
     if (!ar.sub) { ar.sub = h('span', ''); ar.querySelector('.l').append(ar.sub); }
     inv('autostart_get').then((v) => { auto = !!v; asw.input.checked = auto; });
+    row(c, t({ ru: 'Мастер первого запуска', en: 'First-run wizard' }), t({ ru: 'Короткая настройка: язык, модули, клавиши', en: 'A short setup: language, modules, hotkeys' }), btn(t({ ru: 'Запустить снова', en: 'Run again' }), startWizard, 'sm'));
 
     cap(p, t({ ru: 'Копия настроек', en: 'Settings backup' }));
     c = card(p);
@@ -1102,7 +1103,7 @@
   function searchBox() {
     const wrap = h('div', 'sb-search');
     const lab = t({ ru: 'Поиск по настройкам', en: 'Search settings' });
-    const q = h('input', 'field sb-q'); q.type = 'text'; q.placeholder = lab + ' (Ctrl+F)'; q.spellcheck = false; q.autocomplete = 'off';
+    const q = h('input', 'field sb-q'); q.type = 'text'; q.placeholder = t({ ru: 'Поиск', en: 'Search' }) + ' (Ctrl+F)'; q.spellcheck = false; q.autocomplete = 'off';
     q.setAttribute('aria-label', lab); q.setAttribute('role', 'combobox'); q.setAttribute('aria-autocomplete', 'list'); q.setAttribute('aria-expanded', 'false'); q.setAttribute('aria-controls', 'sb-results');
     const list = h('div', 'sb-results'); list.id = 'sb-results'; list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', lab); list.hidden = true;
     const close = () => { list.hidden = true; q.setAttribute('aria-expanded', 'false'); q.removeAttribute('aria-activedescendant'); sHits = []; sAct = -1; };
@@ -1140,6 +1141,57 @@
     q.onblur = () => setTimeout(close, 120);
     wrap.append(q, list);
     return wrap;
+  }
+
+  // ---------------------------------------------------------------------------------------------------------- first-run wizard
+  // settings.rs decides who gets it (only a brand-new install, page id 'welcome'); General has "Run again". Four short steps; Skip is always on screen.
+  // Nothing opt-in is turned on and nothing is downloaded here: the module switches start at their existing defaults, the AI step only points to AI setup.
+  let wiz = 0;
+  function startWizard() {
+    wiz = 1; stopRec();
+    cleanups.forEach((f) => safe(f)); cleanups = [];
+    document.body.classList.add('wiz');
+    drawWizard();
+  }
+  function endWizard(go) {
+    wiz = 0; document.body.classList.remove('wiz');
+    put({ firstRunDone: true });
+    buildSide();
+    return show(go || 'general');
+  }
+  function drawWizard() {
+    syncs = [];
+    const STEPS = 4, page = $('#page'), box = h('div');
+    page.replaceChildren(box);
+    const top = h('div', 'inline wz-top'), h1 = h('h1', '', t({ ru: 'Добро пожаловать в Pill', en: 'Welcome to Pill' }));
+    top.append(h1, btn(t({ ru: 'Пропустить', en: 'Skip' }), () => endWizard('general'), 'sm'));
+    box.append(top, h('div', 'cap', t({ ru: `Шаг ${wiz} из ${STEPS}`, en: `Step ${wiz} of ${STEPS}` })));
+    const c = card(box);
+    if (wiz === 1) {
+      row(c, t({ ru: 'Язык', en: 'Language' }), t({ ru: 'По умолчанию — как в Windows', en: 'By default, the same as Windows' }),
+        seg([['auto', t({ ru: 'Как в Windows', en: 'Windows' })], ['ru', 'Русский'], ['en', 'English']], () => get('language'), (v) => { put({ language: v }).then(() => { I18n.set(v); buildSide(); drawWizard(); }); }));
+    } else if (wiz === 2) {
+      box.insertBefore(h('div', 'footnote wz-note', t({ ru: 'Включите то, чем будете пользоваться. Выключенный модуль прячет свою вкладку; всё можно изменить позже в «Модули».', en: 'Keep what you will use. A module that is off hides its tab; you can change it later in Modules.' })), c);
+      MODS.forEach(([id, title, sub]) => { DEF['module.' + id] = true; row(c, t(title), t(sub), sw('module.' + id)); });
+    } else if (wiz === 3) {
+      box.insertBefore(h('div', 'footnote wz-note', t({ ru: 'Главные сочетания клавиш. Остальные и смена любой клавиши — на странице «Клавиши».', en: 'The main shortcuts. The rest, and changing any key, are on the Hotkeys page.' })), c);
+      HK.slice(0, 6).forEach(([id, title, , def]) => {
+        const k = h('div', 'keys'); drawKeys(k, S['hotkey.' + id] !== undefined ? S['hotkey.' + id] : def);
+        row(c, t(title), '', k);
+      });
+      row(c, t({ ru: 'Поменять клавиши', en: 'Change the keys' }), '', btn(t({ ru: 'Открыть «Клавиши»', en: 'Open Hotkeys' }), () => endWizard('hotkeys'), 'sm'));
+    } else {
+      row(c, t({ ru: 'ИИ и голос в текст', en: 'AI and voice to text' }),
+        t({ ru: 'По желанию. Пока вы сами не нажмёте кнопку, ничего не скачивается, не включается и не отправляется в сеть.', en: 'Optional. Nothing is downloaded, turned on or sent over the network until you press a button.' }),
+        btn(t({ ru: 'Установка ИИ', en: 'AI setup' }), () => endWizard('aisetup'), 'sm'));
+    }
+    const nav = h('div', 'inline wz-nav');
+    const back = btn(t({ ru: 'Назад', en: 'Back' }), () => { wiz -= 1; drawWizard(); });
+    back.hidden = wiz === 1;
+    const next = btn(wiz === STEPS ? t({ ru: 'Готово', en: 'Done' }) : t({ ru: 'Далее', en: 'Next' }), () => { if (wiz === STEPS) endWizard('general'); else { wiz += 1; drawWizard(); } }, 'pri');
+    nav.append(back, next);
+    box.append(nav);
+    $('#content').scrollTop = 0;
   }
 
   // ---------------------------------------------------------------------------------------------------------- shell: sidebar, pages, window
@@ -1191,7 +1243,7 @@
     const want = new URLSearchParams(location.search).get('page');
     cur = PAGES.some((x) => x.id === want) ? want : 'character';
     buildSide();
-    await show(cur);
+    if (want === 'welcome') startWizard(); else await show(cur);
     // caption buttons
     document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && String(e.key).toLowerCase() === 'f') { const q = $('.sb-q'); if (q) { e.preventDefault(); q.focus(); q.select(); } } });
     $('#b-min').onclick = () => win && win.minimize();
@@ -1204,9 +1256,9 @@
       T.event.listen('settings:changed', (e) => {
         if (e.payload && typeof e.payload === 'object') S = Object.assign({}, e.payload);
         rm();
-        if (I18n.lang !== (I18n.set(get('language')))) renderAll(); else sync();
+        if (I18n.lang !== (I18n.set(get('language')))) { if (wiz) { buildSide(); drawWizard(); } else renderAll(); } else if (!wiz) sync();
       });
-      T.event.listen('settings:page', (e) => { if (PAGES.some((x) => x.id === e.payload)) show(e.payload); });
+      T.event.listen('settings:page', (e) => { if (e.payload === 'welcome') startWizard(); else if (PAGES.some((x) => x.id === e.payload)) { if (wiz) { wiz = 0; document.body.classList.remove('wiz'); } show(e.payload); } });
     }
     // show the window after the first paint (it is created hidden: no white flash), then play the short entrance
     requestAnimationFrame(() => requestAnimationFrame(async () => {
