@@ -247,7 +247,7 @@
   function buildBar() {
     const b = (a, i, cls = '') => `<button type="button" data-a="${a}" class="${cls}" title="${TIPS[i || a]}">${ic(i || a)}</button>`;
     barEl.innerHTML = ['select', 'rect', 'arrow', 'pen', 'blur', 'text'].map((t) => b(t, t, t === 'select' ? 'on' : '')).join('')
-      + '<span class="sep"></span>' + COLORS.map((c, i) => `<button type="button" class="sw${i ? '' : ' on'}" data-c="${c}" style="--c:${c}"><i></i></button>`).join('')
+      + '<span class="sep"></span>' + COLORS.map((c, i) => `<button type="button" class="sw${i ? '' : ' on'}" data-c="${c}" aria-label="${c}" style="--c:${c}"><i></i></button>`).join('')
       + '<span class="sep"></span>' + b('undo') + '<span class="sep"></span>' + b('copy') + b('save') + b('record', 'video') + b('both', 'check', 'go') + b('cancel', 'x', 'x');
     barEl.addEventListener('pointerdown', (e) => e.stopPropagation());
     barEl.addEventListener('click', (e) => {

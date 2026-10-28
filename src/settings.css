@@ -254,6 +254,9 @@ details.disc ul { margin: 0 0 16px 22px; padding: 0; color: var(--text-dim); fon
 .found button:hover { background: var(--ctl); }
 .found button span { color: var(--text-dim); font-size: var(--fs-xs); margin-left: 8px; }
 
+/* the OS setting, or the island's own Reduce motion switch (settings.js puts .rm on <html>) */
+.rm *, .rm *::before, .rm *::after { transition-duration: 0.01ms !important; transition-delay: 0s !important; animation-duration: 0.01ms !important; }
+.rm .btn:active, .rm .pcard:active, .rm .sb-item:active { transform: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; transition-delay: 0s !important; animation-duration: 0.01ms !important; }
   .btn:active, .pcard:active, .sb-item:active { transform: none; }

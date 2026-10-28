@@ -231,7 +231,7 @@
     errEl.append(el('span', null, msg));
     if (withRetry) { const b = el('button', 'btn-ghost', t({ ru: 'Повторить', en: 'Retry' })); b.type = 'button'; b.onclick = () => retry(); errEl.append(b); }
     const s = el('button', 'btn-ghost', t({ ru: 'Настройки ИИ', en: 'AI settings' })); s.type = 'button'; s.onclick = () => openSettings(true); errEl.append(s);
-    const x = el('button', 'icon-btn'); x.type = 'button'; x.innerHTML = IC.x; x.onclick = () => showErr(''); errEl.append(x);
+    const x = el('button', 'icon-btn'); x.type = 'button'; x.innerHTML = IC.x; x.title = t({ ru: 'Скрыть', en: 'Dismiss' }); x.onclick = () => showErr(''); errEl.append(x);
   }
 
   function setSendIcon() {
@@ -401,7 +401,7 @@
     filesEl.replaceChildren(...st.files.map((f, i) => {
       const c = el('span', 'ch-file');
       c.append(el('span', null, f.name));
-      const x = el('button', 'icon-btn'); x.type = 'button'; x.innerHTML = IC.x; x.onclick = () => { st.files.splice(i, 1); renderFiles(); };
+      const x = el('button', 'icon-btn'); x.type = 'button'; x.innerHTML = IC.x; x.title = t({ ru: 'Убрать файл', en: 'Remove the file' }); x.onclick = () => { st.files.splice(i, 1); renderFiles(); };
       c.append(x);
       return c;
     }));
@@ -479,7 +479,7 @@
     setPanel.replaceChildren();
     const head = el('div', 'ch-sh');
     head.append(el('b', null, t({ ru: 'Настройки ИИ', en: 'AI settings' })));
-    const cl = el('button', 'icon-btn'); cl.type = 'button'; cl.innerHTML = IC.x; cl.onclick = () => popOut(setPanel); head.append(cl);
+    const cl = el('button', 'icon-btn'); cl.type = 'button'; cl.innerHTML = IC.x; cl.title = t({ ru: 'Закрыть', en: 'Close' }); cl.onclick = () => popOut(setPanel); head.append(cl);
 
     const seg = el('div', 'seg');
     const dots = {}; // preset id -> status dot, painted by scan()

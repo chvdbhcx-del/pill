@@ -912,7 +912,7 @@
       for (const a of o.actions) {
         const b = h('button', 'ab' + (a.kind ? ' ' + a.kind : '') + (a.icon && !a.label ? ' icon' : ''));
         if (a.icon) b.innerHTML = icon(a.icon, { size: 17, sw: 1.9 });
-        if (a.label) b.append(document.createTextNode(a.label));
+        if (a.label) b.append(document.createTextNode(a.label)); else b.setAttribute('aria-label', a.title || a.icon || '');
         b.onclick = () => { safe(a.run); dismiss(); };
         ta.append(b);
       }
@@ -1006,11 +1006,14 @@
     const row = (c, label, desc, ctl) => {
       const r = h('div', 'st-row'), l = h('div', 'l');
       l.append(h('b', '', label)); if (desc) l.append(h('span', '', desc));
+      // a11y: the row title names the control (switch / range / select inside it; a segmented control becomes a labelled group)
+      if (ctl.classList.contains('seg')) { ctl.setAttribute('role', 'group'); ctl.setAttribute('aria-label', label); }
+      else (ctl.matches('input,select') ? [ctl] : [...ctl.querySelectorAll('input,select')]).forEach((i) => { if (!i.hasAttribute('aria-label')) i.setAttribute('aria-label', label); });
       r.append(l, ctl); c.append(r); return r;
     };
     const seg = (opts, get, set, track = true) => {
       const w = h('div', 'seg');
-      const draw = () => [...w.children].forEach((b, i) => b.classList.toggle('on', String(opts[i][0]) === String(get())));
+      const draw = () => [...w.children].forEach((b, i) => { const on = String(opts[i][0]) === String(get()); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
       opts.forEach(([v, l]) => { const b = h('button', '', l); b.onclick = () => { set(v); draw(); }; w.append(b); });
       if (track) redraws.push(draw);
       draw();
@@ -1018,7 +1021,7 @@
     };
     const sw = (key) => {
       const w = h('label', 'switch'), i = h('input'), k = h('i');
-      i.type = 'checkbox'; i.checked = !!S[key]; i.onchange = () => put(key, i.checked);
+      i.type = 'checkbox'; i.setAttribute('role', 'switch'); i.checked = !!S[key]; i.onchange = () => put(key, i.checked);
       w.append(i, k); redraws.push(() => { i.checked = !!S[key]; }); return w;
     };
     const range = (key, min, max, step, fmt) => {
@@ -1072,7 +1075,7 @@
     head(t({ ru: 'Буфер обмена', en: 'Clipboard' }));
     c = card();
     const pw = h('label', 'switch'), pi = h('input'), pk = h('i');
-    pi.type = 'checkbox'; pw.append(pi, pk);
+    pi.type = 'checkbox'; pi.setAttribute('role', 'switch'); pw.append(pi, pk);
     pi.onchange = () => { invoke('clip_pause', { paused: pi.checked }); if (Pill.clipPaused) Pill.clipPaused(pi.checked); };
     row(c, t({ ru: 'Приватный режим', en: 'Private mode' }), t({ ru: 'История не записывается, пока включено', en: 'Nothing is recorded while it is on' }), pw);
     redraws.push(async () => { const s = await invoke('clip_status'); if (s) pi.checked = !!s.paused; });

@@ -48,6 +48,14 @@
   const openLink = (url) => inv('chat_open_link', { url });
   const link = (text, url) => { const a = h('a', 'link', text); a.href = '#'; a.onclick = (e) => { e.preventDefault(); openLink(url); }; return a; };
 
+  // a11y: name the control of a row after the row title (switch / select / range / textarea: the label is not inside the control), group a segmented control
+  function nameControl(ctl, title) {
+    if (!(ctl instanceof Element)) return;
+    if (ctl.classList.contains('seg')) { ctl.setAttribute('role', 'group'); ctl.setAttribute('aria-label', title); return; }
+    const ins = ctl.matches('input,select,textarea') ? [ctl] : [...ctl.querySelectorAll('input,select,textarea')];
+    ins.forEach((i, n) => { if (!i.hasAttribute('aria-label') && !i.hidden) i.setAttribute('aria-label', n && i.placeholder ? title + ': ' + i.placeholder : title); });
+  }
+
   function card(page, cls) { const c = h('div', 'card' + (cls ? ' ' + cls : '')); page.append(c); return c; }
   function cap(page, txt) { page.append(h('div', 'cap', txt)); }
   function row(c, title, sub, ctl, o = {}) {
@@ -59,6 +67,7 @@
     if (ctl) {
       if (o.block) r.append(ctl);
       else r.append(h('div', 'c', ctl));
+      nameControl(ctl, title);
     }
     c.append(r);
     return r;
@@ -67,7 +76,7 @@
 
   function sw(key, opt = {}) {
     const w = h('label', 'sw'), i = h('input'), k = h('i');
-    i.type = 'checkbox';
+    i.type = 'checkbox'; i.setAttribute('role', 'switch');
     i.onchange = () => (opt.set ? opt.set(i.checked) : put({ [key]: opt.invert ? !i.checked : i.checked }));
     w.append(i, k);
     syncs.push(() => { i.checked = opt.read ? opt.read() : opt.invert ? !get(key) : !!get(key); });
@@ -85,7 +94,7 @@
       ind.style.width = b.offsetWidth + 'px'; ind.style.transform = `translateX(${b.offsetLeft}px)`;
       if (!placed) { placed = true; requestAnimationFrame(() => w.classList.add('anim')); }
     };
-    const draw = () => { bs.forEach((b, i) => b.classList.toggle('on', String(opts[i][0]) === String(getter()))); place(); };
+    const draw = () => { bs.forEach((b, i) => { const on = String(opts[i][0]) === String(getter()); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); }); place(); };
     w.append(ind);
     opts.forEach(([v, l]) => { const b = h('button', '', l); b.type = 'button'; b.onclick = () => { setter(v); draw(); }; bs.push(b); w.append(b); });
     if (window.ResizeObserver) new ResizeObserver(place).observe(w);
@@ -575,7 +584,7 @@
     // key
     const kr = h('div', 'row block');
     kr.append(h('div', 'l', [h('b', '', t({ ru: 'Ключ API', en: 'API key' })), h('span', '', t({ ru: 'Ключ выбранного сервиса. Хранится только на этом компьютере, зашифрован Windows, не вшит в приложение и никому не передаётся.', en: 'The key of the chosen service. Stored only on this computer, encrypted by Windows; it is not built into the app and not shared with anyone.' }))]));
-    const key = h('input', 'field'); key.type = 'password'; key.autocomplete = 'off'; key.spellcheck = false;
+    const key = h('input', 'field'); key.type = 'password'; key.autocomplete = 'off'; key.spellcheck = false; key.setAttribute('aria-label', t({ ru: 'Ключ API', en: 'API key' }));
     const keyMsg = h('div', 'note'); keyMsg.style.marginTop = '8px';
     const setPh = () => { key.placeholder = aiState.cfg.hasKey ? t({ ru: '•••••••• (ключ сохранён)', en: '•••••••• (key saved)' }) : t({ ru: 'не нужен для локальных серверов', en: 'not needed for local servers' }); };
     const rm = btn(t({ ru: 'Удалить', en: 'Remove' }), async () => { await inv('ai_set_key', { key: '' }); aiState.cfg = (await inv('ai_config')) || cfg; setPh(); rm.hidden = true; msg(keyMsg, ''); }, 'danger');
@@ -592,8 +601,8 @@
     // address + model
     const ar = h('div', 'row block');
     ar.append(h('div', 'l', [h('b', '', t({ ru: 'Адрес API и модель', en: 'API address and model' }))]));
-    const urlIn = h('input', 'field'); urlIn.value = cfg.baseUrl || ''; urlIn.placeholder = 'http://127.0.0.1:11434/v1'; urlIn.spellcheck = false;
-    const mdl = h('input', 'field mono'); mdl.value = cfg.model || ''; mdl.placeholder = t({ ru: 'имя модели', en: 'model name' }); mdl.spellcheck = false; mdl.setAttribute('list', 'st-models');
+    const urlIn = h('input', 'field'); urlIn.value = cfg.baseUrl || ''; urlIn.placeholder = 'http://127.0.0.1:11434/v1'; urlIn.spellcheck = false; urlIn.setAttribute('aria-label', t({ ru: 'Адрес API', en: 'API address' }));
+    const mdl = h('input', 'field mono'); mdl.value = cfg.model || ''; mdl.placeholder = t({ ru: 'имя модели', en: 'model name' }); mdl.spellcheck = false; mdl.setAttribute('list', 'st-models'); mdl.setAttribute('aria-label', t({ ru: 'Модель', en: 'Model' }));
     const dl = h('datalist'); dl.id = 'st-models';
     const listB = btn(t({ ru: 'Список', en: 'List' }), async () => {
       await put({ 'ai.baseUrl': urlIn.value.trim() });
@@ -937,7 +946,7 @@
     next.append(h('h1', '', t(pg.head || pg.name)));
     page.replaceChildren(next);
     // the new page rises and fades in (WAAPI, no stylesheet needed; skipped with reduced motion)
-    if (next.animate && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+    if (next.animate && !get('reduceMotion') && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
       next.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.2,.8,.2,1)' });
     }
     $('#content').scrollTop = 0;
@@ -950,6 +959,8 @@
     if (s) S = s;
     if (info) ver = info.version || '';
     I18n.set(get('language'));
+    const rm = () => document.documentElement.classList.toggle('rm', !!get('reduceMotion')); // the island's own switch, besides the OS setting (CSS)
+    rm();
     const want = new URLSearchParams(location.search).get('page');
     cur = PAGES.some((x) => x.id === want) ? want : 'character';
     buildSide();
@@ -964,6 +975,7 @@
     if (T.event && T.event.listen) {
       T.event.listen('settings:changed', (e) => {
         if (e.payload && typeof e.payload === 'object') S = Object.assign({}, e.payload);
+        rm();
         if (I18n.lang !== (I18n.set(get('language')))) renderAll(); else sync();
       });
       T.event.listen('settings:page', (e) => { if (PAGES.some((x) => x.id === e.payload)) show(e.payload); });

@@ -149,6 +149,7 @@
 .btn-ghost:hover { background: var(--hover); color: var(--text); }
 .btn:active, .btn-primary:active, .btn-ghost:active { transform: scale(.96); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
 .btn:focus-visible, .btn-primary:focus-visible, .btn-ghost:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+:where(button, [role="button"], [tabindex]:not([tabindex="-1"]), a[href], summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }   /* keyboard focus is always visible; zero specificity, so any rule above or in a tab stylesheet still wins */
 .btn[disabled], .btn-primary[disabled], .btn-ghost[disabled], .icon-btn[disabled] { opacity: .45; cursor: default; pointer-events: none; }
 .icon-btn { all: unset; box-sizing: border-box; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; cursor: pointer; color: var(--icon); transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
 .icon-btn:active { transform: scale(.92); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }

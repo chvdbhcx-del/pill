@@ -44,7 +44,7 @@
     // ---- key
     const kr = h('div', 'row block');
     kr.append(h('div', 'l', [h('b', '', t({ ru: 'Ключ API', en: 'API key' })), h('span', '', t({ ru: 'Хранится только на этом компьютере, зашифрован Windows, не вшит в приложение и никому не передаётся. Если для того же адреса уже есть ключ ИИ-помощника, он подходит и сюда.', en: 'Stored only on this computer, encrypted by Windows; it is not built into the app and not shared with anyone. If the AI assistant already has a key for the same address, it is used here too.' }))]));
-    const key = h('input', 'field'); key.type = 'password'; key.autocomplete = 'off'; key.spellcheck = false;
+    const key = h('input', 'field'); key.type = 'password'; key.autocomplete = 'off'; key.spellcheck = false; key.setAttribute('aria-label', t({ ru: 'Ключ API', en: 'API key' }));
     const keyMsg = h('div', 'note'); keyMsg.style.marginTop = '8px';
     let ks = { has: false, source: 'none' };
     const paintKey = () => {
@@ -67,8 +67,8 @@
     // ---- address + model
     const ar = h('div', 'row block');
     ar.append(h('div', 'l', [h('b', '', t({ ru: 'Адрес API и модель', en: 'API address and model' }))]));
-    const urlIn = h('input', 'field'); urlIn.value = url(); urlIn.placeholder = 'https://api.groq.com/openai/v1'; urlIn.spellcheck = false;
-    const mdl = h('input', 'field mono'); mdl.value = get('voice.model') || ''; mdl.placeholder = t({ ru: 'имя модели', en: 'model name' }); mdl.spellcheck = false;
+    const urlIn = h('input', 'field'); urlIn.value = url(); urlIn.placeholder = 'https://api.groq.com/openai/v1'; urlIn.spellcheck = false; urlIn.setAttribute('aria-label', t({ ru: 'Адрес API', en: 'API address' }));
+    const mdl = h('input', 'field mono'); mdl.value = get('voice.model') || ''; mdl.placeholder = t({ ru: 'имя модели', en: 'model name' }); mdl.spellcheck = false; mdl.setAttribute('aria-label', t({ ru: 'Модель', en: 'Model' }));
     mdl.style.flex = '0 0 38%';
     const il = h('div', 'inline'); il.append(urlIn, mdl); ar.append(il); c.append(ar);
 
