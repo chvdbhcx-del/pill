@@ -82,7 +82,7 @@
     // ---- the page
     function build() {
       const intro = h('div', 'as-intro');
-      intro.append(t({ ru: 'Для голоса в текст и ИИ-чата можно скачать всё на этот компьютер или подключить облачный сервис. Ничего не скачивается и не запускается, пока вы сами не нажмёте кнопку: рядом с ней написано, откуда и сколько.', en: 'For voice-to-text and the AI chat you can download everything onto this computer or connect a cloud service. Nothing is downloaded or started until you press a button; the source and the size are written next to it.' }));
+      intro.append(t({ ru: 'Голос в текст и ИИ-чат можно скачать на этот компьютер или подключить облачный сервис. Ничего не скачивается и не запускается без вашего нажатия; у кнопки указано, откуда и сколько.', en: 'Voice to text and the AI chat can run on this computer or through a cloud service. Nothing is downloaded or started without your click; the button shows the source and size.' }));
       root.append(intro);
       buildVoice();
       buildChat();
@@ -107,7 +107,7 @@
         : w.enabled ? t({ ru: 'включён, но сервер не запущен (см. server.log в папке ai/whisper)', en: 'enabled, but the server is not running (see server.log in the ai/whisper folder)' })
         : t({ ru: 'не установлен или выключен', en: 'not installed or off' });
       const r = row(c, t({ ru: 'Локально, на этом компьютере', en: 'Locally, on this computer' }),
-        t({ ru: 'Pill запускает whisper.cpp скрыто, только на адресе 127.0.0.1, и закрывает его вместе с собой. Запись голоса не покидает компьютер, ключ не нужен. ', en: 'Pill runs whisper.cpp hidden, on 127.0.0.1 only, and closes it together with itself. The recording never leaves this computer and no key is needed. ' }) + t({ ru: 'Сейчас: ', en: 'Now: ' }) + state, null);
+        t({ ru: 'Pill запускает whisper.cpp скрыто, только на 127.0.0.1, и закрывает его вместе с собой. Запись не покидает компьютер, ключ не нужен. ', en: 'Pill runs whisper.cpp hidden, on 127.0.0.1 only, and closes it with itself. The recording stays on this computer and no key is needed. ' }) + t({ ru: 'Сейчас: ', en: 'Now: ' }) + state, null);
       r.sub.className = w.running ? 'ok' : '';
       if (w.engine.installed && w.models.some((m) => m.installed)) {
         const sw = h('label', 'sw'), inp = h('input'); inp.type = 'checkbox'; inp.checked = !!w.running; inp.disabled = lock();
@@ -255,7 +255,7 @@
         }
         row(c, t({ ru: 'Ollama: программа для локальных моделей', en: 'Ollama: the app for local models' }),
           o.installed ? t({ ru: 'Официальный установщик уже не нужен.', en: 'The official installer is not needed any more.' })
-            : t({ ru: `Официальный установщик с ollama.com (перенаправляет на GitHub), около ${size(inst.size)}. Скачивание не запускает его: запуск отдельной кнопкой, дальше свои окна установщика и запрос Windows. Хеша для проверки у него нет: проверьте издателя в окне Windows.`, en: `The official installer from ollama.com (redirects to GitHub), about ${size(inst.size)}. Downloading does not start it: running is a separate button, then the installer's own windows and the Windows prompt. It has no published hash to verify: check the publisher in the Windows prompt.` }), ctl);
+            : t({ ru: `Официальный установщик с ollama.com (перенаправляет на GitHub), около ${size(inst.size)}. Скачивание его не запускает: запуск отдельной кнопкой, дальше запрос Windows. Хеша для проверки нет: сверьте издателя в окне Windows.`, en: `The official installer from ollama.com (redirects to GitHub), about ${size(inst.size)}. Downloading does not start it: running is a separate button, then the Windows prompt. There is no published hash: check the publisher in the prompt.` }), ctl);
         c.append(progBox('ollama-setup'));
       } else {
         const cat = h('div', 'pad');
@@ -297,7 +297,7 @@
 
       const cc = card(root);
       const cr = row(cc, t({ ru: 'Через облако', en: 'Through the cloud' }),
-        t({ ru: 'Любой OpenAI-совместимый сервис (OpenAI, OpenRouter, Groq, свой сервер). Нужен адрес API и ключ; ключ шифруется Windows и хранится только здесь.', en: 'Any OpenAI-compatible service (OpenAI, OpenRouter, Groq, your own server). An API address and key are needed; the key is encrypted by Windows and stays on this computer.' }), null);
+        t({ ru: 'Любой OpenAI-совместимый сервис (OpenAI, OpenRouter, Groq, свой сервер). Нужны адрес API и ключ; ключ шифруется Windows и хранится только здесь.', en: 'Any OpenAI-compatible service (OpenAI, OpenRouter, Groq, your own server). An API address and a key are needed; the key is encrypted by Windows and stays here.' }), null);
       cr.append(h('div', 'c', btn(t({ ru: 'Настроить облачный ИИ', en: 'Set up a cloud AI' }), () => go('ai'))));
     }
 

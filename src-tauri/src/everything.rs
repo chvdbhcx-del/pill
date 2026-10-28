@@ -1,4 +1,4 @@
-// Everything (voidtools) for the command-bar file search: an opt-in download of the OFFICIAL installer and es.exe (Settings > General).
+// Everything (voidtools) for the command-bar file search: an opt-in download of the OFFICIAL installer and es.exe (Settings > File search).
 // Flow (all on clicks, modelled on aisetup.rs): Download = installer + es.exe zip from www.voidtools.com over https (host allowlist in aisetup::HOSTS,
 // redirects re-checked), size + SHA-256 pinned below, es.exe unpacked into %APPDATA%\pill\ai\everything\; "Run installer" is a SEPARATE click that
 // hands the installer to the shell, so Windows shows its own UAC prompt (Everything needs its service to index NTFS). Pill never elevates itself.

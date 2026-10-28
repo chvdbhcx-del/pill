@@ -141,7 +141,7 @@
         if (off()) { ask.hidden = true; return show(t({ ru: 'Выключено', en: 'Off' })); }
         if (s === 'granted') show(t({ ru: 'Доступ к уведомлениям разрешён: карточки приходят', en: 'Notification access granted: cards arrive' }), 'ok');
         else if (s === 'denied') show(t({ ru: 'Доступ запрещён. Разрешите в Параметры → Конфиденциальность → Уведомления', en: 'Access denied. Allow it in Settings → Privacy → Notifications' }), 'bad');
-        else if (s === 'unsupported') show(t({ ru: 'Windows не отдаёт чтение уведомлений этому приложению (обычно нужен пакет приложения). Карточки уведомлений недоступны, переключатель ничего не сделает.', en: 'Windows does not give notification access to this app (it usually needs an app package). Notification cards are unavailable; the switch will do nothing.' }), 'warn');
+        else if (s === 'unsupported') show(t({ ru: 'Windows не даёт этому приложению читать уведомления (обычно нужен пакет приложения). Карточки уведомлений недоступны, переключатель ничего не изменит.', en: 'Windows does not let this app read notifications (it usually needs an app package). Notification cards are unavailable; the switch changes nothing.' }), 'warn');
         else show(t({ ru: 'Windows ещё не спрашивал разрешение. Разрешите в Параметры → Конфиденциальность → Уведомления или нажмите кнопку', en: 'Windows has not been asked yet. Allow it in Settings → Privacy → Notifications or press the button' }), 'warn');
       };
       poll(async () => { const s = await inv('notif_status'); if (s) paint(s.status); }, 3000);
