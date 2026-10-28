@@ -46,6 +46,7 @@
   let hidden = false;     // window hidden by Rust (guard / auto-hide / tray): no timers, no animation
   let away = false;       // auto-hide: #body slid up
   let hovering = false;   // Rust says the cursor is on the pill
+  let noOpenUntil = 0;    // hover must not open the pill right after a card closed: the cursor still rests where its button was
   let typing = false;     // a text field has keyboard focus (pill_activate)
   let frameExp = false;   // the OS window is in the expanded frame
   let chosen = false;     // the user (or code) picked a tab, stop auto-selecting the first one
@@ -939,6 +940,7 @@
     const c = curCard;
     if (!c || c.out) return;
     c.out = true; clearTimeout(c.t);
+    noOpenUntil = performance.now() + 900;
     c.el.classList.add('out');
     setTimeout(() => {
       endCard(c); next();
@@ -1163,7 +1165,7 @@
   on('audio:bands', setBands);   // media lane: { b: [32 floats], rms } ~30 Hz while a track plays
   on('weather:current', setWx);  // weather lane: { temp, unit, code, icon, text }
   let openT = 0, leaveT = 0;
-  const armOpen = () => { clearTimeout(openT); openT = setTimeout(() => { if (hovering && Pill.state !== 'expanded') Pill.expand(undefined, 'hover'); }, 250); };
+  const armOpen = () => { clearTimeout(openT); openT = setTimeout(() => { if (hovering && Pill.state !== 'expanded' && !curCard && performance.now() >= noOpenUntil) Pill.expand(undefined, 'hover'); }, 250); }; // a card on screen is the thing to click: hover does not replace it
   on('pill:hover', () => { hovering = true; poke(); cancelAway(); clearTimeout(leaveT); if (Pill.state !== 'expanded') armOpen(); });
   on('pill:leave', () => {
     hovering = false; clearTimeout(openT);

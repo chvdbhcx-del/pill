@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Fixed
+- Event cards (for example "Agent finished"): while a card is on screen, and for a moment after it closes, resting the cursor on the island no longer opens it, so pressing Dismiss does not pop the island open.
+
 ## [0.3.7] - 2026-10-28
 
 ### Changed
