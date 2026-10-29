@@ -379,7 +379,7 @@
   function updateLive() {
     // Settings > Live events > Music (and Modules > Media player) off: no widget, no edge reaction
     if (!P.liveOn('music') || cfg['module.media'] === false || !st || !st.has_session) { P.unreact('media'); if (liveKey) { liveKey = ''; P.setLive('media', null); } return; }
-    if (st.playing) P.react('media', 'music'); else P.unreact('media'); // edge baseline while a track plays
+    if (st.playing) P.react('media', 'music', { color: accent() }); else P.unreact('media'); // edge baseline while a track plays; the cover accent tints the pet (its eyes) too
     if (!st.playing) { if (liveKey) { liveKey = ''; P.setLive('media', null); } return; } // paused: the capsule goes back to the clock + weather
     const key = [mode, st.playing, st.title, st.artist, art.id, accent()].join('|');
     if (key === liveKey) return;

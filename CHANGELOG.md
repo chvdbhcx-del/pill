@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.5.3] - 2026-10-29
+
+### Changed
+- While a track plays the pet (its eyes included) is tinted in the cover's accent colour, the same colour as the wavy outline; before, it used the generic music colour.
+
 ## [0.5.2] - 2026-10-29
 
 ### Fixed
