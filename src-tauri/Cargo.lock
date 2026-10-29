@@ -2722,6 +2722,7 @@ name = "pill"
 version = "0.5.3"
 dependencies = [
  "base64 0.22.1",
+ "pill-ui-core",
  "png",
  "qrcode",
  "rqrr",
@@ -2739,6 +2740,14 @@ dependencies = [
  "windows 0.58.0",
  "windows-core 0.58.0",
  "zip",
+]
+
+[[package]]
+name = "pill-ui-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
