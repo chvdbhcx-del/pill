@@ -86,6 +86,7 @@
     return s < 60 ? t({ ru: `${s} с`, en: `${s}s` }) : m < 60 ? t({ ru: `${m} мин`, en: `${m}m` }) : t({ ru: `${h} ч ${m % 60} мин`, en: `${h}h ${m % 60}m` });
   };
   const STATE = { waiting: { ru: 'ждёт ответа', en: 'waiting' }, working: { ru: 'работает', en: 'working' }, done: { ru: 'готово', en: 'done' }, stale: { ru: 'нет вестей', en: 'no news' } };
+  let seenState = new Map(), freshList = false; // id -> state at the last paint: a changed state pops its dot; freshList: the tab was just opened, rows come in one after another
   function paintList() {
     const ss = (snapAll && snapAll.sessions) || [];
     P.setBadge('agents', Math.max(0, (snapAll && snapAll.waiting) | 0) || '');
@@ -97,22 +98,29 @@
       return;
     }
     const now = Date.now();
-    listEl.replaceChildren(...ss.map((x) => {
-      const r = document.createElement('div'); r.className = 'ag-row'; r.dataset.state = x.state;
+    const rows = ss.map((x, k) => {
+      const r = document.createElement('div'); r.className = 'ag-row' + (freshList ? ' stag' : ''); r.dataset.state = x.state; r.dataset.id = x.tool + '/' + x.session; r.style.setProperty('--i', k);
       const nm = document.createElement('div'); nm.className = 'ag-name'; nm.textContent = x.project || TOOLS[x.tool] || x.tool;
       const ti = document.createElement('div'); ti.className = 'ag-title'; ti.textContent = plainTitle(x.title);
       const body = document.createElement('div'); body.className = 'ag-body'; body.append(nm, ti);
       const st = document.createElement('div'); st.className = 'ag-state';
       st.textContent = t(STATE[x.state] || STATE.stale) + ' · ' + dur(now - x.ts);
-      r.append(document.createElement('i'), body, st);
+      const dot = document.createElement('i');
+      r.append(dot, body, st);
+      const was = seenState.get(r.dataset.id);
+      if (was && was !== x.state && window.PillMotion) setTimeout(() => window.PillMotion.pop(dot, { from: 'scale(.3)', dur: 0.55 }), 0); // waiting -> working etc.
       return r;
-    }));
+    });
+    seenState = new Map(ss.map((x) => [x.tool + '/' + x.session, x.state]));
+    const mutate = () => listEl.replaceChildren(...rows);
+    if (freshList || !window.PillMotion) mutate(); else window.PillMotion.flip(listEl, mutate, { sel: '.ag-row', enterNew: true, leave: true }); // waiting moves to the top by sliding, new rows drop in, gone ones fade out
+    freshList = false;
   }
   const feed = (snap) => { snapAll = snap || {}; render(snapAll); paintList(); };
   P.register({
     id: 'agents', title: t({ ru: 'Агенты', en: 'Agents' }), order: 66, icon: P.icon('terminal'),
     mount(root) { root.classList.add('ag-root'); listEl = document.createElement('div'); listEl.className = 'ag-list scroll'; root.append(listEl); paintList(); },
-    onShow() { paintList(); clearInterval(tick); tick = setInterval(paintList, 15000); },
+    onShow() { freshList = true; paintList(); clearInterval(tick); tick = setInterval(paintList, 15000); },
     onHide() { clearInterval(tick); },
   });
 

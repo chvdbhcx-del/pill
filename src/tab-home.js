@@ -482,8 +482,9 @@
     const nodes = links.map((l) => { const n = appNode(l); if (seenIds && !seenIds.has(l.id)) n.classList.add('in'); return n; });
     el.add.before(...nodes);
     const removed = seenIds && [...seenIds].some((id) => !links.some((l) => l.id === id));
+    const added = seenIds && links.some((l) => !seenIds.has(l.id)); // a newly pinned icon pops in while the others (and the + tile) slide aside
     seenIds = new Set(links.map((l) => l.id));
-    if (removed && !rm()) {
+    if ((removed || added) && !rm()) {
       const easing = tok('--ease-out-expo', 'ease-out');
       [...nodes, el.add].forEach((n) => {
         const o = old.get(key(n)), d = o == null ? 0 : o - n.offsetLeft;

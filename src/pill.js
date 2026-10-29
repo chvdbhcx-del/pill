@@ -607,7 +607,7 @@
   // ---- collapsed live row: highest priority widget, else the clock: [weather icon] time date [battery] temp ----
   const lives = new Map();
   let liveTall = false; // the winning live widget asks to be sized by its own height (setLive { tall }): the shelf drop target
-  let liveKey = '', liveT = 0, battery = null, slots = { left: '', right: '' }, wx = null, clockSig = '', clockTime = null;
+  let clockShape = '', liveKey = '', liveT = 0, battery = null, slots = { left: '', right: '' }, wx = null, clockSig = '', clockTime = null;
   const invalidateLive = () => { liveKey = ''; clockSig = ''; };
   const loc = () => (lang === 'ru' ? 'ru-RU' : 'en-GB');
   // 12-hour clock without the AM/PM suffix (the island keeps the capsule narrow: "1:02", not "1:02AM")
@@ -648,12 +648,19 @@
     const right = b + (slots.right || (showDeg ? `<span class="lp-aux">${Math.round(wx.temp)}°</span>` : ''));
     const sig = `<span class="lp-l">${left}</span>${S.showTime ? '<span class="lp-time">%T%</span>' : '<span></span>'}<span class="lp-r">${right}</span>`;
     if (sig !== clockSig || !clockTime) {
-      const swap = liveKey !== 'clock';
+      // which pieces the side columns hold (weather icon, date, battery, temperature): when that set changes - a switch was flipped, the weather arrived - the old row fades out
+      // under the new one and the new pieces pop in; a changed number (temperature, battery %) just updates in place
+      const shape = [...sig.matchAll(/class="(lp-(?:wx|ico|date|aux|batt)[^" ]*)/g)].map((m) => m[1]).join(',');
+      const reshaped = liveKey === 'clock' && clockTime && shape !== clockShape;
+      const hadShape = new Set(clockShape.split(','));
+      clockShape = shape;
+      const swap = liveKey !== 'clock' || reshaped;
       clockSig = sig; liveKey = 'clock';
       if (swap) liveGhost();
       liveIn.innerHTML = `<div class="lp lp-clock" style="--lpw:172px">${sig.replace('%T%', digits(tt))}</div>`;
       if (swap) swapFx();
       clockTime = liveIn.querySelector('.lp-time');
+      if (reshaped && window.PillMotion) liveIn.querySelectorAll('.lp-l > *, .lp-r > *').forEach((n) => { if (!hadShape.has(n.className.split(' ')[0])) window.PillMotion.enter(n, { y: 0, scale: 0.6, dur: 0.45 }); });
       // equal side columns = the time sits exactly on the capsule axis (fr tracks collapse under shrink-to-fit sizing, so measure the cells)
       const lpc = liveIn.firstChild, s = scale(), cw = (e) => [...e.children].reduce((a, k) => a + k.getBoundingClientRect().width / s, 0) + 12 * Math.max(0, e.children.length - 1);
       lpc.style.setProperty('--cw', Math.ceil(Math.max(cw(lpc.querySelector('.lp-l')), cw(lpc.querySelector('.lp-r')))) + 'px');

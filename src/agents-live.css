@@ -45,7 +45,10 @@
 .ag-row { display: flex; align-items: center; gap: var(--sp-3, 12px); min-height: 44px; padding: 6px var(--sp-3, 12px); border-radius: 12px; }
 .ag-row > i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim, #8e8c93); }
 .ag-row[data-state="waiting"] > i { background: var(--amber, #ffb340); }
-.ag-row[data-state="working"] > i { background: var(--accent, #8f96ff); }
+.ag-row[data-state="working"] > i { background: var(--accent, #8f96ff); animation: ag-dot-pulse 1.6s var(--ease-in-out, ease-in-out) infinite; }
+@keyframes ag-dot-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.8); } }
+.ag-row[data-state="waiting"] > i { animation: ag-dot-pulse 1.3s var(--ease-in-out, ease-in-out) infinite; }
+.ag-row > i { transition: background var(--dur-med, .22s) var(--ease-out, ease-out); }
 .ag-row[data-state="done"] > i { background: var(--green, #58ddab); }
 .ag-body { flex: 1; min-width: 0; }
 .ag-name, .ag-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
