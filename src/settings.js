@@ -60,6 +60,8 @@
   function card(page, cls) { const c = h('div', 'card' + (cls ? ' ' + cls : '')); page.append(c); return c; }
   function cap(page, txt) { page.append(h('div', 'cap', txt)); }
   function row(c, title, sub, ctl, o = {}) {
+    // a segmented control with long labels takes most of the row and squeezes the text into a sliver: it goes under the text instead
+    if (!o.block && ctl && ctl.classList && ctl.classList.contains('seg') && (ctl.textContent || '').length > 34) o = Object.assign({}, o, { block: true });
     const r = h('div', 'row' + (o.block ? ' block' : '') + (o.cls ? ' ' + o.cls : ''));
     const l = h('div', 'l', [h('b', '', title)]);
     r.sub = null;

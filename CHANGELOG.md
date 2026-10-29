@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.4.2] - 2026-10-29
+
+### Fixed
+- Settings: a row whose switch has long labels (for example "Hotkey mode" on Voice to text) no longer squeezes its title and description into a narrow strip; the switch goes under the text.
+
 ## [0.4.1] - 2026-10-29
 
 ### Changed
