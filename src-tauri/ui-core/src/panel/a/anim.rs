@@ -62,8 +62,16 @@ pub enum AnimKind {
     SlideIn { dx: f32 },
     /// Old view slides away by `dx` while fading out (tab switch).
     SlideAway { dx: f32 },
-    /// Endless rotation for as long as the operation runs (refresh button).
+    /// One full turn (refresh button), `.wx-spin`.
     Spin,
+    /// Opacity breathes down to `min_opacity` and back; `looped` for as long as the state lasts (busy tile).
+    Pulse { min_opacity: f32, looped: bool },
+    /// Quick left-right wobble (a drop that was already on the shelf).
+    Shake,
+    /// A ring expands from the element and fades (landed pulse).
+    Ring,
+    /// Opacity fades from `from` to 0 over the duration (the armed "press again" tile).
+    FadeTo { from: f32 },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -148,6 +156,34 @@ impl Anim {
         let rot = if k % 2 == 1 { 8.0 } else { -8.0 };
         Anim::new(AnimKind::FlyIn { from_dx, from_dy, rot_deg: rot }, 700, Ease::SpringPop).delayed(k.min(6) as u32 * 60)
     }
+    /// Weather refresh button: one turn, 0.8 s ease-in-out.
+    pub fn spin() -> Anim {
+        Anim::new(AnimKind::Spin, 800, Ease::CssInOut)
+    }
+    /// Controls: a tile waiting for UAC / a slow call breathes (1 s, loops while busy).
+    pub fn busy_pulse() -> Anim {
+        Anim::new(AnimKind::Pulse { min_opacity: 0.45, looped: true }, 1000, Ease::CssInOut)
+    }
+    /// Controls: the armed power tile's wash drains over the 3 s window.
+    pub fn arm_countdown() -> Anim {
+        Anim::new(AnimKind::FadeTo { from: 0.34 }, 3000, Ease::Linear)
+    }
+    /// Popover / menu: fade + 6 px drop and a .97 scale on the settle spring (Bluetooth list, shelf menu).
+    pub fn popover_in() -> Anim {
+        Anim::new(AnimKind::Enter { dx: 0.0, dy: -6.0, scale: 0.97 }, 400, Ease::SpringSettle)
+    }
+    /// The matching exit (`PillMotion.exit(pop, {y: -6, scale: .97})`).
+    pub fn popover_out() -> Anim {
+        Anim::exit(-6.0, 0.97)
+    }
+    /// Shelf: "already on the shelf" wobble, .45 s.
+    pub fn shake() -> Anim {
+        Anim::new(AnimKind::Shake, 450, Ease::Out)
+    }
+    /// Shelf: ring when files landed, .75 s.
+    pub fn ring() -> Anim {
+        Anim::new(AnimKind::Ring, 750, Ease::Out)
+    }
     /// Tab switch: the new view (CSS `view-in` .14 s + `view-slide-*` .24 s on the settle spring, 10 px).
     pub fn view_in(dir_right: bool) -> Anim {
         Anim::new(AnimKind::SlideIn { dx: if dir_right { 10.0 } else { -10.0 } }, 240, Ease::SpringSettle).delayed(30)
@@ -183,6 +219,14 @@ mod tests {
         assert_eq!(Anim::view_away(true).kind, AnimKind::SlideAway { dx: -10.0 });
         assert_eq!(Anim::view_in(false).kind, AnimKind::SlideIn { dx: -10.0 });
         assert_eq!(Anim::view_in(true).delay_ms, 30);
+    }
+
+    #[test]
+    fn popover_pair_mirrors() {
+        assert_eq!(Anim::popover_in().kind, AnimKind::Enter { dx: 0.0, dy: -6.0, scale: 0.97 });
+        assert_eq!(Anim::popover_out().kind, AnimKind::Exit { dx: 0.0, dy: -6.0, scale: 0.97 });
+        assert_eq!(Anim::arm_countdown().dur_ms, 3000);
+        assert!(matches!(Anim::busy_pulse().kind, AnimKind::Pulse { looped: true, .. }));
     }
 
     #[test]
