@@ -6,6 +6,7 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ### Fixed
 - Legs' eyes now stand on the same line as the text of the folded island (they sat about 1-3 px lower than the time, the pet and the icon): the eyes' height is taken from the middle of the live row's first text.
+- The "Eyes" pet drew its face lower than the island's text (about 3 px); the artwork now sits on the text line, both in the calm state and with the happy arcs.
 
 ## [0.5.1] - 2026-10-29
 

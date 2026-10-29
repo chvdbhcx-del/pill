@@ -221,7 +221,7 @@ ${P}.act-twitch .sk-flame { animation: sk-fl .12s ease-in-out 5 alternate; }
       id: 'eyes', group: 'characters', fx: false, w: 60, h: 40,
       name: { ru: 'Глазки', en: 'Eyes' },
       desc: { ru: 'Только глаза: моргают, смотрят за курсором, щурятся', en: 'Just the eyes: blink, follow the cursor, squint' },
-      svg: () => `<g class="ey-all">${one(19, 'ey-l')}${one(41, 'ey-r')}<path class="ey-s ey-sm" d="M26 31.5Q30 36 34 31.5"/></g>
+      svg: () => `<g transform="translate(0 -5.6)"><g class="ey-all">${one(19, 'ey-l')}${one(41, 'ey-r')}<path class="ey-s ey-sm" d="M26 31.5Q30 36 34 31.5"/></g></g>
 ${props({ z: [51, 14], ex: [53, 8], dots: [30, 5], paper: [53, 11], hearts: [30, 6], spark: [52, 8] })}`,
       css: `${propsCss(P)}
 ${glanceKf(P, '.ey-all', 5)} ${blinkKf}
