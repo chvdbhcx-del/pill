@@ -192,6 +192,11 @@ fn place(app: &AppHandle, win: &WebviewWindow) {
     let _ = win.set_position(PhysicalPosition::new(x, y));
 }
 
+/// Is the command bar on screen right now?
+pub(crate) fn bar_visible(app: &AppHandle) -> bool {
+    app.get_webview_window(LABEL).is_some_and(|w| w.is_visible().unwrap_or(false))
+}
+
 /// Opens the bar when it is closed (the uninstall flow brings it back when the uninstaller is done).
 pub(crate) fn show(app: &AppHandle) {
     if app.get_webview_window(LABEL).is_some_and(|w| !w.is_visible().unwrap_or(false)) {

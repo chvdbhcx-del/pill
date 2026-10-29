@@ -93,6 +93,23 @@
     });
   });
 
+  // ---------------------------------------------------------------- uninstall: a finished step while the user is elsewhere
+  // Rust (uninstall.rs) sends this only when the command bar is closed; the bar's own status strip covers the open bar. Quiet hours apply (not urgent).
+  on('uninstall:ready', (p) => {
+    const name = String(p.name || ''), n = +p.count || 0, kind = String(p.kind || '');
+    const sub = kind === 'review' ? t({ ru: 'Остатков к проверке: ', en: 'Leftovers to review: ' }) + n
+      : kind === 'done' ? (n ? t({ ru: 'Готово, удалено: ', en: 'Done, removed: ' }) + n : t({ ru: 'Остатков не найдено', en: 'No leftovers found' }))
+      : kind === 'still' ? t({ ru: 'Приложение всё ещё установлено', en: 'The app is still installed' }) : t({ ru: 'Не получилось', en: 'It did not work' });
+    P.toast({
+      id: 'uninstall:' + name, icon: kind === 'error' || kind === 'still' ? 'trash' : 'check', tone: kind === 'error' || kind === 'still' ? undefined : 'green', ttlMs: 12000,
+      title: t({ ru: 'Удаление: ', en: 'Uninstall of ' }) + name, sub,
+      actions: [
+        { label: t({ ru: 'Открыть', en: 'Open' }), kind: 'white', run: () => T.core.invoke('uninstall_open_panel').catch(() => {}) },
+        { label: t({ ru: 'Закрыть', en: 'Close' }), run: none },
+      ],
+    });
+  });
+
   // a switch flipped off removes its chip at once (Rust also stops its worker)
   on('settings:changed', () => {
     if (!P.liveOn('obs')) { obs.rec = obs.live = 0; obsRender(); }

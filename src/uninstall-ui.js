@@ -5,11 +5,16 @@
 // Motion: every step enters on the settle spring and the previous one leaves first (PillMotion), rows drop in staggered, groups expand and collapse,
 // ticks draw their check, numbers glide, deleted rows slide out one by one, failures shake once. transform / opacity only (groups animate height,
 // the shared PillMotion way); html.rm / prefers-reduced-motion = every state is applied at once (PillMotion.off()).
+// The search box always works: the job lives in the backend and the panel is only a view of it (state machine: uninstall-state.js). Any typing
+// steps the panel aside and runs the normal search; a status strip pinned under the results shows the running job, Ctrl+U / a click on it
+// (or `u <name>`, or the island card) brings the panel back exactly where it was.
 (() => {
   const T = window.__TAURI__;
   const inv = (c, a) => T.core.invoke(c, a).catch((e) => { console.error(c, e); return null; });
   const list = document.getElementById('list'), q = document.getElementById('q');
   if (!T || !list || !q) return;
+  const U = window.UninstallState;
+  if (!U) return;
   const M = window.PillMotion;
   const off = () => !M || M.off();
   const lang = () => { try { const c = localStorage.getItem('pill.lang'); if (c === 'ru' || c === 'en') return c; } catch (e) { /* storage blocked */ } return /^ru/i.test(navigator.language || '') ? 'ru' : 'en'; };
@@ -23,6 +28,12 @@
     waiting: { ru: 'Жду, пока приложение исчезнет из списка установленных…', en: 'Waiting for the app to leave the installed list…' },
     checkAgain: { ru: 'Проверить снова', en: 'Check again' }, hide: { ru: 'Скрыть', en: 'Hide' },
     scanning: { ru: 'Ищу остатки по всему ПК…', en: 'Searching the whole PC for leftovers…' }, found: { ru: 'найдено: ', en: 'found: ' },
+    stopWait: { ru: 'Не ждать', en: 'Stop waiting' }, stopScan: { ru: 'Остановить поиск', en: 'Stop searching' },
+    sRunning: { ru: ': деинсталлятор работает', en: ': the uninstaller is running' }, sScanning: { ru: ': ищу остатки, найдено ', en: ': searching for leftovers, found ' },
+    sDeleting: { ru: ': удаляю выбранное…', en: ': deleting the selection\u2026' }, sAdmin: { ru: ': жду разрешения администратора', en: ': waiting for administrator permission' },
+    sReview: { ru: ': остатков к проверке: ', en: ': leftovers to review: ' }, sDone: { ru: ': готово, сводка', en: ': done, summary' },
+    sStill: { ru: ': всё ещё установлено', en: ': still installed' }, sError: { ru: ': ошибка', en: ': failed' },
+    stripTip: { ru: 'Открыть панель удаления (Ctrl+U)', en: 'Open the uninstall panel (Ctrl+U)' },
     still: { ru: 'Приложение всё ещё установлено (деинсталлятор отменён или ещё работает). Ничего не удалено.', en: 'The app is still installed (the uninstaller was cancelled or is still running). Nothing was deleted.' },
     leftovers: { ru: 'Остатки: ', en: 'Leftovers: ' }, none: { ru: 'Остатков не найдено. Приложение удалено начисто.', en: 'No leftovers found. The app is gone.' },
     items: { ru: ' объектов', en: ' items' },
@@ -115,6 +126,8 @@
   const box = el('div'); box.id = 'uni'; box.hidden = true;
   list.before(box);
   let phase = '', inner = null, gen = 0, S = null;
+  let st = U.init(); // the pure state machine (uninstall-state.js)
+  let snap = null; // ticks of the checklist, kept while the panel is away: { last, ticks: Map(item id -> checked) }
 
   const btn = (label, cls, fn) => { const b = el('button', 'ubtn ' + (cls || ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; };
   // a tick box whose check draws itself
@@ -139,7 +152,9 @@
         M && M.enter(box, { y: -8, dur: 0.4 });
       }
       M && M.enter(next, { y: 10, dur: 0.4 });
-      box.querySelector('.ubtn.dflt')?.focus({ preventScroll: true });
+      // a button gets the keyboard only when the step is waiting for a decision; a running step leaves the search box alone
+      if (['confirm', 'checklist', 'done', 'still', 'error'].includes(phase)) box.querySelector('.ubtn.dflt')?.focus({ preventScroll: true });
+      else if (!box.contains(document.activeElement) && document.activeElement !== q) q.focus({ preventScroll: true });
     };
     if (box.hidden) {
       // the result list steps aside first
@@ -148,20 +163,99 @@
     } else if (inner && inner.isConnected && !off()) M.exit(inner, { y: -6, dur: 0.14 }).then((ok) => ok && apply());
     else apply();
   }
-  function close() {
-    phase = ''; S = null; gen++;
-    inv('uninstall_cancel');
-    const finish = () => { box.hidden = true; box.replaceChildren(); inner = null; list.style.display = ''; M && M.enter(list, { y: 4, dur: 0.3 }); q.focus(); q.dispatchEvent(new Event('input')); };
+  // the panel leaves the screen; `then` runs when the list is back
+  function away(then) {
+    gen++;
+    const finish = () => { box.hidden = true; box.replaceChildren(); inner = null; list.style.display = ''; M && M.enter(list, { y: 4, dur: 0.3 }); then && then(); strip.update(); };
     if (box.hidden || off()) finish(); else M.collapse(box, { dur: 0.26, after: finish });
   }
-  const hide = () => inv('cmd_toggle');
+  // the explicit Close / Cancel: the backend job is dropped too (a running uninstaller is only no longer waited for)
+  function close() {
+    phase = ''; S = null; snap = null;
+    st = U.reduce(st, { type: 'close' });
+    inv('uninstall_cancel');
+    away(() => { q.focus(); q.dispatchEvent(new Event('input')); });
+  }
+  // typing / Esc / the Hide button: the panel steps aside and the job goes on in the backend; the strip takes over
+  function leave(kind) {
+    if (!st.takeover) return;
+    if (S && S.picks && st.last) snap = { last: st.last, ticks: new Map(S.picks.filter((p) => !p.gone).map((p) => [p.it.id, p.cb.input.checked])) };
+    const was = st.job;
+    st = U.reduce(st, { type: kind || 'typing' });
+    if (!st.job && was) inv('uninstall_cancel'); // a dismissed summary / error: nothing is left to come back to
+    phase = '';
+    away(kind === 'typing' ? null : () => q.focus({ preventScroll: true }));
+  }
+  // the panel comes back where it was: redrawn from the last backend state, the ticks restored
+  function focusPanel() {
+    if (!st.job) return;
+    st = U.reduce(st, { type: 'focus' });
+    if (st.last) draw(st.last);
+    strip.update();
+  }
+  const hide = () => leave('esc'); // the "Hide" button of the running step: back to searching, the strip stays
+
+  // ---- the status strip under the results ----
+  const strip = (() => {
+    const e = el('div', 'u-strip'); e.hidden = true; e.setAttribute('role', 'button'); e.tabIndex = -1;
+    const ico = el('span', 'u-sico'), txt = el('span', 'u-stxt'), name = el('b', 'u-sname'), msg = el('span', 'u-smsg'), num = el('b', 'tnum u-snum'), tip = el('kbd', null, 'Ctrl+U');
+    txt.append(name, msg, num);
+    e.append(ico, txt, tip, bar0());
+    list.after(e);
+    e.addEventListener('mousedown', (ev) => ev.preventDefault()); // keep the caret in the search box
+    e.addEventListener('click', focusPanel);
+    let shown = false, kind = '', phaseNow = '';
+    const spinner = () => SVG('<circle cx="8" cy="8" r="6" class="u-sp"/>', 'u-spin');
+    const check = () => SVG('<circle cx="8" cy="8" r="6.5"/><path d="M5 8.4l2.1 2.1L11 6"/>', 'u-ok-s');
+    const warn = () => SVG('<path d="M8 2l6.5 11.5h-13z"/><path d="M8 6.5v3.2M8 11.6v.1"/>', 'u-warn-s');
+    function words(d, last) {
+      const k = { running: L.sRunning, scanning: L.sScanning, deleting: L.sDeleting, admin: L.sAdmin, checklist: L.sReview, done: L.sDone, still: L.sStill, error: L.sError }[d.phase];
+      const n = d.phase === 'scanning' ? last.found || 0 : d.phase === 'checklist' ? (last.items || []).length : null;
+      return [t(k), n];
+    }
+    function update() {
+      const d = U.strip(st);
+      if (!d) {
+        if (shown) { shown = false; if (off()) e.hidden = true; else M.exit(e, { y: 6, dur: 0.18, hide: true }); }
+        return;
+      }
+      const [m, n] = words(d, st.last || {});
+      name.textContent = d.name;
+      const newPhase = d.phase !== phaseNow;
+      if (newPhase) {
+        const was = phaseNow;
+        phaseNow = d.phase;
+        msg.textContent = m;
+        const fresh = d.kind === 'busy' ? spinner() : d.phase === 'error' || d.phase === 'still' ? warn() : check();
+        ico.replaceChildren(fresh);
+        e.dataset.kind = d.kind; e.dataset.phase = d.phase;
+        if (was && !off()) { // the strip changes meaning: the label slides, a finished step pops
+          M.enter(txt, { y: 4, dur: 0.3 });
+          if (d.kind === 'ready') { e.classList.remove('pop'); void e.offsetWidth; e.classList.add('pop'); }
+        }
+      }
+      e.title = t(L.stripTip);
+      if (n == null) { num.textContent = ''; delete num.dataset.v; } else glide(num, n);
+      if (!shown) {
+        shown = true;
+        e.hidden = false;
+        if (!off()) M.enter(e, { y: 8, dur: 0.4 });
+      }
+      kind = d.kind;
+    }
+    const api = { el: e, update, get shown() { return shown; }, get kind() { return kind; } };
+    return api;
+  })();
+  function bar0() { const b = el('div', 'uprog u-sbar'); b.append(el('i')); return b; }
 
   // ---- confirm card ----
   async function open(it) {
+    if (st.job) { focusPanel(); return; } // `u <name>` while a job exists (this app or another one): the same panel, not a second card
     const id = parseInt(it.payload, 10);
     const r = await inv('uninstall_info', { id, name: it.title });
     if (!r || !r.ok) { q.dispatchEvent(new Event('input')); return; }
-    phase = 'confirm'; S = null;
+    st = U.reduce(st, { type: 'open', name: r.name });
+    phase = 'confirm'; S = null; snap = null;
     const card = el('div');
     const silent = tick(false);
     const meta = [r.publisher, r.version, r.sizeKb ? size(r.sizeKb * 1024) : ''].filter(Boolean).join(' · ');
@@ -193,6 +287,8 @@
     const num = el('b', 'tnum'); num.textContent = '0';
     const line = el('div', 'u-note'); line.append(document.createTextNode(t(L.found)), num, document.createTextNode(' · '), stage);
     const page = busyPage(s.name, t(L.scanning), line);
+    const stop = el('div', 'u-btns'); stop.append(btn(t(L.stopScan), '', () => inv('uninstall_cancel')), btn(t(L.hide), 'dflt', hide));
+    page.append(stag(stop, 5));
     page.dataset.scan = '1'; page._num = num; page._stage = stage;
     glide(num, s.found || 0);
     return page;
@@ -301,6 +397,7 @@
       admTxt.textContent = ` ${t(L.adminDel)} (${a.length})`;
       admBtn.disabled = !a.length;
     };
+    if (snap && snap.last === st.last) S.picks.forEach((p) => { if (snap.ticks.has(p.it.id)) p.cb.input.checked = snap.ticks.get(p.it.id); });
     S.groups.forEach(recount);
     S.upd();
     page._foot = foot;
@@ -322,7 +419,7 @@
     }
   }
   function itemDone(p) {
-    if (!S || !p) return;
+    if (!S || !p || !st.takeover) return;
     if (inner && inner._prog) glide(inner._prog._n, p.n || 0, (v) => `${Math.round(v)} / ${p.total || '?'}`);
     const pick = S.picks.find((x) => x.it.path === p.shown && !x.gone);
     if (!pick) return;
@@ -369,13 +466,20 @@
     return page;
   }
 
-  function render(s) {
+  // a backend state arrives: the machine moves, the panel is redrawn only when it is on screen, the strip follows otherwise
+  function ingest(s) {
     if (!s || !s.phase) return;
+    if (s.focus) { st = U.reduce(st, { type: 'server', payload: s }); focusPanel(); return; }
+    st = U.reduce(st, { type: 'server', payload: s });
+    if (st.takeover) draw(s); else strip.update();
+  }
+
+  function draw(s) {
     const prev = phase;
     phase = s.phase;
     switch (s.phase) {
       case 'running': {
-        const b2 = el('div', 'u-btns'); b2.append(btn(t(L.checkAgain), '', () => inv('uninstall_scan')), btn(t(L.hide), 'dflt', hide));
+        const b2 = el('div', 'u-btns'); b2.append(btn(t(L.checkAgain), '', () => inv('uninstall_scan')), btn(t(L.stopWait), '', () => inv('uninstall_cancel')), btn(t(L.hide), 'dflt', hide));
         const page = busyPage(s.name, t(L.running), el('div', 'u-note', t(L.waiting)));
         page.append(stag(b2, 4));
         return go(() => page);
@@ -405,14 +509,22 @@
     }
   }
 
-  T.event.listen('uninstall:state', (e) => render(e.payload));
+  T.event.listen('uninstall:state', (e) => ingest(e.payload));
   T.event.listen('uninstall:item', (e) => itemDone(e.payload));
-  T.event.listen('bar:shown', async () => { const s = await inv('uninstall_state'); if (s && s.phase && s.phase !== phase) render(s); });
+  T.event.listen('uninstall:focus', () => focusPanel());
+  // the bar opened again: whatever happened meanwhile is read from the backend; the panel (if it was up) is still up, otherwise the strip shows
+  T.event.listen('bar:shown', async () => { const s = await inv('uninstall_state'); if (s && s.phase && (s.focus || s.phase !== phase || !st.job)) ingest(s); strip.update(); });
+  // typing in the search box always works: the panel steps aside first (the bar's own handler runs the query)
+  q.addEventListener('input', () => { if (st.takeover) leave('typing'); }, true);
   // while the panel is up it owns the keyboard: Esc closes it (or just hides the bar while something runs), Enter/Tab act on its own buttons
   window.addEventListener('keydown', (e) => {
+    // Ctrl+U: the panel of the running job comes back (nothing else in the bar uses it)
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyU') { e.preventDefault(); e.stopPropagation(); focusPanel(); return; }
     if (box.hidden) return;
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (['running', 'scanning', 'deleting', 'elevating'].includes(phase)) hide(); else close(); }
-    else if (['Enter', 'ArrowUp', 'ArrowDown', 'Tab', 'F4'].includes(e.key) || (e.ctrlKey && e.shiftKey)) e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave('esc'); return; } // only the view: the backend job goes on (Cancel / Close drop it)
+    // a letter typed while a panel button has the keyboard is typing for the search box: leave the panel, put the caret there, the key lands in it
+    if (e.target !== q && U.isTyping(e)) { leave('typing'); q.focus({ preventScroll: true }); return; }
+    if (['Enter', 'ArrowUp', 'ArrowDown', 'Tab', 'F4'].includes(e.key) || (e.ctrlKey && e.shiftKey)) e.stopPropagation();
   }, true);
   window.UninstallUI = { open };
 })();
