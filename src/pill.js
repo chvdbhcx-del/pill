@@ -644,8 +644,9 @@
     const b = battery && battery.has_battery && S.showBattery
       ? `<span class="lp-batt${battery.percent <= 15 && !battery.charging ? ' low' : ''}${battery.charging ? ' chg' : ''}"><i style="--rest:${100 - battery.percent}%"></i><span class="lp-bp">${battery.percent}%</span></span>` : '';
     // three columns (1fr auto 1fr): the time stays on the capsule axis whatever the side slots hold; icon + date left, battery + temperature right
-    const left = (slots.left || (showIcon ? wxIconHtml(wx) : '')) + (S.showDate ? `<span class="lp-date">${esc(dateText(d))}</span>` : '');
-    const right = b + (slots.right || (showDeg ? `<span class="lp-aux">${Math.round(wx.temp)}°</span>` : ''));
+    const awayRight = document.documentElement.dataset.charSide === 'right', icon = showIcon ? wxIconHtml(wx) : ''; // the pet is on the left: the weather icon goes to the right side, away from it
+    const left = (slots.left || (awayRight ? '' : icon)) + (S.showDate ? `<span class="lp-date">${esc(dateText(d))}</span>` : '');
+    const right = (!slots.right && awayRight ? icon : '') + b + (slots.right || (showDeg ? `<span class="lp-aux">${Math.round(wx.temp)}°</span>` : ''));
     const sig = `<span class="lp-l">${left}</span>${S.showTime ? '<span class="lp-time">%T%</span>' : '<span></span>'}<span class="lp-r">${right}</span>`;
     if (sig !== clockSig || !clockTime) {
       // which pieces the side columns hold (weather icon, date, battery, temperature): when that set changes - a switch was flipped, the weather arrived - the old row fades out
@@ -667,6 +668,12 @@
       const ec = document.documentElement.dataset.char === 'legs' ? (document.documentElement.dataset.charSide === 'left' ? '.lp-l' : '.lp-r') : null, eic = !!ec && !lpc.querySelector(ec).children.length;
       lpc.classList.toggle('eic', eic);
       lpc.style.setProperty('--cw', Math.ceil(Math.max(cw(lpc.querySelector('.lp-l')), cw(lpc.querySelector('.lp-r')), eic ? 30 : 0)) + 'px');
+      // the pet's own side column, when empty, collapses (the pet stands where it would be): no hole between the pet and the time
+      const pc = S.pet && S.pet !== 'none' ? (document.documentElement.dataset.charSide === 'right' ? '.lp-l' : '.lp-r') : null;
+      const pcl = pc === '.lp-l' && !lpc.querySelector(pc).children.length, pcr = pc === '.lp-r' && !lpc.querySelector(pc).children.length;
+      lpc.style.setProperty('--cwl', pcl ? '0px' : 'var(--cw)');
+      lpc.style.setProperty('--cwr', pcr ? '0px' : 'var(--cw)');
+      lpc.classList.toggle('pcl', pcl); lpc.classList.toggle('pcr', pcr);
       sizeLive();
       document.dispatchEvent(new Event('pill:live-changed')); // characters.js re-measures where the eyes stand
     } else if (clockTime) setTime(clockTime, tt, !S.showSeconds);
@@ -1162,7 +1169,7 @@
     },
     collapse: (how) => doCollapse(true, how === 'click'),
     openCommandBar: () => invoke('cmd_toggle'),
-    relayoutLive() { if (hidden || cardLive) return; sizeLive(); if (Pill.state === 'collapsed') retarget(false, null, 'resize'); }, // the live row's CSS changed (characters.css keeps a slot for the legs' eyes): re-measure its fixed width and resize the capsule to it
+    relayoutLive() { if (hidden || cardLive) return; if (liveKey === 'clock') { clockSig = ''; renderClock(); } sizeLive(); if (Pill.state === 'collapsed') retarget(false, null, 'resize'); }, // the live row's CSS changed (characters.css keeps a slot for the legs' eyes): re-measure its fixed width and resize the capsule to it
     reserve(px) { px = Math.max(0, Math.round(+px || 0)); if (px === petRes) return; petRes = px; if (Pill.state === 'collapsed' && !hidden) retarget(false, null, 'resize'); }, // widen the collapsed capsule by px css px (a pet lives there); animated like any content resize
   };
   // quiet hours: what was queued before the window began is dropped too (checked every 20 s)
@@ -1204,7 +1211,8 @@
     hidden = true; clearTimeout(liveT); clearTimeout(batT); clearTimeout(wxT); LQ.want = 0; LQ.inn = 0; LQ.innV = 0; rafPause(); syncPaused(); cancelAway(); dropCards(); hovering = false;
     forceCollapse();
   });
-  window.addEventListener('load', () => { if (wx) { invalidateLive(); renderLive(); } }); // tab-weather.js (PillWxIcon) is loaded by now: redraw the clock row with the coloured icon
+  window.addEventListener('load', () => { if (wx) { invalidateLive(); renderLive(); } });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (liveKey === 'clock') { clockSig = ''; renderClock(); } }); // the clock row's width was measured with the fallback font: measure again once the UI font is in // tab-weather.js (PillWxIcon) is loaded by now: redraw the clock row with the coloured icon
   on('pill:show', () => { hidden = false; syncPaused(); rafWake(); wxOnShow(); away = false; body.classList.remove('away'); retarget(true); renderLive(); pollBattery(); scheduleAway(); next(); });
   on('settings:changed', (p) => {
     Object.assign(S, p); applySettings(); checkLang();

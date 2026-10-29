@@ -5,7 +5,7 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 ## [Unreleased]
 
 ### Fixed
-- Folded island with the legs' eyes: when the eyes' side of the clock row is empty (for example the temperature is switched off), the eyes now stand in that column right next to the time instead of staying at the far edge behind an empty gap, and the island is narrower by that gap.
+- Folded island spacing: the pet, the weather icon, the time and the legs' eyes now stand at even distances. When the pet is on the left the weather icon moves to the right side (and the other way round), the eyes stand in their side column next to the time when it is empty, an empty column next to the pet collapses, and the clock row is measured again once the typeface and the character are in (the width could stay stale).
 
 ## [0.5.0] - 2026-10-29
 

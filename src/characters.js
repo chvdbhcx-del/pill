@@ -197,13 +197,13 @@
     }
     if (legs) { // the legs stand right under the eyes (one character); before the eyes are measured: the middle of the island
       const lr0 = eyeCx || { w: 0, l: 0, r: 0 }, left0 = eyesSide() === 'left';
-      let lx = lr0.c != null ? lr0.c : lr0.w > 1 ? (left0 ? lr0.l + 15 * s : lr0.r - 15 * s) : W / 2;
+      let lx = lr0.c != null ? lr0.c : lr0.w > 1 ? (left0 ? lr0.l + 18 * s : lr0.r - 18 * s) : W / 2;
       lx = clamp(lx, 14 * s, Math.max(14 * s, W - 14 * s));
       legs.g.setAttribute('transform', `translate(${n2(lx)} ${n2(H - 0.2)}) scale(${n2(s)})`);
     }
     if (eyes) { // in the slot that characters.css keeps free on the pet-free side of the live row; stays in the capsule band while the island opens
       const lr = eyeCx || { w: 0, l: 0, r: 0 }, left = eyesSide() === 'left';
-      let cx = lr.c != null ? lr.c : lr.w > 1 ? (left ? lr.l + 15 * s : lr.r - 15 * s) : (left ? 18 * s : W - 18 * s);
+      let cx = lr.c != null ? lr.c : lr.w > 1 ? (left ? lr.l + 18 * s : lr.r - 18 * s) : (left ? 18 * s : W - 18 * s);
       cx = clamp(cx, 14 * s, Math.max(14 * s, W - 14 * s));
       const cy = Math.min(H, 30 * s) / 2;
       eyes.g.setAttribute('transform', `translate(${n2(cx)} ${n2(cy)}) scale(${n2(s)})`);

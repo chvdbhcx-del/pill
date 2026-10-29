@@ -45,7 +45,7 @@ button { font-family: inherit; }
 .lp svg { flex: none; }
 .lp-time { font-size: var(--fs-md); letter-spacing: 0.01em; display: inline-flex; align-items: center; }
 /* [icon | time | temp]: equal side columns keep the time on the capsule axis; the side items sit against the time (icon right-aligned, temp left-aligned) so both gaps are exactly the column gap */
-.lp-clock { display: grid; grid-template-columns: var(--cw, auto) auto var(--cw, auto); column-gap: var(--sp-4); align-items: center; padding: 0 var(--sp-4) 2px; min-width: 0; }   /* min-width 0: pill.js sets --lpw 172 for the clock, which stretched the grid into a loose 172 px strip; the capsule is now exactly content (~145 px, the original is 143) */
+.lp-clock { display: grid; grid-template-columns: var(--cwl, var(--cw, auto)) auto var(--cwr, var(--cw, auto)); column-gap: var(--sp-4); align-items: center; padding: 0 var(--sp-4) 2px; min-width: 0; }   /* min-width 0: pill.js sets --lpw 172 for the clock, which stretched the grid into a loose 172 px strip; the capsule is now exactly content (~145 px, the original is 143) */
 .lp-l, .lp-r { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
 .lp-l { justify-content: flex-end; } .lp-r { justify-content: flex-start; }
 .lp-date { font-size: var(--fs-sm); font-weight: var(--fw-semi); line-height: 16px; color: var(--text); opacity: .6; }
