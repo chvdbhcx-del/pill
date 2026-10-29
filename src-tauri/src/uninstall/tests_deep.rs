@@ -285,8 +285,8 @@ fn deep_file_scan_tiers_and_admin_flags() {
         (r"pf\foo editor", c, true),
         (r"u\appdata\roaming\foo editor", c, false),
         (r"ou\appdata\local\fooeditor", c, true),
-        (r"d\games\foo editor", c, false),
-        (r"d\foo-editor", c, false),
+        (r"d\games\foo editor", pr, false), // the top of a drive can hold the user's own work: Probable only
+        (r"d\foo-editor", pr, false),
         (r"pd\acme", c, true),
         (r"u\appdata\localLow\foo editor".to_lowercase().as_str().to_string().leak(), c, false),
         (r"u\documents\foo editor notes", pr, false),
@@ -691,16 +691,16 @@ fn request_wire_format() {
 
 // ---------------------------------------------------------------- deleting: ordering, backups, refusals
 
-struct HkcuKey(String);
+pub(super) struct HkcuKey(pub(super) String);
 impl Drop for HkcuKey {
     fn drop(&mut self) {
         let _ = std::process::Command::new("reg").args(["delete", &format!(r"HKCU\{}", self.0), "/f"]).creation_flags(NO_WINDOW).output();
     }
 }
-fn hkcu_exists(sub: &str) -> bool {
+pub(super) fn hkcu_exists(sub: &str) -> bool {
     std::process::Command::new("reg").args(["query", &format!(r"HKCU\{sub}")]).creation_flags(NO_WINDOW).output().is_ok_and(|o| o.status.success())
 }
-fn reg_add(sub: &str, args: &[&str]) {
+pub(super) fn reg_add(sub: &str, args: &[&str]) {
     let mut a = vec!["add".to_string(), format!(r"HKCU\{sub}")];
     a.extend(args.iter().map(|s| s.to_string()));
     a.push("/f".into());
@@ -783,9 +783,9 @@ fn reg_dump_is_regedit_compatible_for_values_too() {
     let txt = reg_dump(&[(Hive::Hkcu, sub.clone(), Some("one".into()))]).unwrap();
     assert!(txt.contains("\"One\"=\"first\"") && !txt.contains("second"), "{txt}");
     assert!(reg_dump(&[(Hive::Hkcu, format!(r"Software\{name}\nope"), None)]).is_err());
-    assert_eq!(reg_line("", 1, &[b'a', 0, 0, 0]), "@=\"a\"\r\n");
-    assert_eq!(reg_line("n", 3, &[1, 2]), "\"n\"=hex:01,02\r\n");
-    assert_eq!(reg_line("n", 7, &[0, 0]), "\"n\"=hex(7):00,00\r\n");
+    assert_eq!(reg_line("", 1, &[b'a', 0, 0, 0]).unwrap(), "@=\"a\"\r\n");
+    assert_eq!(reg_line("n", 3, &[1, 2]).unwrap(), "\"n\"=hex:01,02\r\n");
+    assert_eq!(reg_line("n", 7, &[0, 0]).unwrap(), "\"n\"=hex(7):00,00\r\n");
 }
 
 #[test]

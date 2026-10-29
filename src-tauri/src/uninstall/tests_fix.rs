@@ -1,6 +1,6 @@
 // Round-3 hardening tests: every finding of the security review has a test here that fails without its fix.
 use super::tests::{prog, sv, Tmp};
-use super::tests_deep::{denv, foo, listener, reg_fixture, FakeReg, G, OTHER_G, TOKEN};
+use super::tests_deep::{denv, foo, hkcu_exists, listener, reg_add, reg_fixture, FakeReg, HkcuKey, G, OTHER_G, TOKEN};
 use std::io::{BufReader, Write};
 use std::net::TcpStream;
 use std::os::windows::fs::OpenOptionsExt;
@@ -453,4 +453,318 @@ fn the_reader_keeps_a_half_received_line_across_timeouts() {
     }
     assert_eq!(got, Some(json!({ "hb": 1 })));
     h.join().unwrap();
+}
+
+// ---------------------------------------------------------------- 4. the Recycle Bin never turns into a permanent delete
+
+#[test]
+fn recycle_decisions_fail_closed() {
+    let normal = BinPolicy { nuke: false, max_bytes: None, volume_bytes: 1000 * 1_000_000 };
+    assert!(bin_decision(10_000, &normal, 100, true).is_ok());
+    // not a fixed drive, a path longer than MAX_PATH, "remove immediately", bigger than the configured bin, bigger than the default tenth of the volume
+    assert!(bin_decision(1, &normal, 100, false).unwrap_err().contains("fixed"));
+    assert!(bin_decision(1, &normal, 260, true).unwrap_err().contains("259"));
+    assert!(bin_decision(1, &normal, 259, true).is_ok());
+    assert!(bin_decision(1, &BinPolicy { nuke: true, ..normal }, 100, true).unwrap_err().contains("immediately"));
+    assert!(bin_decision(51_000_000, &BinPolicy { max_bytes: Some(50_000_000), ..normal }, 100, true).unwrap_err().contains("not recycled"));
+    assert!(bin_decision(50_000_000, &BinPolicy { max_bytes: Some(50_000_000), ..normal }, 100, true).is_ok());
+    assert!(bin_decision(101_000_000, &normal, 100, true).is_err(), "a tenth of the volume is the default capacity");
+    // every refusal says nothing was deleted
+    for e in [bin_decision(1, &normal, 100, false), bin_decision(1, &normal, 300, true), bin_decision(1, &BinPolicy { nuke: true, ..normal }, 100, true)] {
+        assert!(e.unwrap_err().contains("nothing deleted"));
+    }
+    // the real policy of this PC's temp drive is readable
+    let t = Tmp::new();
+    assert!(bin_policy(&t.0).volume_bytes > 0);
+}
+
+#[test]
+fn recycle_refuses_long_paths_links_and_other_drives_without_touching_anything() {
+    let t = Tmp::new();
+    let long = t.0.join("a".repeat(150)).join("b".repeat(150));
+    std::fs::create_dir_all(&long).unwrap_or(());
+    if long.exists() {
+        assert!(recycle(&long).unwrap_err().contains("259"), "long path");
+        assert!(long.exists());
+    }
+    let target = t.dir(r"outside\Precious");
+    t.file(r"outside\Precious\keep.txt", 3);
+    let link = t.0.join("link");
+    let st = std::process::Command::new("cmd").args(["/c", "mklink", "/J"]).arg(&link).arg(&target).creation_flags(NO_WINDOW).output().unwrap();
+    assert!(st.status.success());
+    assert!(recycle(&link).is_err() && recycle(&link.join("keep.txt")).is_err());
+    let _ = std::process::Command::new("cmd").args(["/c", "rmdir"]).arg(&link).creation_flags(NO_WINDOW).output();
+    assert!(target.join("keep.txt").exists());
+    assert!(recycle(Path::new(r"Q:\nothing\here")).is_err());
+}
+
+// ---------------------------------------------------------------- 5. over-eager Certain
+
+#[test]
+fn a_folder_at_the_top_of_a_drive_is_only_probable() {
+    let t = Tmp::new();
+    let e = denv(&t);
+    let p = prog("Blender", "Blender Foundation", "");
+    t.dir(r"d\Blender");
+    t.dir(r"d\Projects\Blender");
+    t.dir(r"d\Blender Foundation");
+    let found = scan_fs(&p, &e, false, &|_| None, &mut Budget::new(10_000, 10));
+    assert_eq!(found.len(), 3, "{found:?}");
+    assert!(found.iter().all(|c| c.tier == Tier::Probable && !c.ticked), "{found:?}");
+}
+
+#[test]
+fn a_product_family_key_is_probable_unless_every_subkey_is_this_version() {
+    let t = Tmp::new();
+    let e = denv(&t);
+    let mut p = prog("Python 3.12.1 (64-bit)", "Python Software Foundation", "");
+    p.version = "3.12.1150.0".into();
+    let mut r = FakeReg::default();
+    let u = Hive::Hkcu;
+    r.key(u, r"Software\Python\PythonCore\3.11\InstallPath", &[]);
+    r.key(u, r"Software\Python\PythonCore\3.12\InstallPath", &[]);
+    let k = What::Key(u, r"Software\Python".into());
+    assert_eq!(guard_cand(&k, &p, &e, &r).map(|x| x.0), Ok(Tier::Probable), "other versions live in it");
+    // only this version (and structural names): Certain
+    let mut r2 = FakeReg::default();
+    r2.key(u, r"Software\Python\PythonCore\3.12\InstallPath", &[]);
+    assert_eq!(guard_cand(&k, &p, &e, &r2).map(|x| x.0), Ok(Tier::Certain));
+    let mut r3 = FakeReg::default();
+    r3.key(u, r"Software\Python\Settings", &[]);
+    assert_eq!(guard_cand(&k, &p, &e, &r3).map(|x| x.0), Ok(Tier::Certain));
+    // under a publisher key too
+    let mut r4 = FakeReg::default();
+    let mut p2 = p.clone();
+    p2.publisher = "Acme Inc".into();
+    r4.key(u, r"Software\Acme\Python\3.9", &[]);
+    assert_eq!(guard_cand(&What::Key(u, r"Software\Acme\Python".into()), &p2, &e, &r4).map(|x| x.0), Ok(Tier::Probable));
+}
+
+#[test]
+fn a_publisher_folder_read_from_a_cut_listing_is_never_sole() {
+    let t = Tmp::new();
+    let e = denv(&t);
+    let p = foo();
+    t.dir(r"u\AppData\Roaming\Acme\Foo Editor");
+    t.dir(r"u\AppData\Roaming\Acme\Zed Other App"); // sorts after the app folder: a cut listing shows only the app
+    for n in 1..120 {
+        let mut b = Budget::new(n, 10);
+        let found = scan_fs(&p, &e, false, &|_| None, &mut b);
+        assert!(!found.iter().any(|c| c.note == "publisher folder holding only this app"), "budget {n}: {found:?}");
+    }
+    // sanity: with a real sole folder and enough budget it is Certain
+    let t2 = Tmp::new();
+    let e2 = denv(&t2);
+    t2.dir(r"u\AppData\Roaming\Acme\Foo Editor");
+    let found = scan_fs(&p, &e2, false, &|_| None, &mut Budget::new(100_000, 10));
+    assert!(found.iter().any(|c| c.note == "publisher folder holding only this app" && c.tier == Tier::Certain), "{found:?}");
+    // the registry reader's cap: a listing at the cap is not "sole"
+    struct Capped;
+    impl Reg for Capped {
+        fn subkeys(&self, _: Hive, sub: &str) -> Vec<String> {
+            if sub.ends_with("Acme") { (0..20_000).map(|i| if i == 0 { "Foo Editor".to_string() } else { format!("X{i}") }).collect() } else { vec![] }
+        }
+        fn values(&self, _: Hive, _: &str) -> Vals {
+            Vals::new()
+        }
+        fn exists(&self, _: Hive, _: &str) -> bool {
+            true
+        }
+    }
+    assert!(guard_cand(&What::Key(Hive::Hkcu, r"Software\Acme".into()), &p, &e, &Capped).is_err());
+}
+
+#[test]
+fn doubtful_install_locations_are_probable() {
+    let t = Tmp::new();
+    let mut e = denv(&t);
+    // a one-word folder of its own at the top of a drive that is not named like the app
+    let top = t.dir(r"d\Games");
+    let mut p = prog("Foo Editor", "Acme", &top.to_string_lossy());
+    e.drives = vec![t.0.join("d")];
+    let found = scan_fs(&p, &e, false, &|_| None, &mut Budget::new(10_000, 10));
+    // generic names never make it as an install folder at all; use a non-generic one-word folder
+    assert!(found.iter().all(|c| c.tier != Tier::Certain || !c.shown.ends_with("Games")));
+    let top = t.dir(r"d\Stuff");
+    p.location = top.to_string_lossy().into_owned();
+    let found = scan_fs(&p, &e, false, &|_| None, &mut Budget::new(10_000, 10));
+    let c = found.iter().find(|c| c.shown.ends_with("Stuff")).expect("listed");
+    assert!(c.tier == Tier::Probable && !c.ticked && c.note.contains("top of a drive"), "{c:?}");
+    // named like the app at the top of a drive is still the app's own install folder... but drive-level matches stay Probable by the other rule
+    // a folder that holds several programs
+    let multi = t.dir(r"pf\Suite");
+    for s in ["a", "b", "c"] {
+        t.file(&format!(r"pf\Suite\{s}\{s}.exe"), 3);
+    }
+    p.location = multi.to_string_lossy().into_owned();
+    let found = scan_fs(&p, &e, false, &|_| None, &mut Budget::new(10_000, 10));
+    let c = found.iter().find(|c| c.shown.ends_with("Suite")).expect("listed");
+    assert!(c.tier == Tier::Probable && c.note.contains("several programs"), "{c:?}");
+    // an ordinary Program Files install stays Certain
+    let ok = t.dir(r"pf\Foo Editor");
+    t.file(r"pf\Foo Editor\foo.exe", 3);
+    p.location = ok.to_string_lossy().into_owned();
+    let found = scan_fs(&p, &e, false, &|_| None, &mut Budget::new(10_000, 10));
+    assert!(found.iter().any(|c| c.shown.ends_with(r"pf\Foo Editor") && c.tier == Tier::Certain && c.note == "install folder"), "{found:?}");
+    // shared with another registered location: Probable (round-2 rule, still there)
+    assert!(scan_fs(&p, &e, true, &|_| None, &mut Budget::new(10_000, 10)).iter().any(|c| c.tier == Tier::Probable && c.note.contains("shared")));
+}
+
+// ---------------------------------------------------------------- 6. delete order
+
+#[test]
+fn deletes_run_tasks_and_services_first_and_keys_last() {
+    let mix = [
+        What::Key(Hive::Hkcu, "k".into()),
+        What::Value(Hive::Hkcu, "k".into(), "v".into()),
+        What::Fs(PathBuf::from(r"C:\x\y")),
+        What::Service("S".into()),
+        What::Task(r"\T".into()),
+    ];
+    let mut sorted: Vec<&What> = mix.iter().collect();
+    sorted.sort_by_key(|w| delete_rank(w));
+    let order: Vec<&str> = sorted.iter().map(|w| match w { What::Task(_) => "task", What::Service(_) => "service", What::Fs(_) => "fs", What::Value(..) => "value", _ => "key" }).collect();
+    assert_eq!(order, ["task", "service", "fs", "value", "key"]);
+}
+
+#[test]
+fn a_service_that_is_still_running_or_only_marked_is_not_reported_deleted() {
+    assert!(service_verdict(SvcState::Stopped, false).is_ok());
+    assert!(service_verdict(SvcState::Missing, false).is_ok());
+    assert!(service_verdict(SvcState::Running, false).unwrap_err().contains("still running"));
+    assert!(service_verdict(SvcState::Stopped, true).unwrap_err().contains("marked for deletion"));
+    assert_eq!(parse_sc_state("SERVICE_NAME: x\r\n        TYPE               : 10  WIN32_OWN_PROCESS\r\n        STATE              : 1  STOPPED\r\n"), SvcState::Stopped);
+    assert_eq!(parse_sc_state("        STATE              : 4  RUNNING\r\n"), SvcState::Running);
+    assert_eq!(parse_sc_state("        STATE              : 3  STOP_PENDING\r\n"), SvcState::Running, "pending is not stopped");
+    assert_eq!(parse_sc_state("[SC] EnumQueryServicesStatus:OpenService FAILED 1060:\r\nThe specified service does not exist as an installed service."), SvcState::Missing);
+    assert_eq!(parse_sc_state("garbage"), SvcState::Running, "unclear means do not claim it stopped");
+}
+
+#[test]
+fn files_values_and_keys_are_removed_in_that_order() {
+    let t = Tmp::new();
+    let e = denv(&t);
+    let name = format!("PillFixOrder{}", std::process::id());
+    let sub = format!(r"Software\{name}");
+    let _g = HkcuKey(sub.clone());
+    reg_add(&sub, &["/v", "V", "/d", "1"]);
+    let dir = t.dir(&format!(r"u\AppData\Local\{name}"));
+    let p = prog(&name, "", "");
+    let key = Cand::new(What::Key(Hive::Hkcu, sub.clone()), Tier::Certain, "x", 0);
+    let fsc = Cand::new(What::Fs(dir), Tier::Certain, "x", 0);
+    let order = std::cell::RefCell::new(Vec::<String>::new());
+    let bk = t.dir("bk");
+    let r = delete_cands(&p, &[&key, &fsc], &e, &RealReg, "7", false, &|n, b| file_store(&bk, "o", n, b), &|s, ok, _, _, _| order.borrow_mut().push(format!("{ok}:{}", if s.starts_with("HKCU") { "key" } else { "fs" })));
+    assert_eq!((r.done.len(), r.failed.len()), (2, 0), "{:?}", r.failed);
+    assert_eq!(*order.borrow(), vec!["true:fs", "true:key"]);
+}
+
+// ---------------------------------------------------------------- 8. no panic leaves the panel spinning
+
+#[test]
+fn a_panicking_worker_body_is_caught_and_reported() {
+    assert_eq!(catch_body(|| {}), None);
+    assert_eq!(catch_body(|| panic!("boom")).as_deref(), Some("boom"));
+    assert_eq!(catch_body(|| panic!("{}", String::from("formatted"))).as_deref(), Some("formatted"));
+    assert_eq!(catch_body(|| std::panic::panic_any(5u8)).as_deref(), Some("unknown error"));
+    // every thread of the flow goes through spawn_guarded
+    let src = include_str!("../uninstall.rs");
+    let n = src.lines().filter(|l| l.contains("std::thread::spawn(move ||") && !l.trim_start().starts_with("//")).count();
+    assert_eq!(n, 2, "only the output reader of ps() and spawn_guarded itself spawn a bare thread");
+}
+
+// ---------------------------------------------------------------- 9. backups: complete or nothing
+
+#[test]
+fn a_backup_that_hits_a_cap_fails_instead_of_being_partial() {
+    let pid = std::process::id();
+    let base = format!(r"Software\PillFixDump{pid}");
+    let _g = HkcuKey(base.clone());
+    reg_add(&format!(r"{base}\a\b\c\d\e\f"), &["/v", "Deep", "/d", "x"]);
+    for i in 0..5 {
+        reg_add(&format!(r"{base}\wide\k{i}"), &["/v", "V", "/d", "y"]);
+    }
+    let item = [(Hive::Hkcu, base.clone(), None)];
+    assert!(reg_dump(&item).is_ok());
+    let shallow = DumpLimits { depth: 4, ..DumpLimits::default() };
+    assert!(reg_dump_with(&item, &shallow).unwrap_err().contains("deeper than 4"));
+    let narrow = DumpLimits { subkeys: 3, ..DumpLimits::default() };
+    assert!(reg_dump_with(&[(Hive::Hkcu, format!(r"{base}\wide"), None)], &narrow).unwrap_err().contains("more than 3 subkeys"));
+    let small = DumpLimits { budget: 2, ..DumpLimits::default() };
+    assert!(reg_dump_with(&item, &small).is_err());
+    // a 20-level key is fine with the real limits (the old fixed depth of 16 silently dropped everything below it)
+    let deep = (0..20).map(|i| format!("L{i}")).collect::<Vec<_>>().join(r"\");
+    reg_add(&format!(r"{base}\{deep}"), &["/v", "Bottom", "/d", "z"]);
+    let txt = reg_dump(&item).unwrap();
+    assert!(txt.contains("\"Bottom\"=\"z\""), "the deepest value is in the backup");
+    // a key that does not exist, and a key name that cannot be written
+    assert!(reg_dump(&[(Hive::Hkcu, format!(r"{base}\nope"), None)]).is_err());
+    assert!(reg_dump(&[(Hive::Hkcu, format!(r"{base}\bad[1]"), None)]).is_err());
+    assert!(verify_dump("Windows Registry Editor Version 5.00\r\n\r\n", &item).is_err());
+    assert!(verify_dump("nothing", &item).is_err());
+}
+
+#[test]
+fn line_breaks_quotes_and_backslashes_survive_a_backup_and_restore() {
+    let t = Tmp::new();
+    let pid = std::process::id();
+    let sub = format!(r"Software\PillFixEsc{pid}");
+    let _g = HkcuKey(sub.clone());
+    // build the value through regedit's own importer: "a\r\n\"b\" \\ c" as exact hex(1) bytes (with the terminating NUL)
+    let text = "a\r\n\"b\" \\ c";
+    let bytes: Vec<String> = text.encode_utf16().chain(Some(0)).flat_map(u16::to_le_bytes).map(|b| format!("{b:02x}")).collect();
+    let src = format!("Windows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\{sub}]\r\n\"Multi\"=hex(1):{}\r\n\"Plain\"=\"x\\\\y\"\r\n", bytes.join(","));
+    let f = t.0.join("seed.reg");
+    std::fs::write(&f, reg_bytes(&src)).unwrap();
+    let imp = std::process::Command::new(system_exe("reg.exe")).arg("import").arg(&f).creation_flags(NO_WINDOW).output().unwrap();
+    assert!(imp.status.success(), "{}", String::from_utf8_lossy(&imp.stderr));
+    let before = Key::open(HKEY_CURRENT_USER, &sub, KEY_READ).unwrap().raw_values().unwrap();
+    assert_eq!(before.len(), 2);
+    let dump = reg_dump(&[(Hive::Hkcu, sub.clone(), None)]).unwrap();
+    assert!(dump.contains("hex(1):") && !dump.contains("a\r\nb"), "the line break is written as hex, never as a raw newline: {dump}");
+    assert!(dump.contains(r#""Plain"="x\\y""#));
+    // delete, import the backup, read again: identical bytes
+    assert_eq!(unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, PCWSTR(sub.encode_utf16().chain(Some(0)).collect::<Vec<u16>>().as_ptr())) }, OK);
+    let back = t.0.join("back.reg");
+    std::fs::write(&back, reg_bytes(&dump)).unwrap();
+    let imp = std::process::Command::new(system_exe("reg.exe")).arg("import").arg(&back).creation_flags(NO_WINDOW).output().unwrap();
+    assert!(imp.status.success(), "{}", String::from_utf8_lossy(&imp.stderr));
+    let mut after = Key::open(HKEY_CURRENT_USER, &sub, KEY_READ).unwrap().raw_values().unwrap();
+    let mut before = before;
+    before.sort();
+    after.sort();
+    assert_eq!(before, after);
+    // names that cannot be written are refused, never mangled
+    assert!(reg_line("a\nb", 1, &[0, 0]).is_err());
+    assert!(reg_line("ok", 1, &[b'a', 0, 0, 0]).unwrap().contains("\"ok\"=\"a\""));
+    assert!(reg_line("ok", 1, &[b'a', 0, b'\n', 0, 0, 0]).unwrap().contains("hex(1):"));
+}
+
+#[test]
+fn backups_are_tracked_per_item_and_read_back() {
+    let t = Tmp::new();
+    let e = denv(&t);
+    let pid = std::process::id();
+    let name = format!("PillFixItem{pid}");
+    let publisher = format!("PillFixPub{pid}");
+    let good = format!(r"Software\{name}");
+    let bad = format!(r"Software\{publisher}\{name}");
+    let _g1 = HkcuKey(good.clone());
+    let _g2 = HkcuKey(format!(r"Software\{publisher}"));
+    reg_add(&good, &["/v", "V", "/d", "1"]);
+    reg_add(&format!(r"{bad}\sub[x]"), &["/v", "V", "/d", "1"]); // a key name a .reg file cannot carry: this item has no backup
+    let p = prog(&name, &publisher, "");
+    let a = Cand::new(What::Key(Hive::Hkcu, good.clone()), Tier::Certain, "x", 0);
+    let b = Cand::new(What::Key(Hive::Hkcu, bad.clone()), Tier::Certain, "x", 0);
+    let bk = t.dir("bk");
+    let r = delete_cands(&p, &[&a, &b], &e, &RealReg, "8", false, &|n, by| file_store(&bk, "i", n, by), &|_, _, _, _, _| {});
+    assert_eq!(r.done.len(), 1, "{:?}", r.failed);
+    assert!(r.done[0].1.ends_with(&name) && r.failed.len() == 1 && r.failed[0].1.contains("no backup of this item"), "{:?} {:?}", r.done, r.failed);
+    assert!(!hkcu_exists(&good) && hkcu_exists(&bad), "only the backed-up item was deleted");
+    let reg = std::fs::read(r.backup.unwrap()).unwrap();
+    assert!(String::from_utf16_lossy(&reg.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect::<Vec<_>>()).contains(&name));
+    // a store that reports success but wrote something else is an error
+    assert!(file_store(&bk, "z", "reg", b"").unwrap_err().contains("empty"));
+    let p2 = file_store(&bk, "z", "reg", b"abc").unwrap();
+    assert_eq!(std::fs::read(p2).unwrap(), b"abc");
 }

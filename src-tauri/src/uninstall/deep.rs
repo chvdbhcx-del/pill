@@ -7,6 +7,7 @@ pub const N_INSIDE: &str = "inside the install folder";
 pub const N_NAME: &str = "named like the app";
 pub const N_SEQ: &str = "contains the app's full name";
 pub const N_PUB: &str = "named like the publisher";
+const N_FAMILY: &str = "key shared with other versions of the product";
 const N_REG_PUB_ONLY: &str = "publisher key holding only this app";
 const N_REG_UNDER_PUB: &str = "key under the publisher";
 const N_DEAD_UNINSTALL: &str = "uninstall entry of this product, its uninstaller is gone";
@@ -221,8 +222,24 @@ fn typelib_into(h: Hive, sub: &str, install: Option<&Path>, reg: &dyn Reg) -> bo
     })
 }
 
+/// `3.12` / `3.12.1`: a version-looking key name.
+fn version_like(s: &str) -> bool {
+    s.chars().next().is_some_and(|c| c.is_ascii_digit()) && s.chars().all(|c| c.is_ascii_digit() || c == '.') && s.contains('.')
+}
+
+/// A key found only by the product's name that also holds other versions' subkeys (`Software\Python\PythonCore\3.11`) is a product FAMILY key, shared
+/// with installs that are not being removed.
+fn family_shared(h: Hive, sub: &str, version: &str, reg: &dyn Reg) -> bool {
+    let mine = |v: &str| !version.is_empty() && (version.starts_with(v) || v.starts_with(version));
+    reg.subkeys(h, sub).iter().any(|a| {
+        (version_like(a) && !mine(a)) || reg.subkeys(h, &format!(r"{sub}\{a}")).iter().any(|b| (version_like(b) && !mine(b)) || reg.subkeys(h, &format!(r"{sub}\{a}\{b}")).iter().any(|c| version_like(c) && !mine(c)))
+    })
+}
+
 fn sole_content(h: Hive, sub: &str, n: &Names, reg: &dyn Reg) -> bool {
-    reg.values(h, sub).is_empty() && reg.subkeys(h, sub).iter().all(|c| matches!(name_tier(c, n), Some((_, t)) if t != N_PUB))
+    let subs = reg.subkeys(h, sub);
+    // a listing that hit the reader's cap may be incomplete
+    subs.len() < 20_000 && reg.values(h, sub).is_empty() && subs.iter().all(|c| matches!(name_tier(c, n), Some((_, t)) if t != N_PUB))
 }
 
 /// The CLSID's own server (InprocServer32 / LocalServer32 / codebase) is a file in the install folder. A GUID match alone never counts.
@@ -351,6 +368,7 @@ fn key_evidence(h: Hive, sub: &str, p: &Prog, env: &Env, reg: &dyn Reg) -> Resul
             // Software\<Name>  /  Software\<Publisher>\<Name>
             match rest.len() {
                 1 => match name_tier(&rest[0], &names) {
+                    Some((Tier::Certain, _)) if family_shared(h, sub, &p.version, reg) => Ok((Tier::Probable, N_FAMILY)),
                     Some((t, n)) if n != N_PUB => Ok((t, n)),
                     Some(_) if sole_content(h, sub, &names, reg) => Ok((Tier::Certain, N_REG_PUB_ONLY)),
                     _ => Err("name does not match the app"),
@@ -360,6 +378,7 @@ fn key_evidence(h: Hive, sub: &str, p: &Prog, env: &Env, reg: &dyn Reg) -> Resul
                         return Err("publisher does not match");
                     }
                     match name_tier(&rest[1], &names) {
+                        Some((Tier::Certain, _)) if family_shared(h, sub, &p.version, reg) => Ok((Tier::Probable, N_FAMILY)),
                         Some((t, n)) if n != N_PUB => Ok((t, if t == Tier::Certain { N_REG_UNDER_PUB } else { n })),
                         _ => Err("name does not match the app"),
                     }

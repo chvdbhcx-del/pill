@@ -23,8 +23,8 @@ use windows::Win32::System::Registry::{
 };
 use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::Win32::UI::Shell::{
-    ShellExecuteExW, SHFileOperationW, FOLDERID_CommonPrograms, FOLDERID_Desktop, FOLDERID_LocalAppData, FOLDERID_Profile, FOLDERID_ProgramData, FOLDERID_ProgramFiles,
-    FOLDERID_ProgramFilesX86, FOLDERID_Programs, FOLDERID_PublicDesktop, FOLDERID_RoamingAppData, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, SHFILEOPSTRUCTW,
+    ShellExecuteExW, FOLDERID_CommonPrograms, FOLDERID_Desktop, FOLDERID_LocalAppData, FOLDERID_Profile, FOLDERID_ProgramData, FOLDERID_ProgramFiles,
+    FOLDERID_ProgramFilesX86, FOLDERID_Programs, FOLDERID_PublicDesktop, FOLDERID_RoamingAppData, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -854,7 +854,11 @@ pub fn scan_fs(p: &Prog, env: &Env, shared: bool, lnk: &dyn Fn(&Path) -> Option<
     let ins = install.as_deref();
     let mut out: Vec<Cand> = Vec::new();
     if let Some(i) = ins.filter(|i| i.is_dir() && guard_deep(i, env, p).is_ok()) {
-        out.push(if shared { fs_cand(i.to_path_buf(), Tier::Probable, "shared with another installed app", env, b) } else { fs_cand(i.to_path_buf(), Tier::Certain, "install folder", env, b) });
+        let why = if shared { Some("shared with another installed app") } else { install_doubt(i, &names, env, b) };
+        out.push(match why {
+            Some(w) => fs_cand(i.to_path_buf(), Tier::Probable, w, env, b),
+            None => fs_cand(i.to_path_buf(), Tier::Certain, "install folder", env, b),
+        });
     }
     let mut roots: Vec<Root> = Vec::new();
     for (pd, _) in env.profiles() {
@@ -888,6 +892,7 @@ pub fn scan_fs(p: &Prog, env: &Env, shared: bool, lnk: &dyn Fn(&Path) -> Option<
             }
             // a folder named like the publisher: the app's own subfolders are Certain; the folder itself only when nothing else is in it
             let kids = read_dir(&path, b);
+            let truncated = b.cut; // the listing may be incomplete: then "only this app" cannot be claimed
             let is_app = |n: &str| matches!(name_tier(n, &names), Some((_, x)) if x != N_PUB);
             for (n2, p2, d2) in &kids {
                 if *d2 && is_app(n2) {
@@ -895,7 +900,7 @@ pub fn scan_fs(p: &Prog, env: &Env, shared: bool, lnk: &dyn Fn(&Path) -> Option<
                     out.push(fs_cand(p2.clone(), if root.probable_only { Tier::Probable } else { t2 }, if t2 == Tier::Certain { "named like the app, under the publisher" } else { N_SEQ }, env, b));
                 }
             }
-            let sole = !kids.is_empty() && kids.iter().all(|(n2, _, d2)| *d2 && is_app(n2));
+            let sole = !truncated && !kids.is_empty() && kids.iter().all(|(n2, _, d2)| *d2 && is_app(n2));
             out.push(if sole && !root.probable_only {
                 fs_cand(path, Tier::Certain, "publisher folder holding only this app", env, b)
             } else {
@@ -909,13 +914,14 @@ pub fn scan_fs(p: &Prog, env: &Env, shared: bool, lnk: &dyn Fn(&Path) -> Option<
             if !d1 || DRIVE_PROTECTED.contains(&norm(&n1).as_str()) {
                 continue;
             }
-            if let Some((t, note)) = name_tier(&n1, &names) {
-                out.push(fs_cand(p1, if note == N_PUB { Tier::Probable } else { t }, if note == N_PUB { "publisher folder, other apps may use it" } else { note }, env, b));
+            // a folder at the top of a drive (D:\Blender, D:\Projects\Blender) can hold the user's own work: always Probable, never pre-ticked
+            if let Some((_, note)) = name_tier(&n1, &names) {
+                out.push(fs_cand(p1, Tier::Probable, if note == N_PUB { "publisher folder, other apps may use it" } else { "named like the app, at the top of a drive" }, env, b));
                 continue;
             }
             for (n2, p2, d2) in read_dir(&p1, b) {
-                if let (true, Some((t, note))) = (d2, name_tier(&n2, &names).filter(|x| x.1 != N_PUB)) {
-                    out.push(fs_cand(p2, t, note, env, b));
+                if let (true, Some(_)) = (d2, name_tier(&n2, &names).filter(|x| x.1 != N_PUB)) {
+                    out.push(fs_cand(p2, Tier::Probable, "named like the app, at the top of a drive", env, b));
                 }
             }
         }
@@ -961,6 +967,17 @@ pub fn scan_fs(p: &Prog, env: &Env, shared: bool, lnk: &dyn Fn(&Path) -> Option<
     out
 }
 
+/// Reasons not to trust a recorded InstallLocation as "this app's own folder": a one-word folder at the top of a drive that is not named like the
+/// app, or a folder that holds several programs. Such a folder is only Probable.
+fn install_doubt(i: &Path, names: &Names, env: &Env, b: &mut Budget) -> Option<&'static str> {
+    let top = env.drives.iter().any(|d| depth_under(i, d) == Some(1)) || (i.components().count() == 3 && drive_is_fixed(i));
+    if top && !names.product.contains(&norm(&i.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())) {
+        return Some("install folder, but it is a folder of its own at the top of a drive and not named like the app");
+    }
+    let apps = read_dir(i, b).iter().filter(|(_, sub, is_dir)| *is_dir && read_dir(sub, b).iter().any(|(n, _, d)| !*d && n.to_ascii_lowercase().ends_with(".exe"))).count();
+    (apps >= 3).then_some("install folder, but it holds several programs")
+}
+
 fn shortcut(name: &str, path: PathBuf, names: &Names, install: Option<&Path>, env: &Env, lnk: &dyn Fn(&Path) -> Option<PathBuf>, b: &mut Budget) -> Option<Cand> {
     let low = name.to_lowercase();
     if !(low.ends_with(".lnk") || low.ends_with(".url")) {
@@ -980,16 +997,107 @@ fn shortcut(name: &str, path: PathBuf, names: &Names, install: Option<&Path>, en
 // Deleting: Recycle Bin for files, a .reg backup before any registry item, exact commands for services and tasks
 // ---------------------------------------------------------------------------------------------------------------
 
-/// Sends `p` to the Recycle Bin (never a plain delete) and checks it is gone.
-pub fn recycle(p: &Path) -> Result<(), String> {
-    let mut from: Vec<u16> = p.to_string_lossy().encode_utf16().collect();
-    from.extend([0, 0]);
-    // FO_DELETE; FOF_SILENT | FOF_NOCONFIRMATION | FOF_ALLOWUNDO | FOF_NOERRORUI
-    let mut op = SHFILEOPSTRUCTW { wFunc: 3, pFrom: PCWSTR(from.as_ptr()), fFlags: (0x4 | 0x10 | 0x40 | 0x400) as u16, ..Default::default() };
-    let r = unsafe { SHFileOperationW(&mut op) };
-    if r != 0 || op.fAnyOperationsAborted.as_bool() {
-        return Err(format!("Windows refused (code {r}); it may need administrator rights or a program may still use it"));
+/// What the Recycle Bin of a drive will do with an item (read from the user's Explorer settings).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BinPolicy {
+    /// "Don't move files to the Recycle Bin. Remove files immediately when deleted."
+    pub nuke: bool,
+    /// Configured maximum size in bytes (None: the Windows default, about a tenth of the volume).
+    pub max_bytes: Option<u64>,
+    pub volume_bytes: u64,
+}
+
+/// Would Windows really put this in the Recycle Bin? Anything else is refused: nothing is deleted and the user is told why. Pure, so it is tested.
+pub fn bin_decision(size: u64, policy: &BinPolicy, path_chars: usize, fixed: bool) -> Result<(), String> {
+    if !fixed {
+        return Err("not on a fixed local drive: Windows would delete it for good, not recycled; nothing deleted".into());
     }
+    if path_chars > 259 {
+        return Err(format!("the path is {path_chars} characters long (more than 259): Windows would delete it for good, not recycled; nothing deleted"));
+    }
+    if policy.nuke {
+        return Err("this drive is set to remove files immediately instead of using the Recycle Bin: not recycled; nothing deleted".into());
+    }
+    let cap = policy.max_bytes.unwrap_or(policy.volume_bytes / 10);
+    if cap > 0 && size > cap {
+        return Err(format!("{size} bytes is more than the Recycle Bin of this drive holds ({cap}): not recycled; nothing deleted"));
+    }
+    Ok(())
+}
+
+/// The Recycle Bin settings of the drive `p` is on: `...\Explorer\BitBucket\Volume\{volume GUID}` (NukeOnDelete, MaxCapacity in MB).
+pub fn bin_policy(p: &Path) -> BinPolicy {
+    use windows::Win32::Storage::FileSystem::{GetDiskFreeSpaceExW, GetVolumeNameForVolumeMountPointW};
+    let s = p.to_string_lossy();
+    let mut pol = BinPolicy::default();
+    if s.len() < 3 {
+        return pol;
+    }
+    let root: Vec<u16> = format!("{}\\", &s[..2]).encode_utf16().chain(Some(0)).collect();
+    let mut total = 0u64;
+    unsafe {
+        let _ = GetDiskFreeSpaceExW(PCWSTR(root.as_ptr()), None, Some(&mut total), None);
+    }
+    pol.volume_bytes = total;
+    let mut name = [0u16; 64];
+    let guid = unsafe { GetVolumeNameForVolumeMountPointW(PCWSTR(root.as_ptr()), &mut name) }
+        .ok()
+        .map(|_| String::from_utf16_lossy(&name[..name.iter().position(|c| *c == 0).unwrap_or(name.len())]))
+        .and_then(|v| find_guid(&v));
+    let bb = r"Software\Microsoft\Windows\CurrentVersion\Explorer\BitBucket";
+    let mut vals = guid.map(|g| RealReg.values(Hive::Hkcu, &format!(r"{bb}\Volume\{g}"))).unwrap_or_default();
+    if vals.is_empty() {
+        vals = RealReg.values(Hive::Hkcu, bb);
+    }
+    pol.nuke = matches!(vals.get("nukeondelete"), Some(Val::D(1)));
+    pol.max_bytes = match vals.get("maxcapacity") {
+        Some(Val::D(mb)) if *mb > 0 => Some(*mb as u64 * 1024 * 1024),
+        _ => None,
+    };
+    pol
+}
+
+/// IFileOperation with FOFX_RECYCLEONDELETE: an item that cannot be recycled makes the operation FAIL instead of being deleted for good.
+fn recycle_ifo(p: &Path) -> Result<(), String> {
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName, FILEOPERATION_FLAGS};
+    // FOF_SILENT | FOF_NOCONFIRMATION | FOF_ALLOWUNDO | FOF_NOERRORUI | FOFX_RECYCLEONDELETE
+    const FLAGS: u32 = 0x4 | 0x10 | 0x40 | 0x400 | 0x0008_0000;
+    let wide: Vec<u16> = p.to_string_lossy().encode_utf16().chain(Some(0)).collect();
+    unsafe {
+        let init = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let r = (|| -> windows::core::Result<bool> {
+            let op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+            op.SetOperationFlags(FILEOPERATION_FLAGS(FLAGS))?;
+            let item: IShellItem = SHCreateItemFromParsingName(PCWSTR(wide.as_ptr()), None)?;
+            op.DeleteItem(&item, None)?;
+            op.PerformOperations()?;
+            Ok(op.GetAnyOperationsAborted()?.as_bool())
+        })();
+        if init.is_ok() {
+            CoUninitialize();
+        }
+        match r {
+            Ok(false) => Ok(()),
+            Ok(true) => Err("Windows did not recycle it (aborted); nothing deleted".into()),
+            Err(e) => Err(format!("Windows refused to recycle it ({e}); it may need administrator rights or a program may still use it; nothing deleted")),
+        }
+    }
+}
+
+/// Sends `p` to the Recycle Bin and checks it is gone. Never a plain delete: a mapped drive, a path over 259 characters, a drive set to "remove
+/// immediately", an item bigger than the bin, a link or junction on the way, all end in an error and nothing is deleted.
+pub fn recycle(p: &Path) -> Result<(), String> {
+    if !reparse_free(p) {
+        return Err("a link or junction is on the path: not touched".into());
+    }
+    let mut b = Budget::new(500_000, 20);
+    let size = dir_size(p, &mut b);
+    if b.cut {
+        return Err("too big to measure: not recycled; nothing deleted".into());
+    }
+    bin_decision(size, &bin_policy(p), p.to_string_lossy().chars().count(), drive_is_fixed(p))?;
+    recycle_ifo(p)?;
     if p.exists() {
         return Err("still there after the delete".into());
     }
@@ -1013,46 +1121,106 @@ fn hex_bytes(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect::<Vec<_>>().join(",")
 }
 
-/// One value in .reg syntax.
-fn reg_line(name: &str, ty: u32, data: &[u8]) -> String {
-    let n = if name.is_empty() { "@".to_string() } else { format!("\"{}\"", reg_escape(name)) };
-    let v = match ty {
-        1 if data.len() % 2 == 0 => {
-            let u: Vec<u16> = data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
-            format!("\"{}\"", reg_escape(String::from_utf16_lossy(&u).trim_end_matches('\0')))
-        }
-        4 if data.len() == 4 => format!("dword:{:08x}", u32::from_le_bytes([data[0], data[1], data[2], data[3]])),
-        3 => format!("hex:{}", hex_bytes(data)),
-        t => format!("hex({t:x}):{}", hex_bytes(data)),
-    };
-    format!("{n}={v}\r\n")
+fn has_control(s: &str) -> bool {
+    s.chars().any(|c| (c as u32) < 0x20 || c as u32 == 0x7f)
 }
 
-/// `.reg` text of keys (with everything below them) and single values; imports back with `reg import`. Err when something cannot be read.
+/// One value in .reg syntax. A string with a line break or another control character cannot be written as text: it goes out as exact hex bytes.
+/// A value NAME with a control character cannot be written at all: Err (no partial backup).
+pub fn reg_line(name: &str, ty: u32, data: &[u8]) -> Result<String, String> {
+    if has_control(name) {
+        return Err(format!("a value name with a control character cannot be backed up ({name:?})"));
+    }
+    let n = if name.is_empty() { "@".to_string() } else { format!("\"{}\"", reg_escape(name)) };
+    let text = if ty == 1 && data.len() % 2 == 0 {
+        let u: Vec<u16> = data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let s = String::from_utf16_lossy(&u);
+        // plain text only when it is a clean single NUL-terminated (or unterminated) string
+        let body = s.strip_suffix('\0').unwrap_or(&s);
+        (!has_control(body) && !s.contains('\u{fffd}') && String::from_utf16(&u).is_ok()).then(|| format!("\"{}\"", reg_escape(body)))
+    } else {
+        None
+    };
+    let v = match (ty, text) {
+        (1, Some(t)) => t,
+        (4, _) if data.len() == 4 => format!("dword:{:08x}", u32::from_le_bytes([data[0], data[1], data[2], data[3]])),
+        (3, _) => format!("hex:{}", hex_bytes(data)),
+        (t, _) => format!("hex({t:x}):{}", hex_bytes(data)),
+    };
+    Ok(format!("{n}={v}\r\n"))
+}
+
+/// Limits of one backup. Hitting one is an ERROR: a partial backup is worse than none.
+#[derive(Clone, Copy, Debug)]
+pub struct DumpLimits {
+    pub depth: usize,
+    pub subkeys: u32,
+    pub budget: usize,
+}
+impl Default for DumpLimits {
+    fn default() -> Self {
+        DumpLimits { depth: 64, subkeys: 20_000, budget: 100_000 }
+    }
+}
+
+const REG_HEADER: &str = "Windows Registry Editor Version 5.00\r\n\r\n";
+
+/// `.reg` text of keys (with everything below them) and single values; imports back with `reg import`. Err when anything could not be read in
+/// full (a cap, an enumeration error, a name that cannot be written): then there is no backup and the caller deletes nothing.
 pub fn reg_dump(items: &[(Hive, String, Option<String>)]) -> Result<String, String> {
-    fn key(out: &mut String, h: Hive, sub: &str, only: Option<&str>, depth: usize, budget: &mut usize) -> Result<(), String> {
+    reg_dump_with(items, &DumpLimits::default())
+}
+
+pub fn reg_dump_with(items: &[(Hive, String, Option<String>)], lim: &DumpLimits) -> Result<String, String> {
+    fn key(out: &mut String, h: Hive, sub: &str, only: Option<&str>, depth: usize, budget: &mut usize, lim: &DumpLimits) -> Result<(), String> {
+        if depth > lim.depth {
+            return Err(format!("{}\\{sub} is nested deeper than {} levels: no complete backup possible", h.label(), lim.depth));
+        }
+        if has_control(sub) || sub.contains('[') || sub.contains(']') {
+            return Err(format!("a key name that cannot be written to a .reg file: {sub:?}"));
+        }
         let k = Key::open(h.root(), sub, KEY_READ).ok_or_else(|| format!("cannot read {}\\{sub}", h.label()))?;
         out.push_str(&format!("[{}\\{sub}]\r\n", h.long()));
-        for (n, ty, data) in k.raw_values() {
+        for (n, ty, data) in k.raw_values().map_err(|e| format!("{}\\{sub}: {e}", h.label()))? {
             if only.is_none_or(|o| o.eq_ignore_ascii_case(&n)) {
-                out.push_str(&reg_line(&n, ty, &data));
+                out.push_str(&reg_line(&n, ty, &data)?);
             }
         }
         out.push_str("\r\n");
-        if only.is_none() && depth < 16 {
-            for c in k.subkeys(20_000) {
+        if only.is_none() {
+            for c in k.subkeys_checked(lim.subkeys).map_err(|e| format!("{}\\{sub}: {e}", h.label()))? {
                 *budget = budget.checked_sub(1).ok_or("key too large to back up")?;
-                key(out, h, &format!(r"{sub}\{c}"), None, depth + 1, budget)?;
+                key(out, h, &format!(r"{sub}\{c}"), None, depth + 1, budget, lim)?;
             }
         }
         Ok(())
     }
-    let mut out = String::from("Windows Registry Editor Version 5.00\r\n\r\n");
-    let mut budget = 50_000usize;
+    let mut out = String::from(REG_HEADER);
+    let mut budget = lim.budget;
     for (h, sub, only) in items {
-        key(&mut out, *h, sub, only.as_deref(), 0, &mut budget)?;
+        key(&mut out, *h, sub, only.as_deref(), 0, &mut budget, lim)?;
     }
+    verify_dump(&out, items)?;
     Ok(out)
+}
+
+/// The text really contains every requested key (and value): checked before it is trusted as a backup.
+pub fn verify_dump(text: &str, items: &[(Hive, String, Option<String>)]) -> Result<(), String> {
+    if !text.starts_with("Windows Registry Editor Version 5.00") {
+        return Err("backup has no .reg header".into());
+    }
+    for (h, sub, only) in items {
+        let header = format!("[{}\\{}]\r\n", h.long(), sub);
+        let Some(i) = text.find(&header) else { return Err(format!("backup is missing {}\\{sub}", h.label())) };
+        if let Some(n) = only {
+            let block = text[i + header.len()..].split("\r\n\r\n").next().unwrap_or("");
+            let want = if n.is_empty() { "@=".to_string() } else { format!("\"{}\"=", reg_escape(n)) };
+            if !block.lines().any(|l| l.to_lowercase().starts_with(&want.to_lowercase())) {
+                return Err(format!("backup is missing the value {n:?} of {}\\{sub}", h.label()));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The text as a UTF-16LE file with BOM, the format regedit writes.
@@ -1070,10 +1238,13 @@ pub fn file_store(dir: &Path, base: &str, name: &str, bytes: &[u8]) -> Result<St
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{base}.{name}"));
     std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
-    if std::fs::metadata(&path).map_or(0, |m| m.len()) == 0 {
-        return Err("backup file is empty".into());
+    // read it back: the file must be there, not empty, and exactly what was meant to be written
+    match std::fs::read(&path) {
+        Ok(b) if !b.is_empty() && b == bytes => Ok(path.to_string_lossy().into_owned()),
+        Ok(b) if b.is_empty() => Err("backup file is empty".into()),
+        Ok(_) => Err("backup file does not match what was written".into()),
+        Err(e) => Err(format!("backup file cannot be read back: {e}")),
     }
-    Ok(path.to_string_lossy().into_owned())
 }
 
 pub struct Report {
@@ -1091,6 +1262,70 @@ fn run_quiet(exe: &str, args: &[&str]) -> Result<(), String> {
     if o.status.success() { Ok(()) } else { Err(format!("{exe} failed ({})", o.status.code().unwrap_or(-1))) }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SvcState {
+    Running,
+    Stopped,
+    Missing,
+}
+
+/// State from the text of `sc query <name>`. Anything unclear counts as Running (the safe answer: do not claim it stopped).
+pub fn parse_sc_state(out: &str) -> SvcState {
+    if out.contains("1060") {
+        SvcState::Missing
+    } else if out.lines().any(|l| l.contains("STATE") && l.contains("STOPPED")) {
+        SvcState::Stopped
+    } else {
+        SvcState::Running
+    }
+}
+
+fn svc_state(n: &str) -> SvcState {
+    let o = std::process::Command::new(system_exe("sc.exe")).args(["query", n]).creation_flags(NO_WINDOW).output();
+    o.map_or(SvcState::Running, |o| parse_sc_state(&String::from_utf8_lossy(&o.stdout)))
+}
+
+/// A removed service is one that is stopped, deleted and gone from the registry. A service that is still running after the stop, or only marked
+/// for deletion (an open handle keeps its key until a restart), is reported as NOT removed.
+pub fn service_verdict(state_after_stop: SvcState, key_still_there: bool) -> Result<(), String> {
+    match (state_after_stop, key_still_there) {
+        (SvcState::Running, _) => Err("the service is still running after the stop request: not deleted".into()),
+        (_, true) => Err("the service is only marked for deletion (something holds it open); it goes away after a restart".into()),
+        _ => Ok(()),
+    }
+}
+
+fn remove_service(n: &str) -> Result<(), String> {
+    let _ = run_quiet("sc.exe", &["stop", n]); // a stopped service answers with an error: fine
+    let t = Instant::now();
+    while t.elapsed() < Duration::from_secs(5) && svc_state(n) == SvcState::Running {
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    let st = svc_state(n);
+    service_verdict(st, false)?;
+    if st != SvcState::Missing {
+        run_quiet("sc.exe", &["delete", n])?;
+    }
+    let key = format!(r"SYSTEM\CurrentControlSet\Services\{n}");
+    let t = Instant::now();
+    while t.elapsed() < Duration::from_secs(3) && Key::open(HKEY_LOCAL_MACHINE, &key, KEY_READ).is_some() {
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    service_verdict(st, Key::open(HKEY_LOCAL_MACHINE, &key, KEY_READ).is_some())
+}
+
+/// Delete order: tasks and services first (so nothing restarts the app's files), then files, then registry values, then keys last (a handler
+/// association needs its handler key until the value is gone).
+pub fn delete_rank(w: &What) -> u8 {
+    match w {
+        What::Task(_) => 0,
+        What::Service(_) => 1,
+        What::Fs(_) => 2,
+        What::Value(..) => 3,
+        _ => 4,
+    }
+}
+
 fn remove(w: &What) -> Result<(), String> {
     match w {
         What::Fs(p) => recycle(p),
@@ -1105,11 +1340,13 @@ fn remove(w: &What) -> Result<(), String> {
             let e = unsafe { RegDeleteValueW(key.0, PCWSTR(wide.as_ptr())) };
             if e == OK { Ok(()) } else { Err(format!("registry error {}", e.0)) }
         }
-        What::Service(n) => {
-            let _ = run_quiet("sc.exe", &["stop", n]); // a stopped service answers with an error: fine
-            run_quiet("sc.exe", &["delete", n])
+        What::Service(n) => remove_service(n),
+        What::Task(t) => {
+            run_quiet("schtasks.exe", &["/delete", "/tn", t, "/f"])?;
+            // reported deleted only when the task file is really gone
+            let file = windows_dir().join("System32").join("Tasks").join(t.trim_start_matches('\\'));
+            if file.exists() { Err("the task is still registered".into()) } else { Ok(()) }
         }
-        What::Task(t) => run_quiet("schtasks.exe", &["/delete", "/tn", t, "/f"]),
         What::Remote(_) => Err("only the elevated process can remove this".into()),
     }
 }
@@ -1138,66 +1375,62 @@ pub fn delete_cands(
             todo.push(c);
         }
     }
-    // backups first
-    let mut items: Vec<(Hive, String, Option<String>)> = Vec::new();
-    let mut tasks: Vec<(String, Vec<u8>)> = Vec::new();
+    // backups first, ITEM BY ITEM: a registry item is deleted only when its own dump succeeded and the combined file was stored and read back
+    let mut dumped: Vec<(String, String)> = Vec::new(); // (item key, text without the header)
+    let mut tasks: Vec<(String, String, Vec<u8>)> = Vec::new(); // (item key, task path, xml)
     for c in &todo {
         if guard_cand(&c.what, p, env, reg).is_err() {
             continue; // refused below, with its reason
         }
-        match &c.what {
-            What::Key(h, s) => items.push((*h, s.clone(), None)),
-            What::Value(h, s, n) => items.push((*h, s.clone(), Some(n.clone()))),
-            What::Service(n) => items.push((Hive::Hklm, format!(r"SYSTEM\CurrentControlSet\Services\{n}"), None)),
+        let item = match &c.what {
+            What::Key(h, s) => Some((*h, s.clone(), None)),
+            What::Value(h, s, n) => Some((*h, s.clone(), Some(n.clone()))),
+            What::Service(n) => Some((Hive::Hklm, format!(r"SYSTEM\CurrentControlSet\Services\{n}"), None)),
             What::Task(t) => {
                 if let Ok(b) = std::fs::read(env.windows.join("System32").join("Tasks").join(t.trim_start_matches('\\'))) {
-                    tasks.push((t.clone(), b));
+                    tasks.push((cand_key(&c.what), t.clone(), b));
                 }
+                None
             }
-            _ => {}
+            _ => None,
+        };
+        if let Some(it) = item {
+            match reg_dump(std::slice::from_ref(&it)) {
+                Ok(t) => dumped.push((cand_key(&c.what), t.strip_prefix(REG_HEADER).unwrap_or(&t).to_string())),
+                Err(e) => log.push(format!("backup of {} failed, it will not be deleted: {e}", c.shown)),
+            }
         }
     }
     let mut backup: Option<String> = None;
-    let mut backed_up = items.is_empty();
-    if !items.is_empty() {
-        match reg_dump(&items).and_then(|t| store("reg", &reg_bytes(&t))) {
+    let mut backed: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if !dumped.is_empty() {
+        let text = format!("{REG_HEADER}{}", dumped.iter().map(|d| d.1.as_str()).collect::<String>());
+        match store("reg", &reg_bytes(&text)) {
             Ok(path) => {
                 log.push(format!("backup: {path}"));
                 backup = Some(path);
-                backed_up = true;
+                backed.extend(dumped.iter().map(|d| d.0.clone()));
             }
-            Err(e) => log.push(format!("backup failed, registry items, services and tasks skipped: {e}")),
+            Err(e) => log.push(format!("the backup could not be stored, registry items, services and tasks skipped: {e}")),
         }
     }
-    let mut task_ok: Vec<String> = Vec::new();
-    if backed_up {
-        for (i, (t, bytes)) in tasks.iter().enumerate() {
-            match store(&format!("task{i}.xml"), bytes) {
-                Ok(path) => {
-                    log.push(format!("task backup: {path}"));
-                    task_ok.push(t.clone());
-                }
-                Err(e) => log.push(format!("task backup failed ({t}): {e}")),
+    for (i, (k, t, bytes)) in tasks.iter().enumerate() {
+        match store(&format!("task{i}.xml"), bytes) {
+            Ok(path) => {
+                log.push(format!("task backup: {path}"));
+                backed.insert(k.clone());
             }
+            Err(e) => log.push(format!("task backup failed ({t}): {e}")),
         }
     }
-    // values first (a handler association needs its handler key), files, services, tasks, keys last
-    let rank = |c: &Cand| match c.what {
-        What::Value(..) => 0,
-        What::Fs(_) => 1,
-        What::Service(_) => 2,
-        What::Task(_) => 3,
-        _ => 4,
-    };
-    todo.sort_by_key(|c| rank(c));
+    todo.sort_by_key(|c| delete_rank(&c.what));
     let total = todo.len();
     for (n, c) in todo.into_iter().enumerate() {
         let r: Result<(), String> = match guard_cand(&c.what, p, env, reg) {
             Err(e) => Err(format!("refused: {e}")),
             Ok(_) => match &c.what {
                 What::Fs(_) => remove(&c.what),
-                What::Task(t) if !task_ok.contains(t) => Err("no backup, not deleted".into()),
-                _ if !backed_up => Err("no backup, not deleted".into()),
+                _ if !backed.contains(&cand_key(&c.what)) => Err("no backup of this item, not deleted".into()),
                 _ => remove(&c.what),
             },
         };
@@ -1248,11 +1481,34 @@ impl Key {
         }
         out
     }
-    /// Every value as (name, type, bytes), names in their own case, for the backup.
-    fn raw_values(&self) -> Vec<(String, u32, Vec<u8>)> {
+    /// Subkeys, or an error when the list is cut at `cap` or an enumeration fails (a backup must never be partial).
+    fn subkeys_checked(&self, cap: u32) -> Result<Vec<String>, String> {
+        let mut out = Vec::new();
+        for i in 0..=cap {
+            if i == cap {
+                return Err(format!("more than {cap} subkeys"));
+            }
+            let mut buf = [0u16; 512];
+            let mut n = buf.len() as u32;
+            let r = unsafe { RegEnumKeyExW(self.0, i, PWSTR(buf.as_mut_ptr()), &mut n, None, PWSTR::null(), None, None) };
+            if r == WIN32_ERROR(259) {
+                break;
+            }
+            if r != OK {
+                return Err(format!("registry enumeration error {}", r.0));
+            }
+            out.push(String::from_utf16_lossy(&buf[..n as usize]));
+        }
+        Ok(out)
+    }
+    /// Every value as (name, type, bytes), names in their own case, for the backup. Err on any failure or when there are more than 20,000.
+    fn raw_values(&self) -> Result<Vec<(String, u32, Vec<u8>)>, String> {
         let mut out = Vec::new();
         let mut i = 0u32;
-        while i < 20_000 {
+        loop {
+            if i >= 20_000 {
+                return Err("more than 20000 values".into());
+            }
             let (mut name, mut data) = (vec![0u16; 16_384], vec![0u8; 65_536]);
             let (mut nn, mut dn, mut ty) = (name.len() as u32, data.len() as u32, 0u32);
             let r = unsafe { RegEnumValueW(self.0, i, PWSTR(name.as_mut_ptr()), &mut nn, None, Some(&mut ty), Some(data.as_mut_ptr()), Some(&mut dn)) };
@@ -1260,17 +1516,21 @@ impl Key {
                 // ERROR_MORE_DATA: grow the data buffer and ask again for the same index
                 data = vec![0u8; dn as usize + 2];
                 let (mut nn2, mut dn2) = (name.len() as u32, data.len() as u32);
-                if unsafe { RegEnumValueW(self.0, i, PWSTR(name.as_mut_ptr()), &mut nn2, None, Some(&mut ty), Some(data.as_mut_ptr()), Some(&mut dn2)) } == OK {
-                    out.push((String::from_utf16_lossy(&name[..nn2 as usize]), ty, data[..dn2 as usize].to_vec()));
+                let r2 = unsafe { RegEnumValueW(self.0, i, PWSTR(name.as_mut_ptr()), &mut nn2, None, Some(&mut ty), Some(data.as_mut_ptr()), Some(&mut dn2)) };
+                if r2 != OK {
+                    return Err(format!("registry value read error {}", r2.0));
                 }
+                out.push((String::from_utf16_lossy(&name[..nn2 as usize]), ty, data[..dn2 as usize].to_vec()));
             } else if r == OK {
                 out.push((String::from_utf16_lossy(&name[..nn as usize]), ty, data[..dn as usize].to_vec()));
             } else if r == WIN32_ERROR(259) {
                 break;
+            } else {
+                return Err(format!("registry enumeration error {}", r.0));
             }
             i += 1;
         }
-        out
+        Ok(out)
     }
     /// REG_SZ / REG_EXPAND_SZ / REG_DWORD values, names lower-cased. Others are skipped.
     fn values(&self) -> Vals {
@@ -1564,6 +1824,24 @@ fn run_and_wait(file: &str, args: &str) -> Result<bool, String> {
     Ok(waited)
 }
 
+/// Runs a worker-thread body; a panic is caught and its message returned (so `busy` can be reset and the user told).
+pub fn catch_body(f: impl FnOnce()) -> Option<String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).err().map(|p| {
+        p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_else(|| "unknown error".into())
+    })
+}
+
+/// A thread for one step of the flow: whatever happens in `f`, `busy` is reset and the page gets an error instead of a panel that spins forever.
+fn spawn_guarded(app: AppHandle, name: String, f: impl FnOnce() + Send + 'static) {
+    std::thread::spawn(move || {
+        if let Some(msg) = catch_body(f) {
+            flow(|fl| fl.busy = false);
+            emit(&app, json!({ "phase": "error", "name": name, "message": format!("internal error: {msg}") }));
+            crate::command::show(&app);
+        }
+    });
+}
+
 fn begin() -> Option<Prog> {
     CANCEL.store(false, Ordering::Relaxed);
     flow(|f| if f.busy { None } else { f.sel.clone().inspect(|_| f.busy = true) })
@@ -1572,7 +1850,7 @@ fn begin() -> Option<Prog> {
 #[tauri::command]
 pub fn uninstall_start(app: AppHandle, silent: bool) -> Value {
     let Some(p) = begin() else { return json!({ "ok": false, "error": "nothing selected or busy" }) };
-    std::thread::spawn(move || {
+    spawn_guarded(app.clone(), p.name.clone(), move || {
         emit(&app, json!({ "phase": "running", "name": p.name }));
         let res: Result<bool, String> = if p.appx {
             if !valid_full_name(&p.sub) {
@@ -1627,7 +1905,7 @@ fn settle_and_scan(app: &AppHandle, p: &Prog, waited: bool) {
 #[tauri::command]
 pub fn uninstall_scan(app: AppHandle) -> Value {
     let Some(p) = begin() else { return json!({ "ok": false }) };
-    std::thread::spawn(move || settle_and_scan(&app, &p, false));
+    spawn_guarded(app.clone(), p.name.clone(), move || settle_and_scan(&app, &p, false));
     json!({ "ok": true })
 }
 
@@ -1647,7 +1925,7 @@ pub fn uninstall_delete(app: AppHandle, ids: Vec<usize>) -> Value {
     }) else {
         return json!({ "ok": false });
     };
-    std::thread::spawn(move || {
+    spawn_guarded(app.clone(), p.name.clone(), move || {
         emit(&app, json!({ "phase": "deleting", "name": p.name, "total": picked.len() }));
         let env = Env::real();
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()).to_string();
@@ -1780,7 +2058,7 @@ pub fn uninstall_admin(app: AppHandle, mode: String, ids: Vec<usize>) -> Value {
     }) else {
         return json!({ "ok": false });
     };
-    std::thread::spawn(move || {
+    spawn_guarded(app.clone(), p.name.clone(), move || {
         emit(&app, json!({ "phase": "elevating", "name": p.name, "mode": if mode == Mode::Scan { "scan" } else { "delete" } }));
         let env = Env::real();
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()).to_string();
@@ -1818,7 +2096,7 @@ pub fn uninstall_admin(app: AppHandle, mode: String, ids: Vec<usize>) -> Value {
                     f.busy = false;
                     f.cands.clone()
                 });
-                emit(&app, review_json(&p.name, &all, &manual2, cut, json!({ "phase": "review", "adminScanned": true })));
+                emit(&app, review_json(&p.name, &all, &manual2, cut, json!({ "phase": "review", "adminScanned": true, "hiddenOthers": res["hiddenOthers"].as_u64().unwrap_or(0) })));
             }
             Ok(res) => {
                 let pairs = |k: &str| -> Vec<(String, String)> {
