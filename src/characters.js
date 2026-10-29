@@ -185,6 +185,10 @@
       eyeX = br.left; eyeY = br.top; eyeCx = { w: lr.width, l: lr.left - br.left, r: lr.right - br.left, c: null };
       const ec = live.querySelector('.lp-clock.eic'), col = ec && ec.querySelector(eyesSide() === 'left' ? '.lp-l' : '.lp-r'); // the clock row's own empty side column (pill.js marks it .eic): the eyes stand in its middle
       if (col) { const cr = col.getBoundingClientRect(); eyeCx.c = cr.left + cr.width / 2 - br.left; }
+      // the eyes stand on the same line as the text of the live row: the middle of its first text (the typeface centres capitals in the line box)
+      eyeCx.ty = null;
+      const tw = document.createTreeWalker(live, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.nodeValue.trim() && !(n.parentElement && n.parentElement.closest('.lp-ghost')) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT) }), tn = tw.nextNode();
+      if (tn) { const rg = document.createRange(); rg.selectNodeContents(tn); const rr = rg.getBoundingClientRect(); if (rr.height) eyeCx.ty = rr.top + rr.height / 2 - br.top; }
     }
   }
   function place(now) { // cheap: only moves the groups to where the island is right now (cached geometry; re-measured by the observers)
@@ -205,7 +209,7 @@
       const lr = eyeCx || { w: 0, l: 0, r: 0 }, left = eyesSide() === 'left';
       let cx = lr.c != null ? lr.c : lr.w > 1 ? (left ? lr.l + 18 * s : lr.r - 18 * s) : (left ? 18 * s : W - 18 * s);
       cx = clamp(cx, 14 * s, Math.max(14 * s, W - 14 * s));
-      const cy = Math.min(H, 30 * s) / 2;
+      const cy = lr.ty != null ? clamp(lr.ty, 8 * s, Math.max(8 * s, H - 8 * s)) : Math.min(H, 30 * s) / 2;
       eyes.g.setAttribute('transform', `translate(${n2(cx)} ${n2(cy)}) scale(${n2(s)})`);
       eyeWorld = { x: eyeX + cx, y: eyeY + cy };
       themeEyes(now == null ? performance.now() : now);
