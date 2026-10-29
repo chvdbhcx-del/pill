@@ -2,6 +2,14 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.4.3] - 2026-10-29
+
+### Added
+- Command bar: an app row has a trash button and "Uninstall..." in its right-click menu; it puts `u <app name>` in the box, so the uninstall row (with its confirm step) shows right there.
+
+### Changed
+- Folded island: the weather icon has its own switch ("Weather icon"); "Temperature" now hides only the number, no longer the icon too.
+
 ## [0.4.2] - 2026-10-29
 
 ### Fixed
