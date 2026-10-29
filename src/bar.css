@@ -243,3 +243,35 @@ mark { background: none; color: var(--text); font-weight: 600; }
   #uni .uprog i { width: 100%; opacity: .5; }
   #uni .u-ok, #uni .u-ok circle, #uni .u-ok path, #uni .u-shake, #uni .u-item.u-fail { animation: none; }
 }
+
+/* ---------- the uninstall status strip: pinned under the search results while an uninstall job runs in the background (uninstall-ui.js) ----------
+   Enter / exit via PillMotion; the bar slides on a loop (transform only), the spinner turns, a finished step pops once; html.rm: all of it still. */
+.u-strip { flex: none; position: relative; display: flex; align-items: center; gap: 10px; margin: 0 8px 8px; padding: 8px 12px 10px; border-radius: 13px; overflow: hidden; cursor: pointer;
+  background: var(--raised); color: var(--text-2); font-size: var(--fs-sm, 12px); line-height: 16px;
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.u-strip[hidden] { display: none; }
+.u-strip:hover { background: var(--raised-2); }
+.u-strip:active { transform: scale(.985); transition-duration: var(--dur-xs); transition-timing-function: var(--ease-out); }
+.u-strip .u-sico { width: 16px; height: 16px; flex: none; display: grid; place-items: center; color: var(--accent); }
+.u-strip[data-kind="ready"] .u-sico { color: var(--green); }
+.u-strip[data-phase="still"] .u-sico, .u-strip[data-phase="error"] .u-sico { color: var(--amber); }
+.u-strip .u-sico svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.u-strip .u-spin { animation: u-rot .9s linear infinite; }
+.u-strip .u-spin .u-sp { stroke-dasharray: 24 14; }
+@keyframes u-rot { to { transform: rotate(360deg); } }
+.u-strip .u-stxt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.u-strip .u-sname { color: var(--text); font-weight: 600; }
+.u-strip .u-snum { color: var(--text); font-weight: 600; }
+.u-strip kbd { flex: none; font: 600 var(--fs-2xs, 10px) / 12px var(--mono); padding: 3px 6px; border-radius: 6px; background: var(--raised-2); color: var(--text-dim); }
+.u-strip .uprog { position: absolute; left: 12px; right: 12px; bottom: 3px; height: 2px; margin: 0; border-radius: 2px; background: var(--raised-2); overflow: hidden; }
+.u-strip .uprog i { position: absolute; inset: 0 auto 0 0; width: 38%; border-radius: 2px; background: var(--accent); animation: u-slide 1.3s var(--ease-in-out, ease-in-out) infinite; }
+.u-strip[data-kind="ready"] .uprog { display: none; }
+.u-strip.pop { animation: u-strip-pop .6s var(--spring-pop, var(--ease-spring)), u-strip-glow 1.1s var(--ease-out); }
+@keyframes u-strip-pop { from { transform: scale(.93); } }
+@keyframes u-strip-glow { from { box-shadow: 0 0 0 2px var(--green); } to { box-shadow: 0 0 0 2px transparent; } }
+.rm .u-strip .uprog i { animation: none; width: 100%; opacity: .5; }
+.rm .u-strip .u-spin, .rm .u-strip.pop { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .u-strip .uprog i { animation: none; width: 100%; opacity: .5; }
+  .u-strip .u-spin, .u-strip.pop { animation: none; }
+}

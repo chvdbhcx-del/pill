@@ -784,7 +784,7 @@ impl Budget {
         Budget { until: Instant::now() + Duration::from_secs(secs), left: entries, cut: false }
     }
     fn tick(&mut self) -> bool {
-        if self.left == 0 || Instant::now() > self.until {
+        if self.left == 0 || Instant::now() > self.until || CANCEL.load(Ordering::Relaxed) {
             self.cut = true;
             return false;
         }
@@ -1666,6 +1666,8 @@ struct Flow {
     cut: bool,
     busy: bool,
     last: Value,
+    /// The island card ("N leftovers to review") was pressed: the bar page opens the panel the next time it reads the state.
+    focus: bool,
 }
 static FLOW: Mutex<Option<Flow>> = Mutex::new(None);
 static APPX: Mutex<Option<(Instant, Vec<Prog>)>> = Mutex::new(None);
@@ -1837,7 +1839,7 @@ fn spawn_guarded(app: AppHandle, name: String, f: impl FnOnce() + Send + 'static
         if let Some(msg) = catch_body(f) {
             flow(|fl| fl.busy = false);
             emit(&app, json!({ "phase": "error", "name": name, "message": format!("internal error: {msg}") }));
-            crate::command::show(&app);
+            notify_ready(&app, &name, "error", 0);
         }
     });
 }
@@ -1866,7 +1868,7 @@ pub fn uninstall_start(app: AppHandle, silent: bool) -> Value {
             Err(e) => {
                 flow(|f| f.busy = false);
                 emit(&app, json!({ "phase": "error", "name": p.name, "message": e }));
-                crate::command::show(&app);
+                notify_ready(&app, &p.name, "error", 0);
             }
             Ok(waited) => settle_and_scan(&app, &p, waited),
         }
@@ -1883,13 +1885,17 @@ fn settle_and_scan(app: &AppHandle, p: &Prog, waited: bool) {
     if still_installed(p) {
         flow(|f| f.busy = false);
         emit(app, json!({ "phase": "still", "name": p.name }));
+        notify_ready(app, &p.name, "still", 0);
     } else if p.appx {
         flow(|f| f.busy = false);
         emit(app, review_json(&p.name, &[], &[], false, json!({})));
+        notify_ready(app, &p.name, "done", 0);
     } else {
         emit(app, json!({ "phase": "scanning", "name": p.name, "step": "starting", "found": 0 }));
         let (cands, manual, cut) = scan_all(app, p);
         let v = review_json(&p.name, &cands, &manual, cut, json!({}));
+        let found = cands.len();
+        CANCEL.store(false, Ordering::Relaxed); // a stopped scan must not make the deletion that follows refuse its size checks
         flow(|f| {
             f.cands = cands;
             f.manual = manual;
@@ -1897,8 +1903,8 @@ fn settle_and_scan(app: &AppHandle, p: &Prog, waited: bool) {
             f.busy = false;
         });
         emit(app, v);
+        notify_ready(app, &p.name, if found == 0 { "done" } else { "review" }, found);
     }
-    crate::command::show(app);
 }
 
 /// "Check again": the user finished the uninstaller by hand (or it handed over to another process).
@@ -1911,6 +1917,7 @@ pub fn uninstall_scan(app: AppHandle) -> Value {
 
 #[tauri::command]
 pub fn uninstall_delete(app: AppHandle, ids: Vec<usize>) -> Value {
+    CANCEL.store(false, Ordering::Relaxed);
     let Some((p, picked)) = flow(|f| {
         if f.busy {
             return None;
@@ -1958,6 +1965,7 @@ pub(crate) fn finish_delete(app: &AppHandle, p: &Prog, r: &Report, dir: &Path) {
             "failed": failed, "skippedAdmin": r.need_admin, "backup": r.backup, "log": r.log, "backupDir": dir.to_string_lossy() }),
     );
     emit(app, v);
+    notify_ready(app, &p.name, "done", r.done.len());
 }
 
 /// Opens the folder with the .reg backups and logs in Explorer.
@@ -1984,7 +1992,34 @@ pub fn uninstall_cancel() {
 /// The last state event, for a bar that was hidden while the uninstaller ran.
 #[tauri::command]
 pub fn uninstall_state() -> Value {
-    flow(|f| f.last.clone())
+    flow(|f| {
+        let mut v = f.last.clone();
+        if let (Some(o), true) = (v.as_object_mut(), std::mem::take(&mut f.focus)) {
+            o.insert("focus".into(), json!(true));
+        }
+        v
+    })
+}
+
+/// The island card's button: show the bar (when it is closed) and bring the uninstall panel back where it was.
+#[tauri::command]
+pub fn uninstall_open_panel(app: AppHandle) {
+    flow(|f| f.focus = !f.last.is_null());
+    if crate::command::bar_visible(&app) {
+        let _ = app.emit_to("bar", "uninstall:focus", json!({}));
+        flow(|f| f.focus = false);
+    } else {
+        crate::command::show(&app);
+    }
+}
+
+/// A step finished (leftovers found, summary ready, still installed, error): the island shows a small card, unless the bar is open (its strip tells).
+/// The panel itself is never forced open: the user may be searching for something else.
+fn notify_ready(app: &AppHandle, name: &str, kind: &str, count: usize) {
+    if crate::command::bar_visible(app) {
+        return;
+    }
+    let _ = app.emit("uninstall:ready", json!({ "name": name, "kind": kind, "count": count }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2112,7 +2147,6 @@ pub fn uninstall_admin(app: AppHandle, mode: String, ids: Vec<usize>) -> Value {
                 finish_delete(&app, &p, &rep, &dir);
             }
         }
-        crate::command::show(&app);
     });
     json!({ "ok": true })
 }

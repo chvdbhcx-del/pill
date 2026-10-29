@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Fixed
+- The command bar search works while an uninstall runs. Typing (any letter, Backspace, Delete) while the uninstall panel is up now steps the panel aside and searches for what you typed; before, the panel took the keyboard and nothing could be searched during the leftover scan, the wait for the uninstaller or the deletion. The job itself (waiting, scanning, deleting, the administrator step) always ran in the background and keeps running; Esc inside the panel only closes the view, "Stop searching" / "Stop waiting" / Close stop or drop the job.
+- A status strip under the search results shows the running uninstall ("qBittorrent: searching for leftovers, found 812" with a thin progress bar and a count that glides). When the step finishes it turns into "leftovers to review" with a small pop; clicking it, Ctrl+U or `u <name>` bring the panel back exactly where it was (checklist and ticks kept). If the bar is closed when a step finishes, the island shows a card ("Uninstall of qBittorrent: leftovers to review") with an Open button instead of the bar jumping open over what you are doing (quiet hours apply). The panel's logic is a small pure state machine (`src/uninstall-state.js`, `node src/uninstall-state.test.mjs`).
+
 ## [0.5.1] - 2026-10-29
 
 ### Fixed
