@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Changed
+- Command bar window is created on demand and released when idle, lowering memory. It is built when you press the hotkey and torn down after 120 s hidden (`ui.lazyBarSecs` in settings.json; 0 keeps it alive like before). The first open after an idle period takes a moment longer while the page loads. An uninstall in progress keeps the window alive.
+
 ## [0.5.3] - 2026-10-29
 
 ### Changed

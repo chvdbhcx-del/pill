@@ -1,8 +1,10 @@
 // Command bar: configurable hotkey, Start Menu / Store app index, Everything (es.exe) file search,
 // calculator, unit conversion, web search, `>` shell, confirmed system commands. Owner: command agent.
-// Window `bar` is declared hidden in tauri.conf.json; page = bar.html + bar.js + bar.css.
-// Events (to window "bar"): bar:shown, bar:hidden. Commands: cmd_toggle, cmd_query, cmd_run.
+// Window `bar` is built hidden by ui/windows.rs and created on demand by ui/lazy.rs (destroyed after `ui.lazyBarSecs` hidden, 0 = never);
+// page = bar.html + bar.js + bar.css, bar-ready.js tells Rust (cmd_ready) when the page has registered its event listeners.
+// Events (to window "bar"): bar:shown, bar:hidden. Commands: cmd_toggle, cmd_query, cmd_run, cmd_ready.
 // Not done (later slice): timer / remind parsing, currency, runtime hotkey rebind (restart needed).
+use crate::ui::lazy;
 use crate::{settings, store};
 use serde::Serialize;
 use serde_json::json;
@@ -13,7 +15,7 @@ use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
 
@@ -127,24 +129,79 @@ impl Lru {
 
 pub fn init(app: &tauri::App) {
     index_apps_async();
-    if let Some(win) = app.get_webview_window(LABEL) {
-        let (w2, h) = (win.clone(), app.handle().clone());
-        win.on_window_event(move |e| match e {
-            WindowEvent::Focused(false) if w2.is_visible().unwrap_or(false) => {
-                if lk(&SHOWN_AT).is_some_and(|t| t.elapsed() < Duration::from_millis(400)) {
-                    return; // our own focus hand-over (grab_keyboard), not the user clicking away
-                }
-                *lk(&LAST_BLUR_HIDE) = Some(Instant::now());
-                hide(&h);
-            }
-            WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-                hide(&h);
-            }
-            _ => {}
-        });
+    // The bar is created on demand (ui/lazy.rs); with `ui.lazyBarSecs` = 0 it is never torn down, so it is built at start like before.
+    if lazy_bar_secs() == 0 {
+        crate::ui::lazy::get_or_create(app.handle(), LABEL);
     }
     // the command-bar hotkey is registered (and re-registered live) by hotkeys.rs
+}
+
+/// Idle seconds before the hidden bar window is destroyed: settings key `ui.lazyBarSecs`, default 120, 0 = never, otherwise 5 .. 86400.
+pub(crate) fn lazy_bar_secs() -> u64 {
+    lazy_secs_from(settings::get_f64("ui.lazyBarSecs", 120.0))
+}
+
+fn lazy_secs_from(v: f64) -> u64 {
+    if !v.is_finite() {
+        120
+    } else if v < 1.0 {
+        0
+    } else {
+        v.clamp(5.0, 86_400.0) as u64
+    }
+}
+
+/// Window events of a freshly built bar (ui/lazy.rs calls this for every new window).
+pub(crate) fn attach_bar(app: &AppHandle, win: &WebviewWindow) {
+    let (w2, h) = (win.clone(), app.clone());
+    win.on_window_event(move |e| match e {
+        WindowEvent::Focused(false) if w2.is_visible().unwrap_or(false) => {
+            if lk(&SHOWN_AT).is_some_and(|t| t.elapsed() < Duration::from_millis(400)) {
+                return; // our own focus hand-over (grab_keyboard), not the user clicking away
+            }
+            *lk(&LAST_BLUR_HIDE) = Some(Instant::now());
+            hide(&h);
+        }
+        // Alt+F4 / close on the bar only hides it; the idle teardown (ui/lazy.rs) destroys the window, which does not ask
+        WindowEvent::CloseRequested { api, .. } => {
+            api.prevent_close();
+            hide(&h);
+        }
+        _ => {}
+    });
+}
+
+// The page of a new bar window reports (cmd_ready) once its scripts have run and every event listener is registered; showing earlier would
+// lose bar:shown. Forgotten when a window is (re)built.
+static READY: Mutex<bool> = Mutex::new(false);
+static READY_CV: Condvar = Condvar::new();
+static OPENING: AtomicBool = AtomicBool::new(false); // a slow open (window being built / loaded) is in flight: more presses are ignored
+const READY_WAIT: Duration = Duration::from_secs(4);
+
+pub(crate) fn bar_reset() {
+    *lk(&READY) = false;
+}
+
+fn is_ready() -> bool {
+    *lk(&READY)
+}
+
+/// Blocks until the page reported or `max` passed; true when it reported.
+fn wait_ready(max: Duration) -> bool {
+    let g = lk(&READY);
+    let (g, _) = READY_CV.wait_timeout_while(g, max, |r| !*r).unwrap_or_else(|e| e.into_inner());
+    *g
+}
+
+/// bar-ready.js: the page is loaded and listening. A report that comes after the open gave up waiting (bar already on screen) replays bar:shown,
+/// which that page missed.
+#[tauri::command]
+pub fn cmd_ready(app: AppHandle) {
+    *lk(&READY) = true;
+    READY_CV.notify_all();
+    if bar_visible(&app) {
+        let _ = app.emit_to(LABEL, "bar:shown", ());
+    }
 }
 
 /// tao makes a transparent window by switching DWM blur-behind on with an empty region, once, when the window is created (it even has a FIXME
@@ -169,6 +226,7 @@ fn hide(app: &AppHandle) {
     if let Some(win) = app.get_webview_window(LABEL) {
         let _ = win.hide();
         let _ = app.emit_to(LABEL, "bar:hidden", ());
+        crate::ui::lazy::note_hidden(app, LABEL); // starts the idle count: the window is destroyed after ui.lazyBarSecs hidden
     }
 }
 
@@ -199,14 +257,13 @@ pub(crate) fn bar_visible(app: &AppHandle) -> bool {
 
 /// Opens the bar when it is closed (the uninstall flow brings it back when the uninstaller is done).
 pub(crate) fn show(app: &AppHandle) {
-    if app.get_webview_window(LABEL).is_some_and(|w| !w.is_visible().unwrap_or(false)) {
+    if !bar_visible(app) {
         toggle(app);
     }
 }
 
 fn toggle(app: &AppHandle) {
-    let Some(win) = app.get_webview_window(LABEL) else { return };
-    if win.is_visible().unwrap_or(false) {
+    if bar_visible(app) {
         hide(app);
         return;
     }
@@ -214,10 +271,46 @@ fn toggle(app: &AppHandle) {
     if lk(&LAST_BLUR_HIDE).is_some_and(|t| t.elapsed() < Duration::from_millis(300)) {
         return;
     }
-    PREV_FG.store(unsafe { GetForegroundWindow() }.0 as isize, Ordering::Relaxed);
-    place(app, &win);
+    PREV_FG.store(unsafe { GetForegroundWindow() }.0 as isize, Ordering::Relaxed); // taken now: the slow open below shows the bar later
+    lazy::note_shown(LABEL); // the idle teardown must not fire while the bar is being opened
+    match lazy::try_get(app, LABEL) {
+        Some(win) if is_ready() => show_now(app, &win),
+        _ => open_slow(app), // no window yet (idle teardown), or it is still loading / being built or torn down
+    }
+}
+
+/// The bar window is not there or not ready: build it right now (hidden, so the page loads while nothing is shown), wait for its page to
+/// report, then show it exactly like the fast path. The work runs on a worker thread (window creation must not run on the event loop).
+fn open_slow(app: &AppHandle) {
+    if OPENING.swap(true, Ordering::SeqCst) {
+        return; // a second press while the window is still loading
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let win = lazy::get_or_create(&app, LABEL);
+        if win.is_some() && !wait_ready(READY_WAIT) {
+            eprintln!("command bar: its page did not report within {} s, showing it anyway", READY_WAIT.as_secs());
+        }
+        let Some(win) = win else {
+            OPENING.store(false, Ordering::SeqCst);
+            return;
+        };
+        let a = app.clone();
+        let sent = app.run_on_main_thread(move || {
+            show_now(&a, &win);
+            OPENING.store(false, Ordering::SeqCst);
+        });
+        if sent.is_err() {
+            OPENING.store(false, Ordering::SeqCst);
+        }
+    });
+}
+
+/// Puts the (ready) bar on screen: place, show, bar:shown, take the keyboard.
+fn show_now(app: &AppHandle, win: &WebviewWindow) {
+    place(app, win);
     index_apps_async();
-    keep_transparent(&win);
+    keep_transparent(win);
     *lk(&SHOWN_AT) = Some(Instant::now());
     let _ = win.show();
     let _ = app.emit_to(LABEL, "bar:shown", ()); // first: the pop animation must not wait for the focus hand-over below
@@ -1328,6 +1421,16 @@ use calc::{calc_row, convert};
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lazy_bar_secs_setting() {
+        assert_eq!(lazy_secs_from(120.0), 120); // default
+        assert_eq!(lazy_secs_from(0.0), 0); // never destroy
+        assert_eq!(lazy_secs_from(-3.0), 0);
+        assert_eq!(lazy_secs_from(1.0), 5); // churn guard
+        assert_eq!(lazy_secs_from(1e9), 86_400);
+        assert_eq!(lazy_secs_from(f64::NAN), 120);
+    }
 
     #[test]
     fn web_search_encoding() {

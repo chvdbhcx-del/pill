@@ -75,7 +75,7 @@ fn main() {
             shelf::shelf_add, shelf::shelf_list, shelf::shelf_remove, shelf::shelf_clear,
             shelf::shelf_open, shelf::shelf_reveal, shelf::shelf_copy_path, shelf::shelf_drag_out,
             // @shelf-commands
-            command::cmd_toggle, command::cmd_query, command::cmd_run, command::cmd_icon,
+            command::cmd_toggle, command::cmd_query, command::cmd_run, command::cmd_icon, command::cmd_ready,
             // @command-commands
             settings::settings_get, settings::settings_set,
             settings_backup::settings_export, settings_backup::settings_import,
@@ -124,9 +124,9 @@ fn main() {
             notifhist::notif_history_add, notifhist::notif_history_list, notifhist::notif_history_clear, notifhist::notif_history_mark_read, notifhist::notif_history_remove,
         ])
         .setup(|app| {
-            // The two permanent windows are built here, not declared in tauri.conf.json; before every init() below, which look them up by label.
+            // The island window is built here, not declared in tauri.conf.json; before every init() below, which look it up by label.
+            // The command bar is not: it is created on demand (ui/lazy.rs; command::init builds it at start only when ui.lazyBarSecs = 0).
             ui::windows::build_pill(app.handle())?;
-            ui::windows::build_bar(app.handle())?;
             store::init(app);
             settings::init(app);
             pill::init(app);

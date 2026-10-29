@@ -1989,6 +1989,13 @@ pub fn uninstall_cancel() {
     });
 }
 
+/// An uninstall job exists: the backend is working, or its last state (a running wait, the leftover checklist, a summary) waits to be
+/// seen or dismissed. The command bar window is not torn down while this is true (ui/lazy.rs): the panel's view state (ticks of the checklist,
+/// whether the panel is up) lives in the bar page and only the phase can be read back from the backend.
+pub(crate) fn job_active() -> bool {
+    flow(|f| f.busy || !f.last.is_null())
+}
+
 /// The last state event, for a bar that was hidden while the uninstaller ran.
 #[tauri::command]
 pub fn uninstall_state() -> Value {
