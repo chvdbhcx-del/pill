@@ -83,6 +83,7 @@ mark { background: none; color: var(--text); font-weight: 600; }
 .hint { margin: 4px 0 8px; padding: 8px 18px; border-radius: 12px; font-size: var(--fs-sm, 12px); line-height: 18px; background: var(--amber-bg); color: var(--amber); }
 .msg { padding: 6px 26px 12px; font-size: var(--fs-sm, 12px); line-height: 18px; color: var(--red); }
 .msg:empty { display: none; }
+.msg[data-tone="ok"] { color: var(--green, #58ddab); }
 
 .wv { position: absolute; left: 24px; right: 24px; top: calc(100% - 4px); height: 16px; pointer-events: none; }
 .wv canvas { display: block; width: 100%; height: 100%; }

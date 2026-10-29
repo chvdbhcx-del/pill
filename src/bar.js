@@ -308,7 +308,7 @@
     if (/^[>=]/.test(raw)) return search();
     ++seq;
     if (asking) { asking = 0; invoke('ai_transform_cancel'); } // a new keystroke abandons a pending follow-up; the previous answer comes back
-    msg.textContent = ''; delete msg.dataset.page;
+    msg.textContent = ''; delete msg.dataset.page; delete msg.dataset.tone;
     if (ans.className !== 'md') showAnswer(lastAns);
     const am = ASK.exec(raw);
     dlgRows((am ? raw.slice(am[0].length) : raw).trim());
@@ -318,7 +318,7 @@
     const text = q.value.replace(/^\s+/, ''), my = ++seq;
     endDialog();
     clearAns();
-    msg.textContent = ''; delete msg.dataset.page;
+    msg.textContent = ''; delete msg.dataset.page; delete msg.dataset.tone;
     const am = ASK.exec(text);
     if (am) {
       const question = text.slice(am[0].length).trim();
@@ -379,9 +379,10 @@
     if (svg) M.pop(svg, { from: 'scale(.4) rotate(-40deg)', dur: 0.6 });
     if (el && !M0) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 700); }
     if (msg.textContent) {
+      msg.dataset.tone = 'ok'; // a confirmation, not an error: green instead of the error red
       M.enter(msg, { y: 8, dur: 0.4 });
       clearTimeout(pinMsgT);
-      pinMsgT = setTimeout(() => { if (msg.textContent === text) M.exit(msg, { y: -4, dur: 0.22, after: (e) => { if (e.textContent === text) e.textContent = ''; } }); }, 2600);
+      pinMsgT = setTimeout(() => { if (msg.textContent === text) M.exit(msg, { y: -4, dur: 0.22, after: (e) => { if (e.textContent === text) { e.textContent = ''; delete e.dataset.tone; } } }); }, 2600);
     }
   }
 
@@ -552,7 +553,7 @@
   function reset() {
     endDialog();
     q.value = '';
-    msg.textContent = ''; delete msg.dataset.page;
+    msg.textContent = ''; delete msg.dataset.page; delete msg.dataset.tone;
     clearAns();
     clearTimeout(timer);
     body.classList.remove('in', 'off');
