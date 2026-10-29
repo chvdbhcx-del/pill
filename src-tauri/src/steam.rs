@@ -4,13 +4,14 @@
 // steamapps\\appmanifest_*.acf (StateFlags, BytesDownloaded, BytesToDownload). No network, no writes, nothing is sent anywhere.
 // Runs only while live.steam is on (no switch = no thread); polls every 3 s while Steam runs, every 10 s to notice Steam starting.
 // Event to window "pill": `live:steam` {state: downloading|paused|installing|idle|done, game, appid, percent, speed (B/s), etaSec}.
+use crate::ui::bus::{self, Target};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
-use tauri::{AppHandle, Emitter, Listener};
+use tauri::{AppHandle, Listener};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RRF_RT_REG_SZ};
@@ -451,7 +452,7 @@ fn sync(app: &AppHandle) {
         let app = app.clone();
         std::thread::spawn(move || run(app, g));
     } else {
-        let _ = app.emit_to("pill", "live:steam", json!({ "state": "idle" }));
+        let _ = bus::emit(&app, Target::Label("pill"), "live:steam", json!({ "state": "idle" }));
     }
 }
 
@@ -489,7 +490,7 @@ fn run(app: AppHandle, gen: u64) {
             if shown {
                 shown = false;
                 last = Value::Null;
-                let _ = app.emit_to("pill", "live:steam", json!({ "state": "idle" }));
+                let _ = bus::emit(&app, Target::Label("pill"), "live:steam", json!({ "state": "idle" }));
             }
             seen.clear();
             acf.clear();
@@ -544,7 +545,7 @@ fn run(app: AppHandle, gen: u64) {
         }
         seen = now.iter().map(|m| (m.appid, Seen { active: matches!(classify(m, live_of(m.appid)), St::Downloading | St::Installing), dl: m.downloaded, live: live_of(m.appid) })).collect();
         if let Some(done) = ev {
-            let _ = app.emit_to("pill", "live:steam", done);
+            let _ = bus::emit(&app, Target::Label("pill"), "live:steam", done);
         }
         let p = match cur {
             Some((m, st)) => {
@@ -571,7 +572,7 @@ fn run(app: AppHandle, gen: u64) {
         if (p != last || sent.elapsed() > std::time::Duration::from_secs(10)) && (cur.is_some() || shown) {
             shown = cur.is_some();
             sent = Instant::now();
-            let _ = app.emit_to("pill", "live:steam", p.clone());
+            let _ = bus::emit(&app, Target::Label("pill"), "live:steam", p.clone());
         }
         last = p;
         if !nap(gen, 3_000) {

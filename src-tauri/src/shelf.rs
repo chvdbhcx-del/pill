@@ -1,9 +1,10 @@
 // File shelf (drop files, keep, drag out). Owner: shelf agent. Part of the Pill replica (user request: "replica of the Island app via the replica skills").
 // Files stay where they are; the DB only keeps path + name. Native drag-out = OLE DoDragDrop with a shell CF_HDROP data object.
+use crate::ui::bus::{self, Target};
 use base64::Engine;
 use serde::Serialize;
 use std::path::Path;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 use windows::core::{implement, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{BOOL, DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, HGLOBAL, HWND, S_OK, SIZE};
 use windows::Win32::Graphics::Gdi::*;
@@ -87,7 +88,7 @@ fn items() -> Vec<Item> {
 
 fn changed(app: &AppHandle) -> Vec<Item> {
     let v = items();
-    let _ = app.emit_to("pill", "shelf:changed", serde_json::json!({ "count": v.len(), "items": &v }));
+    let _ = bus::emit(&app, Target::Label("pill"), "shelf:changed", serde_json::json!({ "count": v.len(), "items": &v }));
     v
 }
 

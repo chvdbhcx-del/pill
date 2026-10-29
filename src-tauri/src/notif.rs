@@ -5,11 +5,12 @@
 // Windows normally gives this API only to apps with package identity: from an unpackaged exe the calls may fail -> status "unsupported", the worker ends.
 // Status for Settings: granted | denied | pending (not asked yet) | unsupported | off. Event to window "pill": `live:notification` {app, title, body, id}.
 // PRIVACY: titles and bodies are only forwarded to our own page (shown as text), never logged, stored or sent anywhere.
+use crate::ui::bus::{self, Target};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Listener};
+use tauri::{AppHandle, Listener};
 use windows::UI::Notifications::Management::{UserNotificationListener, UserNotificationListenerAccessStatus};
 use windows::UI::Notifications::NotificationKinds;
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
@@ -139,7 +140,7 @@ fn run(app: AppHandle, gen: u64) {
                 let Ok(l) = UserNotificationListener::Current() else { return };
                 if let Some(v) = poll(&l, &mut seen, &mut primed) {
                     for p in v {
-                        let _ = app.emit_to("pill", "live:notification", p);
+                        let _ = bus::emit(&app, Target::Label("pill"), "live:notification", p);
                     }
                 }
                 if !nap(gen, POLL_MS) {

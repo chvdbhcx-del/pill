@@ -2,6 +2,7 @@
 // Owner: pill agent (lane L1). Other modules read their own keys through get_str/get_bool/get_f64.
 // Keys: size (80-200), theme (dark|light|auto), clock24, autoHide, monitor ("primary"|"1".."n"), reduceMotion,
 // showInCapture, hideInApps (list of exe names), hotkey.<action> (live: hotkeys.rs), module.<id>, live.<id>, capture.*.
+use crate::ui::bus::{self, Target};
 use serde_json::{json, Map, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -188,7 +189,6 @@ pub fn settings_set(app: tauri::AppHandle, patch: Cfg) -> Cfg {
 /// (taken by another program, invalid) every `hotkey.*` key of the patch goes back to its old value, the previous bindings stay
 /// registered and the second value is Err(text). `module.*` keys re-sync the hotkeys of that module (never fails the patch).
 pub fn apply_patch(app: &tauri::AppHandle, mut patch: Cfg) -> (Cfg, Result<(), String>) {
-    use tauri::Emitter;
     if let Some(v) = patch.get("size").and_then(|v| v.as_f64()) {
         patch.insert("size".into(), json!(v.clamp(80.0, 200.0).round()));
     }
@@ -223,7 +223,7 @@ pub fn apply_patch(app: &tauri::AppHandle, mut patch: Cfg) -> (Cfg, Result<(), S
     crate::pill::on_settings(app, &patch);
     crate::media::on_settings(&patch);
     let all = merged();
-    let _ = app.emit("settings:changed", &all);
+    let _ = bus::emit(&app, Target::All, "settings:changed", &all);
     (all, res)
 }
 

@@ -1,13 +1,14 @@
 // Clipboard history (local, capped, skips sensitive formats). Owner: clipboard agent.
 // Capture: message-only window + AddClipboardFormatListener, 150 ms debounce, privacy filters run BEFORE content is read.
 // Content is never logged. Items live in store.rs table clip_items; images are PNG files under store::dir()/clips/.
+use crate::ui::bus::{self, Target};
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 use windows::core::{w, PCWSTR, PWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Security::*;
@@ -361,7 +362,7 @@ fn capture(app: &AppHandle) {
     };
     prune();
     if let Some(item) = crate::store::with(|c| item_by_id(c, id)) {
-        let _ = app.emit_to("pill", "clip:added", item);
+        let _ = bus::emit(&app, Target::Label("pill"), "clip:added", item);
     }
 }
 

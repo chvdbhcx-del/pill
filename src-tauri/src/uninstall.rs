@@ -7,6 +7,7 @@
 // indexes into the server-side list of the last scan.
 // Commands: uninstall_info uninstall_start uninstall_scan uninstall_delete uninstall_admin uninstall_cancel uninstall_state uninstall_open_backups.
 // Event (window bar): uninstall:state {phase: running|still|scanning|review|deleting|elevating|done|error, name, message, items[], manual[], ...}.
+use crate::ui::bus::{self, Target};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::os::windows::process::CommandExt;
@@ -14,7 +15,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 use windows::core::{w, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HWND, WIN32_ERROR};
 use windows::Win32::System::Registry::{
@@ -1757,7 +1758,7 @@ pub fn rows(query: &str) -> Vec<Row> {
 
 fn emit(app: &AppHandle, v: Value) {
     flow(|f| f.last = v.clone());
-    let _ = app.emit_to("bar", "uninstall:state", v);
+    let _ = bus::emit(&app, Target::Label("bar"), "uninstall:state", v);
 }
 
 pub(crate) fn items_json(cands: &[Cand]) -> Vec<Value> {
@@ -1939,7 +1940,7 @@ pub fn uninstall_delete(app: AppHandle, ids: Vec<usize>) -> Value {
         let (dir, base) = (backup_dir(&env), format!("{}-{stamp}", sanitize(&p.name)));
         let refs: Vec<&Cand> = picked.iter().collect();
         let r = delete_cands(&p, &refs, &env, &RealReg, &stamp, false, &|name, bytes| file_store(&dir, &base, name, bytes), &|shown, ok, err, n, total| {
-            let _ = app.emit_to("bar", "uninstall:item", json!({ "shown": shown, "ok": ok, "error": err, "n": n, "total": total }));
+            let _ = bus::emit(&app, Target::Label("bar"), "uninstall:item", json!({ "shown": shown, "ok": ok, "error": err, "n": n, "total": total }));
         });
         finish_delete(&app, &p, &r, &dir);
     });
@@ -2013,7 +2014,7 @@ pub fn uninstall_state() -> Value {
 pub fn uninstall_open_panel(app: AppHandle) {
     flow(|f| f.focus = !f.last.is_null());
     if crate::command::bar_visible(&app) {
-        let _ = app.emit_to("bar", "uninstall:focus", json!({}));
+        let _ = bus::emit(&app, Target::Label("bar"), "uninstall:focus", json!({}));
         flow(|f| f.focus = false);
     } else {
         crate::command::show(&app);
@@ -2026,7 +2027,7 @@ fn notify_ready(app: &AppHandle, name: &str, kind: &str, count: usize) {
     if crate::command::bar_visible(app) {
         return;
     }
-    let _ = app.emit("uninstall:ready", json!({ "name": name, "kind": kind, "count": count }));
+    let _ = bus::emit(&app, Target::All, "uninstall:ready", json!({ "name": name, "kind": kind, "count": count }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------

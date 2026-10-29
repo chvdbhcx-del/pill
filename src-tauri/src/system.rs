@@ -1,12 +1,12 @@
 // System controls for the Controls tab (S10 / F08): Ethernet, Wi-Fi, Bluetooth, dark theme, volume, mic mute, power. Owner: system agent (lane L5).
 // Reads need no elevation. Adapter admin state needs it: done by launching `netsh` with the "runas" verb, so Windows shows UAC (the app never elevates itself).
 // Power actions are two-step: the first call only arms a 3 s window in Rust, the second call inside it runs the action (see `decide`).
+use crate::ui::bus::{self, Target};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::os::windows::process::CommandExt;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::Emitter;
 use windows::core::{w, HSTRING, PCWSTR};
 use windows::Devices::Bluetooth::{BluetoothConnectionStatus, BluetoothDevice};
 use windows::Devices::Enumeration::DeviceInformation;
@@ -212,7 +212,7 @@ fn build_state() -> SysState {
 
 fn emit_state() {
     if let Some(app) = APP.get() {
-        let _ = app.emit_to("pill", "sys:changed", build_state());
+        let _ = bus::emit(&app, Target::Label("pill"), "sys:changed", build_state());
     }
 }
 

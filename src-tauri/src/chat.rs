@@ -2,6 +2,7 @@
 // streaming orchestration against the user's OpenAI-compatible endpoint. Owner: net/chat agent.
 // All sockets are in net.rs; this file never touches the network itself. History is local; the key is DPAPI-wrapped.
 // Events to the page: chat:delta {thread, run, text}, chat:done {thread, run, ok, stopped, error, id}.
+use crate::ui::bus::{self, Target};
 use crate::net;
 use rusqlite::params;
 use serde_json::{json, Value};
@@ -9,7 +10,6 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::Emitter;
 
 static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
 static SEQ: AtomicU64 = AtomicU64::new(1);
@@ -24,7 +24,7 @@ pub fn init(app: &tauri::App) {
 
 fn emit(name: &str, payload: Value) {
     if let Some(a) = APP.get() {
-        let _ = a.emit_to("pill", name, payload);
+        let _ = bus::emit(&a, Target::Label("pill"), name, payload);
     }
 }
 

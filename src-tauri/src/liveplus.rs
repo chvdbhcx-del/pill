@@ -9,13 +9,14 @@
 // One supervisor thread (2 s tick); a switch that is off costs one boolean read. Everything is local and read-only; the only network use is the
 // optional calendar subscription (net.rs, Feature::Calendar). Mail (IMAP) has its own thread in mail.rs.
 // The decision logic (DlWatch, UsbWatch, Bat, ics parsing and recurrence, due()) is pure and unit-tested.
+use crate::ui::bus::{self, Target};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use sha2::{Digest, Sha256};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 use windows::core::PCWSTR;
 use windows::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
@@ -689,7 +690,7 @@ impl Cal {
         }
         for (title, minutes) in due(&self.events, local_now(), &mut self.fired).into_iter().take(3) {
             let title: String = title.chars().take(80).collect();
-            let _ = app.emit_to("pill", "live:calendar", json!({ "title": title, "minutes": minutes }));
+            let _ = bus::emit(&app, Target::Label("pill"), "live:calendar", json!({ "title": title, "minutes": minutes }));
         }
     }
 }
@@ -708,7 +709,7 @@ fn tick(app: &AppHandle, n: u64, dl: &mut DlWatch, usb: &mut UsbWatch, bat: &mut
             let ready = dl.step(now, &files);
             if let Some(first) = ready.first() {
                 let path = dir.join(first);
-                let _ = app.emit_to("pill", "live:file-done", json!({ "name": first, "path": path.to_string_lossy(), "more": ready.len() - 1 }));
+                let _ = bus::emit(&app, Target::Label("pill"), "live:file-done", json!({ "name": first, "path": path.to_string_lossy(), "more": ready.len() - 1 }));
             }
         }
     } else {
@@ -716,7 +717,7 @@ fn tick(app: &AppHandle, n: u64, dl: &mut DlWatch, usb: &mut UsbWatch, bat: &mut
     }
     if on("live.usb", true) {
         for (c, added) in usb.step(now, removable_mask()) {
-            let _ = app.emit_to("pill", "live:usb", json!({ "letter": c.to_string(), "added": added }));
+            let _ = bus::emit(&app, Target::Label("pill"), "live:usb", json!({ "letter": c.to_string(), "added": added }));
         }
     } else {
         *usb = UsbWatch::default();
@@ -730,7 +731,7 @@ fn tick(app: &AppHandle, n: u64, dl: &mut DlWatch, usb: &mut UsbWatch, bat: &mut
                 None => None,
             };
             if let Some((kind, percent)) = ev {
-                let _ = app.emit_to("pill", "live:battery", json!({ "kind": kind, "percent": percent }));
+                let _ = bus::emit(&app, Target::Label("pill"), "live:battery", json!({ "kind": kind, "percent": percent }));
             }
         }
     } else {

@@ -4,11 +4,11 @@
 // Only 32 level numbers (+ one rms value and a timestamp) leave Rust, as the `audio:bands` event (~60 Hz) to the local window "pill".
 // The capture runs only while the pill is visible AND the selected media session is playing AND setting
 // `audio.reactive` (default true) is on; otherwise the thread is parked and no audio client is open.
+use crate::ui::bus::{self, Target};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::Emitter;
 use windows::Win32::Media::Audio::{
     eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator,
     AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
@@ -276,7 +276,7 @@ fn emit(app: &tauri::AppHandle, b: &[f32; B], rms: f32) {
     let t = T0.get_or_init(Instant::now).elapsed().as_millis() as u64;
     let mut b = *b;
     b.iter_mut().for_each(|v| *v = (*v * 100.0).round() / 100.0);
-    let _ = app.emit_to("pill", "audio:bands", &Frame { b, rms: (rms * 1000.0).round() / 1000.0, t });
+    let _ = bus::emit(&app, Target::Label("pill"), "audio:bands", &Frame { b, rms: (rms * 1000.0).round() / 1000.0, t });
 }
 
 fn device_id(dev: &IMMDevice) -> String {

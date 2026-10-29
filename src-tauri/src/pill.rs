@@ -5,6 +5,7 @@
 // Expand: Rust enlarges the window -> emits `pill:expand` -> page animates. Collapse: page animates, then calls
 // `pill_set_state("collapsed")` and Rust shrinks the window. Rust owns the cursor (hover / top-edge) and emits
 // `pill:hover` / `pill:leave`.
+use crate::ui::bus::{self, Target};
 use serde_json::{json, Map, Value};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,7 +13,7 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::core::PCWSTR;
 use windows::Win32::Graphics::Gdi::{
@@ -204,9 +205,9 @@ fn apply_vis(app: &AppHandle, reason: &str) {
             let _ = ShowWindow(me(), SW_SHOWNOACTIVATE);
         }
         place(app); // re-assert topmost + re-place after being hidden
-        let _ = app.emit_to("pill", "pill:show", json!({ "reason": reason }));
+        let _ = bus::emit(&app, Target::Label("pill"), "pill:show", json!({ "reason": reason }));
     } else {
-        let _ = app.emit_to("pill", "pill:hide", json!({ "reason": reason }));
+        let _ = bus::emit(&app, Target::Label("pill"), "pill:hide", json!({ "reason": reason }));
         unsafe {
             let _ = ShowWindow(me(), SW_HIDE);
         }
@@ -243,12 +244,12 @@ pub fn expand(app: &AppHandle, tab: Option<String>, via: &str) {
     set_hidden(app, HIDE_USER | HIDE_AUTO, false, "expand");
     st().expanded = true;
     place(app);
-    let _ = app.emit_to("pill", "pill:expand", json!({ "tab": tab, "via": via }));
+    let _ = bus::emit(&app, Target::Label("pill"), "pill:expand", json!({ "tab": tab, "via": via }));
 }
 
 pub fn toggle(app: &AppHandle) {
     if st().expanded {
-        let _ = app.emit_to("pill", "pill:collapse", ());
+        let _ = bus::emit(&app, Target::Label("pill"), "pill:collapse", ());
     } else {
         expand(app, None, "hotkey");
     }
@@ -531,7 +532,7 @@ mod tests {
 }
 
 fn emit(app: &AppHandle, name: &str) {
-    let _ = app.emit_to("pill", name, ());
+    let _ = bus::emit(&app, Target::Label("pill"), name, ());
 }
 
 /// One thread owns the cursor: display-rate (deadline-paced) near the pill, 10 Hz far, nothing but a flag check
@@ -558,7 +559,7 @@ fn cursor_loop(app: AppHandle) {
             let h = display_hz(HWND(hwnd as *mut c_void));
             if h != hz || dirty || first {
                 hz = h;
-                let _ = app.emit_to("pill", "pill:display", json!({ "hz": hz }));
+                let _ = bus::emit(&app, Target::Label("pill"), "pill:display", json!({ "hz": hz }));
             }
             page_up |= first;
         }
@@ -647,11 +648,11 @@ fn cursor_loop(app: AppHandle) {
                 zone_on = true;
                 last = (p.x, p.y);
                 let c = Cur { x: Some((p.x - wr.left) as f64 / sc), y: Some((p.y - wr.top) as f64 / sc) };
-                let _ = app.emit_to("pill", "pill:cursor", c);
+                let _ = bus::emit(&app, Target::Label("pill"), "pill:cursor", c);
             }
         } else if zone_on {
             zone_on = false;
-            let _ = app.emit_to("pill", "pill:cursor", Cur { x: None, y: None });
+            let _ = bus::emit(&app, Target::Label("pill"), "pill:cursor", Cur { x: None, y: None });
         }
         // `pill:gaze` for the pets' / eyes' look: the cursor in PHYSICAL px relative to the window's top-left (negative / beyond the
         // window is fine: any distance, any monitor). Only while the page asked for it and the cursor moved; once on enable.
@@ -661,7 +662,7 @@ fn cursor_loop(app: AppHandle) {
             if (p.x, p.y) != gaze_last {
                 gaze_last = (p.x, p.y);
                 moved = true;
-                let _ = app.emit_to("pill", "pill:gaze", json!({ "x": p.x - wr.left, "y": p.y - wr.top }));
+                let _ = bus::emit(&app, Target::Label("pill"), "pill:gaze", json!({ "x": p.x - wr.left, "y": p.y - wr.top }));
             }
         } else {
             gaze_last = (i32::MIN, i32::MIN);

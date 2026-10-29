@@ -9,6 +9,7 @@
 // * Weather: MET Norway Locationforecast 2.0 compact + Nominatim city search; sunrise/sunset, feels-like and the
 //   daily/hourly digest are computed locally (pure functions, `cargo test net`).
 // * secrets: DPAPI (CryptProtectData, current user) for the AI key; the key is only ever sent to the configured endpoint.
+use crate::ui::bus::{self, Target};
 use serde_json::{json, Value};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
@@ -1146,8 +1147,7 @@ fn imperial() -> bool {
 
 fn emit_current(v: Value) {
     if let Some(a) = APP.get() {
-        use tauri::Emitter;
-        let _ = a.emit_to("pill", "weather:current", v);
+        let _ = bus::emit(&a, Target::Label("pill"), "weather:current", v);
     }
 }
 

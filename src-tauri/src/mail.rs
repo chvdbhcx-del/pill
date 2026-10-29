@@ -9,6 +9,7 @@
 // 15 s minimum between any two polls, exponential back-off up to 30 min after errors, catch_unwind around every tick.
 // net.rs says it is the only module that opens sockets; this is the one exception (WinHTTP cannot speak IMAP), it only talks to mail.host.
 // The parsing, RFC 2047 decoding, UID dedup and the scheduler are pure and unit-tested on canned data; the session runs on an in-memory stream.
+use crate::ui::bus::{self, Target};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -17,7 +18,7 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 
 const TICK: Duration = Duration::from_secs(2);
 const EVERY_MS: u64 = 120_000; // poll interval
@@ -672,7 +673,7 @@ fn tick(app: &AppHandle, sched: &mut Sched, st: &mut MailState) {
             set_status("ok", String::new(), Some(f.unseen));
             if f.fresh > 0 {
                 let (from, subject) = f.newest.unwrap_or_default();
-                let _ = app.emit_to("pill", "live:mail", json!({ "from": from, "subject": subject, "more": f.fresh - 1 }));
+                let _ = bus::emit(&app, Target::Label("pill"), "live:mail", json!({ "from": from, "subject": subject, "more": f.fresh - 1 }));
             }
             sched.done(crate::liveplus::mono_ms(), true);
         }

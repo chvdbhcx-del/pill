@@ -4,12 +4,13 @@
 // %APPDATA%\pill\agents\ ; this module only reads that directory. File content is untrusted: size-capped, parsed
 // defensively, titles are text only (control characters stripped, capped), never executed or passed to a shell.
 // Events to window "pill": `agents:changed` {sessions, working, waiting}, `agents:done` {session, tool, title, cwd} (once per transition).
+use crate::ui::bus::{self, Target};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 
 const MAX_FILE: u64 = 4096;
 const MAX_FILES: usize = 64;
@@ -357,10 +358,10 @@ fn run(app: AppHandle) {
         let txt = snap.to_string();
         if txt != last {
             last = txt;
-            let _ = app.emit_to("pill", "agents:changed", snap);
+            let _ = bus::emit(&app, Target::Label("pill"), "agents:changed", snap);
         }
         for s in out.done {
-            let _ = app.emit_to("pill", "agents:done", json!({ "session": s.session, "tool": s.tool, "title": s.title, "cwd": s.cwd }));
+            let _ = bus::emit(&app, Target::Label("pill"), "agents:done", json!({ "session": s.session, "tool": s.tool, "title": s.title, "cwd": s.cwd }));
         }
         // 10 s tick with the watcher (stale expiry is time based), 2 s while a session waits (its transcript is not watched), 1.5 s when the watcher failed
         match &watcher {

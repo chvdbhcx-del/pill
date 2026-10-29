@@ -1,13 +1,13 @@
 // Now playing, media controls, master volume, battery. Owner: media agent (lane L2).
 // GSMTC sessions with event subscriptions (no polling); one worker thread coalesces events and emits `media:changed`.
 // The page interpolates the timeline between events.
+use crate::ui::bus::{self, Target};
 use base64::Engine;
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::Emitter;
 use windows::core::Interface;
 use windows::Foundation::{EventRegistrationToken, TypedEventHandler};
 use windows::Graphics::Imaging::{
@@ -443,7 +443,7 @@ fn worker(app: tauri::AppHandle, tx: Sender<Msg>, rx: Receiver<Msg>) {
             wake();
         }
         EMITTED_THUMB.store(st.thumb_id, Ordering::Relaxed);
-        let _ = app.emit_to("pill", "media:changed", &st);
+        let _ = bus::emit(&app, Target::Label("pill"), "media:changed", &st);
         // New track: browsers publish the artwork after the title (until then Windows may hand out the
         // app icon), so re-read the thumbnail a couple of times.
         let key = format!("{}\u{1}{}\u{1}{}", st.session_id, st.title, st.artist);

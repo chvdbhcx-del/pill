@@ -4,6 +4,7 @@
 // page = bar.html + bar.js + bar.css, bar-ready.js tells Rust (cmd_ready) when the page has registered its event listeners.
 // Events (to window "bar"): bar:shown, bar:hidden. Commands: cmd_toggle, cmd_query, cmd_run, cmd_ready.
 // Not done (later slice): timer / remind parsing, currency, runtime hotkey rebind (restart needed).
+use crate::ui::bus::{self, Target};
 use crate::ui::lazy;
 use crate::{settings, store};
 use serde::Serialize;
@@ -17,7 +18,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
+use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
 
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::HWND;
@@ -200,7 +201,7 @@ pub fn cmd_ready(app: AppHandle) {
     *lk(&READY) = true;
     READY_CV.notify_all();
     if bar_visible(&app) {
-        let _ = app.emit_to(LABEL, "bar:shown", ());
+        let _ = bus::emit(&app, Target::Label(LABEL), "bar:shown", ());
     }
 }
 
@@ -225,7 +226,7 @@ fn hide(app: &AppHandle) {
     crate::notes::search_cache_drop(); // so does the note text index
     if let Some(win) = app.get_webview_window(LABEL) {
         let _ = win.hide();
-        let _ = app.emit_to(LABEL, "bar:hidden", ());
+        let _ = bus::emit(&app, Target::Label(LABEL), "bar:hidden", ());
         crate::ui::lazy::note_hidden(app, LABEL); // starts the idle count: the window is destroyed after ui.lazyBarSecs hidden
     }
 }
@@ -313,7 +314,7 @@ fn show_now(app: &AppHandle, win: &WebviewWindow) {
     keep_transparent(win);
     *lk(&SHOWN_AT) = Some(Instant::now());
     let _ = win.show();
-    let _ = app.emit_to(LABEL, "bar:shown", ()); // first: the pop animation must not wait for the focus hand-over below
+    let _ = bus::emit(&app, Target::Label(LABEL), "bar:shown", ()); // first: the pop animation must not wait for the focus hand-over below
     grab_keyboard(app);
     // the first SetForegroundWindow can lose to the app that still owns the keyboard (the hotkey's own keys are barely released)
     let a = app.clone();
@@ -1394,7 +1395,7 @@ fn open_pill(app: &AppHandle, tab: &str, extra: serde_json::Value) {
     if let (Some(m), Some(e)) = (p.as_object_mut(), extra.as_object()) {
         m.extend(e.clone());
     }
-    let _ = app.emit_to("pill", "pill:open-tab", p);
+    let _ = bus::emit(&app, Target::Label("pill"), "pill:open-tab", p);
     crate::pill::expand(app, Some(tab.to_string()), "command");
 }
 

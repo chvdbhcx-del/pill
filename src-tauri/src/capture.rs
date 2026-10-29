@@ -13,6 +13,7 @@
 // a QR link is opened only when the user clicks "Open" on the card, the page can only open files inside the capture folders.
 // Settings read through settings::get_*: capture.folder, capture.videoFolder, capture.fps, capture.encoder (auto|x264|nvenc),
 // capture.ffmpeg, capture.format (mp4|gif), capture.shotAction (both|copy|save), capture.revealAfterSave, hotkey.shotArea/shotFull/ocr/qr/pipette/record.
+use crate::ui::bus::{self, Target};
 use crate::{settings, store};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -25,7 +26,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager, Webview, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, Webview, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND};
 use windows::Win32::Graphics::Gdi::{
@@ -639,7 +640,7 @@ fn rec_slot() -> MutexGuard<'static, Option<Rec>> {
 }
 
 fn emit(app: &AppHandle, ev: &str, payload: Value) {
-    let _ = app.emit_to("pill", ev, payload);
+    let _ = bus::emit(&app, Target::Label("pill"), ev, payload);
 }
 
 fn fail(app: &AppHandle, msg: impl Into<String>) {
@@ -721,7 +722,7 @@ fn open_overlays(app: &AppHandle, id: u64) {
             if let Some(w) = ensure_window(&a, &m.label) {
                 place(&w, m, false);
                 if existed {
-                    let _ = a.emit_to(m.label.as_str(), "capture:begin", json!({ "id": id }));
+                    let _ = bus::emit(&a, Target::Label(m.label.as_str()), "capture:begin", json!({ "id": id }));
                 }
             }
         }
@@ -767,7 +768,7 @@ fn hide_overlays(app: &AppHandle) {
                     let _ = ShowWindow(h, SW_HIDE);
                 }
             }
-            let _ = app.emit_to(label.as_str(), "capture:end", json!({}));
+            let _ = bus::emit(&app, Target::Label(label.as_str()), "capture:end", json!({}));
         }
     }
     *LAST_END.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());

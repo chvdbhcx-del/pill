@@ -3,9 +3,10 @@
 // Storage: launcher_groups / launcher_links (migration V1). One implicit group (the lowest id) holds the Home row;
 // `sort` is the position. Targets are canonical paths, opened with ShellExecute (no shell string); icons come from
 // the shelf lane's IShellItemImageFactory pipeline (shelf::icon_for).
+use crate::ui::bus::{self, Target};
 use serde::Serialize;
 use std::path::Path;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Shell::ShellExecuteW;
@@ -93,7 +94,7 @@ fn links() -> Vec<Link> {
 
 fn changed(app: &AppHandle) -> Vec<Link> {
     let v = links();
-    let _ = app.emit_to("pill", "launcher:changed", serde_json::json!({ "count": v.len(), "items": &v }));
+    let _ = bus::emit(&app, Target::Label("pill"), "launcher:changed", serde_json::json!({ "count": v.len(), "items": &v }));
     v
 }
 

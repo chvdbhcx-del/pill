@@ -5,11 +5,12 @@
 //        (3) the commands remind_add / remind_list / remind_done / remind_delete / remind_snooze and timer_start / timer_cancel / timer_state.
 // Events to the page (window "pill"): remind:due {id,text,kind,late,repeat,due_at}, remind:changed, timer:tick {id,remaining_ms,total_s}, timer:done {id}.
 // Timer = a reminder row of kind 'timer' (`total_s` = length, `done` set when it ends).
+use crate::ui::bus::{self, Target};
 use crate::store;
 use serde::Serialize;
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 
 const MIN: i64 = 60_000;
 const HOUR: i64 = 60 * MIN;
@@ -374,7 +375,7 @@ fn advance(rule: &str, due: i64, now: i64) -> Option<i64> {
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static WAKE: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
 fn wake() { if let Ok(mut g) = WAKE.0.lock() { *g = true; WAKE.1.notify_all(); } }
-fn emit(name: &str, payload: serde_json::Value) { if let Some(app) = APP.get() { let _ = app.emit_to("pill", name, payload); } }
+fn emit(name: &str, payload: serde_json::Value) { if let Some(app) = APP.get() { let _ = bus::emit(&app, Target::Label("pill"), name, payload); } }
 
 pub fn init(app: &tauri::App) {
     let _ = APP.set(app.handle().clone());

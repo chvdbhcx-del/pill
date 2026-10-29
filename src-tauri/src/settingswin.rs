@@ -1,10 +1,11 @@
 // Settings window: the separate, lazily created window "settings" (settings.html), size/position memory (settingsWin.*),
 // autostart (HKCU Run value "Pill", only on an explicit toggle), hotkey checks/storage and the few helpers the pages need.
 // Owner: settings-window agent. Window creation always runs on a worker thread (WebView2 creation on the event-loop thread deadlocks).
+use crate::ui::bus::{self, Target};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use windows::core::w;
 use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
 use windows::Win32::System::Registry::{RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ};
@@ -26,7 +27,7 @@ pub fn open(app: &AppHandle, page: Option<&str>) {
         let _ = w.show();
         let _ = w.set_focus();
         if let Some(p) = &page {
-            let _ = app.emit_to(LABEL, "settings:page", p);
+            let _ = bus::emit(&app, Target::Label(LABEL), "settings:page", p);
         }
         return;
     }

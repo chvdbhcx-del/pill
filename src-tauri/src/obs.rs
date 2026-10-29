@@ -4,6 +4,7 @@
 // LOCALHOST ONLY (the address is hard-coded, only the port is configurable). Runs only while the switch live.obs is on: no switch, no thread, no socket.
 // Event to window "pill": `live:obs` {recording, streaming, recMs, streamMs, file?}; `file` (the saved recording) is only present on the stop event.
 // The OBS password is typed once into Settings, kept DPAPI-encrypted in settings key `obs.passwordEnc` (net::secrets) and never logged or sent to the page.
+use crate::ui::bus::{self, Target};
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -12,7 +13,7 @@ use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Listener};
+use tauri::{AppHandle, Listener};
 
 const MAX_FRAME: usize = 1 << 20;
 const OUTPUTS: u32 = 1 << 6; // eventSubscriptions: Outputs only
@@ -184,7 +185,7 @@ fn sync(app: &AppHandle, force: bool) {
         }
         None => {
             set_status("off");
-            let _ = app.emit_to("pill", "live:obs", json!({ "recording": false, "streaming": false, "recMs": 0, "streamMs": 0 }));
+            let _ = bus::emit(&app, Target::Label("pill"), "live:obs", json!({ "recording": false, "streaming": false, "recMs": 0, "streamMs": 0 }));
         }
     }
 }
@@ -263,7 +264,7 @@ fn emit(app: &AppHandle, st: &ObsState) {
             }
         }
     }
-    let _ = app.emit_to("pill", "live:obs", p);
+    let _ = bus::emit(&app, Target::Label("pill"), "live:obs", p);
 }
 
 fn session(app: &AppHandle, gen: u64, port: u16) -> End {
@@ -336,7 +337,7 @@ fn session(app: &AppHandle, gen: u64, port: u16) -> End {
     };
     let _ = s.shutdown(std::net::Shutdown::Both);
     if shown {
-        let _ = app.emit_to("pill", "live:obs", json!({ "recording": false, "streaming": false, "recMs": 0, "streamMs": 0 })); // OBS went away: clear the chip
+        let _ = bus::emit(&app, Target::Label("pill"), "live:obs", json!({ "recording": false, "streaming": false, "recMs": 0, "streamMs": 0 })); // OBS went away: clear the chip
     }
     end
 }

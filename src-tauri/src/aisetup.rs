@@ -14,6 +14,7 @@
 // Commands: aisetup_status aisetup_whisper_install aisetup_whisper_set aisetup_whisper_remove aisetup_ollama_download
 //   aisetup_ollama_run_installer aisetup_ollama_pull aisetup_ai_use aisetup_cancel.
 // Event: aisetup:progress {id: whisper|ollama-setup|ollama-pull, item, done, total, phase: download|verify|unpack|start|pull|done|error|cancelled, message}.
+use crate::ui::bus::{self, Target};
 use crate::net::{self, Abort, Feature, Opts};
 use crate::settings;
 use serde_json::{json, Map, Value};
@@ -27,7 +28,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HANDLE, HWND};
 use windows::Win32::System::JobObjects::{
@@ -271,7 +272,7 @@ fn job_lock() -> std::sync::MutexGuard<'static, Option<(String, Abort)>> {
 }
 
 fn emit(app: &AppHandle, id: &str, item: &str, done: u64, total: u64, phase: &str, message: &str) {
-    let _ = app.emit("aisetup:progress", json!({ "id": id, "item": item, "done": done, "total": total, "phase": phase, "message": message }));
+    let _ = bus::emit(&app, Target::All, "aisetup:progress", json!({ "id": id, "item": item, "done": done, "total": total, "phase": phase, "message": message }));
 }
 
 /// Runs `f` on its own thread as the one active job; the outcome arrives as a progress event (done / error / cancelled).

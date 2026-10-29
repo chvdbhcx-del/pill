@@ -9,13 +9,14 @@
 // voice.paste (false), voice.autostop (false), voice.mode (toggle|hold), voice.key.<provider> (DPAPI blob, same mechanism as ai.apiKeyEnc), hotkey.voice.
 // Commands: voice_toggle voice_start voice_stop voice_cancel voice_state voice_test_mic voice_test_service voice_set_key voice_has_key.
 // Events: voice:state {state: idle|recording|transcribing|done|error, startedAt?, text?, code?, message?}, voice:level {rms, level, test?}.
+use crate::ui::bus::{self, Target};
 use crate::net::{self, Abort, Feature, Opts};
 use crate::settings;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Listener, Manager};
+use tauri::{AppHandle, Listener, Manager};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HGLOBAL};
 use windows::Win32::Media::Audio::{
@@ -361,9 +362,9 @@ struct RecOpts {
 fn emit_level(app: &AppHandle, rms: f32, test: bool) {
     let p = json!({ "rms": (rms * 10000.0).round() / 10000.0, "level": (level_of(rms) * 100.0).round() / 100.0, "test": test });
     if test {
-        let _ = app.emit("voice:level", p);
+        let _ = bus::emit(&app, Target::All, "voice:level", p);
     } else {
-        let _ = app.emit_to("pill", "voice:level", p);
+        let _ = bus::emit(&app, Target::Label("pill"), "voice:level", p);
     }
 }
 
@@ -546,7 +547,7 @@ fn emit_state(app: &AppHandle, state: &str, extra: Value) {
     if let (Some(o), Value::Object(x)) = (p.as_object_mut(), extra) {
         o.extend(x);
     }
-    let _ = app.emit("voice:state", p);
+    let _ = bus::emit(&app, Target::All, "voice:state", p);
 }
 
 fn fail(app: &AppHandle, e: VErr) {

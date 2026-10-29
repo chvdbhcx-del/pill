@@ -3,9 +3,10 @@
 // One poller thread: 250 ms while the pill is visible, 1000 ms while hidden (the page calls watch_pause / watch_resume from
 // its pill:hide / pill:show handlers). Emits `kbd:layout` {lang:'RU', name:'Russian'} to window "pill" only when the layout of
 // the SAME foreground thread changed and stayed changed for 2 polls. Never on startup, never for a null layout.
+use crate::ui::bus::{self, Target};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 use windows::Win32::Globalization::{GetLocaleInfoW, LOCALE_SENGLISHLANGUAGENAME, LOCALE_SISO639LANGNAME};
 use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout;
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
@@ -98,7 +99,7 @@ fn run(app: AppHandle) {
         }
         if let Some((tid, lid)) = current() {
             if let Some(new) = t.step(tid, lid) {
-                let _ = app.emit_to("pill", "kbd:layout", info(new));
+                let _ = bus::emit(&app, Target::Label("pill"), "kbd:layout", info(new));
             }
         } else {
             t.step(0, 0);

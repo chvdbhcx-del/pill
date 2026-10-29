@@ -8,6 +8,7 @@
 //                                                    1 s poll of the Downloads folder (known folder API) for browser temp files. Only while live.downloads
 //                                                    is on and the pill is visible. total is always null (browsers do not publish it).
 // One supervisor thread (500 ms base tick); when every switch is off it only reads three booleans per tick.
+use crate::ui::bus::{self, Target};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
@@ -15,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 use windows::core::{implement, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, HANDLE};
 use windows::Win32::Media::Audio::Endpoints::{
@@ -130,7 +131,7 @@ impl IAudioEndpointVolumeCallback_Impl for VolCb_Impl {
             }
             *last = cur;
         }
-        let _ = self.app.emit_to("pill", "live:volume", json!({ "level": cur.0, "muted": cur.1 }));
+        let _ = bus::emit(&self.app, Target::Label("pill"), "live:volume", json!({ "level": cur.0, "muted": cur.1 }));
         Ok(())
     }
 }
@@ -296,7 +297,7 @@ fn set_privacy(app: &AppHandle, now: (bool, bool, Vec<String>)) {
     if last.as_ref() == Some(&now) || (last.is_none() && !now.0 && !now.1) {
         return;
     }
-    let _ = app.emit_to("pill", "live:privacy", json!({ "mic": now.0, "cam": now.1, "apps": now.2 }));
+    let _ = bus::emit(&app, Target::Label("pill"), "live:privacy", json!({ "mic": now.0, "cam": now.1, "apps": now.2 }));
     *last = Some(now);
 }
 
@@ -370,7 +371,7 @@ impl Dl {
             }
             if t.shown && now.duration_since(t.last_change) < STALE {
                 let shown_name = t.final_name.clone().unwrap_or_default();
-                let _ = app.emit_to("pill", "live:download", json!({
+                let _ = bus::emit(&app, Target::Label("pill"), "live:download", json!({
                     "state": "progress", "id": id, "name": shown_name, "bytes": t.size, "total": Value::Null,
                     "path": dir.join(name).to_string_lossy(),
                 }));
@@ -399,12 +400,12 @@ impl Dl {
                     let c = list.remove(i);
                     let p = dir.join(&c.name);
                     let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(t.size);
-                    let _ = app.emit_to("pill", "live:download", json!({
+                    let _ = bus::emit(&app, Target::Label("pill"), "live:download", json!({
                         "state": "done", "id": id, "name": c.name, "bytes": bytes, "total": Value::Null, "path": p.to_string_lossy(),
                     }));
                 }
                 None => {
-                    let _ = app.emit_to("pill", "live:download", json!({ "state": "gone", "id": id }));
+                    let _ = bus::emit(&app, Target::Label("pill"), "live:download", json!({ "state": "gone", "id": id }));
                 }
             }
         }
