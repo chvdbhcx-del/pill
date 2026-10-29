@@ -11,11 +11,11 @@ use base64::Engine;
 
 /// A registry in memory. Key names keep their case, value names are lower-cased like the real reader returns them.
 #[derive(Default)]
-struct FakeReg {
-    keys: Vec<(Hive, String, Vals)>,
+pub(super) struct FakeReg {
+    pub(super) keys: Vec<(Hive, String, Vals)>,
 }
 impl FakeReg {
-    fn key(&mut self, h: Hive, sub: &str, vals: &[(&str, Val)]) -> &mut Self {
+    pub(super) fn key(&mut self, h: Hive, sub: &str, vals: &[(&str, Val)]) -> &mut Self {
         let mut p = String::new();
         for part in sub.split('\\') {
             if !p.is_empty() {
@@ -52,18 +52,18 @@ impl Reg for FakeReg {
     }
 }
 
-const G: &str = "{0A1B2C3D-4E5F-6789-ABCD-EF0123456789}";
-const OTHER_G: &str = "{11111111-2222-3333-4444-555555555555}";
+pub(super) const G: &str = "{0A1B2C3D-4E5F-6789-ABCD-EF0123456789}";
+pub(super) const OTHER_G: &str = "{11111111-2222-3333-4444-555555555555}";
 
 /// "Foo Editor" by "Acme Inc", installed in `D:\Apps\Foo Editor`, product code G.
-fn foo() -> Prog {
+pub(super) fn foo() -> Prog {
     let mut p = prog("Foo Editor", "Acme Inc", r"D:\Apps\Foo Editor");
     p.sub = format!(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{G}");
     p.msi = Some(G.to_string());
     p
 }
 
-fn denv(t: &Tmp) -> Env {
+pub(super) fn denv(t: &Tmp) -> Env {
     let mut e = t.env();
     e.drives = vec![t.dir("d")];
     e.others = vec![t.dir("ou")];
@@ -339,7 +339,7 @@ fn emptied_parents_of_the_install_folder_are_probable() {
 
 // ---------------------------------------------------------------- registry evidence
 
-fn reg_fixture() -> FakeReg {
+pub(super) fn reg_fixture() -> FakeReg {
     let mut r = FakeReg::default();
     let (l, u) = (Hive::Hklm, Hive::Hkcu);
     // Software keys

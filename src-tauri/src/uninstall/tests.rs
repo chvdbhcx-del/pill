@@ -49,6 +49,7 @@ impl Tmp {
             pill: vec![r.join(r"u\AppData\Local\Pill"), r.join(r"u\AppData\Roaming\com.pill.dev")],
             drives: vec![],
             others: vec![],
+            strict_drives: false,
             appdata,
             programdata,
         }
@@ -77,6 +78,7 @@ pub(super) fn fake() -> Env {
         pill: vec![r"C:\Users\usr\AppData\Local\Pill".into(), r"C:\Users\usr\AppData\Roaming\com.pill.dev".into()],
         drives: vec![r"C:\".into(), r"D:\".into()],
         others: vec![r"C:\Users\other".into()],
+        strict_drives: false,
     }
 }
 
@@ -145,8 +147,8 @@ fn guid_and_msi_command() {
     assert_eq!(find_guid("{0A1B2C3D-4E5F-6789-ABCD-EF012345678}"), None); // short
     assert_eq!(find_guid("{ZA1B2C3D-4E5F-6789-ABCD-EF0123456789}"), None);
     let p = parse_entry(true, &format!(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{g}"), &vals(&[("displayname", sv("Foo")), ("uninstallstring", sv(&format!("MsiExec.exe /I{g}")))])).unwrap();
-    assert_eq!(build_cmd(&p, false).unwrap(), ("msiexec.exe".into(), format!("/x {g}")));
-    assert_eq!(build_cmd(&p, true).unwrap(), ("msiexec.exe".into(), format!("/x {g} /passive /norestart")));
+    assert_eq!(build_cmd(&p, false).unwrap(), (system_exe("msiexec.exe").to_string_lossy().into_owned(), format!("/x {g}")));
+    assert_eq!(build_cmd(&p, true).unwrap(), (system_exe("msiexec.exe").to_string_lossy().into_owned(), format!("/x {g} /passive /norestart")));
     assert!(can_silent(&p));
     // WindowsInstaller=1 with only the GUID key name
     let q = parse_entry(true, &format!(r"X\{g}"), &vals(&[("displayname", sv("Foo")), ("windowsinstaller", Val::D(1))])).unwrap();

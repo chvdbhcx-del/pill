@@ -697,6 +697,9 @@ fn named_leaf(path: &Path, par: &Path, max_depth: usize, names: &Names) -> bool 
 
 pub(super) fn guard_core(path: &Path, env: &Env, install: Option<&Path>, deep: Option<&Prog>) -> Result<(), &'static str> {
     lexical_ok(path)?;
+    if !env.is_fixed(path) {
+        return Err("not on a fixed local drive");
+    }
     if env.protected().iter().any(|f| depth_under(f, path).is_some()) {
         return Err("protected folder or a parent of one");
     }
@@ -705,10 +708,13 @@ pub(super) fn guard_core(path: &Path, env: &Env, install: Option<&Path>, deep: O
     if depth_under(path, &env.windows).is_some() && !in_win_temp {
         return Err("inside Windows");
     }
+    if env.denied(path) && !in_win_temp {
+        return Err("protected system folder");
+    }
     if env.pill.iter().any(|d| depth_under(path, d).is_some()) {
         return Err("Pill's own folder");
     }
-    let install = install.filter(|i| install_usable(i, env));
+    let install = install.filter(|i| install_usable(i, env) && reparse_free(i));
     let parents = env.parents();
     let regular = parents.iter().filter(|r| depth_under(path, r).is_some_and(|d| d >= 1)).max_by_key(|r| r.components().count());
     let mut generic = false;
@@ -721,7 +727,8 @@ pub(super) fn guard_core(path: &Path, env: &Env, install: Option<&Path>, deep: O
             generic = true;
         }
     }
-    if chosen.is_none() {
+    // a generic first folder below an allowed root (ProgramData\Microsoft\Crypto, Common Files\Services, ...) is never rescued by an install record
+    if chosen.is_none() && !generic {
         if let Some(i) = install.filter(|i| depth_under(path, i).is_some()) {
             if depth_under(path, i) != Some(0) || !leaf_generic(path) {
                 chosen = Some(i.to_path_buf());
@@ -781,8 +788,20 @@ pub(super) fn guard_core(path: &Path, env: &Env, install: Option<&Path>, deep: O
     let cp = std::fs::canonicalize(path).map_err(|_| "does not exist")?;
     let cr = std::fs::canonicalize(&par).map_err(|_| "allowed folder is not readable")?;
     let tail: PathBuf = path.components().skip(par.components().count()).collect();
-    if comps(&plain(cp)) != comps(&plain(cr.join(tail))) {
+    if comps(&plain(cp.clone())) != comps(&plain(cr.join(tail))) {
         return Err("link, junction or alternative name");
     }
+    if !in_win_temp && env.denied(&plain(cp)) {
+        return Err("protected system folder");
+    }
+    // no junction or symlink anywhere on the way: the path itself, the allowed parent, the install folder, every ancestor up to the drive
+    if !reparse_free(path) {
+        return Err("link or junction on the path");
+    }
     Ok(())
+}
+
+/// No component of `p`, up to the drive root, is a symlink or junction (checked with symlink_metadata, nothing is followed).
+pub fn reparse_free(p: &Path) -> bool {
+    p.ancestors().filter(|a| a.components().count() > 1).all(|a| std::fs::symlink_metadata(a).is_ok_and(|m| !m.file_type().is_symlink()))
 }

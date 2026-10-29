@@ -22,7 +22,10 @@ use windows::Win32::System::Registry::{
     KEY_SET_VALUE, REG_SAM_FLAGS,
 };
 use windows::Win32::System::Threading::WaitForSingleObject;
-use windows::Win32::UI::Shell::{ShellExecuteExW, SHFileOperationW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, SHFILEOPSTRUCTW};
+use windows::Win32::UI::Shell::{
+    ShellExecuteExW, SHFileOperationW, FOLDERID_CommonPrograms, FOLDERID_Desktop, FOLDERID_LocalAppData, FOLDERID_Profile, FOLDERID_ProgramData, FOLDERID_ProgramFiles,
+    FOLDERID_ProgramFilesX86, FOLDERID_Programs, FOLDERID_PublicDesktop, FOLDERID_RoamingAppData, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, SHFILEOPSTRUCTW,
+};
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 mod admin;
@@ -269,7 +272,7 @@ pub fn split_cmd(s: &str) -> Option<(String, String)> {
         return Some((r[..e].to_string(), r[e + 1..].trim().to_string()));
     }
     // unquoted path with spaces: every ".exe" followed by a blank or the end may end the file name; an existing file wins (like CreateProcess)
-    let low = s.to_lowercase();
+    let low = s.to_ascii_lowercase();
     let (mut from, mut ends) = (0, Vec::new());
     while let Some(i) = low[from..].find(".exe") {
         let end = from + i + 4;
@@ -290,7 +293,7 @@ pub fn split_cmd(s: &str) -> Option<(String, String)> {
 /// (file, args) for ShellExecute. MSI goes through `msiexec /x {GUID}`; `silent` = QuietUninstallString, or msiexec /passive.
 pub fn build_cmd(p: &Prog, silent: bool) -> Result<(String, String), &'static str> {
     if let Some(g) = &p.msi {
-        return Ok(("msiexec.exe".into(), format!("/x {g}{}", if silent { " /passive /norestart" } else { "" })));
+        return Ok((system_exe("msiexec.exe").to_string_lossy().into_owned(), format!("/x {g}{}", if silent { " /passive /norestart" } else { "" })));
     }
     let s = if silent { &p.quiet } else { &p.uninst };
     split_cmd(s).filter(|(f, _)| !f.is_empty()).ok_or("no uninstall command")
@@ -325,6 +328,8 @@ pub struct Env {
     pub drives: Vec<PathBuf>,
     /// Other users' profile folders that could be listed.
     pub others: Vec<PathBuf>,
+    /// Real runs check that a path is on a fixed local drive (GetDriveTypeW); tests on temp folders leave it off.
+    pub strict_drives: bool,
 }
 
 /// The places of one user profile a deep clean looks into.
@@ -363,17 +368,17 @@ fn pd_of(root: &Path, roaming: PathBuf, local: PathBuf, desktop: PathBuf, start:
 const NOT_PROFILES: &[&str] = &["public", "default", "default user", "all users", "defaultuser0", "desktop.ini"];
 
 impl Env {
+    /// The real places of this PC. Taken from the system (GetSystemWindowsDirectoryW, SHGetKnownFolderPath), NEVER from environment variables:
+    /// a process that can set `ProgramFiles` or `SystemRoot` for us must not be able to move the protected folders.
     pub fn real() -> Env {
-        let var = |k: &str, d: &str| PathBuf::from(std::env::var_os(k).filter(|v| !v.is_empty()).unwrap_or_else(|| d.into()));
-        let profile = var("USERPROFILE", r"C:\Users\Default");
-        let appdata = var("APPDATA", r"C:\Users\Default\AppData\Roaming");
-        let local = var("LOCALAPPDATA", r"C:\Users\Default\AppData\Local");
-        let programdata = var("ProgramData", r"C:\ProgramData");
+        let profile = known(&FOLDERID_Profile).unwrap_or_else(|| PathBuf::from(r"C:\Users\Default"));
+        let appdata = known(&FOLDERID_RoamingAppData).unwrap_or_else(|| profile.join(r"AppData\Roaming"));
+        let local = known(&FOLDERID_LocalAppData).unwrap_or_else(|| profile.join(r"AppData\Local"));
+        let programdata = known(&FOLDERID_ProgramData).unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"));
         let mut pill = vec![local.join("Pill"), appdata.join("com.pill.dev"), local.join("com.pill.dev"), programdata.join("Pill")];
         if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
             pill.push(d);
         }
-        let start = |b: &Path| b.join(r"Microsoft\Windows\Start Menu\Programs");
         let others = profile
             .parent()
             .and_then(|users| std::fs::read_dir(users).ok())
@@ -387,13 +392,13 @@ impl Env {
             })
             .unwrap_or_default();
         Env {
-            windows: var("SystemRoot", r"C:\Windows"),
-            pf: var("ProgramFiles", r"C:\Program Files"),
-            pf86: var("ProgramFiles(x86)", r"C:\Program Files (x86)"),
-            desktop: profile.join("Desktop"),
-            public_desktop: var("PUBLIC", r"C:\Users\Public").join("Desktop"),
-            start_user: start(&appdata),
-            start_common: start(&programdata),
+            windows: windows_dir(),
+            pf: known(&FOLDERID_ProgramFiles).unwrap_or_else(|| PathBuf::from(r"C:\Program Files")),
+            pf86: known(&FOLDERID_ProgramFilesX86).unwrap_or_else(|| PathBuf::from(r"C:\Program Files (x86)")),
+            desktop: known(&FOLDERID_Desktop).unwrap_or_else(|| profile.join("Desktop")),
+            public_desktop: known(&FOLDERID_PublicDesktop).unwrap_or_else(|| PathBuf::from(r"C:\Users\Public\Desktop")),
+            start_user: known(&FOLDERID_Programs).unwrap_or_else(|| appdata.join(r"Microsoft\Windows\Start Menu\Programs")),
+            start_common: known(&FOLDERID_CommonPrograms).unwrap_or_else(|| programdata.join(r"Microsoft\Windows\Start Menu\Programs")),
             profile,
             appdata,
             local,
@@ -401,7 +406,41 @@ impl Env {
             pill,
             drives: fixed_drives(),
             others,
+            strict_drives: true,
         }
+    }
+
+    /// True when `p` is on a fixed local drive (not a mapped network drive, a USB stick, a CD).
+    pub fn is_fixed(&self, p: &Path) -> bool {
+        !self.strict_drives || drive_is_fixed(p)
+    }
+
+    /// Well-known system sub-trees that are never an app's, whatever an install record says. Compared case-insensitively on the canonical path.
+    pub fn denied(&self, p: &Path) -> bool {
+        const PF_FIRST: &[&str] = &[
+            "windowsdefender", "windowsdefenderadvancedthreatprotection", "windowsapps", "modifiablewindowsapps", "windowsnt", "windowsmail", "windowsmediaplayer", "windowsphotoviewer",
+            "windowssidebar", "windowsportabledevices", "windowssecurity", "windowspowershell", "referenceassemblies", "msbuild", "dotnet", "internetexplorer", "applicationverifier",
+            "uninstallinformation",
+        ];
+        let machine = [&self.pf, &self.pf86, &self.programdata];
+        // first folder below a machine-wide root: Microsoft*, the Windows components above, Package Cache
+        for root in machine {
+            if depth_under(p, root).is_some_and(|d| d >= 1) {
+                let first = p.components().nth(root.components().count()).map(|c| norm(&c.as_os_str().to_string_lossy())).unwrap_or_default();
+                if first.starts_with("microsoft") || first == "packagecache" || (root != &self.programdata && PF_FIRST.contains(&first.as_str())) {
+                    return true;
+                }
+            }
+        }
+        let mut trees: Vec<PathBuf> = vec![self.windows.clone(), self.windows.join("System32"), self.windows.join("WinSxS")];
+        for pf in [&self.pf, &self.pf86] {
+            for t in [r"Common Files\Microsoft Shared", r"Common Files\Services", r"Common Files\System", r"Common Files\SpeechEngines", r"NVIDIA Corporation\Drs"] {
+                trees.push(pf.join(t));
+            }
+        }
+        trees.push(self.programdata.join("Package Cache"));
+        trees.push(self.programdata.join("Microsoft"));
+        trees.iter().any(|t| depth_under(p, t).is_some() || depth_under(t, p).is_some())
     }
 
     /// The current user's profile first (flag false), then every other one found (flag true).
@@ -454,6 +493,46 @@ impl Env {
     }
 }
 
+fn known(id: &windows::core::GUID) -> Option<PathBuf> {
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::{SHGetKnownFolderPath, KF_FLAG_DEFAULT};
+    unsafe {
+        let p = SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, HANDLE::default()).ok()?;
+        let s = p.to_string().ok();
+        CoTaskMemFree(Some(p.0 as *const std::ffi::c_void));
+        s.filter(|s| !s.is_empty()).map(PathBuf::from)
+    }
+}
+
+fn windows_dir() -> PathBuf {
+    use windows::Win32::System::SystemInformation::GetSystemWindowsDirectoryW;
+    let mut buf = [0u16; 260];
+    let n = unsafe { GetSystemWindowsDirectoryW(Some(&mut buf)) } as usize;
+    if n == 0 || n >= buf.len() { PathBuf::from(r"C:\Windows") } else { PathBuf::from(String::from_utf16_lossy(&buf[..n])) }
+}
+
+/// The System32 folder, from the system. Every tool Pill starts is named by its absolute path here, never by a bare name.
+pub fn system32() -> PathBuf {
+    windows_dir().join("System32")
+}
+
+pub fn system_exe(name: &str) -> PathBuf {
+    system32().join(name)
+}
+
+/// DRIVE_FIXED only: a mapped network drive, a USB stick, a CD or a drive that does not exist is not.
+pub fn drive_is_fixed(p: &Path) -> bool {
+    use windows::Win32::Storage::FileSystem::GetDriveTypeW;
+    let s = p.to_string_lossy();
+    let b = s.as_bytes();
+    if b.len() < 3 || !b[0].is_ascii_alphabetic() || b[1] != b':' || b[2] != b'\\' {
+        return false;
+    }
+    let root: Vec<u16> = format!("{}:\\", b[0] as char).encode_utf16().chain(Some(0)).collect();
+    unsafe { GetDriveTypeW(PCWSTR(root.as_ptr())) == 3 }
+}
+
 /// Roots of the fixed (not removable, not network) drives.
 fn fixed_drives() -> Vec<PathBuf> {
     use windows::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
@@ -501,6 +580,14 @@ fn lexical_ok(p: &Path) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// OneDrive / Dropbox / Google Drive / iCloud style folders hold the user's own files: never an app's install folder.
+fn is_sync_folder(p: &Path) -> bool {
+    p.components().any(|c| {
+        let n = norm(&c.as_os_str().to_string_lossy());
+        ["onedrive", "dropbox", "googledrive", "icloud", "yandexdisk", "megasync", "boxsync"].iter().any(|s| n.starts_with(s))
+    })
+}
+
 fn leaf_generic(p: &Path) -> bool {
     let n = norm(&p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
     !usable(&n)
@@ -509,6 +596,9 @@ fn leaf_generic(p: &Path) -> bool {
 /// An InstallLocation recorded by an app is trusted as a parent only when it is a real app folder.
 fn install_usable(i: &Path, env: &Env) -> bool {
     lexical_ok(i).is_ok()
+        && env.is_fixed(i)
+        && !env.denied(i)
+        && !is_sync_folder(i)
         && !env.protected().iter().any(|f| depth_under(f, i).is_some())
         && depth_under(i, &env.windows).is_none()
         && !env.known_folders().iter().any(|k| depth_under(i, k).is_some())
@@ -522,19 +612,45 @@ pub fn guard(p: &Path, env: &Env, install: Option<&Path>) -> Result<(), &'static
     deep::guard_core(p, env, install, None)
 }
 
+/// `%VAR%` in a registry value, expanded from the TRUSTED places only (the same API-derived paths as `Env::real`), never from this process's
+/// environment; unknown variables stay as they are.
 fn expand_env(s: &str) -> String {
+    static VARS: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    let vars = VARS.get_or_init(|| {
+        let e = Env::real();
+        let u = |p: &Path| p.to_string_lossy().into_owned();
+        let drive = u(&e.windows).chars().take(2).collect::<String>();
+        vec![
+            ("systemroot".into(), u(&e.windows)),
+            ("windir".into(), u(&e.windows)),
+            ("systemdrive".into(), drive),
+            ("programfiles".into(), u(&e.pf)),
+            ("programfiles(x86)".into(), u(&e.pf86)),
+            ("programdata".into(), u(&e.programdata)),
+            ("allusersprofile".into(), u(&e.programdata)),
+            ("userprofile".into(), u(&e.profile)),
+            ("appdata".into(), u(&e.appdata)),
+            ("localappdata".into(), u(&e.local)),
+            ("temp".into(), u(&e.local.join("Temp"))),
+            ("tmp".into(), u(&e.local.join("Temp"))),
+        ]
+    });
+    expand_with(s, vars)
+}
+
+pub fn expand_with(s: &str, vars: &[(String, String)]) -> String {
     let mut out = String::new();
     let mut rest = s;
     while let Some(i) = rest.find('%') {
         out.push_str(&rest[..i]);
         let after = &rest[i + 1..];
         match after.find('%') {
-            Some(j) if j > 0 => match std::env::var(&after[..j]) {
-                Ok(v) => {
-                    out.push_str(&v);
+            Some(j) if j > 0 => match vars.iter().find(|(k, _)| k.eq_ignore_ascii_case(&after[..j])) {
+                Some((_, v)) => {
+                    out.push_str(v);
                     rest = &after[j + 1..];
                 }
-                Err(_) => {
+                None => {
                     out.push('%');
                     rest = after;
                 }
@@ -1726,3 +1842,5 @@ pub fn uninstall_admin(app: AppHandle, mode: String, ids: Vec<usize>) -> Value {
 mod tests;
 #[cfg(test)]
 mod tests_deep;
+#[cfg(test)]
+mod tests_fix;
