@@ -36,6 +36,7 @@
     adminErr: { ru: 'Права администратора не получены: ', en: 'Administrator step did not run: ' }, cancelled: { ru: 'запрос Windows отклонён', en: 'the Windows prompt was declined' },
     manual: { ru: 'Только список, Pill это не трогает (драйверы и т. п.):', en: 'Listed only, Pill does not touch these (drivers and the like):' },
     safe: { ru: 'Файлы уходят в Корзину, ключи реестра сначала сохраняются в .reg-копию (её можно импортировать обратно).', en: 'Files go to the Recycle Bin; registry keys are saved to a .reg backup first (you can import it back).' },
+    hiddenOthers: { ru: ' объектов в профилях других пользователей не показаны: удали их из сеанса этого пользователя.', en: ' items in other users’ profiles are not shown: remove them from that user’s own session.' },
     cut: { ru: 'Поиск остановлен по лимиту времени или числа объектов: список может быть неполным.', en: 'The scan hit its time or entry limit: the list may be incomplete.' },
     deleting: { ru: 'Удаляю выбранное…', en: 'Deleting the selection…' },
     elevScan: { ru: 'Жду разрешения Windows: поиск от администратора…', en: 'Waiting for the Windows permission prompt: searching as administrator…' },
@@ -61,6 +62,10 @@
       'named like the app': { ru: 'называется как приложение', en: 'named like the app' },
       'named like the app, under the publisher': { ru: 'как приложение, внутри папки издателя', en: 'named like the app, under the publisher' },
       'named like the app, in a place for your own files': { ru: 'как приложение, но в папке для твоих файлов: проверь перед удалением', en: 'named like the app, but in a place for your own files: check before deleting' },
+      'named like the app, at the top of a drive': { ru: 'как приложение, в корне диска: там могут лежать твои файлы', en: 'named like the app, at the top of a drive: it may hold your own files' },
+      'install folder, but it is a folder of its own at the top of a drive and not named like the app': { ru: 'папка установки, но это отдельная папка в корне диска с чужим именем', en: 'install folder, but a folder of its own at the top of a drive, not named like the app' },
+      'install folder, but it holds several programs': { ru: 'папка установки, но в ней несколько программ', en: 'install folder, but it holds several programs' },
+      'key shared with other versions of the product': { ru: 'ключ общий с другими версиями продукта', en: 'key shared with other versions of the product' },
       'named like the publisher': { ru: 'называется как издатель', en: 'named like the publisher' },
       "contains the app's full name": { ru: 'в названии есть полное имя приложения', en: 'contains the app’s full name' },
       'publisher folder holding only this app': { ru: 'папка издателя, в ней только это приложение', en: 'publisher folder holding only this app' },
@@ -259,6 +264,7 @@
     if (!s.items.length) parts.push(el('div', 'u-s', t(L.none)));
     if (s.manual && s.manual.length) { parts.push(el('div', 'u-sub', t(L.manual))); for (const m of s.manual) parts.push(el('div', 'u-p', m)); }
     if (s.cut) parts.push(el('div', 'u-warn', t(L.cut)));
+    if (s.hiddenOthers) parts.push(el('div', 'u-note', s.hiddenOthers + t(L.hiddenOthers)));
     if (s.items.length) parts.push(el('div', 'u-note', t(L.safe)));
     const admRow = el('div', 'u-btns u-admrow');
     parts.push(admRow);

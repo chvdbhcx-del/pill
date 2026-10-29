@@ -58,3 +58,6 @@ jobs:
 
       - name: Command contract check
         run: node src/contract.test.mjs
+
+      - name: Content-Security-Policy check
+        run: node src/csp.test.mjs
