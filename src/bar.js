@@ -240,8 +240,8 @@
   function render(res, empty) {
     items = res.filter((r) => r.kind !== 'hint');
     sel = 0;
-    const fill = () => { list.replaceChildren(); items.forEach((it, i) => list.append(row(it, i))); };
-    if (fresh) fill(); else window.PillMotion.flip(list, fill, { sel: '.row', enterNew: true }); // later renders: survivors slide, new rows drop in
+    const fill = () => { list.classList.remove('glide'); selInd.classList.remove('on', 'mv'); list.replaceChildren(); items.forEach((it, i) => list.append(row(it, i))); };
+    if (fresh) fill(); else window.PillMotion.flip(list, fill, { sel: '.row', enterNew: true, leave: true }); // later renders: survivors slide, new rows drop in
     fresh = false; // the stagger plays once per opening, not on every keystroke
     for (const h of res.filter((r) => r.kind === 'hint')) {
       const v = view(h), d = document.createElement('div'); d.className = 'hint'; d.textContent = h.title + (v.sub ? ' - ' + v.sub : ''); list.append(d);
@@ -249,10 +249,19 @@
     if (!items.length && empty) { const d = document.createElement('div'); d.className = 'tip'; d.textContent = t(L.tip); list.prepend(d); }
   }
 
+  // the selection highlight glides from row to row: one indicator moves under the rows (transform only); a fresh render snaps back to the rows' own background
+  const selInd = document.createElement('div'); selInd.className = 'selind'; selInd.setAttribute('aria-hidden', 'true');
+  const placeInd = (row) => { selInd.style.transform = `translateY(${row.offsetTop}px)`; selInd.style.height = row.offsetHeight + 'px'; };
   function select(i) {
     if (!items.length) return;
+    const prev = list.querySelector('.row.sel');
     sel = (i + items.length) % items.length;
     list.querySelectorAll('.row').forEach((r) => r.classList.toggle('sel', +r.dataset.i === sel));
+    const next = list.querySelector('.row.sel');
+    if (prev && next && prev !== next && prev.isConnected && !window.PillMotion.off()) {
+      if (!list.classList.contains('glide')) { if (!selInd.isConnected) list.prepend(selInd); selInd.classList.remove('mv'); placeInd(prev); selInd.classList.add('on'); list.classList.add('glide'); void selInd.offsetWidth; }
+      selInd.classList.add('mv'); placeInd(next);
+    }
     list.querySelector('.row.sel')?.scrollIntoView({ block: 'nearest' });
   }
 
@@ -362,6 +371,20 @@
   // app / file / folder rows (Microsoft Store apps too) can be pinned to the island's launcher strip
   function pinnable(it) { return !!it && ['app', 'file', 'folder'].includes(it.kind); }
 
+  // pin confirmation: the pin icon pops with a spring and turns into place, the row flashes once, the message slides in and fades out again
+  let pinMsgT = 0;
+  function pinFeedback(el, text) {
+    const M = window.PillMotion;
+    const svg = el && el.querySelector('.ab[data-m="pin"] svg'), M0 = M.off();
+    if (svg) M.pop(svg, { from: 'scale(.4) rotate(-40deg)', dur: 0.6 });
+    if (el && !M0) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 700); }
+    if (msg.textContent) {
+      M.enter(msg, { y: 8, dur: 0.4 });
+      clearTimeout(pinMsgT);
+      pinMsgT = setTimeout(() => { if (msg.textContent === text) M.exit(msg, { y: -4, dur: 0.22, after: (e) => { if (e.textContent === text) e.textContent = ''; } }); }, 2600);
+    }
+  }
+
   async function run(it, mode) {
     if (!it) return;
     if (mode === 'uninstall' && it.kind === 'app') { // the row's trash button / menu line: put the uninstall trigger for this app in the box; its row (with the confirm step) shows right here
@@ -390,6 +413,7 @@
     } else if (r.status === 'updated') { // a setting or action switched: show the new state, stay open
       const s = el && el.querySelector('.s');
       if (s) s.textContent = r.message; else msg.textContent = r.message;
+      if (mode === 'pin') pinFeedback(el, r.message);
     } else if (r.status === 'confirm' && el) {
       const lab = el.querySelector('.act'), before = lab.firstChild.textContent;
       el.classList.add('confirm');
@@ -450,8 +474,11 @@
     }
     root.append(ctx);
     const r = ctx.getBoundingClientRect();
-    ctx.style.left = Math.max(6, Math.min(x, window.innerWidth - r.width - 6)) + 'px';
-    ctx.style.top = Math.max(6, Math.min(y, window.innerHeight - r.height - 6)) + 'px';
+    const lx = Math.max(6, Math.min(x, window.innerWidth - r.width - 6)), ly = Math.max(6, Math.min(y, window.innerHeight - r.height - 6));
+    ctx.style.left = lx + 'px';
+    ctx.style.top = ly + 'px';
+    ctx.style.transformOrigin = `${x - lx}px ${y - ly}px`; // opens from the cursor
+    ctx.querySelectorAll('.it').forEach((b, k) => b.style.setProperty('--i', k));
   }
   document.addEventListener('contextmenu', (e) => {
     if (e.target.closest('#q')) return;

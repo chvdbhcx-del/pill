@@ -23,12 +23,23 @@ body { font: 14px / 18px var(--font); color: var(--text); -webkit-font-smoothing
 #q::placeholder { color: var(--text-dim); }
 .sf kbd { font: 600 var(--fs-xs, 11px) / 12px var(--mono); padding: 5px 8px; border-radius: 7px; background: var(--raised); color: var(--text-dim); }
 
-#list { overflow-y: auto; padding: 0 6px 6px; scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; min-height: 0; }
+#list { position: relative; overflow-y: auto; padding: 0 6px 6px; scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; min-height: 0; }
 #list:empty { display: none; }
 .row { display: flex; align-items: center; gap: 12px; height: 38px; box-sizing: border-box; padding: 0 10px 0 14px; border-radius: 13px; cursor: default; }
 .row { transition: background var(--dur-fast), transform var(--dur-fast) var(--ease-spring); }
 .row:active { transform: scale(.99); }
+#list .row { position: relative; }
 .row.sel { background: var(--raised); }
+/* the glide indicator (bar.js select): sits under the rows, moves by transform, the selected row's own background steps aside while it is on */
+.selind { position: absolute; left: 6px; right: 6px; top: 0; height: 38px; border-radius: 13px; background: var(--raised); opacity: 0; pointer-events: none; will-change: transform; }
+.selind.on { opacity: 1; }
+.selind.mv { transition: transform var(--dur-slow) var(--spring-settle, var(--ease-out)), height var(--dur-fast) var(--ease-out); }
+#list.glide .row.sel:not(.confirm) { background: transparent; }
+/* pin confirmation: one soft flash over the row (opacity only) */
+.row::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--accent-soft, rgba(143, 150, 255, .22)); opacity: 0; pointer-events: none; }
+.row.flash::after { animation: row-flash .6s var(--ease-out) both; }
+@keyframes row-flash { 0% { opacity: 0; } 18% { opacity: 1; } 100% { opacity: 0; } }
+.row.ghost { background: transparent; }
 .row.confirm { background: var(--red-bg); }
 .row .ico { width: 18px; height: 18px; flex: none; display: grid; place-items: center; color: var(--text-2); }
 .row .ico svg { width: 18px; height: 18px; }
@@ -44,16 +55,27 @@ body { font: 14px / 18px var(--font); color: var(--text); -webkit-font-smoothing
 .row .acts { display: none; flex: none; gap: 2px; }
 .row.sel .acts { display: inline-flex; }
 .row .ab { all: unset; box-sizing: border-box; cursor: pointer; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; color: var(--text-dim); transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+/* the action buttons come in one after another when their row is selected, and press down under the finger */
+.row.sel .acts .ab { animation: ab-fade var(--dur-med) var(--ease-out) backwards, ab-pop .4s var(--spring-pop, var(--ease-spring)) backwards; }
+.row.sel .acts .ab:nth-child(2) { animation-delay: 24ms; } .row.sel .acts .ab:nth-child(3) { animation-delay: 48ms; } .row.sel .acts .ab:nth-child(4) { animation-delay: 72ms; } .row.sel .acts .ab:nth-child(5) { animation-delay: 96ms; }
+@keyframes ab-fade { from { opacity: 0; } }
+@keyframes ab-pop { from { transform: scale(.5); } }
+.row .ab { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-slow) var(--spring-pop, var(--ease-spring)); }
+.row .ab:active { transform: scale(.86); transition-duration: var(--dur-xs), var(--dur-xs), var(--dur-xs); }
 .row .ab:hover { background: var(--raised-2); color: var(--text); }
 .row .ab svg { width: 16px; height: 16px; }
 /* our right-click menu on a row (the page's own, never the WebView's default one) */
-.ctx { position: fixed; z-index: 20; min-width: 250px; padding: 6px; border-radius: 16px; background: var(--bg); box-shadow: 0 10px 30px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .09); animation: pop-fade var(--dur-fast) var(--ease-out) both; }
+.ctx { position: fixed; z-index: 20; min-width: 250px; padding: 6px; border-radius: 16px; background: var(--bg); box-shadow: 0 10px 30px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .09); animation: pop-fade var(--dur-fast) var(--ease-out) both, ctx-in .34s var(--spring-settle, var(--ease-out)) both; }
+@keyframes ctx-in { from { transform: scale(.88); } }
 .ctx .it { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 100%; height: 34px; padding: 0 10px; border-radius: 10px; cursor: default; font-size: var(--fs-md, 13px); line-height: 18px; color: var(--text); }
 .ctx .it svg { width: 16px; height: 16px; flex: none; color: var(--text-2); }
 .ctx .it:hover { background: var(--raised); }
 .ctx .it:active { background: var(--raised-2); }
 .ctx .it span { flex: 1; white-space: nowrap; }
 .ctx .it kbd { font: 600 var(--fs-2xs, 10px) / 12px var(--mono); color: var(--text-dim); }
+.ctx .it { animation: pop-fade var(--dur-med) var(--ease-out) backwards, ctx-it .34s var(--spring-settle, var(--ease-out)) backwards; animation-delay: calc(var(--i, 0) * 24ms + 40ms); }
+@keyframes ctx-it { from { transform: translateY(5px); } }
+.ctx .it:active { transform: scale(.97); }
 .row.calc .t, .row.convert .t { font-size: var(--fs-lg, 16px); line-height: 24px; font-weight: 600; flex: none; }
 .row.confirm .act { color: var(--red); }
 mark { background: none; color: var(--text); font-weight: 600; }

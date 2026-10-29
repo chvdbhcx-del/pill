@@ -5,7 +5,8 @@
 //   swap(a, b)                                                       a exits (hidden), then b is unhidden and enters
 //   collapse(el, {dur, remove, hide, after})                         height/padding/margin to 0 (+gap of the parent), then remove/hide
 //   expand(el, {dur})                                                call AFTER the element is in the layout: grows from 0 to its natural height
-//   flip(box, mutate, {sel, enterNew})                               mutate() rebuilds box; children matched by data-id slide from their old spot
+//   flip(box, mutate, {sel, enterNew, leave})                        mutate() rebuilds box; children matched by data-id slide from their old spot; leave: rows that are gone fade out as ghosts
+//   pop(el, {from, dur, base})                                       spring pop from `from` (default scale .6) to the natural state
 //   cancel(el), off()                                                drop a running animation (element back to its natural state); true when motion must be skipped
 // Reduced motion (html.rm, prefers-reduced-motion) or a hidden document: no animation, the end state is applied at once.
 // `base` = a transform the element already has (e.g. 'translateX(-50%)'), so the keyframes do not wipe it.
@@ -99,11 +100,28 @@
     ], null, { hideOverflow: true });
   }
 
-  function flip(box, mutate, { sel = ':scope > *', enterNew = false } = {}) {
-    const before = new Map();
-    if (!off()) box.querySelectorAll(sel).forEach((c) => { const r = c.getBoundingClientRect(); if (c.dataset.id && r.width) before.set(c.dataset.id, r); });
+  function pop(el, { from = 'scale(.6)', dur = 0.5, base = '' } = {}) {
+    if (off()) { cancel(el); return Promise.resolve(true); }
+    return run(el, [[[{ transform: (base ? base + ' ' : '') + from }, { transform: base || 'none' }], { duration: dur * 1000, easing: T('--spring-pop', 'cubic-bezier(.34, 1.56, .64, 1)'), fill: 'backwards' }]]);
+  }
+
+  function flip(box, mutate, { sel = ':scope > *', enterNew = false, leave = false } = {}) {
+    const before = new Map(), ghosts = new Map();
+    const b0 = box.getBoundingClientRect(), st = box.scrollTop, sl = box.scrollLeft;
+    if (!off()) box.querySelectorAll(sel).forEach((c) => { const r = c.getBoundingClientRect(); if (c.dataset.id && r.width) { before.set(c.dataset.id, r); if (leave) ghosts.set(c.dataset.id, c.cloneNode(true)); } });
     mutate();
     if (!before.size) return;
+    const present = new Set();
+    if (leave) box.querySelectorAll(sel).forEach((c) => present.add(c.dataset.id));
+    ghosts.forEach((g, id) => { // a row that is gone stays a moment as an out-of-flow copy at its old spot and fades out
+      if (present.has(id)) return;
+      const r = before.get(id);
+      if (getComputedStyle(box).position === 'static') box.style.position = 'relative';
+      g.removeAttribute('id'); g.classList.add('ghost'); g.setAttribute('aria-hidden', 'true');
+      g.style.cssText += `;position:absolute;left:${r.left - b0.left + sl}px;top:${r.top - b0.top + st}px;width:${r.width}px;height:${r.height}px;margin:0;pointer-events:none`;
+      box.append(g);
+      exit(g, { scale: 0.97, dur: 0.14, remove: true });
+    });
     box.querySelectorAll(sel).forEach((c) => {
       const r0 = before.get(c.dataset.id);
       if (!r0) { if (enterNew) enter(c, { y: 4, dur: 0.3 }); return; }
@@ -113,5 +131,5 @@
     });
   }
 
-  window.PillMotion = { exit, enter, swap, collapse, expand, flip, cancel, off };
+  window.PillMotion = { exit, enter, swap, collapse, expand, flip, pop, cancel, off };
 })();
