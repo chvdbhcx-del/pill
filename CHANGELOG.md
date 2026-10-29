@@ -2,7 +2,7 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
-## [Unreleased]
+## [0.5.1] - 2026-10-29
 
 ### Fixed
 - Folded island spacing: the pet, the weather icon, the time and the legs' eyes now stand at even distances. When the pet is on the left the weather icon moves to the right side (and the other way round), the eyes stand in their side column next to the time when it is empty, an empty column next to the pet collapses, and the clock row is measured again once the typeface and the character are in (the width could stay stale).
