@@ -41,6 +41,7 @@ mod whatsnew;
 mod report;
 mod openarg;
 mod uninstall;
+mod ui;
 
 fn main() {
     // `pill.exe --uninstall-admin <port>:<token>`: the elevated helper of the uninstaller (uninstall/admin.rs); nothing else starts in that process
@@ -123,6 +124,9 @@ fn main() {
             notifhist::notif_history_add, notifhist::notif_history_list, notifhist::notif_history_clear, notifhist::notif_history_mark_read, notifhist::notif_history_remove,
         ])
         .setup(|app| {
+            // The two permanent windows are built here, not declared in tauri.conf.json; before every init() below, which look them up by label.
+            ui::windows::build_pill(app.handle())?;
+            ui::windows::build_bar(app.handle())?;
             store::init(app);
             settings::init(app);
             pill::init(app);
@@ -156,6 +160,13 @@ fn main() {
             hotkeys::init(app); // last: every module's init() has run, so the actions it triggers exist
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running pill");
+        .build(tauri::generate_context!())
+        .expect("error while building pill")
+        .run(|_app, event| {
+            // The app ends only through an explicit exit (tray Quit, Ctrl+Alt+Q, settings Quit, updater restart: code is Some). Closing the last
+            // window (code None) must not end it: windows come and go (the bar is torn down while idle) and the island lives in the tray.
+            if let tauri::RunEvent::ExitRequested { code: None, api, .. } = event {
+                api.prevent_exit();
+            }
+        });
 }

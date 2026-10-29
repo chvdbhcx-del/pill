@@ -8,37 +8,7 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; font-src 'self' data:; media-src 'self' blob: data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'" },
-    "windows": [
-      {
-        "label": "pill",
-        "title": "pill-main",
-        "url": "pill.html",
-        "width": 560,
-        "height": 120,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "resizable": false,
-        "shadow": false,
-        "focus": false
-      },
-      {
-        "label": "bar",
-        "title": "pill-bar",
-        "url": "bar.html",
-        "width": 560,
-        "height": 350,
-        "visible": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "resizable": false,
-        "shadow": false
-      }
-    ]
+    "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; font-src 'self' data:; media-src 'self' blob: data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'" }
   },
   "bundle": {
     "active": true,
