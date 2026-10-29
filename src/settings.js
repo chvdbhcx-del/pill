@@ -75,7 +75,7 @@
     c.append(r);
     return r;
   }
-  function msg(el, text, kind) { if (!el) return; el.textContent = text || ''; el.className = [el.dataset.base, kind].filter(Boolean).join(' '); } // data-base: a class the element keeps under every message (its padding / size)
+  function msg(el, text, kind) { if (!el) return; el.textContent = text || ''; el.className = [el.dataset.base, kind].filter(Boolean).join(' '); if (text && window.PillMotion) window.PillMotion.enter(el, { y: 6, dur: 0.38 }); } // data-base: a class the element keeps under every message (its padding / size)
 
   function sw(key, opt = {}) {
     const w = h('label', 'sw'), i = h('input'), k = h('i');
@@ -464,9 +464,14 @@
     const pr = h('div', 'pad as-prog'); pr.append(top, bar); pr.hidden = true;
     const res = h('div', 'updmsg'); res.dataset.base = 'updmsg';
     c.append(pr, res);
+    const showPr = (on) => { // the progress box grows open and closes again instead of snapping
+      if (on === !pr.hidden) return;
+      if (!window.PillMotion) { pr.hidden = !on; return; }
+      if (on) { pr.hidden = false; window.PillMotion.expand(pr); } else window.PillMotion.collapse(pr, { hide: true });
+    };
     const mb = (b) => (b / 1e6).toFixed(1) + ' ' + t({ ru: 'МБ', en: 'MB' });
     function draw() {
-      pr.hidden = !busy;
+      showPr(busy);
       if (!st) { r.sub.textContent = ''; dl.hidden = run.hidden = true; return; }
       const ok = st.installed && st.es;
       r.sub.className = ok ? 'ok' : '';
@@ -495,7 +500,7 @@
           refresh();
           return;
         }
-        busy = true; pr.hidden = false;
+        busy = true; showPr(true);
         const total = q.total || 0, known = total > 0 && q.done <= total * 1.02, pc = known ? Math.min(100, Math.floor((q.done / total) * 100)) : 0;
         const nm = q.item === 'es' ? 'es.exe' : t({ ru: 'установщик Everything', en: 'Everything installer' });
         line.textContent = q.phase === 'verify' ? t({ ru: 'Проверяю SHA-256…', en: 'Verifying SHA-256…' }) : nm + ' · ' + mb(q.done) + (known ? ' / ' + mb(total) + ' · ' + pc + ' %' : '');
@@ -1101,7 +1106,7 @@
     r.scrollIntoView({ block: 'center', behavior: get('reduceMotion') || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'auto' : 'smooth' });
     document.querySelectorAll('#page .hl').forEach((x) => x.classList.remove('hl'));
     r.classList.add('hl');
-    clearTimeout(sHl); sHl = setTimeout(() => r.classList.remove('hl'), 1800);
+    clearTimeout(sHl); sHl = setTimeout(() => r.classList.remove('hl'), 1700);
   }
   function searchBox() {
     const wrap = h('div', 'sb-search');
@@ -1110,11 +1115,13 @@
     q.setAttribute('aria-label', lab); q.setAttribute('role', 'combobox'); q.setAttribute('aria-autocomplete', 'list'); q.setAttribute('aria-expanded', 'false'); q.setAttribute('aria-controls', 'sb-results');
     const list = h('div', 'sb-results'); list.id = 'sb-results'; list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', lab); list.hidden = true;
     const close = () => { list.hidden = true; q.setAttribute('aria-expanded', 'false'); q.removeAttribute('aria-activedescendant'); sHits = []; sAct = -1; };
-    const paint = () => {
+    const paint = (fresh) => {
+      list.classList.toggle('fresh', !!fresh); // the stagger plays when the hits change, not on every arrow key
       list.replaceChildren();
       if (!sHits.length) { list.append(h('div', 'sb-none', t({ ru: 'Ничего не найдено', en: 'Nothing found' }))); return; }
       sHits.forEach((e, i) => {
         const o = h('div', 'sb-res' + (i === sAct ? ' on' : ''), [h('b', '', e.title), h('span', '', e.row ? e.pageName : t({ ru: 'Страница', en: 'Page' }))]);
+        o.style.setProperty('--i', i);
         o.id = 'sb-res-' + i; o.setAttribute('role', 'option'); o.setAttribute('aria-selected', i === sAct ? 'true' : 'false');
         o.onmousedown = (ev) => { ev.preventDefault(); go(e); };
         list.append(o);
@@ -1133,7 +1140,7 @@
       if (!word.trim()) { close(); return; }
       sHits = window.PillSettingsSearch ? window.PillSettingsSearch.match(idx, word, 8) : [];
       sAct = sHits.length ? 0 : -1;
-      list.hidden = false; q.setAttribute('aria-expanded', 'true'); paint();
+      list.hidden = false; q.setAttribute('aria-expanded', 'true'); paint(true);
     };
     q.onkeydown = (ev) => {
       if (ev.key === 'Escape') { if (q.value || !list.hidden) { q.value = ''; close(); } else q.blur(); ev.preventDefault(); return; }
@@ -1149,9 +1156,9 @@
   // ---------------------------------------------------------------------------------------------------------- first-run wizard
   // settings.rs decides who gets it (only a brand-new install, page id 'welcome'); General has "Run again". Four short steps; Skip is always on screen.
   // Nothing opt-in is turned on and nothing is downloaded here: the module switches start at their existing defaults, the AI step only points to AI setup.
-  let wiz = 0;
+  let wiz = 0, wizDir = 0, wizShown = 0; // wizDir: +1 forward / -1 back (the step slides that way), wizShown: the step on screen
   function startWizard() {
-    wiz = 1; stopRec();
+    wiz = 1; wizShown = 0; stopRec();
     cleanups.forEach((f) => safe(f)); cleanups = [];
     document.body.classList.add('wiz');
     drawWizard();
@@ -1168,7 +1175,10 @@
     page.replaceChildren(box);
     const top = h('div', 'inline wz-top'), h1 = h('h1', '', t({ ru: 'Добро пожаловать в Pill', en: 'Welcome to Pill' }));
     top.append(h1, btn(t({ ru: 'Пропустить', en: 'Skip' }), () => endWizard('general'), 'sm'));
-    box.append(top, h('div', 'cap', t({ ru: `Шаг ${wiz} из ${STEPS}`, en: `Step ${wiz} of ${STEPS}` })));
+    const sub = h('div', 'inline wz-sub');
+    const dots = h('div', 'wz-dots'); for (let k = 1; k <= STEPS; k++) dots.append(h('i', k === wiz ? 'on' : k < wiz ? 'past' : ''));
+    sub.append(h('div', 'cap', t({ ru: `Шаг ${wiz} из ${STEPS}`, en: `Step ${wiz} of ${STEPS}` })), dots);
+    box.append(top, sub);
     const c = card(box);
     if (wiz === 1) {
       row(c, t({ ru: 'Язык', en: 'Language' }), t({ ru: 'По умолчанию — как в Windows', en: 'By default, the same as Windows' }),
@@ -1189,12 +1199,14 @@
         btn(t({ ru: 'Установка ИИ', en: 'AI setup' }), () => endWizard('aisetup'), 'sm'));
     }
     const nav = h('div', 'inline wz-nav');
-    const back = btn(t({ ru: 'Назад', en: 'Back' }), () => { wiz -= 1; drawWizard(); });
+    const back = btn(t({ ru: 'Назад', en: 'Back' }), () => { wiz -= 1; wizDir = -1; drawWizard(); });
     back.hidden = wiz === 1;
-    const next = btn(wiz === STEPS ? t({ ru: 'Готово', en: 'Done' }) : t({ ru: 'Далее', en: 'Next' }), () => { if (wiz === STEPS) endWizard('general'); else { wiz += 1; drawWizard(); } }, 'pri');
+    const next = btn(wiz === STEPS ? t({ ru: 'Готово', en: 'Done' }) : t({ ru: 'Далее', en: 'Next' }), () => { if (wiz === STEPS) endWizard('general'); else { wiz += 1; wizDir = 1; drawWizard(); } }, 'pri');
     nav.append(back, next);
     box.append(nav);
     $('#content').scrollTop = 0;
+    if (window.PillMotion) window.PillMotion.enter(box, wizShown && wizShown !== wiz ? { x: wizDir * 28, y: 0, dur: 0.5 } : { y: wizShown ? 4 : 10, dur: 0.4 }); // a new step slides in from the side it came from
+    wizShown = wiz; wizDir = 0;
   }
 
   // ---------------------------------------------------------------------------------------------------------- shell: sidebar, pages, window
@@ -1215,7 +1227,18 @@
     const q = h('button', 'sb-item quit'); q.type = 'button'; q.innerHTML = svg(IC.power); q.append(t({ ru: 'Выйти из Pill', en: 'Quit Pill' }));
     q.onclick = () => inv('settings_quit');
     foot.append(q);
+    list.prepend(h('i', 'sb-ind'));
     side.append(head, searchBox(), list, foot);
+    moveInd(false);
+  }
+  // sidebar: one indicator glides to the current page (transform only); the item's own background steps aside once it is on
+  let showTok = 0;
+  function moveInd(animate) {
+    const list = $('#navlist'), ind = $('.sb-ind'), on = $('.sb-item.on');
+    if (!list || !ind || !on || !on.offsetHeight) return;
+    const place = () => { ind.style.transform = `translateY(${on.offsetTop}px)`; ind.style.height = on.offsetHeight + 'px'; };
+    if (!ind.classList.contains('on') || !animate) { ind.classList.remove('mv'); place(); ind.classList.add('on'); list.classList.add('has-ind'); void ind.offsetWidth; }
+    else { ind.classList.add('mv'); place(); }
   }
   async function show(id) {
     const pg = PAGES.find((x) => x.id === id) || PAGES[0];
@@ -1223,7 +1246,13 @@
     cleanups.forEach((f) => safe(f)); cleanups = []; syncs = [];
     cur = pg.id;
     document.querySelectorAll('.sb-item[data-id]').forEach((b) => b.classList.toggle('on', b.dataset.id === pg.id));
-    const page = $('#page');
+    moveInd(true);
+    const page = $('#page'), my = ++showTok, old = page.firstElementChild;
+    const PM = window.PillMotion;
+    if (old && PM && !PM.off() && !document.body.classList.contains('wiz')) { // the page on screen slides a little aside and fades before the next one rises in
+      await PM.exit(old, { x: -10, dur: 0.12 });
+      if (my !== showTok) return;
+    }
     const next = h('div');
     next.append(h('h1', '', t(pg.head || pg.name)));
     page.replaceChildren(next);

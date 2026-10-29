@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Changed
+- Animations for the newer features. Command bar: the selection highlight glides between rows, row buttons pop in and press down, results that disappear fade out, the right-click menu opens from the cursor with its items in a stagger, pinning pops the pin icon, flashes the row and slides the message in and out. Island: the launcher strip slides aside for a newly pinned icon, the Agents tab slides rows when the order changes and pulses the dot of working sessions, the clock row fades and pops when the weather icon, temperature, date or battery appear or go. Settings: pages cross-fade, the sidebar indicator glides, search results stagger in and the target row pulses, quiet-hours day chips pop, the first-run wizard slides between steps with progress dots, status messages slide in. Reduce motion shows every end state at once.
+
 ## [0.4.3] - 2026-10-29
 
 ### Added

@@ -79,6 +79,11 @@ body.max .cap-btn .g-max { display: none; }
 .sb-ver { font-size: var(--fs-xs); line-height: 14px; color: var(--text-faint); }
 body.wiz #side { display: none; }   /* first-run wizard: the page list stays hidden until it ends */
 .wz-top { justify-content: space-between; }
+.wz-sub { justify-content: space-between; }
+.wz-dots { display: flex; align-items: center; gap: 8px; padding-right: 6px; }
+.wz-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--track); transition: transform var(--dur-slow) var(--spring-pop, var(--ease-out)), background-color var(--dur-med) var(--ease-out); }
+.wz-dots i.past { background: var(--accent-line); }
+.wz-dots i.on { background: var(--accent); transform: scale(1.5); }
 .wz-top h1 { flex: 1; }
 .wz-note { margin: 0 4px 8px; }
 .wz-nav { justify-content: flex-end; margin-top: 12px; }
@@ -91,7 +96,22 @@ body.wiz #side { display: none; }   /* first-run wizard: the page list stays hid
 .sb-res span { display: block; font-size: var(--fs-xs); line-height: 14px; color: var(--text-dim); }
 .sb-res:hover, .sb-res.on { background: var(--ctl); }
 .sb-none { padding: 8px; font-size: var(--fs-xs); color: var(--text-dim); }
-.row.hl, .pcard.hl { background: var(--accent-bg); }   /* the row a search result jumped to; removed after ~2 s */
+/* the row a search result jumped to: a soft accent wash that pulses twice over ~1.6 s (opacity only), removed by settings.js afterwards */
+.row.hl, .pcard.hl { position: relative; }
+.row.hl::after, .pcard.hl::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--accent); opacity: 0; pointer-events: none; animation: hl-pulse 1.6s var(--ease-out) both; }
+@keyframes hl-pulse { 0% { opacity: 0; } 12% { opacity: .34; } 34% { opacity: .1; } 52% { opacity: .28; } 100% { opacity: 0; } }
+.rm .row.hl::after, .rm .pcard.hl::after { animation: none !important; opacity: .2; }   /* reduced motion: a still wash for the same time */
+.sb-results:not([hidden]) { animation: sb-pop .3s var(--spring-pop, var(--ease-out)) backwards; transform-origin: top center; }
+.sb-results.fresh .sb-res { animation: sb-in .3s var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 26ms); }
+@keyframes sb-pop { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
+@keyframes sb-in { from { opacity: 0; transform: translateY(6px); } }
+/* the sidebar indicator (settings.js moveInd): glides under the items; the current item's own background steps aside while it exists */
+#navlist { position: relative; }
+.sb-ind { position: absolute; left: 10px; right: 10px; top: 0; height: 36px; border-radius: 10px; background: #262626; opacity: 0; pointer-events: none; will-change: transform; }
+.sb-ind.on { opacity: 1; }
+.sb-ind.mv { transition: transform var(--dur-slow) var(--spring-pop, var(--ease-out)), height var(--dur-fast) var(--ease-out); }
+#navlist.has-ind .sb-item { position: relative; }
+#navlist.has-ind .sb-item.on { background: transparent; }
 #navlist { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 10px 8px; }
 .sb-item { display: flex; align-items: center; gap: var(--sp-3); width: 100%; height: 36px; padding: 0 12px; margin-bottom: 2px; border-radius: 10px; color: #e6e5e8; font-size: var(--fs-md); line-height: 18px; text-align: left; transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-xs) var(--ease-out); }
 .sb-item:active { transform: scale(0.98); }
@@ -221,6 +241,11 @@ textarea.mono { line-height: 18px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { height: 30px; display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 8px; background: var(--ctl); border: 1px solid transparent; font-size: var(--fs-md); line-height: 18px; color: #e6e5e8; transition: background 0.15s; }
 .chip:hover { background: var(--ctl-hover); }
+.chip { transition: background 0.15s, transform var(--dur-slow) var(--spring-pop, var(--ease-out)); }
+.chip:active { transform: scale(0.93); transition-duration: var(--dur-xs), var(--dur-xs); }
+.chip.on { animation: chip-pop 0.4s var(--spring-pop, var(--ease-out)); }   /* a switched-on chip (quiet-hours days, providers) pops once */
+@keyframes chip-pop { from { transform: scale(0.88); } }
+.field { transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out); }
 .chip.on { background: var(--accent-bg); border-color: var(--accent-line); color: #fff; }
 .chips.dis .chip { opacity: 0.5; pointer-events: none; }
 
