@@ -21,7 +21,7 @@
   const DEF = {
     language: 'auto', theme: 'dark', size: 100, clock24: true, autoHide: false, reduceMotion: false, showInCapture: true, hideInApps: [], shape: 'notch',
     character: 'liquid', pet: 'cat', 'pet.side': 'right', 'pet.size': 'm', hideInFullscreen: true, autoHideKeepDesktop: false, underTaskbar: true, passThrough: false, passThroughOpacity: 50, offsetX: 0,
-    musicPill: 'title', opacityCol: 0, opacityExp: 0, showTime: true, showDate: false, showTemp: true, showSeconds: false, showBattery: true, monitor: 'primary',
+    musicPill: 'title', opacityCol: 0, opacityExp: 0, showTime: true, showDate: false, showTemp: true, showWxIcon: true, showSeconds: false, showBattery: true, monitor: 'primary',
     'audio.reactive': true, 'sound.reminders': true, 'sound.reminderTone': 'chime', 'sound.volumeDevice': '', 'sound.micDevice': '',
     updateAuto: true, 'net.weather': false, 'net.ai': false, 'weather.units': 'metric', 'weather.city': '',
     'clipboard.clickPaste': true, 'clipboard.maxItems': 1000, 'clipboard.retentionDays': 30, 'clipboard.maxImageMb': 512, 'clipboard.skipSecrets': true,
@@ -582,7 +582,8 @@
     c = card(p);
     row(c, t({ ru: 'Время', en: 'Time' }), t({ ru: 'Пока на острове ничего не происходит', en: 'While nothing else is happening on the pill' }), sw('showTime'));
     row(c, t({ ru: 'Дата', en: 'Date' }), t({ ru: 'Рядом со временем', en: 'Next to the time' }), sw('showDate'));
-    row(c, t({ ru: 'Температура', en: 'Temperature' }), t({ ru: 'Нужна включённая погода', en: 'Needs the weather switched on' }), sw('showTemp'));
+    row(c, t({ ru: 'Значок погоды', en: 'Weather icon' }), t({ ru: 'Слева от времени. Нужна включённая погода', en: 'Left of the time. Needs the weather switched on' }), sw('showWxIcon'));
+    row(c, t({ ru: 'Температура', en: 'Temperature' }), t({ ru: 'Число справа от времени. Нужна включённая погода', en: 'The number right of the time. Needs the weather switched on' }), sw('showTemp'));
     row(c, t({ ru: 'Секунды', en: 'Seconds' }), '', sw('showSeconds'));
     row(c, t({ ru: 'Формат часов', en: 'Clock format' }), '', seg([[false, '12 h'], [true, '24 h']], () => !!get('clock24'), (v) => put({ clock24: v })));
     row(c, t({ ru: 'Заряд батареи', en: 'Battery charge' }), t({ ru: 'На компьютере с батареей', en: 'On a computer that has a battery' }), sw('showBattery'));

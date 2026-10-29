@@ -26,7 +26,7 @@
                 expR: 30, expTopR: 26, K: 380, zeta: 0.78 };
 
   const S = { size: 100, theme: 'dark', clock24: true, autoHide: false, reduceMotion: false, hideInApps: [], language: 'auto', shape: 'capsule', edgeIdle: true, edgeCones: false, lastTab: '',
-              showTime: true, showDate: false, showTemp: true, showSeconds: false, showBattery: true, opacityCol: 0, opacityExp: 0, vpnCountry: '', pinned: false,
+              showTime: true, showDate: false, showTemp: true, showWxIcon: true, showSeconds: false, showBattery: true, opacityCol: 0, opacityExp: 0, vpnCountry: '', pinned: false,
               fps: 'auto', edgeIdleFps: 30 /* settings.json: fps = auto | 30 | 60 | 120 | 144 | 240 (cap of the shared rAF loop); edgeIdleFps = 15 | 30 | 60 (calm / sleep edge only) */ };
   // ---- quiet hours (Settings > Behavior; quiet.js has the pure window logic): sources whose cards / pulses / chips are muted, and the toasts that always show ----
   const QUIET_SRC = new Set(['agents', 'agent-done', 'copy', 'download', 'steam', 'sysmon', 'kbd']);
@@ -640,12 +640,12 @@
     });
   }
   function renderClock() {
-    const d = new Date(), tt = timeText(d), showWx = wx && S.showTemp;
+    const d = new Date(), tt = timeText(d), showIcon = wx && S.showWxIcon, showDeg = wx && S.showTemp; // the weather icon and the number are separate switches
     const b = battery && battery.has_battery && S.showBattery
       ? `<span class="lp-batt${battery.percent <= 15 && !battery.charging ? ' low' : ''}${battery.charging ? ' chg' : ''}"><i style="--rest:${100 - battery.percent}%"></i><span class="lp-bp">${battery.percent}%</span></span>` : '';
     // three columns (1fr auto 1fr): the time stays on the capsule axis whatever the side slots hold; icon + date left, battery + temperature right
-    const left = (slots.left || (showWx ? wxIconHtml(wx) : '')) + (S.showDate ? `<span class="lp-date">${esc(dateText(d))}</span>` : '');
-    const right = b + (slots.right || (showWx ? `<span class="lp-aux">${Math.round(wx.temp)}°</span>` : ''));
+    const left = (slots.left || (showIcon ? wxIconHtml(wx) : '')) + (S.showDate ? `<span class="lp-date">${esc(dateText(d))}</span>` : '');
+    const right = b + (slots.right || (showDeg ? `<span class="lp-aux">${Math.round(wx.temp)}°</span>` : ''));
     const sig = `<span class="lp-l">${left}</span>${S.showTime ? '<span class="lp-time">%T%</span>' : '<span></span>'}<span class="lp-r">${right}</span>`;
     if (sig !== clockSig || !clockTime) {
       const swap = liveKey !== 'clock';
@@ -973,7 +973,7 @@
   }
   function applySettings() {
     root.style.setProperty('--s', scale());
-    const layoutSig = [scale(), S.shape, devicePixelRatio].join('|'), clockSig2 = [S.clock24, S.showTime, S.showDate, S.showTemp, S.showSeconds, S.showBattery, lang].join('|');
+    const layoutSig = [scale(), S.shape, devicePixelRatio].join('|'), clockSig2 = [S.clock24, S.showTime, S.showDate, S.showTemp, S.showWxIcon, S.showSeconds, S.showBattery, lang].join('|');
     if (layoutSig !== applySettings.layout) liqSize();
     applyOffsets();
     root.dataset.theme = S.theme === 'auto' ? (mqTheme.matches ? 'light' : 'dark') : (S.theme || 'dark');
@@ -1055,7 +1055,8 @@
     c = card();
     row(c, t({ ru: 'Время', en: 'Time' }), t({ ru: 'Пока на острове ничего не происходит', en: 'While nothing else is happening' }), sw('showTime'));
     row(c, t({ ru: 'Дата', en: 'Date' }), t({ ru: 'Рядом со временем', en: 'Next to the time' }), sw('showDate'));
-    row(c, t({ ru: 'Температура', en: 'Temperature' }), t({ ru: 'Нужна включённая погода', en: 'Needs the weather feature' }), sw('showTemp'));
+    row(c, t({ ru: 'Значок погоды', en: 'Weather icon' }), t({ ru: 'Слева от времени. Нужна включённая погода', en: 'Left of the time. Needs the weather feature' }), sw('showWxIcon'));
+    row(c, t({ ru: 'Температура', en: 'Temperature' }), t({ ru: 'Число справа от времени. Нужна включённая погода', en: 'The number right of the time. Needs the weather feature' }), sw('showTemp'));
     row(c, t({ ru: 'Секунды', en: 'Seconds' }), '', sw('showSeconds'));
     row(c, t({ ru: 'Формат часов', en: 'Clock format' }), '', seg([[false, '12 h'], [true, '24 h']], () => !!S.clock24, (v) => put('clock24', v)));
     row(c, t({ ru: 'Заряд батареи', en: 'Battery charge' }), t({ ru: 'На компьютере с батареей', en: 'On a computer that has a battery' }), sw('showBattery'));

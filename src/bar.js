@@ -41,6 +41,7 @@
     folderTip: { ru: 'Показать в папке (Ctrl+Enter)', en: 'Show in folder (Ctrl+Enter)' },
     ctxOpen: { ru: 'Открыть', en: 'Open' }, ctxFolder: { ru: 'Показать в папке', en: 'Show in folder' },
     pinTip: { ru: 'Закрепить в Pill (Ctrl+P)', en: 'Pin to Pill (Ctrl+P)' }, ctxPin: { ru: 'Закрепить в Pill', en: 'Pin to Pill' },
+    uninstTip: { ru: 'Удалить приложение…', en: 'Uninstall…' }, ctxUninstall: { ru: 'Удалить…', en: 'Uninstall…' },
     pinned: { ru: 'Закреплено в Pill', en: 'Pinned to Pill' }, pinnedAlready: { ru: 'Уже закреплено', en: 'Already pinned' },
     ctxPath: { ru: 'Скопировать путь', en: 'Copy path' }, ctxAdmin: { ru: 'Запустить от имени администратора', en: 'Run as administrator' },
   };
@@ -222,7 +223,7 @@
     let acts = null;
     if (it.kind === 'app' || it.kind === 'file' || it.kind === 'folder') {
       acts = document.createElement('span'); acts.className = 'acts';
-      for (const [m, icon, tip] of [['path', 'copy', L.pathTip], ...(it.kind === 'folder' ? [] : [['admin', 'shield', L.adminTip]]), ...(pinnable(it) ? [['pin', 'pin', L.pinTip]] : []), ['folder', 'folderOpen', L.folderTip]]) {
+      for (const [m, icon, tip] of [['path', 'copy', L.pathTip], ...(it.kind === 'folder' ? [] : [['admin', 'shield', L.adminTip]]), ...(pinnable(it) ? [['pin', 'pin', L.pinTip]] : []), ...(it.kind === 'app' ? [['uninstall', 'trash', L.uninstTip]] : []), ['folder', 'folderOpen', L.folderTip]]) {
         const b = document.createElement('button'); b.className = 'ab'; b.dataset.m = m; b.title = t(tip); b.tabIndex = -1;
         b.innerHTML = ic(icon, { size: 16, sw: 1.6 }); // static markup
         acts.append(b);
@@ -363,6 +364,9 @@
 
   async function run(it, mode) {
     if (!it) return;
+    if (mode === 'uninstall' && it.kind === 'app') { // the row's trash button / menu line: put the uninstall trigger for this app in the box; its row (with the confirm step) shows right here
+      q.value = 'u ' + String(it.title || '').replace(/\s+/g, ' ').trim(); q.focus(); return search();
+    }
     if (it.kind === 'ask') return ask(it);
     if (it.kind === 'uninstall') return window.UninstallUI?.open(it); // confirm card first: nothing is removed by this keystroke
     if (it.kind === 'newconv') { clearTimeout(timer); q.value = ''; return search(); } // search() ends the dialogue
@@ -434,13 +438,13 @@
     closeCtx();
     ctx = document.createElement('div'); ctx.className = 'ctx'; ctx.setAttribute('role', 'menu');
     const defs = [['open', 'enter', L.ctxOpen, 'Enter'], ['folder', 'folderOpen', L.ctxFolder, 'Ctrl+Enter'], ['path', 'copy', L.ctxPath, 'Ctrl+Shift+C'],
-      ...(it.kind === 'folder' ? [] : [['admin', 'shield', L.ctxAdmin, 'Ctrl+Shift+Enter']]), ...(pinnable(it) ? [['pin', 'pin', L.ctxPin, 'Ctrl+P']] : [])];
+      ...(it.kind === 'folder' ? [] : [['admin', 'shield', L.ctxAdmin, 'Ctrl+Shift+Enter']]), ...(pinnable(it) ? [['pin', 'pin', L.ctxPin, 'Ctrl+P']] : []), ...(it.kind === 'app' ? [['uninstall', 'trash', L.ctxUninstall, '']] : [])];
     for (const [m, icon, label, key] of defs) {
       const b = document.createElement('button'); b.className = 'it'; b.setAttribute('role', 'menuitem');
       b.innerHTML = ic(icon, { size: 16, sw: 1.6 }); // static markup
       const s = document.createElement('span'); s.textContent = t(label);
-      const k = document.createElement('kbd'); k.textContent = key;
-      b.append(s, k);
+      b.append(s);
+      if (key) { const k = document.createElement('kbd'); k.textContent = key; b.append(k); }
       b.addEventListener('click', () => { closeCtx(); run(it, m); });
       ctx.append(b);
     }

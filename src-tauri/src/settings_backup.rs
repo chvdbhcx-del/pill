@@ -20,7 +20,7 @@ const PREFIXES: &[&str] = &[
     "hotkey.", "module.", "live.", "capture.", "voice.", "ai.", "weather.", "net.", "obs.", "sound.", "pet.", "audio.", "clipboard.", "everything.", "quiet.",
 ];
 /// Exact keys written by the settings page that have no entry in the Rust defaults table.
-const EXTRA: &[&str] = &["showTime", "showDate", "showTemp", "showSeconds", "showBattery", "opacityCol", "opacityExp", "fps", "edgeIdleFps"];
+const EXTRA: &[&str] = &["showTime", "showDate", "showTemp", "showWxIcon", "showSeconds", "showBattery", "opacityCol", "opacityExp", "fps", "edgeIdleFps"];
 
 /// Secret-like keys: DPAPI blobs (`...Enc`, `voice.key.<provider>`), tokens, passwords, API keys.
 pub fn is_secret(key: &str) -> bool {
