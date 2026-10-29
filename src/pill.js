@@ -663,8 +663,12 @@
       if (reshaped && window.PillMotion) liveIn.querySelectorAll('.lp-l > *, .lp-r > *').forEach((n) => { if (!hadShape.has(n.className.split(' ')[0])) window.PillMotion.enter(n, { y: 0, scale: 0.6, dur: 0.45 }); });
       // equal side columns = the time sits exactly on the capsule axis (fr tracks collapse under shrink-to-fit sizing, so measure the cells)
       const lpc = liveIn.firstChild, s = scale(), cw = (e) => [...e.children].reduce((a, k) => a + k.getBoundingClientRect().width / s, 0) + 12 * Math.max(0, e.children.length - 1);
-      lpc.style.setProperty('--cw', Math.ceil(Math.max(cw(lpc.querySelector('.lp-l')), cw(lpc.querySelector('.lp-r')))) + 'px');
+      // the legs' eyes normally stand in a 30 px slot after the row; when their own side column holds nothing (no temperature / battery on the right, no icon / date on the left) they stand in that column instead, next to the time
+      const ec = document.documentElement.dataset.char === 'legs' ? (document.documentElement.dataset.charSide === 'left' ? '.lp-l' : '.lp-r') : null, eic = !!ec && !lpc.querySelector(ec).children.length;
+      lpc.classList.toggle('eic', eic);
+      lpc.style.setProperty('--cw', Math.ceil(Math.max(cw(lpc.querySelector('.lp-l')), cw(lpc.querySelector('.lp-r')), eic ? 30 : 0)) + 'px');
       sizeLive();
+      document.dispatchEvent(new Event('pill:live-changed')); // characters.js re-measures where the eyes stand
     } else if (clockTime) setTime(clockTime, tt, !S.showSeconds);
   }
   // Exit phase of a live-row swap: the outgoing content stays ~90 ms as an absolutely positioned copy (.lp-ghost, fades + blurs out in pill.css) while the new content blurs in.

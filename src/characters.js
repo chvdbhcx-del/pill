@@ -182,7 +182,9 @@
     if (eyes) {
       br = br || body.getBoundingClientRect();
       const lr = live.getBoundingClientRect();
-      eyeX = br.left; eyeY = br.top; eyeCx = { w: lr.width, l: lr.left - br.left, r: lr.right - br.left };
+      eyeX = br.left; eyeY = br.top; eyeCx = { w: lr.width, l: lr.left - br.left, r: lr.right - br.left, c: null };
+      const ec = live.querySelector('.lp-clock.eic'), col = ec && ec.querySelector(eyesSide() === 'left' ? '.lp-l' : '.lp-r'); // the clock row's own empty side column (pill.js marks it .eic): the eyes stand in its middle
+      if (col) { const cr = col.getBoundingClientRect(); eyeCx.c = cr.left + cr.width / 2 - br.left; }
     }
   }
   function place(now) { // cheap: only moves the groups to where the island is right now (cached geometry; re-measured by the observers)
@@ -195,13 +197,13 @@
     }
     if (legs) { // the legs stand right under the eyes (one character); before the eyes are measured: the middle of the island
       const lr0 = eyeCx || { w: 0, l: 0, r: 0 }, left0 = eyesSide() === 'left';
-      let lx = lr0.w > 1 ? (left0 ? lr0.l + 15 * s : lr0.r - 15 * s) : W / 2;
+      let lx = lr0.c != null ? lr0.c : lr0.w > 1 ? (left0 ? lr0.l + 15 * s : lr0.r - 15 * s) : W / 2;
       lx = clamp(lx, 14 * s, Math.max(14 * s, W - 14 * s));
       legs.g.setAttribute('transform', `translate(${n2(lx)} ${n2(H - 0.2)}) scale(${n2(s)})`);
     }
     if (eyes) { // in the slot that characters.css keeps free on the pet-free side of the live row; stays in the capsule band while the island opens
       const lr = eyeCx || { w: 0, l: 0, r: 0 }, left = eyesSide() === 'left';
-      let cx = lr.w > 1 ? (left ? lr.l + 15 * s : lr.r - 15 * s) : (left ? 18 * s : W - 18 * s);
+      let cx = lr.c != null ? lr.c : lr.w > 1 ? (left ? lr.l + 15 * s : lr.r - 15 * s) : (left ? 18 * s : W - 18 * s);
       cx = clamp(cx, 14 * s, Math.max(14 * s, W - 14 * s));
       const cy = Math.min(H, 30 * s) / 2;
       eyes.g.setAttribute('transform', `translate(${n2(cx)} ${n2(cy)}) scale(${n2(s)})`);
@@ -294,6 +296,7 @@
   P.on('pill:leave', () => aimAt(null));
   new ResizeObserver((es) => { measure(es[es.length - 1]); place(); }).observe(body); // the spring changes the body size every frame; keep the characters glued to it (also in reduced motion)
   new ResizeObserver(() => { if (eyes) measure(); place(); }).observe(live);
+  document.addEventListener('pill:live-changed', () => { if (eyes) { measure(); place(); } }); // the clock row was rebuilt (a switch flipped, the weather arrived): where the eyes stand may have changed without any size change
   const fromSettings = (s) => {
     if (!s) return;
     if (s.pet !== undefined) petOn = !!s.pet && s.pet !== 'none';

@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Fixed
+- Folded island with the legs' eyes: when the eyes' side of the clock row is empty (for example the temperature is switched off), the eyes now stand in that column right next to the time instead of staying at the far edge behind an empty gap, and the island is narrower by that gap.
+
 ## [0.5.0] - 2026-10-29
 
 ### Fixed

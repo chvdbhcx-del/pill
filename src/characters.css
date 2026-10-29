@@ -9,5 +9,8 @@
 
 /* legs: the capsule keeps a 30 px slot for the eyes at one end of the live row (the end without the pet, see pets.css) so they never overlap the clock;
    the extra width goes through the normal capsule resize (ResizeObserver on #live-in), so it animates like any content change */
+/* the clock row keeps the eyes in its own empty side column (pill.js adds .eic): no separate slot beyond it */
+:root[data-char="legs"] #live-in:has(> .lp-clock.eic)::before,
+:root[data-char="legs"] #live-in:has(> .lp-clock.eic)::after { display: none; }
 :root[data-char="legs"][data-char-side="left"] #live-in::before,
 :root[data-char="legs"][data-char-side="right"] #live-in::after { content: ""; flex: none; width: 30px; height: 1px; }
