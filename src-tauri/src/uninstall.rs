@@ -1,10 +1,12 @@
 // Uninstall apps completely from the command bar (`u foo`, `del foo`, `uninstall foo`, `удалить foo`): the app's own uninstaller first,
-// then a STRICT leftover scan the user ticks through. Switch: Settings > Modules, `module.uninstall` (default on).
-// Safety model: nothing is removed without the confirm card; leftovers go to the Recycle Bin (never a plain delete from here), every HKCU key
-// is exported to %LOCALAPPDATA%\Pill\uninstall-backups first; HKLM, services and tasks are only listed. Every deletion path goes through
-// `guard` / `key_guard` / `run_guard`, and the page only ever sends indexes into the server-side lists of the last list / scan.
-// Commands: uninstall_info uninstall_start uninstall_scan uninstall_delete uninstall_cancel uninstall_state.
-// Event (window bar): uninstall:state {phase: running|still|scanning|review|deleting|done|error, name, message, items[], manual[], ...}.
+// then a DEEP CLEAN scan the user ticks through. Switch: Settings > Modules, `module.uninstall` (default on).
+// Safety model: nothing is removed without the confirm card and the checklist; every item carries evidence and a tier (Certain = pre-ticked,
+// Probable = unticked); leftovers go to the Recycle Bin (never a plain delete from here), registry keys / values are backed up to a .reg first.
+// Everything that needs administrator rights (HKLM, services, tasks, firewall rules, Program Files, other profiles) is deleted only by an
+// elevated copy of Pill (admin.rs) that re-derives the list itself. Every deletion goes through `guard_cand` (deep.rs); the page only ever sends
+// indexes into the server-side list of the last scan.
+// Commands: uninstall_info uninstall_start uninstall_scan uninstall_delete uninstall_admin uninstall_cancel uninstall_state uninstall_open_backups.
+// Event (window bar): uninstall:state {phase: running|still|scanning|review|deleting|elevating|done|error, name, message, items[], manual[], ...}.
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::os::windows::process::CommandExt;
@@ -23,10 +25,14 @@ use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::Win32::UI::Shell::{ShellExecuteExW, SHFileOperationW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, SHFILEOPSTRUCTW};
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
+mod admin;
+mod deep;
+pub use admin::*;
+pub use deep::*;
+
 const NO_WINDOW: u32 = 0x0800_0000;
 const OK: WIN32_ERROR = WIN32_ERROR(0);
 const UNINSTALL: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
-const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const WAIT_MAX: Duration = Duration::from_secs(45 * 60); // the uninstaller's own window may sit there; it is never killed
 const SETTLE_MAX: Duration = Duration::from_secs(90); // after the process exits: some uninstallers hand over to a temp copy and exit at once
 
@@ -35,6 +41,9 @@ const GENERIC: &[&str] = &[
     "app", "apps", "data", "tools", "common", "microsoft", "windows", "system", "program", "programs", "update", "updates", "install", "setup", "cache", "temp",
     "logs", "software", "files", "local", "roaming", "user", "users", "default", "config", "settings", "shared", "bin", "lib", "plugins", "resources", "assets",
     "commonfiles", "windowsapps", "windowsnt", "packages", "microsoftshared", "startup", "accessories", "classes", "policies", "wow6432node",
+    "modifiablewindowsapps", "windowsdefender", "windowsmail", "windowsmediaplayer", "windowsphotoviewer", "windowsportabledevices", "windowssecurity",
+    "windowspowershell", "internetexplorer", "dotnet", "referenceassemblies", "msbuild", "uninstallinformation", "microsoftupdatehealthtools",
+    "locallow", "documents", "downloads", "desktop", "pictures", "music", "videos", "onedrive", "appdata", "clsid", "interface", "typelib", "appid", "installer",
 ];
 const CORP: &[&str] = &["inc", "llc", "ltd", "corp", "corporation", "gmbh", "co", "company", "limited", "sa", "ag", "bv", "oy", "plc", "software", "the"];
 /// Runtimes, drivers and SDKs: hidden unless the query has one of RISKY_WORDS.
@@ -93,13 +102,23 @@ fn publisher_norm(s: &str) -> String {
 pub struct Names {
     pub product: Vec<String>,
     pub publisher: Vec<String>,
+    /// Whole-word sequences of the product name (lower case) for the Probable tier; only distinctive ones (4+ letters in all).
+    pub seqs: Vec<Vec<String>>,
 }
 
 pub fn names_of(p: &Prog) -> Names {
     let mut product: Vec<String> = [norm(&p.name), norm(&short_name(&p.name))].into_iter().filter(|n| usable(n)).collect();
     product.dedup();
     let publisher: Vec<String> = [publisher_norm(&p.publisher)].into_iter().filter(|n| usable(n) && !product.contains(n)).collect();
-    Names { product, publisher }
+    let mut seqs: Vec<Vec<String>> = Vec::new();
+    for n in [p.name.as_str(), &short_name(&p.name)] {
+        let t = tokens(n);
+        let j = t.concat();
+        if usable(&j) && j.chars().count() >= 4 && !seqs.contains(&t) {
+            seqs.push(t);
+        }
+    }
+    Names { product, publisher, seqs }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -109,6 +128,8 @@ pub fn names_of(p: &Prog) -> Names {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Val {
     S(String),
+    /// REG_EXPAND_SZ
+    E(String),
     D(u32),
 }
 /// Values of one Uninstall key, names lower-cased.
@@ -132,11 +153,13 @@ pub struct Prog {
     pub parent: bool,
     pub update: bool,
     pub no_remove: bool,
+    /// More product GUIDs than the key name / command lines show (only set from an elevated request).
+    pub extra_guids: Vec<String>,
 }
 
 fn vs(v: &Vals, k: &str) -> String {
     match v.get(k) {
-        Some(Val::S(s)) => s.trim().to_string(),
+        Some(Val::S(s)) | Some(Val::E(s)) => s.trim().to_string(),
         Some(Val::D(d)) => d.to_string(),
         None => String::new(),
     }
@@ -144,7 +167,7 @@ fn vs(v: &Vals, k: &str) -> String {
 fn vd(v: &Vals, k: &str) -> u32 {
     match v.get(k) {
         Some(Val::D(d)) => *d,
-        Some(Val::S(s)) => s.trim().parse().unwrap_or(0),
+        Some(Val::S(s)) | Some(Val::E(s)) => s.trim().parse().unwrap_or(0),
         None => 0,
     }
 }
@@ -206,6 +229,7 @@ pub fn parse_entry(hklm: bool, sub: &str, v: &Vals) -> Option<Prog> {
             || lname.starts_with("update for")
             || lname.starts_with("hotfix for"),
         no_remove: vd(v, "noremove") == 1,
+        extra_guids: Vec::new(),
     })
 }
 
@@ -297,7 +321,46 @@ pub struct Env {
     pub start_common: PathBuf,
     /// Pill's own folders: never touched, nothing inside them either.
     pub pill: Vec<PathBuf>,
+    /// Roots of the fixed local drives (`C:\`, `D:\`).
+    pub drives: Vec<PathBuf>,
+    /// Other users' profile folders that could be listed.
+    pub others: Vec<PathBuf>,
 }
+
+/// The places of one user profile a deep clean looks into.
+#[derive(Clone, Debug)]
+pub struct Pd {
+    pub root: PathBuf,
+    pub roaming: PathBuf,
+    pub local: PathBuf,
+    pub locallow: PathBuf,
+    pub docs: PathBuf,
+    pub saved: PathBuf,
+    pub desktop: PathBuf,
+    pub start: PathBuf,
+    pub downloads: PathBuf,
+    pub temp: PathBuf,
+    pub quick: PathBuf,
+}
+
+fn pd_of(root: &Path, roaming: PathBuf, local: PathBuf, desktop: PathBuf, start: PathBuf) -> Pd {
+    Pd {
+        root: root.to_path_buf(),
+        locallow: local.parent().map_or_else(|| root.join(r"AppData\LocalLow"), |a| a.join("LocalLow")),
+        docs: root.join("Documents"),
+        saved: root.join("Saved Games"),
+        downloads: root.join("Downloads"),
+        temp: local.join("Temp"),
+        quick: roaming.join(r"Microsoft\Internet Explorer\Quick Launch"),
+        roaming,
+        local,
+        desktop,
+        start,
+    }
+}
+
+/// Folder names below `C:\Users` that are not a person's profile.
+const NOT_PROFILES: &[&str] = &["public", "default", "default user", "all users", "defaultuser0", "desktop.ini"];
 
 impl Env {
     pub fn real() -> Env {
@@ -306,11 +369,23 @@ impl Env {
         let appdata = var("APPDATA", r"C:\Users\Default\AppData\Roaming");
         let local = var("LOCALAPPDATA", r"C:\Users\Default\AppData\Local");
         let programdata = var("ProgramData", r"C:\ProgramData");
-        let mut pill = vec![local.join("Pill"), appdata.join("com.pill.dev"), local.join("com.pill.dev")];
+        let mut pill = vec![local.join("Pill"), appdata.join("com.pill.dev"), local.join("com.pill.dev"), programdata.join("Pill")];
         if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
             pill.push(d);
         }
         let start = |b: &Path| b.join(r"Microsoft\Windows\Start Menu\Programs");
+        let others = profile
+            .parent()
+            .and_then(|users| std::fs::read_dir(users).ok())
+            .map(|rd| {
+                rd.flatten()
+                    .filter(|e| e.file_type().is_ok_and(|t| t.is_dir() && !t.is_symlink()))
+                    .filter(|e| !NOT_PROFILES.contains(&e.file_name().to_string_lossy().to_lowercase().as_str()))
+                    .map(|e| e.path())
+                    .filter(|p| depth_under(p, &profile).is_none())
+                    .collect()
+            })
+            .unwrap_or_default();
         Env {
             windows: var("SystemRoot", r"C:\Windows"),
             pf: var("ProgramFiles", r"C:\Program Files"),
@@ -324,53 +399,74 @@ impl Env {
             local,
             programdata,
             pill,
+            drives: fixed_drives(),
+            others,
         }
+    }
+
+    /// The current user's profile first (flag false), then every other one found (flag true).
+    pub fn profiles(&self) -> Vec<(Pd, bool)> {
+        let mut v = vec![(pd_of(&self.profile, self.appdata.clone(), self.local.clone(), self.desktop.clone(), self.start_user.clone()), false)];
+        for o in &self.others {
+            let (r, l) = (o.join(r"AppData\Roaming"), o.join(r"AppData\Local"));
+            v.push((pd_of(o, r.clone(), l, o.join("Desktop"), r.join(r"Microsoft\Windows\Start Menu\Programs")), true));
+        }
+        v
     }
 
     /// Never deletable, and nothing that contains one of them is either.
     fn protected(&self) -> Vec<PathBuf> {
         let mut v = vec![
-            self.profile.clone(),
             self.windows.clone(),
             self.windows.join("System32"),
-            self.appdata.clone(),
-            self.local.clone(),
             self.programdata.clone(),
             self.pf.clone(),
             self.pf86.clone(),
-            self.desktop.clone(),
+            self.pf.join("Common Files"),
+            self.pf86.join("Common Files"),
             self.public_desktop.clone(),
-            self.start_user.clone(),
             self.start_common.clone(),
-            self.local.join("Programs"),
+            self.windows.join("Temp"),
         ];
-        for k in ["Documents", "Downloads", "Pictures", "Music", "Videos", "Favorites", "Links", "Contacts", "Saved Games", "OneDrive", "AppData"] {
-            v.push(self.profile.join(k));
+        v.extend(self.drives.iter().cloned());
+        for (pd, _) in self.profiles() {
+            v.extend([pd.root.clone(), pd.roaming.clone(), pd.local.clone(), pd.local.join("Programs"), pd.locallow.clone(), pd.desktop.clone(), pd.start.clone(), pd.docs.clone(), pd.saved.clone(), pd.downloads.clone(), pd.temp.clone(), pd.quick.clone()]);
+            for k in ["Pictures", "Music", "Videos", "Favorites", "Links", "Contacts", "OneDrive", "AppData"] {
+                v.push(pd.root.join(k));
+            }
         }
         v.extend(self.pill.iter().cloned());
         v
     }
 
-    /// Folders a leftover may live in (strictly below).
+    /// Folders a leftover may live in (strictly below, first folder below must carry a specific name).
     fn parents(&self) -> Vec<PathBuf> {
-        vec![
-            self.appdata.clone(),
-            self.local.clone(),
-            self.local.join("Programs"),
-            self.programdata.clone(),
-            self.pf.clone(),
-            self.pf86.clone(),
-            self.start_user.clone(),
-            self.start_common.clone(),
-            self.desktop.clone(),
-            self.public_desktop.clone(),
-        ]
+        let mut v = vec![self.programdata.clone(), self.pf.clone(), self.pf86.clone(), self.start_common.clone(), self.public_desktop.clone()];
+        for (pd, _) in self.profiles() {
+            v.extend([pd.roaming.clone(), pd.local.clone(), pd.local.join("Programs"), pd.locallow.clone(), pd.start.clone(), pd.desktop.clone(), pd.quick.clone()]);
+        }
+        v
     }
 
     /// User folders where an app's recorded InstallLocation is not believed (a stray "InstallLocation = Documents").
     fn known_folders(&self) -> Vec<PathBuf> {
         ["Documents", "Downloads", "Pictures", "Music", "Videos", "Desktop", "OneDrive"].iter().map(|k| self.profile.join(k)).collect()
     }
+}
+
+/// Roots of the fixed (not removable, not network) drives.
+fn fixed_drives() -> Vec<PathBuf> {
+    use windows::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+    let mask = unsafe { GetLogicalDrives() };
+    (0..26u32)
+        .filter(|i| mask & (1 << i) != 0)
+        .map(|i| format!("{}:\\", (b'A' + i as u8) as char))
+        .filter(|root| {
+            let w: Vec<u16> = root.encode_utf16().chain(Some(0)).collect();
+            unsafe { GetDriveTypeW(PCWSTR(w.as_ptr())) == 3 } // DRIVE_FIXED
+        })
+        .map(PathBuf::from)
+        .collect()
 }
 
 fn comps(p: &Path) -> Vec<String> {
@@ -419,67 +515,11 @@ fn install_usable(i: &Path, env: &Env) -> bool {
         && !leaf_generic(i)
 }
 
-/// THE check every file / folder deletion goes through. Ok = `p` is a real, existing, non-link path strictly inside an allowed parent.
+/// The strict structural check: `p` is a real, existing, non-link path strictly inside an allowed parent (or the recorded install folder).
+/// Deletions use `guard_deep` / `guard_cand` (deep.rs), which add the wider places and the evidence rules on top of this.
+#[cfg(test)]
 pub fn guard(p: &Path, env: &Env, install: Option<&Path>) -> Result<(), &'static str> {
-    lexical_ok(p)?;
-    if env.protected().iter().any(|f| depth_under(f, p).is_some()) {
-        return Err("protected folder or a parent of one");
-    }
-    if depth_under(p, &env.windows).is_some() {
-        return Err("inside Windows");
-    }
-    if env.pill.iter().any(|d| depth_under(p, d).is_some()) {
-        return Err("Pill's own folder");
-    }
-    let install = install.filter(|i| install_usable(i, env));
-    // the closest allowed parent; the first folder below it must carry a specific name (not Microsoft, Temp, Packages, ...)
-    let parents = env.parents();
-    let par: &Path = match parents.iter().filter(|r| depth_under(p, r).is_some_and(|d| d >= 1)).max_by_key(|r| r.components().count()) {
-        Some(r) => {
-            let first = p.components().nth(r.components().count()).map(|c| norm(&c.as_os_str().to_string_lossy())).unwrap_or_default();
-            if !usable(&first) {
-                return Err("generic folder name");
-            }
-            r
-        }
-        None => match install.filter(|i| depth_under(p, i).is_some()) {
-            Some(i) if depth_under(p, i) != Some(0) || !leaf_generic(p) => i,
-            _ => return Err("not inside an allowed folder"),
-        },
-    };
-    // exists, and is what it says: canonical form must be the parent's canonical form plus the same tail (no junction / symlink anywhere below)
-    let cp = std::fs::canonicalize(p).map_err(|_| "does not exist")?;
-    let cr = std::fs::canonicalize(par).map_err(|_| "allowed folder is not readable")?;
-    let tail: PathBuf = p.components().skip(par.components().count()).collect();
-    if comps(&plain(cp)) != comps(&plain(cr.join(tail))) {
-        return Err("link, junction or alternative name");
-    }
-    Ok(())
-}
-
-/// HKCU subkey (below HKCU) that may be deleted: `Software\<Name>` or `Software\<Publisher>\<Name>`, exact normalised matches only.
-pub fn key_guard(sub: &str, n: &Names) -> Result<(), &'static str> {
-    let parts: Vec<&str> = sub.split('\\').collect();
-    if sub.contains("..") || !parts[0].eq_ignore_ascii_case("software") || !(2..=3).contains(&parts.len()) || parts.iter().any(|x| x.is_empty()) {
-        return Err("not an app key");
-    }
-    if !n.product.contains(&norm(parts[parts.len() - 1])) {
-        return Err("name does not match the app");
-    }
-    if parts.len() == 3 && !n.publisher.contains(&norm(parts[1])) {
-        return Err("publisher does not match");
-    }
-    Ok(())
-}
-
-/// A Run value may be deleted when its command line starts inside the app's install folder.
-pub fn run_guard(data: &str, install: Option<&Path>, env: &Env) -> Result<(), &'static str> {
-    let i = install.filter(|i| install_usable(i, env)).ok_or("no usable install folder")?;
-    let (f, _) = split_cmd(&expand_env(data)).ok_or("empty value")?;
-    match depth_under(Path::new(&f), i) {
-        Some(d) if d >= 1 && !f.contains("..") => Ok(()),
-        _ => Err("does not start inside the install folder"),
-    }
+    deep::guard_core(p, env, install, None)
 }
 
 fn expand_env(s: &str) -> String {
@@ -513,23 +553,108 @@ fn expand_env(s: &str) -> String {
 // Leftover scan
 // ---------------------------------------------------------------------------------------------------------------
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Tier {
+    /// Pre-ticked: points into the install folder, carries the product's GUID, or its name equals the app's.
+    Certain,
+    /// Unticked: the app's full name appears as whole words, or a shared publisher folder.
+    Probable,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Hive {
+    Hkcu,
+    Hklm,
+}
+impl Hive {
+    pub fn root(self) -> HKEY {
+        match self {
+            Hive::Hkcu => HKEY_CURRENT_USER,
+            Hive::Hklm => HKEY_LOCAL_MACHINE,
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Hive::Hkcu => "HKCU",
+            Hive::Hklm => "HKLM",
+        }
+    }
+    fn long(self) -> &'static str {
+        match self {
+            Hive::Hkcu => "HKEY_CURRENT_USER",
+            Hive::Hklm => "HKEY_LOCAL_MACHINE",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum What {
     Fs(PathBuf),
-    /// Subkey below HKCU
-    Key(String),
-    /// (Run key below HKCU, value name, value data)
-    Run(String, String, String),
+    /// Registry key (hive, subkey) and everything below it.
+    Key(Hive, String),
+    /// Registry value (hive, key, value name).
+    Value(Hive, String, String),
+    /// Win32 service (own-process / shared-process only; drivers are only listed).
+    Service(String),
+    /// Scheduled task, as `\Folder\Name`.
+    Task(String),
+    /// An item the elevated scan found; it can only be deleted by the elevated process, selected by this key.
+    Remote(String),
 }
 
 #[derive(Clone, Debug)]
 pub struct Cand {
-    pub kind: &'static str, // folder | shortcut | key | autorun
+    pub kind: &'static str, // folder | file | shortcut | key | value | autorun | service | task | item
     pub shown: String,
     pub size: u64,
+    pub tier: Tier,
     pub ticked: bool,
-    pub note: &'static str,
+    /// Why it matched.
+    pub note: String,
+    /// Only an elevated process may delete it.
+    pub admin: bool,
     pub what: What,
+}
+
+/// Stable identity of an item, the same in the unelevated and the elevated process.
+pub fn cand_key(w: &What) -> String {
+    match w {
+        What::Fs(p) => format!("fs:{}", p.to_string_lossy().to_lowercase()),
+        What::Key(h, s) => format!("key:{}\\{}", h.label(), s.to_lowercase()),
+        What::Value(h, s, n) => format!("val:{}\\{}|{}", h.label(), s.to_lowercase(), n.to_lowercase()),
+        What::Service(n) => format!("svc:{}", n.to_lowercase()),
+        What::Task(t) => format!("task:{}", t.to_lowercase()),
+        What::Remote(k) => k.clone(),
+    }
+}
+
+const RUN_LISTS: &[&str] = &[r"microsoft\windows\currentversion\run", r"microsoft\windows\currentversion\runonce"];
+
+impl Cand {
+    /// `kind`, the shown path and `admin` follow from the item; Certain items start ticked.
+    pub fn new(what: What, tier: Tier, note: &str, size: u64) -> Cand {
+        let (kind, shown, admin) = match &what {
+            What::Fs(p) => {
+                let low = p.to_string_lossy().to_lowercase();
+                (if low.ends_with(".lnk") || low.ends_with(".url") { "shortcut" } else if p.is_dir() { "folder" } else { "file" }, p.to_string_lossy().into_owned(), false)
+            }
+            What::Key(h, s) => ("key", format!("{}\\{s}", h.label()), *h == Hive::Hklm),
+            What::Value(h, s, n) => {
+                let run = RUN_LISTS.iter().any(|l| s.to_lowercase().ends_with(l));
+                (if run { "autorun" } else { "value" }, format!("{}\\{s} : {n}", h.label()), *h == Hive::Hklm)
+            }
+            What::Service(n) => ("service", format!("Service: {n}"), true),
+            What::Task(t) => ("task", format!("Scheduled task: {t}"), true),
+            What::Remote(k) => ("item", k.clone(), true),
+        };
+        Cand { kind, shown, size, tier, ticked: tier == Tier::Certain, note: note.to_string(), admin, what }
+    }
+}
+
+/// Needs an elevated process to delete: Program Files, ProgramData, Windows, the all-users Start Menu / Desktop, other people's profiles.
+fn fs_admin(p: &Path, env: &Env) -> bool {
+    [&env.pf, &env.pf86, &env.programdata, &env.windows, &env.public_desktop, &env.start_common].iter().any(|r| depth_under(p, r).is_some())
+        || env.others.iter().any(|o| depth_under(p, o).is_some())
 }
 
 /// Caps a scan: entries looked at and wall time.
@@ -588,52 +713,120 @@ pub fn dir_size(p: &Path, b: &mut Budget) -> u64 {
     total
 }
 
-fn fs_cand(kind: &'static str, path: PathBuf, ticked: bool, note: &'static str, b: &mut Budget) -> Cand {
-    Cand { kind, shown: path.to_string_lossy().into_owned(), size: dir_size(&path, b), ticked, note, what: What::Fs(path) }
+fn fs_cand(path: PathBuf, tier: Tier, note: &str, env: &Env, b: &mut Budget) -> Cand {
+    let size = dir_size(&path, b);
+    let admin = fs_admin(&path, env);
+    let mut c = Cand::new(What::Fs(path), tier, note, size);
+    c.admin = admin;
+    c
 }
 
-/// Files and folders: the recorded install folder, name-equal folders in the usual data roots, shortcuts. `lnk` resolves a .lnk target.
-/// `shared` = another installed app records a folder that contains / is contained in the install folder.
+struct Root {
+    dir: PathBuf,
+    /// installer files are matched here too (Temp, Downloads)
+    files: bool,
+    /// everything found here is Probable (Downloads)
+    probable_only: bool,
+}
+
+/// Files and folders: the recorded install folder, name-matching folders in every profile and the shared roots, the top levels of the fixed drives,
+/// shortcuts, emptied parent folders. `lnk` resolves a .lnk target. `shared` = another installed app records a folder that contains / is
+/// contained in the install folder.
 pub fn scan_fs(p: &Prog, env: &Env, shared: bool, lnk: &dyn Fn(&Path) -> Option<PathBuf>, b: &mut Budget) -> Vec<Cand> {
     let names = names_of(p);
-    let install = (!p.location.is_empty()).then(|| PathBuf::from(p.location.trim_end_matches('\\')));
+    let install = p.install();
     let ins = install.as_deref();
     let mut out: Vec<Cand> = Vec::new();
-    if let Some(i) = ins.filter(|i| i.is_dir() && guard(i, env, Some(i)).is_ok()) {
-        out.push(fs_cand("folder", i.to_path_buf(), !shared, if shared { "shared with another installed app" } else { "install folder" }, b));
+    if let Some(i) = ins.filter(|i| i.is_dir() && guard_deep(i, env, p).is_ok()) {
+        out.push(if shared { fs_cand(i.to_path_buf(), Tier::Probable, "shared with another installed app", env, b) } else { fs_cand(i.to_path_buf(), Tier::Certain, "install folder", env, b) });
     }
-    // folders named like the app (ticked) or like its publisher (unticked: the publisher's other apps use it)
-    let roots = [env.appdata.clone(), env.local.clone(), env.local.join("Programs"), env.programdata.clone(), env.pf.clone(), env.pf86.clone()];
+    let mut roots: Vec<Root> = Vec::new();
+    for (pd, _) in env.profiles() {
+        for d in [pd.roaming.clone(), pd.local.clone(), pd.local.join("Programs"), pd.locallow.clone()] {
+            roots.push(Root { dir: d, files: false, probable_only: false });
+        }
+        // places for the user's own files (documents, save games): a name match is only ever Probable, never pre-ticked
+        for d in [pd.docs.clone(), pd.saved.clone()] {
+            roots.push(Root { dir: d, files: false, probable_only: true });
+        }
+        roots.push(Root { dir: pd.temp.clone(), files: true, probable_only: false });
+        roots.push(Root { dir: pd.downloads.clone(), files: true, probable_only: true });
+    }
+    for d in [env.programdata.clone(), env.pf.clone(), env.pf86.clone(), env.pf.join("Common Files"), env.pf86.join("Common Files")] {
+        roots.push(Root { dir: d, files: false, probable_only: false });
+    }
+    roots.push(Root { dir: env.windows.join("Temp"), files: true, probable_only: false });
     for root in &roots {
-        for (name, path, is_dir) in read_dir(root, b) {
-            let n = norm(&name);
-            if !is_dir || !usable(&n) {
+        for (name, path, is_dir) in read_dir(&root.dir, b) {
+            if !is_dir {
+                if root.files && installer_name(&name, &names) {
+                    out.push(fs_cand(path, Tier::Probable, "installer file named like the app", env, b));
+                }
                 continue;
             }
-            if names.product.contains(&n) {
-                out.push(fs_cand("folder", path, true, "named like the app", b));
-            } else if names.publisher.contains(&n) {
-                for (n2, p2, d2) in read_dir(&path, b) {
-                    if d2 && names.product.contains(&norm(&n2)) {
-                        out.push(fs_cand("folder", p2, true, "named like the app, under the publisher", b));
-                    }
+            let Some((t, note)) = name_tier(&name, &names) else { continue };
+            if note != N_PUB {
+                let note = if root.probable_only && t == Tier::Certain { "named like the app, in a place for your own files" } else { note };
+                out.push(fs_cand(path, if root.probable_only { Tier::Probable } else { t }, note, env, b));
+                continue;
+            }
+            // a folder named like the publisher: the app's own subfolders are Certain; the folder itself only when nothing else is in it
+            let kids = read_dir(&path, b);
+            let is_app = |n: &str| matches!(name_tier(n, &names), Some((_, x)) if x != N_PUB);
+            for (n2, p2, d2) in &kids {
+                if *d2 && is_app(n2) {
+                    let t2 = name_tier(n2, &names).map_or(Tier::Probable, |x| x.0);
+                    out.push(fs_cand(p2.clone(), if root.probable_only { Tier::Probable } else { t2 }, if t2 == Tier::Certain { "named like the app, under the publisher" } else { N_SEQ }, env, b));
                 }
-                out.push(fs_cand("folder", path, false, "publisher folder, other apps may use it", b));
+            }
+            let sole = !kids.is_empty() && kids.iter().all(|(n2, _, d2)| *d2 && is_app(n2));
+            out.push(if sole && !root.probable_only {
+                fs_cand(path, Tier::Certain, "publisher folder holding only this app", env, b)
+            } else {
+                fs_cand(path, Tier::Probable, "publisher folder, other apps may use it", env, b)
+            });
+        }
+    }
+    // the top level of every fixed drive and one folder below it (D:\Games\<App>, C:\<App>)
+    for d in &env.drives {
+        for (n1, p1, d1) in read_dir(d, b) {
+            if !d1 || DRIVE_PROTECTED.contains(&norm(&n1).as_str()) {
+                continue;
+            }
+            if let Some((t, note)) = name_tier(&n1, &names) {
+                out.push(fs_cand(p1, if note == N_PUB { Tier::Probable } else { t }, if note == N_PUB { "publisher folder, other apps may use it" } else { note }, env, b));
+                continue;
+            }
+            for (n2, p2, d2) in read_dir(&p1, b) {
+                if let (true, Some((t, note))) = (d2, name_tier(&n2, &names).filter(|x| x.1 != N_PUB)) {
+                    out.push(fs_cand(p2, t, note, env, b));
+                }
             }
         }
     }
-    // shortcuts: Desktop and Start Menu, one level of subfolders
-    for root in [&env.desktop, &env.public_desktop, &env.start_user, &env.start_common] {
-        for (name, path, is_dir) in read_dir(root, b) {
-            if !is_dir {
-                out.extend(shortcut(&name, path, &names, ins, env, lnk, b));
-            } else if names.product.contains(&norm(&name)) {
-                out.push(fs_cand("folder", path, true, "Start Menu folder named like the app", b));
-            } else {
-                for (n2, p2, d2) in read_dir(&path, b) {
-                    if !d2 {
-                        out.extend(shortcut(&n2, p2, &names, ins, env, lnk, b));
-                    }
+    // folders that held the install folder and are empty now
+    if let Some(i) = ins.filter(|i| install_usable(i, env)) {
+        for anc in i.ancestors().skip(1).take(2) {
+            if anc.is_dir() && is_empty_dir(anc) && guard_deep(anc, env, p).is_ok() {
+                out.push(fs_cand(anc.to_path_buf(), Tier::Probable, "emptied folder that held the app", env, b));
+            }
+        }
+    }
+    // shortcuts: Desktop, Start Menu, Quick Launch / taskbar pins, up to three folders deep
+    let mut lroots: Vec<(PathBuf, bool)> = vec![(env.public_desktop.clone(), false), (env.start_common.clone(), true)];
+    for (pd, _) in env.profiles() {
+        lroots.extend([(pd.desktop.clone(), false), (pd.start.clone(), true), (pd.quick.clone(), false)]);
+    }
+    for (root, start_menu) in lroots {
+        let mut stack = vec![(root, 0usize)];
+        while let Some((dir, depth)) = stack.pop() {
+            for (name, path, is_dir) in read_dir(&dir, b) {
+                if !is_dir {
+                    out.extend(shortcut(&name, path, &names, ins, env, lnk, b));
+                } else if start_menu && name_tier(&name, &names).is_some_and(|(t, n)| t == Tier::Certain && n == N_NAME) {
+                    out.push(fs_cand(path, Tier::Certain, "Start Menu folder named like the app", env, b));
+                } else if depth < 3 {
+                    stack.push((path, depth + 1));
                 }
             }
         }
@@ -657,55 +850,18 @@ fn shortcut(name: &str, path: PathBuf, names: &Names, install: Option<&Path>, en
     if !(low.ends_with(".lnk") || low.ends_with(".url")) {
         return None;
     }
-    let stem = norm(&name[..name.len() - 4]);
-    let by_name = names.product.contains(&stem);
     let by_target = install.filter(|i| install_usable(i, env)).is_some_and(|i| low.ends_with(".lnk") && lnk(&path).is_some_and(|t| depth_under(&t, i).is_some()));
-    (by_name || by_target).then(|| fs_cand("shortcut", path, true, if by_target { "points into the install folder" } else { "named like the app" }, b))
-}
-
-/// HKCU\Software children matching the app. `children(sub)` lists the subkeys of a key below HKCU (a closure so tests can feed fixtures).
-pub fn scan_keys(p: &Prog, children: &dyn Fn(&str) -> Vec<String>) -> Vec<Cand> {
-    let names = names_of(p);
-    let mut out = Vec::new();
-    for c in children("Software") {
-        let n = norm(&c);
-        if !usable(&n) {
-            continue;
-        }
-        let sub = format!(r"Software\{c}");
-        if names.product.contains(&n) {
-            out.push(Cand { kind: "key", shown: format!(r"HKCU\{sub}"), size: 0, ticked: true, note: "key named like the app", what: What::Key(sub) });
-        } else if names.publisher.contains(&n) {
-            for g in children(&sub) {
-                if names.product.contains(&norm(&g)) {
-                    let s2 = format!(r"{sub}\{g}");
-                    out.push(Cand { kind: "key", shown: format!(r"HKCU\{s2}"), size: 0, ticked: true, note: "key under the publisher", what: What::Key(s2) });
-                }
-            }
-        }
+    if by_target {
+        return Some(fs_cand(path, Tier::Certain, "points into the install folder", env, b));
     }
-    out
-}
-
-/// HKCU Run values that start inside the install folder.
-pub fn scan_run(p: &Prog, values: &[(String, String)], env: &Env) -> Vec<Cand> {
-    let install = (!p.location.is_empty()).then(|| PathBuf::from(p.location.trim_end_matches('\\')));
-    values
-        .iter()
-        .filter(|(_, d)| run_guard(d, install.as_deref(), env).is_ok())
-        .map(|(n, d)| Cand {
-            kind: "autorun",
-            shown: format!(r"HKCU\{RUN_KEY} : {n}"),
-            size: 0,
-            ticked: true,
-            note: "starts the app at sign-in",
-            what: What::Run(RUN_KEY.to_string(), n.clone(), d.clone()),
-        })
-        .collect()
+    match name_tier(&name[..name.len() - 4], names) {
+        Some((t, n)) if n != N_PUB => Some(fs_cand(path, t, if t == Tier::Certain { "shortcut named like the app" } else { N_SEQ }, env, b)),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Deleting: Recycle Bin for files, exported .reg for keys
+// Deleting: Recycle Bin for files, a .reg backup before any registry item, exact commands for services and tasks
 // ---------------------------------------------------------------------------------------------------------------
 
 /// Sends `p` to the Recycle Bin (never a plain delete) and checks it is gone.
@@ -733,105 +889,216 @@ fn sanitize(s: &str) -> String {
     }
 }
 
-/// Exports each HKCU subkey with reg.exe and merges the results into one .reg file; Ok only when the file exists and is not empty.
-pub fn export_keys(subs: &[String], out: &Path) -> Result<(), String> {
-    let mut merged: Vec<u16> = vec![0xFEFF];
-    for (i, s) in subs.iter().enumerate() {
-        let part = out.with_extension(format!("part{i}"));
-        let st = std::process::Command::new("reg").args(["export", &format!(r"HKCU\{s}")]).arg(&part).arg("/y").creation_flags(NO_WINDOW).output();
-        let bytes = std::fs::read(&part).unwrap_or_default();
-        let _ = std::fs::remove_file(&part);
-        if !st.is_ok_and(|o| o.status.success()) || bytes.len() < 4 {
-            return Err(format!("could not export HKCU\\{s}"));
+fn reg_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn hex_bytes(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect::<Vec<_>>().join(",")
+}
+
+/// One value in .reg syntax.
+fn reg_line(name: &str, ty: u32, data: &[u8]) -> String {
+    let n = if name.is_empty() { "@".to_string() } else { format!("\"{}\"", reg_escape(name)) };
+    let v = match ty {
+        1 if data.len() % 2 == 0 => {
+            let u: Vec<u16> = data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+            format!("\"{}\"", reg_escape(String::from_utf16_lossy(&u).trim_end_matches('\0')))
         }
-        let text = String::from_utf16_lossy(&bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect::<Vec<_>>());
-        let text = text.trim_start_matches('\u{feff}');
-        // every part starts with the "Windows Registry Editor" header line: keep it once
-        let body = if i == 0 { text } else { text.split_once('\n').map_or("", |x| x.1) };
-        merged.extend(body.encode_utf16());
-        merged.extend("\r\n".encode_utf16());
+        4 if data.len() == 4 => format!("dword:{:08x}", u32::from_le_bytes([data[0], data[1], data[2], data[3]])),
+        3 => format!("hex:{}", hex_bytes(data)),
+        t => format!("hex({t:x}):{}", hex_bytes(data)),
+    };
+    format!("{n}={v}\r\n")
+}
+
+/// `.reg` text of keys (with everything below them) and single values; imports back with `reg import`. Err when something cannot be read.
+pub fn reg_dump(items: &[(Hive, String, Option<String>)]) -> Result<String, String> {
+    fn key(out: &mut String, h: Hive, sub: &str, only: Option<&str>, depth: usize, budget: &mut usize) -> Result<(), String> {
+        let k = Key::open(h.root(), sub, KEY_READ).ok_or_else(|| format!("cannot read {}\\{sub}", h.label()))?;
+        out.push_str(&format!("[{}\\{sub}]\r\n", h.long()));
+        for (n, ty, data) in k.raw_values() {
+            if only.is_none_or(|o| o.eq_ignore_ascii_case(&n)) {
+                out.push_str(&reg_line(&n, ty, &data));
+            }
+        }
+        out.push_str("\r\n");
+        if only.is_none() && depth < 16 {
+            for c in k.subkeys(20_000) {
+                *budget = budget.checked_sub(1).ok_or("key too large to back up")?;
+                key(out, h, &format!(r"{sub}\{c}"), None, depth + 1, budget)?;
+            }
+        }
+        Ok(())
     }
-    let bytes: Vec<u8> = merged.iter().flat_map(|u| u.to_le_bytes()).collect();
-    std::fs::write(out, &bytes).map_err(|e| e.to_string())?;
-    if std::fs::metadata(out).map_or(0, |m| m.len()) < 8 {
+    let mut out = String::from("Windows Registry Editor Version 5.00\r\n\r\n");
+    let mut budget = 50_000usize;
+    for (h, sub, only) in items {
+        key(&mut out, *h, sub, only.as_deref(), 0, &mut budget)?;
+    }
+    Ok(out)
+}
+
+/// The text as a UTF-16LE file with BOM, the format regedit writes.
+pub fn reg_bytes(text: &str) -> Vec<u8> {
+    std::iter::once(0xFEFFu16).chain(text.encode_utf16()).flat_map(u16::to_le_bytes).collect()
+}
+
+/// Where backups of the current user go.
+pub fn backup_dir(env: &Env) -> PathBuf {
+    env.local.join(r"Pill\uninstall-backups")
+}
+
+/// Writes `<dir>\<base>.<name>` and checks it is there and not empty. Returns the path.
+pub fn file_store(dir: &Path, base: &str, name: &str, bytes: &[u8]) -> Result<String, String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("{base}.{name}"));
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    if std::fs::metadata(&path).map_or(0, |m| m.len()) == 0 {
         return Err("backup file is empty".into());
     }
-    Ok(())
+    Ok(path.to_string_lossy().into_owned())
 }
 
 pub struct Report {
-    pub done: Vec<String>,
+    pub done: Vec<(&'static str, String)>,
     pub failed: Vec<(String, String)>,
-    pub backup: Option<PathBuf>,
-    pub log: PathBuf,
+    pub backup: Option<String>,
+    pub log: Option<String>,
+    /// Items left alone because they need administrator rights.
+    pub need_admin: usize,
 }
 
-/// Deletes the chosen candidates. Every item is re-checked by the guards; registry items need their backup first.
-pub fn delete_cands(p: &Prog, cands: &[&Cand], env: &Env, dir: &Path, stamp: &str) -> Report {
-    let names = names_of(p);
-    let install = (!p.location.is_empty()).then(|| PathBuf::from(p.location.trim_end_matches('\\')));
-    let base = format!("{}-{stamp}", sanitize(&p.name));
-    let _ = std::fs::create_dir_all(dir);
-    let (log_path, reg_path) = (dir.join(format!("{base}.log")), dir.join(format!("{base}.reg")));
-    let mut log = vec![format!("Pill uninstall cleanup: {} ({stamp})", p.name)];
-    let (mut done, mut failed) = (Vec::new(), Vec::new());
-    let mut subs: Vec<String> = Vec::new();
+fn run_quiet(exe: &str, args: &[&str]) -> Result<(), String> {
+    let o = std::process::Command::new(exe).args(args).creation_flags(NO_WINDOW).output().map_err(|e| e.to_string())?;
+    if o.status.success() { Ok(()) } else { Err(format!("{exe} failed ({})", o.status.code().unwrap_or(-1))) }
+}
+
+fn remove(w: &What) -> Result<(), String> {
+    match w {
+        What::Fs(p) => recycle(p),
+        What::Key(h, sub) => {
+            let wide: Vec<u16> = sub.encode_utf16().chain(Some(0)).collect();
+            let e = unsafe { RegDeleteTreeW(h.root(), PCWSTR(wide.as_ptr())) };
+            if e == OK { Ok(()) } else { Err(format!("registry error {}", e.0)) }
+        }
+        What::Value(h, sub, name) => {
+            let key = Key::open(h.root(), sub, KEY_SET_VALUE).ok_or_else(|| "cannot open the key for writing".to_string())?;
+            let wide: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+            let e = unsafe { RegDeleteValueW(key.0, PCWSTR(wide.as_ptr())) };
+            if e == OK { Ok(()) } else { Err(format!("registry error {}", e.0)) }
+        }
+        What::Service(n) => {
+            let _ = run_quiet("sc.exe", &["stop", n]); // a stopped service answers with an error: fine
+            run_quiet("sc.exe", &["delete", n])
+        }
+        What::Task(t) => run_quiet("schtasks.exe", &["/delete", "/tn", t, "/f"]),
+        What::Remote(_) => Err("only the elevated process can remove this".into()),
+    }
+}
+
+/// Deletes the chosen candidates. Every item is re-checked by `guard_cand` right before it is touched; registry / service / task items
+/// need their backup first (written through `store`, which the elevated process points at its caller). Items that need administrator rights
+/// are skipped unless `elevated`.
+pub fn delete_cands(
+    p: &Prog,
+    cands: &[&Cand],
+    env: &Env,
+    reg: &dyn Reg,
+    stamp: &str,
+    elevated: bool,
+    store: &dyn Fn(&str, &[u8]) -> Result<String, String>,
+    progress: &dyn Fn(&str, bool, &str, usize, usize),
+) -> Report {
+    let mut log = vec![format!("Pill uninstall cleanup: {} ({stamp}){}", p.name, if elevated { " [administrator]" } else { "" })];
+    let (mut done, mut failed, mut need_admin) = (Vec::new(), Vec::new(), 0usize);
+    let mut todo: Vec<&Cand> = Vec::new();
     for c in cands {
+        if c.admin && !elevated {
+            need_admin += 1;
+            log.push(format!("needs administrator, left alone: {}", c.shown));
+        } else {
+            todo.push(c);
+        }
+    }
+    // backups first
+    let mut items: Vec<(Hive, String, Option<String>)> = Vec::new();
+    let mut tasks: Vec<(String, Vec<u8>)> = Vec::new();
+    for c in &todo {
+        if guard_cand(&c.what, p, env, reg).is_err() {
+            continue; // refused below, with its reason
+        }
         match &c.what {
-            What::Key(s) if key_guard(s, &names).is_ok() => subs.push(s.clone()),
-            What::Run(k, _, d) if !subs.contains(k) && run_guard(d, install.as_deref(), env).is_ok() => subs.push(k.clone()),
+            What::Key(h, s) => items.push((*h, s.clone(), None)),
+            What::Value(h, s, n) => items.push((*h, s.clone(), Some(n.clone()))),
+            What::Service(n) => items.push((Hive::Hklm, format!(r"SYSTEM\CurrentControlSet\Services\{n}"), None)),
+            What::Task(t) => {
+                if let Ok(b) = std::fs::read(env.windows.join("System32").join("Tasks").join(t.trim_start_matches('\\'))) {
+                    tasks.push((t.clone(), b));
+                }
+            }
             _ => {}
         }
     }
-    let backup = if subs.is_empty() {
-        None
-    } else {
-        match export_keys(&subs, &reg_path) {
-            Ok(()) => {
-                log.push(format!("backup: {}", reg_path.display()));
-                Some(reg_path.clone())
+    let mut backup: Option<String> = None;
+    let mut backed_up = items.is_empty();
+    if !items.is_empty() {
+        match reg_dump(&items).and_then(|t| store("reg", &reg_bytes(&t))) {
+            Ok(path) => {
+                log.push(format!("backup: {path}"));
+                backup = Some(path);
+                backed_up = true;
             }
-            Err(e) => {
-                log.push(format!("backup failed, registry items skipped: {e}"));
-                None
+            Err(e) => log.push(format!("backup failed, registry items, services and tasks skipped: {e}")),
+        }
+    }
+    let mut task_ok: Vec<String> = Vec::new();
+    if backed_up {
+        for (i, (t, bytes)) in tasks.iter().enumerate() {
+            match store(&format!("task{i}.xml"), bytes) {
+                Ok(path) => {
+                    log.push(format!("task backup: {path}"));
+                    task_ok.push(t.clone());
+                }
+                Err(e) => log.push(format!("task backup failed ({t}): {e}")),
             }
         }
+    }
+    // values first (a handler association needs its handler key), files, services, tasks, keys last
+    let rank = |c: &Cand| match c.what {
+        What::Value(..) => 0,
+        What::Fs(_) => 1,
+        What::Service(_) => 2,
+        What::Task(_) => 3,
+        _ => 4,
     };
-    for c in cands {
-        let r: Result<(), String> = match &c.what {
-            What::Fs(path) => guard(path, env, install.as_deref()).map_err(String::from).and_then(|_| recycle(path)),
-            What::Key(s) => match (key_guard(s, &names), &backup) {
-                (Err(e), _) => Err(e.into()),
-                (_, None) => Err("no backup, not deleted".into()),
-                _ => {
-                    let w: Vec<u16> = s.encode_utf16().chain(Some(0)).collect();
-                    let e = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, PCWSTR(w.as_ptr())) };
-                    if e == OK { Ok(()) } else { Err(format!("registry error {}", e.0)) }
-                }
-            },
-            What::Run(k, n, d) => match (run_guard(d, install.as_deref(), env), &backup) {
-                (Err(e), _) => Err(e.into()),
-                (_, None) => Err("no backup, not deleted".into()),
-                _ => Key::open(HKEY_CURRENT_USER, k, KEY_SET_VALUE).ok_or_else(|| "cannot open the Run key".to_string()).and_then(|key| {
-                    let w: Vec<u16> = n.encode_utf16().chain(Some(0)).collect();
-                    let e = unsafe { RegDeleteValueW(key.0, PCWSTR(w.as_ptr())) };
-                    if e == OK { Ok(()) } else { Err(format!("registry error {}", e.0)) }
-                }),
+    todo.sort_by_key(|c| rank(c));
+    let total = todo.len();
+    for (n, c) in todo.into_iter().enumerate() {
+        let r: Result<(), String> = match guard_cand(&c.what, p, env, reg) {
+            Err(e) => Err(format!("refused: {e}")),
+            Ok(_) => match &c.what {
+                What::Fs(_) => remove(&c.what),
+                What::Task(t) if !task_ok.contains(t) => Err("no backup, not deleted".into()),
+                _ if !backed_up => Err("no backup, not deleted".into()),
+                _ => remove(&c.what),
             },
         };
         match r {
             Ok(()) => {
                 log.push(format!("deleted {} {}", c.kind, c.shown));
-                done.push(c.shown.clone());
+                done.push((c.kind, c.shown.clone()));
+                progress(&c.shown, true, "", n + 1, total);
             }
             Err(e) => {
                 log.push(format!("NOT deleted {} {}: {e}", c.kind, c.shown));
+                progress(&c.shown, false, &e, n + 1, total);
                 failed.push((c.shown.clone(), e));
             }
         }
     }
-    let _ = std::fs::write(&log_path, log.join("\r\n") + "\r\n");
-    Report { done, failed, backup, log: log_path }
+    let log_path = store("log", (log.join("\r\n") + "\r\n").as_bytes()).ok();
+    Report { done, failed, backup, log: log_path, need_admin }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -864,11 +1131,35 @@ impl Key {
         }
         out
     }
+    /// Every value as (name, type, bytes), names in their own case, for the backup.
+    fn raw_values(&self) -> Vec<(String, u32, Vec<u8>)> {
+        let mut out = Vec::new();
+        let mut i = 0u32;
+        while i < 20_000 {
+            let (mut name, mut data) = (vec![0u16; 16_384], vec![0u8; 65_536]);
+            let (mut nn, mut dn, mut ty) = (name.len() as u32, data.len() as u32, 0u32);
+            let r = unsafe { RegEnumValueW(self.0, i, PWSTR(name.as_mut_ptr()), &mut nn, None, Some(&mut ty), Some(data.as_mut_ptr()), Some(&mut dn)) };
+            if r == WIN32_ERROR(234) {
+                // ERROR_MORE_DATA: grow the data buffer and ask again for the same index
+                data = vec![0u8; dn as usize + 2];
+                let (mut nn2, mut dn2) = (name.len() as u32, data.len() as u32);
+                if unsafe { RegEnumValueW(self.0, i, PWSTR(name.as_mut_ptr()), &mut nn2, None, Some(&mut ty), Some(data.as_mut_ptr()), Some(&mut dn2)) } == OK {
+                    out.push((String::from_utf16_lossy(&name[..nn2 as usize]), ty, data[..dn2 as usize].to_vec()));
+                }
+            } else if r == OK {
+                out.push((String::from_utf16_lossy(&name[..nn as usize]), ty, data[..dn as usize].to_vec()));
+            } else if r == WIN32_ERROR(259) {
+                break;
+            }
+            i += 1;
+        }
+        out
+    }
     /// REG_SZ / REG_EXPAND_SZ / REG_DWORD values, names lower-cased. Others are skipped.
     fn values(&self) -> Vals {
         let mut out = Vals::new();
-        for i in 0..1024u32 {
-            let (mut name, mut data) = ([0u16; 512], vec![0u8; 8192]);
+        for i in 0..8192u32 {
+            let (mut name, mut data) = ([0u16; 2048], vec![0u8; 8192]);
             let (mut nn, mut dn, mut ty) = (name.len() as u32, data.len() as u32, 0u32);
             let r = unsafe { RegEnumValueW(self.0, i, PWSTR(name.as_mut_ptr()), &mut nn, None, Some(&mut ty), Some(data.as_mut_ptr()), Some(&mut dn)) };
             if r == WIN32_ERROR(259) {
@@ -881,7 +1172,8 @@ impl Key {
             match ty {
                 1 | 2 => {
                     let u: Vec<u16> = data[..dn as usize].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
-                    out.insert(k, Val::S(String::from_utf16_lossy(&u).trim_end_matches('\0').to_string()));
+                    let t = String::from_utf16_lossy(&u).trim_end_matches('\0').to_string();
+                    out.insert(k, if ty == 2 { Val::E(t) } else { Val::S(t) });
                 }
                 4 if dn >= 4 => {
                     out.insert(k, Val::D(u32::from_le_bytes([data[0], data[1], data[2], data[3]])));
@@ -993,6 +1285,8 @@ struct Flow {
     locs: Vec<(String, PathBuf)>, // every installed program's recorded install folder (for the "shared folder" check)
     sel: Option<Prog>,
     cands: Vec<Cand>,
+    manual: Vec<String>,
+    cut: bool,
     busy: bool,
     last: Value,
 }
@@ -1087,8 +1381,22 @@ fn emit(app: &AppHandle, v: Value) {
     let _ = app.emit_to("bar", "uninstall:state", v);
 }
 
-fn items_json(cands: &[Cand]) -> Vec<Value> {
-    cands.iter().enumerate().map(|(i, c)| json!({ "id": i, "kind": c.kind, "path": c.shown, "size": c.size, "ticked": c.ticked, "note": c.note })).collect()
+pub(crate) fn items_json(cands: &[Cand]) -> Vec<Value> {
+    cands
+        .iter()
+        .enumerate()
+        .map(|(i, c)| json!({ "id": i, "kind": c.kind, "path": c.shown, "size": c.size, "ticked": c.ticked, "note": c.note, "admin": c.admin, "tier": if c.tier == Tier::Certain { "certain" } else { "probable" } }))
+        .collect()
+}
+
+/// The review state the page draws: the candidate list with everything needed for the two groups and the administrator section.
+fn review_json(name: &str, cands: &[Cand], manual: &[String], cut: bool, extra: Value) -> Value {
+    let mut v = json!({ "phase": if cands.is_empty() && manual.is_empty() { "done" } else { "review" }, "name": name, "items": items_json(cands), "manual": manual, "cut": cut,
+        "needAdmin": cands.iter().filter(|c| c.admin).count(), "files": 0, "keys": 0, "other": 0, "failed": [] });
+    if let (Some(o), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+        o.extend(e.clone());
+    }
+    v
 }
 
 /// Details for the confirm card; also selects the app for the following commands. `name` must match the row (the list may have moved on).
@@ -1182,14 +1490,15 @@ fn settle_and_scan(app: &AppHandle, p: &Prog, waited: bool) {
         emit(app, json!({ "phase": "still", "name": p.name }));
     } else if p.appx {
         flow(|f| f.busy = false);
-        emit(app, json!({ "phase": "done", "name": p.name, "done": 0, "failed": [] }));
+        emit(app, review_json(&p.name, &[], &[], false, json!({})));
     } else {
-        emit(app, json!({ "phase": "scanning", "name": p.name }));
-        let (cands, manual, cut) = scan_all(p);
-        let phase = if cands.is_empty() && manual.is_empty() { "done" } else { "review" };
-        let v = json!({ "phase": phase, "name": p.name, "items": items_json(&cands), "manual": manual, "cut": cut, "done": 0, "failed": [] });
+        emit(app, json!({ "phase": "scanning", "name": p.name, "step": "starting", "found": 0 }));
+        let (cands, manual, cut) = scan_all(app, p);
+        let v = review_json(&p.name, &cands, &manual, cut, json!({}));
         flow(|f| {
             f.cands = cands;
+            f.manual = manual;
+            f.cut = cut;
             f.busy = false;
         });
         emit(app, v);
@@ -1215,27 +1524,53 @@ pub fn uninstall_delete(app: AppHandle, ids: Vec<usize>) -> Value {
         let mut ids = ids.clone();
         ids.sort_unstable();
         ids.dedup();
-        let picked: Vec<Cand> = ids.iter().filter_map(|i| f.cands.get(*i).cloned()).collect(); // unknown indexes are dropped
+        let picked: Vec<Cand> = ids.iter().filter_map(|i| f.cands.get(*i).cloned()).filter(|c| !c.admin).collect(); // unknown indexes and administrator items are dropped
         f.busy = true;
         Some((p, picked))
     }) else {
         return json!({ "ok": false });
     };
     std::thread::spawn(move || {
-        emit(&app, json!({ "phase": "deleting", "name": p.name }));
+        emit(&app, json!({ "phase": "deleting", "name": p.name, "total": picked.len() }));
         let env = Env::real();
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()).to_string();
+        let (dir, base) = (backup_dir(&env), format!("{}-{stamp}", sanitize(&p.name)));
         let refs: Vec<&Cand> = picked.iter().collect();
-        let r = delete_cands(&p, &refs, &env, &env.local.join(r"Pill\uninstall-backups"), &stamp);
-        flow(|f| {
-            f.busy = false;
-            f.cands.clear();
+        let r = delete_cands(&p, &refs, &env, &RealReg, &stamp, false, &|name, bytes| file_store(&dir, &base, name, bytes), &|shown, ok, err, n, total| {
+            let _ = app.emit_to("bar", "uninstall:item", json!({ "shown": shown, "ok": ok, "error": err, "n": n, "total": total }));
         });
-        let failed: Vec<String> = r.failed.iter().map(|(a, b)| format!("{a}: {b}")).collect();
-        emit(&app, json!({ "phase": "done", "name": p.name, "done": r.done.len(), "failed": failed,
-            "backup": r.backup.map(|b| b.to_string_lossy().into_owned()), "log": r.log.to_string_lossy() }));
+        finish_delete(&app, &p, &r, &dir);
     });
     json!({ "ok": true })
+}
+
+/// Drops what was deleted from the list and emits the summary (the rest, administrator items included, stays tickable).
+pub(crate) fn finish_delete(app: &AppHandle, p: &Prog, r: &Report, dir: &Path) {
+    let gone: std::collections::HashSet<String> = r.done.iter().map(|(_, s)| s.clone()).collect();
+    let (cands, manual, cut) = flow(|f| {
+        f.busy = false;
+        f.cands.retain(|c| !gone.contains(&c.shown));
+        (f.cands.clone(), f.manual.clone(), f.cut)
+    });
+    let count = |kinds: &[&str]| r.done.iter().filter(|(k, _)| kinds.contains(k)).count();
+    let failed: Vec<String> = r.failed.iter().map(|(a, b)| format!("{a}: {b}")).collect();
+    let v = review_json(
+        &p.name,
+        &cands,
+        &manual,
+        cut,
+        json!({ "phase": "done", "files": count(&["folder", "file", "shortcut"]), "keys": count(&["key", "value", "autorun"]), "other": count(&["service", "task", "item"]),
+            "failed": failed, "skippedAdmin": r.need_admin, "backup": r.backup, "log": r.log, "backupDir": dir.to_string_lossy() }),
+    );
+    emit(app, v);
+}
+
+/// Opens the folder with the .reg backups and logs in Explorer.
+#[tauri::command]
+pub fn uninstall_open_backups() {
+    let dir = backup_dir(&Env::real());
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::process::Command::new("explorer.exe").arg(&dir).creation_flags(NO_WINDOW).spawn();
 }
 
 /// Stops waiting for the uninstaller (it keeps running) and forgets the selection.
@@ -1281,65 +1616,113 @@ fn lnk_target(p: &Path) -> Option<PathBuf> {
     }
 }
 
-/// (candidates, read-only "remove manually" lines, truncated)
-fn scan_all(p: &Prog) -> (Vec<Cand>, Vec<String>, bool) {
-    let env = Env::real();
-    let mut b = Budget::new(20_000, 12);
-    let install = (!p.location.is_empty()).then(|| PathBuf::from(p.location.trim_end_matches('\\')));
-    let shared = install.as_ref().is_some_and(|i| flow(|f| f.locs.iter().any(|(k, l)| *k != p.sub && (depth_under(l, i).is_some() || depth_under(i, l).is_some()))));
-    let mut cands = scan_fs(p, &env, shared, &lnk_target, &mut b);
-    let children = |sub: &str| Key::open(HKEY_CURRENT_USER, sub, KEY_READ).map(|k| k.subkeys(3000)).unwrap_or_default();
-    cands.extend(scan_keys(p, &children));
-    let run: Vec<(String, String)> = Key::open(HKEY_CURRENT_USER, RUN_KEY, KEY_READ)
-        .map(|k| k.values().into_iter().filter_map(|(n, v)| if let Val::S(s) = v { Some((n, s)) } else { None }).collect())
-        .unwrap_or_default();
-    cands.extend(scan_run(p, &run, &env));
-    (cands, scan_manual(p, install.as_deref(), &env), b.cut)
+/// The whole deep scan of `p`: (candidates, lines that are only listed, cut off by the caps). `step(stage, found so far)` reports progress.
+/// Used by this process and by the elevated one, so both derive the same list.
+pub fn scan_all_with(p: &Prog, env: &Env, reg: &dyn Reg, shared: bool, step: &dyn Fn(&str, usize)) -> (Vec<Cand>, Vec<String>, bool) {
+    let mut b = Budget::new(400_000, 60);
+    step("files and folders", 0);
+    let mut cands = scan_fs(p, env, shared, &lnk_target, &mut b);
+    let n = cands.len();
+    cands.extend(scan_registry(p, env, reg, &mut b, &|s, c| step(s, n + c)));
+    let mut seen = std::collections::HashSet::new();
+    cands.retain(|c| seen.insert(cand_key(&c.what)));
+    let kind_rank = |k: &str| ["folder", "file", "shortcut", "autorun", "key", "value", "service", "task", "item"].iter().position(|x| *x == k).unwrap_or(9);
+    cands.sort_by_key(|c| (c.admin, c.tier != Tier::Certain, kind_rank(c.kind)));
+    let drivers = list_drivers(p, env, reg);
+    (cands, drivers, b.cut)
 }
 
-/// Things that need administrator rights: only listed, never touched.
-fn scan_manual(p: &Prog, install: Option<&Path>, env: &Env) -> Vec<String> {
-    let names = names_of(p);
-    let mut out = Vec::new();
-    for base in ["SOFTWARE", r"SOFTWARE\WOW6432Node"] {
-        let Some(k) = Key::open(HKEY_LOCAL_MACHINE, base, KEY_READ) else { continue };
-        for c in k.subkeys(3000) {
-            let n = norm(&c);
-            if !usable(&n) {
-                continue;
+fn scan_all(app: &AppHandle, p: &Prog) -> (Vec<Cand>, Vec<String>, bool) {
+    let env = Env::real();
+    let install = p.install();
+    let shared = install.as_ref().is_some_and(|i| flow(|f| f.locs.iter().any(|(k, l)| *k != p.sub && (depth_under(l, i).is_some() || depth_under(i, l).is_some()))));
+    let name = p.name.clone();
+    scan_all_with(p, &env, &RealReg, shared, &|s, c| emit(app, json!({ "phase": "scanning", "name": name, "step": s, "found": c })))
+}
+
+fn static_kind(k: &str) -> &'static str {
+    ["folder", "file", "shortcut", "key", "value", "autorun", "service", "task"].iter().find(|x| **x == k).copied().unwrap_or("item")
+}
+
+/// "Scan as administrator" (`mode` scan: finds what only an elevated process can see) or "Remove system leftovers" (`mode` delete: the ticked
+/// administrator items). Runs in the background; the outcome arrives as `uninstall:state`.
+#[tauri::command]
+pub fn uninstall_admin(app: AppHandle, mode: String, ids: Vec<usize>) -> Value {
+    let mode = if mode == "delete" { Mode::Delete } else { Mode::Scan };
+    let Some((p, keys)) = flow(|f| {
+        if f.busy {
+            return None;
+        }
+        let p = f.sel.clone()?;
+        let keys: Vec<String> = ids.iter().filter_map(|i| f.cands.get(*i)).filter(|c| c.admin).map(|c| cand_key(&c.what)).collect();
+        if mode == Mode::Delete && keys.is_empty() {
+            return None;
+        }
+        f.busy = true;
+        Some((p, keys))
+    }) else {
+        return json!({ "ok": false });
+    };
+    std::thread::spawn(move || {
+        emit(&app, json!({ "phase": "elevating", "name": p.name, "mode": if mode == Mode::Scan { "scan" } else { "delete" } }));
+        let env = Env::real();
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()).to_string();
+        let (dir, base) = (backup_dir(&env), format!("{}-{stamp}-admin", sanitize(&p.name)));
+        let r = run_elevated(&p, mode, keys, &|name, bytes| file_store(&dir, &base, name, bytes));
+        let (cands, manual, cut) = flow(|f| (f.cands.clone(), f.manual.clone(), f.cut));
+        match r {
+            Err(e) => {
+                flow(|f| f.busy = false);
+                emit(&app, review_json(&p.name, &cands, &manual, cut, json!({ "phase": "review", "adminError": e })));
             }
-            if names.product.contains(&n) {
-                out.push(format!(r"HKLM\{base}\{c}"));
-            } else if names.publisher.contains(&n) {
-                let sub = format!(r"{base}\{c}");
-                if let Some(kk) = Key::open(HKEY_LOCAL_MACHINE, &sub, KEY_READ) {
-                    out.extend(kk.subkeys(500).into_iter().filter(|g| names.product.contains(&norm(g))).map(|g| format!(r"HKLM\{sub}\{g}")));
-                }
+            Ok(res) if res.get("error").is_some() => {
+                flow(|f| f.busy = false);
+                emit(&app, review_json(&p.name, &cands, &manual, cut, json!({ "phase": "review", "adminError": res["error"] })));
+            }
+            Ok(res) if mode == Mode::Scan => {
+                let tier_of = |s: &str| if s == "certain" { Tier::Certain } else { Tier::Probable };
+                let remote: Vec<Cand> = res["items"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .map(|j| {
+                                let g = |k: &str| j.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+                                let t = tier_of(&g("tier"));
+                                Cand { kind: static_kind(&g("kind")), shown: g("shown"), size: j.get("size").and_then(Value::as_u64).unwrap_or(0), tier: t, ticked: t == Tier::Certain, note: g("note"), admin: true, what: What::Remote(g("key")) }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let manual2: Vec<String> = res["manual"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or(manual);
+                let all = flow(|f| {
+                    f.cands.retain(|c| !c.admin);
+                    f.cands.extend(remote);
+                    f.manual = manual2.clone();
+                    f.busy = false;
+                    f.cands.clone()
+                });
+                emit(&app, review_json(&p.name, &all, &manual2, cut, json!({ "phase": "review", "adminScanned": true })));
+            }
+            Ok(res) => {
+                let pairs = |k: &str| -> Vec<(String, String)> {
+                    res[k].as_array().map(|a| a.iter().map(|x| (x[0].as_str().unwrap_or("").to_string(), x[1].as_str().unwrap_or("").to_string())).collect()).unwrap_or_default()
+                };
+                let rep = Report {
+                    done: pairs("done").into_iter().map(|(k, s)| (static_kind(&k), s)).collect(),
+                    failed: pairs("failed"),
+                    backup: res["backup"].as_str().map(str::to_string),
+                    log: res["log"].as_str().map(str::to_string),
+                    need_admin: 0,
+                };
+                finish_delete(&app, &p, &rep, &dir);
             }
         }
-    }
-    if let Some(i) = install.filter(|i| install_usable(i, env)) {
-        let needle = i.to_string_lossy().to_lowercase();
-        if let Some(k) = Key::open(HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services", KEY_READ) {
-            for s in k.subkeys(4000) {
-                let img = Key::open(HKEY_LOCAL_MACHINE, &format!(r"SYSTEM\CurrentControlSet\Services\{s}"), KEY_READ).map(|kk| kk.values()).and_then(|v| v.get("imagepath").cloned());
-                if matches!(img, Some(Val::S(x)) if x.to_lowercase().contains(&needle)) {
-                    out.push(format!("Service: {s}"));
-                }
-            }
-        }
-        if let Some(k) = Key::open(HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", KEY_READ) {
-            out.extend(k.values().into_iter().filter(|(_, v)| matches!(v, Val::S(s) if expand_env(s).to_lowercase().contains(&needle))).map(|(n, _)| format!("HKLM Run: {n}")));
-        }
-    }
-    let mut b = Budget::new(3000, 3);
-    for (name, _, _) in read_dir(&env.windows.join(r"System32\Tasks"), &mut b) {
-        if names.product.contains(&norm(&name)) {
-            out.push(format!("Scheduled task: {name}"));
-        }
-    }
-    out
+        crate::command::show(&app);
+    });
+    json!({ "ok": true })
 }
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_deep;

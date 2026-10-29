@@ -4,8 +4,14 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Added
+- Deep clean after an uninstall: the leftover search now covers the whole PC, not only the usual folders. It looks in every fixed drive's top levels, every readable user profile (AppData, LocalLow, Documents, Saved Games, Start Menu, Desktop, taskbar pins, Temp, Downloads installers), ProgramData, Program Files and Common Files, and in the registry (software keys, file associations and shell handlers, COM classes, App Paths, autostart entries, history lists, Windows Installer records, services, scheduled tasks, firewall rules). Every item shows why it matched and is either Certain (points into the install folder, carries the product GUID, or is named exactly like the app: pre-ticked) or Probable (the app's full name as words, or a shared publisher folder: unticked), with counts and sizes per group.
+- Leftovers that need administrator rights (HKLM keys, services, scheduled tasks, firewall rules, Program Files, other users' profiles) can be removed with a second button, "Remove system leftovers (administrator)": Pill restarts itself elevated through the normal Windows permission prompt, re-derives the list itself from its own scan, and deletes only what you ticked. "Search more as administrator" shows what only an elevated scan can see. Registry items are saved to a `.reg` backup first (importable back); "Open backups folder" is in the summary.
+
 ### Changed
 - Animations for the newer features. Command bar: the selection highlight glides between rows, row buttons pop in and press down, results that disappear fade out, the right-click menu opens from the cursor with its items in a stagger, pinning pops the pin icon, flashes the row and slides the message in and out. Island: the launcher strip slides aside for a newly pinned icon, the Agents tab slides rows when the order changes and pulses the dot of working sessions, the clock row fades and pops when the weather icon, temperature, date or battery appear or go. Settings: pages cross-fade, the sidebar indicator glides, search results stagger in and the target row pulses, quiet-hours day chips pop, the first-run wizard slides between steps with progress dots, status messages slide in. Reduce motion shows every end state at once.
+- The uninstall panel animates every step: steps slide in and out, rows drop in one by one, groups expand and collapse, ticks draw their check, numbers glide, removed rows slide out as they are deleted, a failure shakes once, and the elevated step has its own progress animation. With Reduce motion everything appears at once.
+- A name that only contains the app's name as words (for example `Foo Editor Data` for Foo Editor) is now offered as Probable instead of being ignored; it is never pre-ticked.
 
 ## [0.4.3] - 2026-10-29
 

@@ -43,6 +43,10 @@ mod openarg;
 mod uninstall;
 
 fn main() {
+    // `pill.exe --uninstall-admin <port>:<token>`: the elevated helper of the uninstaller (uninstall/admin.rs); nothing else starts in that process
+    if let Some(code) = uninstall::admin_main() {
+        std::process::exit(code);
+    }
     tauri::Builder::default()
         // @plugins-begin (add .plugin(...) lines here, one per line)
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| openarg::handle(app, args))) // first: a second launch is forwarded here and exits
@@ -112,7 +116,7 @@ fn main() {
             aisetup::aisetup_status, aisetup::aisetup_whisper_install, aisetup::aisetup_whisper_set, aisetup::aisetup_whisper_remove,
             aisetup::aisetup_ollama_download, aisetup::aisetup_ollama_run_installer, aisetup::aisetup_ollama_pull, aisetup::aisetup_ai_use,
             aisetup::aisetup_cancel,
-            uninstall::uninstall_info, uninstall::uninstall_start, uninstall::uninstall_scan, uninstall::uninstall_delete, uninstall::uninstall_cancel, uninstall::uninstall_state,
+            uninstall::uninstall_info, uninstall::uninstall_start, uninstall::uninstall_scan, uninstall::uninstall_delete, uninstall::uninstall_admin, uninstall::uninstall_cancel, uninstall::uninstall_state, uninstall::uninstall_open_backups,
             hotkeys::hotkeys_reload,
             obs::obs_status, obs::obs_set_password, obs::obs_reveal, steam::steam_status, notif::notif_status, notif::notif_request,
             notifhist::notif_history_add, notifhist::notif_history_list, notifhist::notif_history_clear, notifhist::notif_history_mark_read, notifhist::notif_history_remove,
