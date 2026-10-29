@@ -105,7 +105,7 @@ pub fn name_tier(raw: &str, n: &Names) -> Option<(Tier, &'static str)> {
 pub fn installer_name(file: &str, n: &Names) -> bool {
     const EXT: &[&str] = &[".exe", ".msi", ".msix", ".msixbundle", ".appx"];
     const FILLER: &[&str] = &["setup", "install", "installer", "installation", "x64", "x86", "win", "win32", "win64", "windows", "amd64", "msi", "exe", "full", "offline", "online", "web", "stable", "release", "en", "us", "v", "ru"];
-    let low = file.to_lowercase();
+    let low = file.to_ascii_lowercase();
     let Some(ext) = EXT.iter().find(|e| low.ends_with(*e)) else { return false };
     let t = tokens(&file[..file.len() - ext.len()]);
     if !t.iter().any(|w| matches!(w.as_str(), "setup" | "install" | "installer" | "installation")) {
@@ -126,6 +126,17 @@ pub fn pack_guid(g: &str) -> Option<String> {
     let rev = |s: &str| s.chars().rev().collect::<String>();
     let swap: String = d[16..].as_bytes().chunks(2).map(|c| format!("{}{}", c[1] as char, c[0] as char)).collect();
     Some(format!("{}{}{}{}", rev(&d[..8]), rev(&d[8..12]), rev(&d[12..16]), swap).to_uppercase())
+}
+
+/// The inverse of `pack_guid`: a 32-digit packed ProductCode back to `{AABBCCDD-...}` (upper case).
+pub fn unpack_guid(packed: &str) -> Option<String> {
+    if packed.len() != 32 || !packed.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let rev = |s: &str| s.chars().rev().collect::<String>();
+    let swap: String = packed[16..].as_bytes().chunks(2).map(|c| format!("{}{}", c[1] as char, c[0] as char)).collect();
+    let d = format!("{}{}{}{}", rev(&packed[..8]), rev(&packed[8..12]), rev(&packed[12..16]), swap).to_uppercase();
+    Some(format!("{{{}-{}-{}-{}-{}}}", &d[..8], &d[8..12], &d[12..16], &d[16..20], &d[20..]))
 }
 
 /// True when the command line / path `s` starts a file inside the install folder.
@@ -203,15 +214,20 @@ fn sw_root(lp: &[String]) -> Option<usize> {
     Some(if lp.get(1).map(String::as_str) == Some("wow6432node") { 2 } else { 1 })
 }
 
+/// A type library whose win32 / win64 path is a file of the app.
+fn typelib_into(h: Hive, sub: &str, install: Option<&Path>, reg: &dyn Reg) -> bool {
+    reg.subkeys(h, sub).iter().any(|ver| {
+        reg.subkeys(h, &format!(r"{sub}\{ver}")).iter().any(|lcid| ["win32", "win64"].iter().any(|plat| points_into(&vstr(&reg.values(h, &format!(r"{sub}\{ver}\{lcid}\{plat}")), ""), install)))
+    })
+}
+
 fn sole_content(h: Hive, sub: &str, n: &Names, reg: &dyn Reg) -> bool {
     reg.values(h, sub).is_empty() && reg.subkeys(h, sub).iter().all(|c| matches!(name_tier(c, n), Some((_, t)) if t != N_PUB))
 }
 
-fn clsid_ok(h: Hive, classes: &str, guid: &str, install: Option<&Path>, guids: &[String], reg: &dyn Reg) -> bool {
+/// The CLSID's own server (InprocServer32 / LocalServer32 / codebase) is a file in the install folder. A GUID match alone never counts.
+fn clsid_ok(h: Hive, classes: &str, guid: &str, install: Option<&Path>, reg: &dyn Reg) -> bool {
     let sub = format!(r"{classes}\CLSID\{guid}");
-    if guids.contains(&guid.to_uppercase()) {
-        return reg.exists(h, &sub);
-    }
     ["InprocServer32", "LocalServer32"].iter().any(|k| {
         let v = reg.values(h, &format!(r"{sub}\{k}"));
         points_into(&vstr(&v, ""), install) || points_into(&vstr(&v, "codebase"), install)
@@ -248,22 +264,30 @@ fn key_evidence(h: Hive, sub: &str, p: &Prog, env: &Env, reg: &dyn Reg) -> Resul
                     let hit = points_into(&cmd(r"shell\open\command"), install.as_deref())
                         || points_into(&cmd("DefaultIcon"), install.as_deref())
                         || verbs.iter().any(|v| points_into(&cmd(&format!(r"shell\{v}\command")), install.as_deref()))
-                        || find_guid(&cmd("CLSID")).is_some_and(|g| clsid_ok(h, &classes, &g, install.as_deref(), &guids, reg));
+                        || find_guid(&cmd("CLSID")).is_some_and(|g| clsid_ok(h, &classes, &g, install.as_deref(), reg));
                     if hit { Ok((Tier::Certain, N_COM)) } else { Err("no evidence") }
                 }
                 2 if matches!(lc[0].as_str(), "clsid" | "appid" | "typelib" | "interface") && is_guid(&r[1]) => {
                     let g = r[1].to_uppercase();
-                    if guids.contains(&g) && reg.exists(h, sub) {
-                        Ok((Tier::Certain, N_GUID))
-                    } else if lc[0] == "clsid" && clsid_ok(h, &classes, &g, install.as_deref(), &guids, reg) {
+                    // Certain only when the key's own server / library path is a file of the app; the GUID alone is Probable
+                    let own = match lc[0].as_str() {
+                        "clsid" => clsid_ok(h, &classes, &g, install.as_deref(), reg),
+                        "typelib" => typelib_into(h, sub, install.as_deref(), reg),
+                        _ => false,
+                    };
+                    if own {
                         Ok((Tier::Certain, N_COM))
+                    } else if guids.contains(&g) && reg.exists(h, sub) {
+                        Ok((Tier::Probable, N_GUID))
                     } else {
                         Err("no evidence")
                     }
                 }
                 3 if lc[0] == "installer" && matches!(lc[1].as_str(), "products" | "features") => {
                     if h == Hive::Hklm && guids.iter().filter_map(|g| pack_guid(g)).any(|pk| pk.eq_ignore_ascii_case(&r[2])) && reg.exists(h, sub) {
-                        Ok((Tier::Certain, N_MSI))
+                        // the record's own icon / source path in the install folder makes it Certain
+                        let own = points_into(&vstr(&reg.values(h, sub), "producticon"), install.as_deref());
+                        Ok((if own { Tier::Certain } else { Tier::Probable }, N_MSI))
                     } else {
                         Err("no evidence")
                     }
@@ -278,7 +302,7 @@ fn key_evidence(h: Hive, sub: &str, p: &Prog, env: &Env, reg: &dyn Reg) -> Resul
                     match rest_l {
                         [a, b, handler] if a == "shellex" && b == "contextmenuhandlers" => {
                             let def = vstr(&reg.values(h, sub), "");
-                            let by_clsid = find_guid(&def).is_some_and(|g| clsid_ok(h, &classes, &g, install.as_deref(), &guids, reg));
+                            let by_clsid = find_guid(&def).is_some_and(|g| clsid_ok(h, &classes, &g, install.as_deref(), reg));
                             let by_name = name_tier(handler, &names).is_some_and(|(t, n)| t == Tier::Certain && n == N_NAME);
                             if by_clsid { Ok((Tier::Certain, N_COM)) } else if by_name { Ok((Tier::Certain, N_NAME)) } else { Err("no evidence") }
                         }
@@ -312,7 +336,13 @@ fn key_evidence(h: Hive, sub: &str, p: &Prog, env: &Env, reg: &dyn Reg) -> Resul
                     if points_into(&vstr(&v, ""), install.as_deref()) || points_into(&vstr(&v, "path"), install.as_deref()) { Ok((Tier::Certain, N_APPPATHS)) } else { Err("no evidence") }
                 }
                 ("installer", 8) if h == Hive::Hklm && lr[4] == "userdata" && lr[6] == "products" && lr[5].starts_with("s-1-") => {
-                    if guids.iter().filter_map(|g| pack_guid(g)).any(|pk| pk.eq_ignore_ascii_case(&rest[7])) && reg.exists(h, sub) { Ok((Tier::Certain, N_MSI)) } else { Err("no evidence") }
+                    if guids.iter().filter_map(|g| pack_guid(g)).any(|pk| pk.eq_ignore_ascii_case(&rest[7])) && reg.exists(h, sub) {
+                        let ip = reg.values(h, &format!(r"{sub}\InstallProperties"));
+                        let own = ["installlocation", "uninstallstring", "displayicon"].iter().any(|k| points_into(&vstr(&ip, k), install.as_deref()));
+                        Ok((if own { Tier::Certain } else { Tier::Probable }, N_MSI))
+                    } else {
+                        Err("no evidence")
+                    }
                 }
                 _ => Err("not an app key"),
             }
@@ -375,7 +405,12 @@ fn value_evidence(h: Hive, sub: &str, name: &str, p: &Prog, env: &Env, reg: &dyn
     }
     // Windows Installer component records: the value NAME is the packed ProductCode
     if h == Hive::Hklm && lr.len() == 8 && lr[..3] == cvs[..] && lr[3] == "installer" && lr[4] == "userdata" && lr[5].starts_with("s-1-") && lr[6] == "components" {
-        return if p.guids().iter().filter_map(|g| pack_guid(g)).any(|pk| pk.eq_ignore_ascii_case(name)) { Ok((Tier::Certain, N_MSI)) } else { Err("no evidence") };
+        // the value's own data (a component path) in the install folder makes it Certain
+        return if p.guids().iter().filter_map(|g| pack_guid(g)).any(|pk| pk.eq_ignore_ascii_case(name)) {
+            Ok((if points_into(&data_s, install.as_deref()) { Tier::Certain } else { Tier::Probable }, N_MSI))
+        } else {
+            Err("no evidence")
+        };
     }
     // .ext\OpenWithProgids: the value NAME is a ProgID of this app
     if lr.len() >= 3 && lr[0] == "classes" && lr[lr.len() - 2].starts_with('.') && lr[lr.len() - 1] == "openwithprogids" {
@@ -803,5 +838,9 @@ pub(super) fn guard_core(path: &Path, env: &Env, install: Option<&Path>, deep: O
 
 /// No component of `p`, up to the drive root, is a symlink or junction (checked with symlink_metadata, nothing is followed).
 pub fn reparse_free(p: &Path) -> bool {
-    p.ancestors().filter(|a| a.components().count() > 1).all(|a| std::fs::symlink_metadata(a).is_ok_and(|m| !m.file_type().is_symlink()))
+    // a part that does not exist (an install folder that was just uninstalled) cannot be a link; everything that exists must not be one
+    p.ancestors().filter(|a| a.components().count() > 1).all(|a| match std::fs::symlink_metadata(a) {
+        Ok(m) => !m.file_type().is_symlink(),
+        Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+    })
 }

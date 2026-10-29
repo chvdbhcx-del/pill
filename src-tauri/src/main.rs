@@ -47,6 +47,7 @@ fn main() {
     if let Some(code) = uninstall::admin_main() {
         std::process::exit(code);
     }
+    uninstall::pin_exe(); // keep pill.exe open (read sharing only) for the whole run: the admin step verifies exactly this file
     tauri::Builder::default()
         // @plugins-begin (add .plugin(...) lines here, one per line)
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| openarg::handle(app, args))) // first: a second launch is forwarded here and exits

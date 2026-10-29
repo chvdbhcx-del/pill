@@ -1085,8 +1085,9 @@ pub struct Report {
     pub need_admin: usize,
 }
 
+/// Starts a System32 tool by its absolute path (never a bare name, so nothing in the current or the app folder can stand in for it).
 fn run_quiet(exe: &str, args: &[&str]) -> Result<(), String> {
-    let o = std::process::Command::new(exe).args(args).creation_flags(NO_WINDOW).output().map_err(|e| e.to_string())?;
+    let o = std::process::Command::new(system_exe(exe)).args(args).creation_flags(NO_WINDOW).output().map_err(|e| e.to_string())?;
     if o.status.success() { Ok(()) } else { Err(format!("{exe} failed ({})", o.status.code().unwrap_or(-1))) }
 }
 
@@ -1335,7 +1336,7 @@ fn still_installed(p: &Prog) -> bool {
 fn ps(script: &str, secs: u64) -> Option<String> {
     use std::io::Read;
     let full = format!("[Console]::OutputEncoding=[Text.Encoding]::UTF8; {script}");
-    let mut c = std::process::Command::new("powershell.exe")
+    let mut c = std::process::Command::new(system32().join(r"WindowsPowerShell1.0\powershell.exe"))
         .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &full])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -1686,7 +1687,7 @@ pub(crate) fn finish_delete(app: &AppHandle, p: &Prog, r: &Report, dir: &Path) {
 pub fn uninstall_open_backups() {
     let dir = backup_dir(&Env::real());
     let _ = std::fs::create_dir_all(&dir);
-    let _ = std::process::Command::new("explorer.exe").arg(&dir).creation_flags(NO_WINDOW).spawn();
+    let _ = std::process::Command::new(windows_dir().join("explorer.exe")).arg(&dir).creation_flags(NO_WINDOW).spawn();
 }
 
 /// Stops waiting for the uninstaller (it keeps running) and forgets the selection.
@@ -1734,10 +1735,10 @@ fn lnk_target(p: &Path) -> Option<PathBuf> {
 
 /// The whole deep scan of `p`: (candidates, lines that are only listed, cut off by the caps). `step(stage, found so far)` reports progress.
 /// Used by this process and by the elevated one, so both derive the same list.
-pub fn scan_all_with(p: &Prog, env: &Env, reg: &dyn Reg, shared: bool, step: &dyn Fn(&str, usize)) -> (Vec<Cand>, Vec<String>, bool) {
+pub fn scan_all_with(p: &Prog, env: &Env, reg: &dyn Reg, shared: bool, lnk: &dyn Fn(&Path) -> Option<PathBuf>, step: &dyn Fn(&str, usize)) -> (Vec<Cand>, Vec<String>, bool) {
     let mut b = Budget::new(400_000, 60);
     step("files and folders", 0);
-    let mut cands = scan_fs(p, env, shared, &lnk_target, &mut b);
+    let mut cands = scan_fs(p, env, shared, lnk, &mut b);
     let n = cands.len();
     cands.extend(scan_registry(p, env, reg, &mut b, &|s, c| step(s, n + c)));
     let mut seen = std::collections::HashSet::new();
@@ -1753,7 +1754,7 @@ fn scan_all(app: &AppHandle, p: &Prog) -> (Vec<Cand>, Vec<String>, bool) {
     let install = p.install();
     let shared = install.as_ref().is_some_and(|i| flow(|f| f.locs.iter().any(|(k, l)| *k != p.sub && (depth_under(l, i).is_some() || depth_under(i, l).is_some()))));
     let name = p.name.clone();
-    scan_all_with(p, &env, &RealReg, shared, &|s, c| emit(app, json!({ "phase": "scanning", "name": name, "step": s, "found": c })))
+    scan_all_with(p, &env, &RealReg, shared, &lnk_target, &|s, c| emit(app, json!({ "phase": "scanning", "name": name, "step": s, "found": c })))
 }
 
 fn static_kind(k: &str) -> &'static str {

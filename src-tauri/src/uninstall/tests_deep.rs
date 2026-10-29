@@ -427,8 +427,9 @@ fn registry_keys_need_evidence() {
         assert!(key(l, bad).is_none(), "{bad}");
     }
     // classes: GUID evidence, COM server evidence, ProgIDs, shell handlers
-    assert_eq!(key(l, &format!(r"SOFTWARE\Classes\CLSID\{G}")).map(|x| x.1), Some("carries the product GUID"));
-    assert_eq!(key(l, &format!(r"SOFTWARE\Classes\AppID\{G}")).map(|x| x.0), Some(Tier::Certain));
+    // the GUID alone is only Probable: Certain needs the key's own server path in the install folder
+    assert_eq!(key(l, &format!(r"SOFTWARE\Classes\CLSID\{G}")), Some((Tier::Probable, "carries the product GUID")));
+    assert_eq!(key(l, &format!(r"SOFTWARE\Classes\AppID\{G}")).map(|x| x.0), Some(Tier::Probable));
     assert_eq!(key(l, r"SOFTWARE\Classes\CLSID\{22222222-3333-4444-5555-666666666666}").map(|x| x.1), Some("COM class or handler in the install folder"));
     assert!(key(l, &format!(r"SOFTWARE\Classes\CLSID\{OTHER_G}")).is_none());
     assert!(key(l, &format!(r"SOFTWARE\Classes\Interface\{OTHER_G}")).is_none());
@@ -603,7 +604,7 @@ fn cand_keys_are_stable_and_case_blind() {
 // ---------------------------------------------------------------- the elevated request
 
 fn req(name: &str, location: &str) -> Req {
-    Req { mode: Mode::Delete, name: name.into(), publisher: "Acme Inc".into(), location: location.into(), sub: String::new(), hklm: true, guids: vec![G.into()], keys: vec!["key:HKLM\\software\\acme".into()] }
+    Req { mode: Mode::Delete, name: name.into(), publisher: "Acme Inc".into(), location: location.into(), keys: vec!["key:HKLM\\software\\acme".into()] }
 }
 
 #[test]
@@ -615,7 +616,7 @@ fn elevated_request_validation_rejects_forged_identities() {
     // a believable identity passes
     let p = validate_req(&req("Foo Editor", &good), &e, &r).unwrap();
     assert_eq!(p.name, "Foo Editor");
-    assert!(p.guids().contains(&G.to_string()));
+    assert!(p.guids().is_empty(), "nothing in the request can supply a GUID");
     assert!(validate_req(&req("Foo Editor", ""), &e, &r).is_ok(), "no recorded folder: name evidence only");
     // generic / short / system-ish names
     for n in ["", "ab", "Foo", "Tools", "App", "Microsoft", "Windows", "System", "Data", "Update", "  ", "Pro", "Setup"] {
@@ -631,18 +632,12 @@ fn elevated_request_validation_rejects_forged_identities() {
         assert!(validate_req(&req("Foo Editor", &d.to_string_lossy()), &e, &r).is_err(), "install {}", d.display());
     }
     // malformed values
-    let mut q = req("Foo Editor", &good);
-    q.guids = vec!["{not-a-guid}".into()];
-    assert!(validate_req(&q, &e, &r).is_err());
-    q = req("Foo\u{0}Editor", &good);
+    let mut q = req("Foo\u{0}Editor", &good);
     assert!(validate_req(&q, &e, &r).is_err());
     q = req("Foo Editor", &good);
     q.keys = vec!["x".repeat(701)];
     assert!(validate_req(&q, &e, &r).is_err());
     q.keys = (0..5001).map(|i| format!("k{i}")).collect();
-    assert!(validate_req(&q, &e, &r).is_err());
-    q = req("Foo Editor", &good);
-    q.guids = (0..9).map(|_| G.to_string()).collect();
     assert!(validate_req(&q, &e, &r).is_err());
 }
 
@@ -675,9 +670,12 @@ fn elevated_request_refuses_apps_that_are_still_installed() {
 fn request_wire_format() {
     let q = req("Foo Editor", r"D:\Apps\Foo Editor");
     let back = Req::from_json(&q.to_json()).unwrap();
-    assert_eq!((back.name, back.mode, back.keys, back.guids), (q.name, Mode::Delete, q.keys, q.guids));
-    assert!(Req::from_json(&json!({ "v": 2, "mode": "scan" })).is_err());
-    assert!(Req::from_json(&json!({ "v": 1, "mode": "format c:" })).is_err());
+    assert_eq!((back.name, back.mode, back.keys), (q.name, Mode::Delete, q.keys));
+    // the request has no GUID, no registry key and no sub field: whatever a forged sender adds is ignored
+    let j = Req::from_json(&json!({ "v": 2, "mode": "scan", "name": "Foo Editor", "guids": ["{0A1B2C3D-4E5F-6789-ABCD-EF0123456789}"], "sub": "x" })).unwrap();
+    assert!(!j.to_json().to_string().contains("0A1B2C3D") && j.to_json().get("guids").is_none());
+    assert!(Req::from_json(&json!({ "v": 1, "mode": "scan" })).is_err(), "old version refused");
+    assert!(Req::from_json(&json!({ "v": 2, "mode": "format c:" })).is_err());
     assert!(Req::from_json(&json!("x")).is_err());
     assert_eq!(valid_port_token("5000:0123456789abcdef0123456789abcdef"), Some((5000, "0123456789abcdef0123456789abcdef".into())));
     for bad in ["80:0123456789abcdef0123456789abcdef", "5000:XYZ", "5000", "5000:0123456789ABCDEF0123456789ABCDEF", "99999:0123456789abcdef0123456789abcdef", ":0123456789abcdef0123456789abcdef", "5000:0123456789abcdef0123456789abcdef0"] {
@@ -867,7 +865,7 @@ fn full_scan_orders_user_items_first_and_certain_before_probable() {
     t.dir(r"u\AppData\Roaming\Foo Editor");
     t.dir(r"u\Documents\Foo Editor Notes");
     let r = reg_fixture();
-    let (c, manual, cut) = scan_all_with(&p, &e, &r, false, &|_, _| {});
+    let (c, manual, cut) = scan_all_with(&p, &e, &r, false, &|_| None, &|_, _| {});
     assert!(!cut);
     assert!(manual.is_empty());
     let keys: Vec<String> = c.iter().map(|x| cand_key(&x.what)).collect();
@@ -896,12 +894,12 @@ fn deep_guard_lexical_rules_on_a_windows_looking_layout() {
 
 // ---------------------------------------------------------------- the conversation with the elevated helper (no elevation needed)
 
-fn listener() -> (TcpListener, u16) {
+pub(super) fn listener() -> (TcpListener, u16) {
     let l = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = l.local_addr().unwrap().port();
     (l, port)
 }
-const TOKEN: &str = "0123456789abcdef0123456789abcdef";
+pub(super) const TOKEN: &str = "0123456789abcdef0123456789abcdef";
 
 #[test]
 fn helper_conversation_scan_and_refusals() {
@@ -911,27 +909,30 @@ fn helper_conversation_scan_and_refusals() {
     let mut p = foo();
     p.location = inst.to_string_lossy().into_owned();
     t.dir(r"ou\AppData\Local\FooEditor"); // an administrator item (another profile)
+    t.dir(r"pd\Foo Editor"); // an administrator item (ProgramData)
     t.dir(r"u\AppData\Roaming\Foo Editor"); // a user item: the helper does not report it
     let mut r = FakeReg::default();
     r.key(Hive::Hklm, r"SYSTEM\CurrentControlSet\Services\FooUpdater", &[("type", Val::D(0x10)), ("imagepath", Val::E(format!(r#""{}\updater.exe" /svc"#, inst.display())))]);
     let (l, port) = listener();
     // helper in a thread, using the same code as the elevated process but our fixtures
     let (e2, r2) = (e.clone(), r);
-    let h = std::thread::spawn(move || worker_with(port, TOKEN, &e2, &r2));
-    let res = serve(&l, TOKEN, &p, Mode::Scan, vec![], &|_, _| Err("no".into()), 10).unwrap();
+    let h = std::thread::spawn(move || worker_with(port, TOKEN, &e2, &r2, &|_| true));
+    let res = serve(&l, TOKEN, &p, Mode::Scan, vec![], &|_, _| Err("no".into()), 10, &|| true).unwrap();
     h.join().unwrap().unwrap();
     let items = res["items"].as_array().unwrap();
     assert!(!items.is_empty());
     assert!(items.iter().any(|i| i["key"].as_str().unwrap().starts_with("svc:fooupdater")), "{items:?}");
-    assert!(items.iter().any(|i| i["shown"].as_str().unwrap().to_lowercase().contains(r"ou\appdata\local\fooeditor")));
+    assert!(!items.iter().any(|i| i["shown"].as_str().unwrap().to_lowercase().contains(r"ou\appdata\local\fooeditor")), "other users' folder names are not sent back");
+    assert_eq!(res["hiddenOthers"], 1);
+    assert!(items.iter().any(|i| i["shown"].as_str().unwrap().to_lowercase().contains(r"pd\foo editor")), "{items:?}");
     assert!(!items.iter().any(|i| i["shown"].as_str().unwrap().to_lowercase().contains(r"u\appdata\roaming")), "user items stay with the user process");
     // a forged identity gets an error and nothing else
     let mut bad = foo();
     bad.name = "Tools".into();
     let (l2, port2) = listener();
     let (e3, r3) = (e.clone(), FakeReg::default());
-    let h = std::thread::spawn(move || worker_with(port2, TOKEN, &e3, &r3));
-    let res = serve(&l2, TOKEN, &bad, Mode::Delete, vec![r"key:HKLM\software\microsoft".into()], &|_, _| Err("no".into()), 10).unwrap();
+    let h = std::thread::spawn(move || worker_with(port2, TOKEN, &e3, &r3, &|_| true));
+    let res = serve(&l2, TOKEN, &bad, Mode::Delete, vec![r"key:HKLM\software\microsoft".into()], &|_, _| Err("no".into()), 10, &|| true).unwrap();
     h.join().unwrap().unwrap();
     assert!(res["error"].as_str().is_some() && res.get("done").is_none(), "{res}");
     // the app is still installed: refused too
@@ -940,8 +941,8 @@ fn helper_conversation_scan_and_refusals() {
     live.key(Hive::Hklm, &format!(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{G}"), &[("displayname", sv("Foo Editor")), ("uninstallstring", sv(&format!("\"{}\"", exe.display())))]);
     let (l3, port3) = listener();
     let e4 = e.clone();
-    let h = std::thread::spawn(move || worker_with(port3, TOKEN, &e4, &live));
-    let res = serve(&l3, TOKEN, &p, Mode::Delete, vec![], &|_, _| Err("no".into()), 10).unwrap();
+    let h = std::thread::spawn(move || worker_with(port3, TOKEN, &e4, &live, &|_| true));
+    let res = serve(&l3, TOKEN, &p, Mode::Delete, vec![], &|_, _| Err("no".into()), 10, &|| true).unwrap();
     h.join().unwrap().unwrap();
     assert_eq!(res["error"], "the app is still installed");
 }
@@ -953,12 +954,12 @@ fn helper_with_a_wrong_token_is_turned_away() {
         let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
         send(&mut s, &json!({ "hello": "ffffffffffffffffffffffffffffffff" })).unwrap();
     });
-    let r = serve(&l, TOKEN, &foo(), Mode::Scan, vec![], &|_, _| Ok(String::new()), 10);
+    let r = serve(&l, TOKEN, &foo(), Mode::Scan, vec![], &|_, _| Ok(String::new()), 2, &|| true);
     h.join().unwrap();
     assert!(r.is_err());
     // nobody connects: gives up
     let (l2, _) = listener();
-    assert!(serve(&l2, TOKEN, &foo(), Mode::Scan, vec![], &|_, _| Ok(String::new()), 0).is_err());
+    assert!(serve(&l2, TOKEN, &foo(), Mode::Scan, vec![], &|_, _| Ok(String::new()), 0, &|| true).is_err());
 }
 
 #[test]
@@ -981,7 +982,7 @@ fn only_known_backup_names_are_stored_for_the_helper() {
         *st.lock().unwrap() = replies.iter().map(|b| b.to_string()).collect();
     });
     let names = RefCell::new(Vec::<String>::new());
-    let res = serve(&l, TOKEN, &foo(), Mode::Delete, vec![], &|n, b| { names.borrow_mut().push(format!("{n}:{}", b.len())); Ok("path".into()) }, 10).unwrap();
+    let res = serve(&l, TOKEN, &foo(), Mode::Delete, vec![], &|n, b| { names.borrow_mut().push(format!("{n}:{}", b.len())); Ok("path".into()) }, 10, &|| true).unwrap();
     h.join().unwrap();
     assert!(res.get("done").is_some());
     assert_eq!(*names.borrow(), vec!["reg:4", "task3.xml:4"]);
