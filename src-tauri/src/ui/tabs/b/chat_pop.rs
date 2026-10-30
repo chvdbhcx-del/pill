@@ -206,7 +206,7 @@ impl HistPop {
                         let (hv, ps) = (clicks.hover_amt(&K::HNew), clicks.press_scale(&K::HNew, 0.96));
                         cv.with_scale_about(nr.center(), ps, |cv| {
                             cv.fill_rr(nr, th.m.btn_r, th.btn.mix(th.btn_hover, hv));
-                            ic.draw(cv, "edit", Rect::new(nr.x + 12.0, nr.cy() - 7.0, 14.0, 14.0), th.text);
+                            ic.draw(cv, "c-compose", Rect::new(nr.x + 12.0, nr.cy() - 7.0, 14.0, 14.0), th.text);
                             cv.text(Rect::new(nr.x + 12.0 + 14.0 + 6.0, nr.y, nr.w - 40.0, nr.h), &v.new_label, th.btn_text(), th.text);
                         });
                         y += 32.0 + 4.0;
@@ -419,7 +419,7 @@ impl SetPop {
                                 let mut tx = b.x + 12.0;
                                 if p.id != "custom" {
                                     let up = p.up == Some(true);
-                                    let dot = Color::lerp_c(th.dim, th.green, up as u8 as f32);
+                                    let dot = th.dim.mix(th.green, up as u8 as f32);
                                     if up {
                                         cv.fill_circle((tx + 3.0, b.cy()), 6.0, th.green.alpha(0.18));
                                     }
@@ -432,7 +432,7 @@ impl SetPop {
                         }
                         y += 32.0 + 8.0;
                         if !v.scan_msg.text.is_empty() {
-                            y = para(cv, th, ox, y, cw, &v.scan_msg);
+                            y = para(cv, th, ox, y, cw, &v.scan_msg) - 8.0;
                         }
                         // url
                         cv.text(Rect::new(ox, y, cw, 16.0), &v.url_label, th.small(400), th.dim);
@@ -531,7 +531,7 @@ impl SetPop {
     fn content_h(&self, v: &SettingsView) -> f32 {
         let mut h = 28.0 + 8.0 + 32.0 + 8.0;
         if !v.scan_msg.text.is_empty() {
-            h += 16.0 + 8.0;
+            h += 16.0;
         }
         h += 16.0 + 4.0 + 32.0 + 8.0;
         if !v.url_error.is_empty() {
@@ -581,18 +581,4 @@ fn raised_btn(cv: &Canvas, th: &Theme, _ic: &Icons, clicks: &Clicks<K>, k: K, r:
             cv.text(r, label, th.btn_text().center(), th.text);
         });
     });
-}
-
-/// Feeds an input event to the dropdown (content space). `rect` is where it is drawn.
-pub fn select_event(sel: &mut Select, ev: &InputEvent, rect: Rect) -> glasskit::input::Response {
-    sel.event(ev, rect)
-}
-
-trait LerpC {
-    fn lerp_c(a: Color, b: Color, t: f32) -> Color;
-}
-impl LerpC for Color {
-    fn lerp_c(a: Color, b: Color, t: f32) -> Color {
-        a.mix(b, t)
-    }
 }
