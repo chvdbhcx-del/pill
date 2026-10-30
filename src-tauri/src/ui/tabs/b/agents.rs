@@ -409,6 +409,7 @@ mod tests {
 
     #[test]
     fn stagger_delays_each_row_and_ends_settled() {
+        let _g = crate::ui::host::testing::motion_lock(); // another test may flip the process-wide reduced-motion override
         let mut f = Flipper::default();
         f.set(&rows(&["a", "b", "c"]), Mode::Stagger, false);
         let a0 = f.pos("a").unwrap();
