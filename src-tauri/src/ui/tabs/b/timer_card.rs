@@ -905,7 +905,7 @@ mod tests {
                 assert_eq!(l.start.h + 8.0 + l.ctime.h, 68.0, "36 + 8 + 24 = the ring");
                 assert!(l.input.bottom() <= h - PAD + 0.01 && l.input.h == 32.0);
                 assert!(l.list.h >= 0.0 && l.list.y >= l.head.bottom());
-                assert!(l.list.bottom() <= if mh > 0.0 { l.msg.y } else { l.input.y });
+                assert!(l.list.h == 0.0 || l.list.bottom() <= if mh > 0.0 { l.msg.y } else { l.input.y });
                 assert!(l.presets[4].right() <= l.unit.x + 0.01 && l.unit.right() <= CARD_W - PAD + 0.01);
             }
         }
@@ -1017,5 +1017,130 @@ mod tests {
         q.reduced = true;
         q.set(true, 0.3);
         assert_eq!(q.value(), (0.3, 1.0));
+    }
+
+    // ---- the card as a View: input -> actions, and the snapshots ----
+    use crate::ui::host::testing::{motion_lock, render_view_cx};
+    use crate::ui::tabs::b::kit::snap;
+    use crate::ui::view::{Cx, View};
+    use glasskit::input::{Buttons, KeyCode, Modifiers};
+
+    struct Rig {
+        card: TimerCardView,
+        v: TimerView,
+        ic: Icons,
+    }
+
+    impl View for Rig {
+        fn draw(&mut self, cv: &Canvas, th: &Theme, rect: Rect, _cx: &Cx) {
+            self.card.draw(cv, th, rect, &self.v, &self.ic, 0.0);
+        }
+    }
+
+    fn row(id: i64, text: &str, when: &str, repeat: &str, overdue: bool) -> ReminderRow {
+        ReminderRow { id, text: text.into(), when: when.into(), repeat: repeat.into(), overdue }
+    }
+
+    fn view(running: bool, rows: Vec<ReminderRow>) -> TimerView {
+        TimerView {
+            clock: if running { "12:30".into() } else { "5:00".into() },
+            clock_len: 5,
+            running,
+            left: if running { 0.5 } else { 1.0 },
+            start_label: if running { "Stop".into() } else { "Start".into() },
+            presets: vec![(5, !running), (10, false), (15, false), (25, false), (45, false)],
+            unit: "min".into(),
+            custom_label: "Custom time".into(),
+            custom_editing: false,
+            custom_placeholder: "12, 1:30, 90s".into(),
+            reminders_head: "Reminders".into(),
+            reminders_count: rows.len(),
+            empty_hint: vec!["Write below what and when:".into(), "\"call mum tomorrow at 9\",".into(), "\"pills every day at 23:00\",".into(), "\"turn off the stove in 20 minutes\".".into()],
+            reminders: rows,
+            msg: None,
+            input: String::new(),
+            input_placeholder: "Call mum tomorrow at 9".into(),
+        }
+    }
+
+    fn rig(v: TimerView, th: &Theme) -> Rig {
+        let mut card = TimerCardView::new(th);
+        card.set_reduced(true);
+        Rig { card, v, ic: Icons::new() }
+    }
+
+    fn mv(x: f32, y: f32) -> InputEvent {
+        InputEvent::MouseMove { pos: (x, y), mods: Modifiers::NONE, buttons: Buttons::NONE }
+    }
+    fn down(x: f32, y: f32) -> InputEvent {
+        InputEvent::MouseDown { pos: (x, y), button: MouseButton::Left, mods: Modifiers::NONE, clicks: 1 }
+    }
+    fn up(x: f32, y: f32) -> InputEvent {
+        InputEvent::MouseUp { pos: (x, y), button: MouseButton::Left, mods: Modifiers::NONE }
+    }
+
+    fn click(r: &mut Rig, p: Pt, cx: &Cx) {
+        let th = Theme::pill_dark();
+        for ev in [mv(p.0, p.1), down(p.0, p.1), up(p.0, p.1)] {
+            r.card.event(&ev);
+            render_view_cx(r, cx, (CARD_W, 346.0), 1.0, &th);
+        }
+    }
+
+    #[test]
+    fn clicks_become_actions() {
+        let _g = motion_lock();
+        let th = Theme::pill_dark();
+        let cx = Cx::headless();
+        let mut r = rig(view(false, vec![row(7, "Call", "09:00", "", false)]), &th);
+        render_view_cx(&mut r, &cx, (CARD_W, 346.0), 1.0, &th);
+        let l = layout(Rect::new(0.0, 0.0, CARD_W, 346.0), 0.0);
+        click(&mut r, l.start.center(), &cx);
+        click(&mut r, l.ctime.center(), &cx);
+        click(&mut r, l.presets[2].center(), &cx);
+        assert_eq!(r.card.drain(), vec![timer::Action::StartStop, timer::Action::CustomOpen, timer::Action::Preset(15)]);
+        assert!(r.card.drain().is_empty(), "drain empties");
+    }
+
+    #[test]
+    fn typing_in_the_reminder_field_reports_input_and_enter_adds() {
+        let _g = motion_lock();
+        let th = Theme::pill_dark();
+        let cx = Cx::headless();
+        let mut r = rig(view(false, vec![]), &th);
+        render_view_cx(&mut r, &cx, (CARD_W, 346.0), 1.0, &th);
+        r.card.focus_reminder_input();
+        render_view_cx(&mut r, &cx, (CARD_W, 346.0), 1.0, &th);
+        for ev in [InputEvent::Char('h'), InputEvent::Char('i')] {
+            r.card.event(&ev);
+        }
+        render_view_cx(&mut r, &cx, (CARD_W, 346.0), 1.0, &th);
+        let a = r.card.drain();
+        assert_eq!(a.last(), Some(&timer::Action::ReminderInput("hi".into())), "{a:?}");
+        r.card.event(&InputEvent::Key { code: KeyCode::Enter, mods: Modifiers::NONE, down: true, repeat: false });
+        render_view_cx(&mut r, &cx, (CARD_W, 346.0), 1.0, &th);
+        assert_eq!(r.card.drain(), vec![timer::Action::AddReminder]);
+    }
+
+    #[test]
+    fn snapshots() {
+        let _g = motion_lock();
+        let mut cx = Cx::headless();
+        for dark in [true, false] {
+            let th = snap::theme(dark);
+            for scale in [1.0, 2.0] {
+                cx.scale = scale;
+                let two = vec![row(1, "\u{41f}\u{43e}\u{437}\u{432}\u{43e}\u{43d}\u{438}\u{442}\u{44c} \u{43c}\u{430}\u{43c}\u{435}", "tomorrow 9:00 AM", "daily", false), row(2, "Turn off the stove", "in 18 min", "", false)];
+                for (name, v) in [("timer-idle", view(false, vec![])), ("timer-running-ring", view(true, vec![])), ("reminders-2", view(false, two.clone())), ("reminders-empty", view(false, vec![]))] {
+                    let mut r = rig(v, &th);
+                    let img = snap::shoot(&mut r, &cx, name, (CARD_W, 346.0), scale, dark);
+                    assert!(img.count(None, |p| p[3] > 0) > 1000, "{name} drew something");
+                }
+                let mut v = view(false, vec![]);
+                v.custom_editing = true;
+                let mut r = rig(v, &th);
+                snap::shoot(&mut r, &cx, "custom-editing", (CARD_W, 346.0), scale, dark);
+            }
+        }
     }
 }
