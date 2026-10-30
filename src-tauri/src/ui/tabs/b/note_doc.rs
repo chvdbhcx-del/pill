@@ -408,7 +408,7 @@ impl Doc {
             while let Some(k) = stack.pop() {
                 out.push_str(close_list(k));
             }
-            let bare = n == 0;
+            let bare = n == 0 && (matches!(l.kind, Kind::Check(_)) || !l.text.is_empty() || self.lines.len() == 1);
             if !bare {
                 out.push_str("<div>");
             }
@@ -416,7 +416,7 @@ impl Doc {
                 out.push_str(if t { "<input type=\"checkbox\" checked=\"\">&nbsp;" } else { "<input type=\"checkbox\">&nbsp;" });
             }
             self.emit_content(l, &mut out);
-            let needs_br = (l.text.is_empty() && !matches!(l.kind, Kind::Check(_)) && !(bare && self.lines.len() == 1)) || l.text.last() == Some(&'\n');
+            let needs_br = (l.text.is_empty() && !matches!(l.kind, Kind::Check(_)) && !bare) || l.text.last() == Some(&'\n');
             if needs_br {
                 out.push_str("<br>");
             }
@@ -771,7 +771,7 @@ mod tests {
         "<input type=\"checkbox\">&nbsp;todo<div><input type=\"checkbox\" checked=\"\">&nbsp;done</div><div><input type=\"checkbox\">&nbsp;</div>",
         "see <a href=\"https://example.com/a?x=1&amp;y=2\">the <b>site</b></a> now",
         "line one<br>line two<div>next</div>",
-        "<div>x</div><ul><li>y</li></ul><ol><li>z</li></ol><div>w</div>",
+        "x<ul><li>y</li></ul><ol><li>z</li></ol><div>w</div>",
         "emoji 😀 и ёлка<div>tab\there</div>",
         "a<input type=\"checkbox\"> inline box",
     ];
@@ -839,7 +839,7 @@ mod tests {
     fn plain_text_has_one_line_per_paragraph() {
         let d = Doc::from_html("Список<div>молоко</div><ul><li>а</li></ul>");
         assert_eq!(d.plain_text(), "Список\nмолоко\nа");
-        assert_eq!(d.text_in(Pos::new(0, 2), Pos::new(1, 3)), "ск\nмол");
+        assert_eq!(d.text_in(Pos::new(0, 2), Pos::new(1, 3)), "исок\nмол");
     }
 
     #[test]
