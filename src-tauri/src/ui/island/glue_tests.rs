@@ -297,3 +297,20 @@ fn weather_reaches_the_clock_row_without_the_weather_tab() {
     let shown = format!("{:?}", g.v.borrow().core.shell.view().live.content);
     assert!(shown.contains("21"), "the temperature is in the capsule: {shown}");
 }
+
+#[test]
+fn the_system_monitor_meters_sit_over_the_controls_tiles() {
+    let mut g = G::new();
+    g.emit("sysmon:tick", json!({"cpu": 37.0, "ram": {"usedMb": 8192.0, "totalMb": 32768.0}, "gpus": [{"index":0,"name":"RTX","util":55.0,"tempC":61.0,"memUsedMb":4096.0,"memTotalMb":24576.0,"powerW":120.0}]}));
+    assert!(g.v.borrow().core.sys_meters.as_ref().is_some_and(|m| m.visible && m.rows.len() >= 3), "the hub made the meters");
+    g.expand("controls");
+    g.emit("sysmon:tick", json!({"cpu": 42.0, "ram": {"usedMb": 8192.0, "totalMb": 32768.0}, "gpus": []}));
+    g.settle(40);
+    let img = g.draw();
+    let views = g.v.borrow().dbg_views_rect();
+    let (ox, oy, s) = g.v.borrow().dbg_panel_origin();
+    // the meter row: 44 px under the header, labels and bars are lit pixels
+    let row = Rect::new(ox + views.x * s, oy + views.y * s, views.w * s, 44.0 * s);
+    let lit = img.count(Some(row), |p| p[3] > 0 && (p[0] > 60 || p[1] > 60 || p[2] > 60));
+    assert!(lit > 100, "the meter row is painted: {lit}");
+}

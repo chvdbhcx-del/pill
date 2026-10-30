@@ -32,6 +32,7 @@ mod weather;
 
 use crate::ui::view::View;
 
+pub(crate) use controls::{is_meters, Meters};
 pub(crate) use home::is_cover_ready;
 
 /// Width of a tab's content box: the 680 px panel minus 16 px padding each side.

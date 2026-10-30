@@ -314,7 +314,9 @@ impl TabHost {
             }
             Err(b) => b,
         };
-        let owner = if crate::ui::tabs::a::is_cover_ready(&*b) {
+        let owner = if crate::ui::tabs::a::is_meters(&*b) {
+            Some("controls".to_string())
+        } else if crate::ui::tabs::a::is_cover_ready(&*b) {
             Some("home".to_string())
         } else if crate::ui::tabs::b::is_picked(&*b) {
             Some("chat".to_string())
@@ -325,6 +327,11 @@ impl TabHost {
             Some(s) => guarded(cx, |cx| s.view.message(Msg::Custom(b), cx)).redraw,
             None => false,
         }
+    }
+
+    /// Has the tab `id` a view (created by `show` or `warm`)?
+    pub fn exists(&self, id: &str) -> bool {
+        self.slots.contains_key(id)
     }
 
     /// Delivers a custom message addressed to the tab `id` (the island's `ToastRec` for the notifications tab).

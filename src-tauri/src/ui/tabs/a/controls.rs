@@ -59,7 +59,22 @@ pub struct ControlsView {
     last_pop: Option<Popover>,
     scroll: ScrollView,
     size: (f32, f32),
+    /// the system monitor's meters (CPU / RAM / GPU) over the tiles, fed by the island (`Meters`); `None` = no row
+    meters: Option<pill_ui_core::live::sysmon::MetersView>,
+    meter_w: Vec<(String, Tween<f32>)>,
 }
+
+/// The island hands the Controls tab the latest meter sample (`LiveCmd::SysMeters`) as `Msg::Custom(Box<Meters>)`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Meters(pub pill_ui_core::live::sysmon::MetersView);
+
+/// True for that message (the island routes it to this tab).
+pub(crate) fn is_meters(b: &(dyn std::any::Any + Send)) -> bool {
+    b.is::<Meters>()
+}
+
+/// Height of the meter row (44) plus its gap (12).
+const METER_ROW: f32 = 56.0;
 
 impl ControlsView {
     pub fn new() -> ControlsView {
@@ -76,6 +91,8 @@ impl ControlsView {
             last_pop: None,
             scroll: ScrollView::new(),
             size: (super::W, super::tab_h("controls").unwrap_or(331.0) - super::CHROME_H),
+            meters: None,
+            meter_w: vec![],
         };
         c.sync();
         c
@@ -87,6 +104,26 @@ impl ControlsView {
         } else {
             &EnTr
         }
+    }
+
+    /// The box of the tiles and the power row: the content box, shortened by the meter row while it is shown.
+    fn grid(&self) -> Rect {
+        let b = self.bounds();
+        if self.meters.as_ref().is_some_and(|m| m.visible && !m.rows.is_empty()) {
+            Rect::new(b.x, b.y + METER_ROW, b.w, (b.h - METER_ROW).max(0.0))
+        } else {
+            b
+        }
+    }
+
+    fn set_meters(&mut self, m: pill_ui_core::live::sysmon::MetersView) {
+        for r in &m.rows {
+            match self.meter_w.iter_mut().find(|(k, _)| *k == r.key) {
+                Some((_, t)) => t.retarget(r.pct / 100.0, dur::SLOW, curves::EASE_OUT),
+                None => self.meter_w.push((r.key.clone(), Tween::at_rest(r.pct / 100.0))),
+            }
+        }
+        self.meters = Some(m);
     }
 
     fn bounds(&self) -> Rect {
@@ -266,6 +303,17 @@ impl View for ControlsView {
                 let calls = self.model.tick(dt);
                 self.run(cx, calls);
             }
+            Incoming::Other(Msg::Custom(b)) => match b.downcast::<Meters>() {
+                Ok(m) => {
+                    let changed = self.meters.as_ref() != Some(&m.0);
+                    self.set_meters(m.0);
+                    if self.base.is_shown() {
+                        cx.request_frame();
+                    }
+                    return if changed { Response::redraw() } else { Response::NONE };
+                }
+                Err(_) => return Response::NONE,
+            },
             Incoming::Image(_) | Incoming::Other(_) => return Response::NONE,
         }
         self.after(cx);
@@ -280,7 +328,7 @@ impl View for ControlsView {
         if let InputEvent::Key { code, mods, down: true, .. } = ev {
             return self.key(*code, *mods, cx);
         }
-        let b = self.bounds();
+        let b = self.grid();
         let tiles = layout::tiles(b, self.v.tiles.len());
         let power = layout::power(b);
         let list_r = self.list_rect(&tiles);
@@ -357,6 +405,9 @@ impl View for ControlsView {
         for p in &mut self.power {
             busy |= p.step(dt);
         }
+        for (_, t) in &mut self.meter_w {
+            busy |= t.step(dt);
+        }
         busy |= self.list.step(dt) | self.pbtn.step(dt) | self.scroll.step(dt);
         busy
     }
@@ -364,6 +415,9 @@ impl View for ControlsView {
     fn draw(&mut self, cv: &Canvas, th: &Theme, rect: Rect, _cx: &Cx) {
         self.base.rect = rect;
         let k = Tok::of(th);
+        self.draw_meters(cv, &k, rect);
+        let rect_all = rect;
+        let rect = self.grid();
         let tiles = layout::tiles(rect, self.v.tiles.len());
         for (i, (t, r)) in self.v.tiles.iter().zip(&tiles).enumerate() {
             let s = &self.tiles[i];
@@ -387,11 +441,31 @@ impl View for ControlsView {
             let look = paint::PowerLook { hover: self.power[i].hover(), scale: self.power[i].press_scale(0.96), wash, ring: self.power[i].ring() };
             paint::power(cv, th, &k, r, p, &look);
         }
-        self.draw_popover(cv, th, &k, rect);
+        self.draw_popover(cv, th, &k, rect_all);
     }
 }
 
 impl ControlsView {
+    /// `.sm-row` of `sysmon-live.css`: equal columns, 44 px high, a label + value line and a 4 px bar (the bar width eases like the web's .5 s transition).
+    fn draw_meters(&self, cv: &Canvas, k: &Tok, rect: Rect) {
+        use glasskit::text::Style;
+        let Some(m) = self.meters.as_ref().filter(|m| m.visible && !m.rows.is_empty()) else { return };
+        let n = m.rows.len() as f32;
+        let w = (rect.w - 12.0 * (n - 1.0)) / n;
+        for (i, r) in m.rows.iter().enumerate() {
+            let b = Rect::new(rect.x + i as f32 * (w + 12.0), rect.y, w, 44.0);
+            cv.fill_rr(b, 14.0, k.off);
+            cv.text(Rect::new(b.x + 12.0, b.y + 8.0, w - 24.0, 16.0), &r.label, Style::new(10.0, 600).top(), k.dim);
+            cv.text(Rect::new(b.x + 12.0, b.y + 8.0, w - 24.0, 16.0), &r.value, Style::new(12.0, 600).top().right().mono().ellipsis(), if r.hot { k.warn } else { k.fg });
+            let track = Rect::new(b.x + 12.0, b.bottom() - 8.0 - 4.0, w - 24.0, 4.0);
+            cv.fill_rr(track, 2.0, k.raised);
+            let f = self.meter_w.iter().find(|(key, _)| *key == r.key).map_or(r.pct / 100.0, |(_, t)| t.value()).clamp(0.0, 1.0);
+            if f > 0.0 {
+                cv.fill_rr(Rect::new(track.x, track.y, (track.w * f).max(4.0), 4.0), 2.0, if r.hot { k.warn } else { k.accent });
+            }
+        }
+    }
+
     fn draw_popover(&mut self, cv: &Canvas, th: &Theme, k: &Tok, rect: Rect) {
         let s = self.base.player.sample("bt-pop");
         let open = self.v.popover.clone();

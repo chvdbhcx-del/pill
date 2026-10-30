@@ -136,6 +136,8 @@ pub struct IslandView {
     measured: (f64, f64),
     pending_measure: Option<(f64, f64)>,
     want_tab: Option<String>,
+    /// the meter sample last handed to the Controls tab
+    sent_meters: Option<pill_ui_core::live::sysmon::MetersView>,
     last_hit: Vec<Rect>,
     last_pass: Option<bool>,
     last_gaze: Option<bool>,
@@ -188,6 +190,7 @@ impl IslandView {
             measured: (0.0, 0.0),
             pending_measure: None,
             want_tab: None,
+            sent_meters: None,
             last_hit: Vec::new(),
             last_pass: None,
             last_gaze: None,
@@ -290,6 +293,14 @@ impl IslandView {
             }
             for r in recs {
                 self.host.custom_to("notifs", Box::new(r), cx);
+            }
+        }
+        // the system monitor's meters belong to the Controls tab (CPU / RAM / GPU over the tiles)
+        if self.core.sys_meters != self.sent_meters && self.host.exists("controls") {
+            if let Some(m) = self.core.sys_meters.clone() {
+                self.sent_meters = Some(m.clone());
+                self.host.custom_to("controls", Box::new(crate::ui::tabs::a::Meters(m)), cx);
+                any = true;
             }
         }
         any

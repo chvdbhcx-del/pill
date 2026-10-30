@@ -701,6 +701,9 @@ mod tests {
 
     #[test]
     fn clicks_hover_press_click() {
+        // the hover tween follows the process-wide Reduce motion flag: other tests flip it, so hold the lock and pin it
+        let _g = crate::ui::host::testing::motion_lock();
+        glasskit::ease::force_reduced(Some(false));
         let mut c: Clicks<&'static str> = Clicks::new();
         c.add("a", Rect::new(0.0, 0.0, 50.0, 20.0));
         c.add("b", Rect::new(60.0, 0.0, 50.0, 20.0));
@@ -724,6 +727,7 @@ mod tests {
             c.step(1.0 / 60.0);
         }
         assert_eq!(c.press_scale(&"a", 0.96), 1.0);
+        glasskit::ease::force_reduced(None);
     }
 
     #[test]

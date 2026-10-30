@@ -14,6 +14,8 @@ pub const LIST_MAX_H: f32 = 180.0;
 
 /// Tile rectangles for `n` toggle tiles: `repeat(4, 1fr)`, 9fr 8fr 9fr for three, halves for two (`.tc-bigrow[data-n]`).
 pub fn tiles(b: Rect, n: usize) -> Vec<Rect> {
+    // the tiles take what the power row leaves (172 in the 260 px box, 116 under the system monitor's meter row)
+    let tile_h = (b.h - POWER_H - GAP).max(0.0);
     let weights: Vec<f32> = match n {
         3 => vec![9.0, 8.0, 9.0],
         2 => vec![1.0, 1.0],
@@ -28,7 +30,7 @@ pub fn tiles(b: Rect, n: usize) -> Vec<Rect> {
         .take(n)
         .map(|w| {
             let cw = free * w / sum;
-            let r = Rect::new(x, b.y, cw, TILE_H);
+            let r = Rect::new(x, b.y, cw, tile_h);
             x += cw + GAP;
             r
         })
@@ -37,7 +39,7 @@ pub fn tiles(b: Rect, n: usize) -> Vec<Rect> {
 
 /// The four power tiles under the toggle row.
 pub fn power(b: Rect) -> Vec<Rect> {
-    let y = b.y + TILE_H + GAP;
+    let y = b.bottom() - POWER_H;
     (0..4).map(|i| Rect::new(b.x, y, b.w, POWER_H).col(i, 4, GAP)).collect()
 }
 
