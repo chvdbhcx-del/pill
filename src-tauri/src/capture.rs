@@ -1241,8 +1241,12 @@ pub fn capture_session(label: String) -> Option<Value> {
 /// The frozen frame of one monitor: raw RGBA, w*h*4 bytes (an ArrayBuffer on the page).
 #[tauri::command]
 pub fn capture_frame(label: String) -> tauri::ipc::Response {
-    let px = session().as_ref().and_then(|s| s.shots.iter().find(|x| x.mon.label == label).map(|x| x.rgba.clone()));
-    tauri::ipc::Response::new(px.map(|a| a.as_ref().clone()).unwrap_or_default())
+    tauri::ipc::Response::new(capture_frame_arc(&label).map(|a| a.as_ref().clone()).unwrap_or_default())
+}
+
+/// The frozen frame of one monitor, shared (no copy): what `capture_frame` sends, for the native UI (ui/api.rs).
+pub fn capture_frame_arc(label: &str) -> Option<std::sync::Arc<Vec<u8>>> {
+    session().as_ref().and_then(|s| s.shots.iter().find(|x| x.mon.label == label).map(|x| x.rgba.clone()))
 }
 
 /// Keyboard focus for the overlay: the OS window AND the WebView2 control inside it (a window shown with SWP_NOACTIVATE is
@@ -1296,7 +1300,7 @@ pub fn capture_ready(app: AppHandle, label: String) {
 
 #[derive(Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
-struct CommitArgs {
+pub(crate) struct CommitArgs {
     label: String,
     action: String,
     rect: Option<[f64; 4]>,
@@ -1321,7 +1325,12 @@ pub async fn capture_commit(app: AppHandle, request: tauri::ipc::Request<'_>) ->
         }
         tauri::ipc::InvokeBody::Json(v) => (serde_json::from_value(v.clone()).map_err(|e| e.to_string())?, None),
     };
-    let sess = end_session(&app).ok_or("no capture in progress")?;
+    capture_commit_impl(&app, args, png)
+}
+
+/// The body of `capture_commit` (also called by the native UI through ui/api.rs): `png` is the marked-up image of the Area mode, if any.
+pub(crate) fn capture_commit_impl(app: &AppHandle, args: CommitArgs, png: Option<Vec<u8>>) -> Result<(), String> {
+    let sess = end_session(app).ok_or("no capture in progress")?;
     let sh = sess.shots.iter().find(|x| x.mon.label == args.label).ok_or("unknown monitor")?;
     let (fw, fh) = (sh.mon.w, sh.mon.h);
     let whole = Rect { x: 0, y: 0, w: fw, h: fh };
