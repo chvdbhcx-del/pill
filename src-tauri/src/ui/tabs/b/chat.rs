@@ -26,7 +26,6 @@ use glasskit::Color;
 use pill_ui_core::panel::b::chat::{Action, ChatModel, ChatView, ErrView, PickedFile, Role, MAX_FILES, MAX_FILE_BYTES};
 use pill_ui_core::panel::b::chat_settings::SAction;
 use pill_ui_core::panel::b::Tags;
-use serde_json::{json, Value};
 use std::path::PathBuf;
 
 const SCROLL_TOP: f32 = 28.0;
@@ -1457,6 +1456,7 @@ impl ChatScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{json, Value};
     use crate::ui::tabs::b::kit::snap;
     use crate::ui::view::{Fakes, MsgQueue, Services};
     use glasskit::input::{Buttons, Modifiers};
