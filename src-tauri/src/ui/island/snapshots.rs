@@ -341,3 +341,120 @@ fn the_eyes_follow_the_cursor() {
     let right = s.draw(t);
     assert!(left.diff(&right, 2) > 0, "looking left and right must look different");
 }
+
+/// Vertical extent (first / last row) of bright ink in columns x0..x1 of rows y0..y1 (straight alpha > 200, luma > 140).
+fn ink_rows(img: &Image, x0: u32, x1: u32, y0: u32, y1: u32) -> Option<(u32, u32)> {
+    let inked = |y: u32| (x0..x1).any(|x| {
+        let p = img.px(x, y); // premultiplied BGRA
+        p[3] > 200 && p[0].max(p[1]).max(p[2]) > 140
+    });
+    let (mut best, mut cur): (Option<(u32, u32)>, Option<(u32, u32)>) = (None, None);
+    for y in y0..y1 {
+        if inked(y) {
+            cur = Some(cur.map_or((y, y), |(a, _)| (a, y)));
+            if best.is_none_or(|(a, b)| cur.unwrap().1 - cur.unwrap().0 > b - a) {
+                best = cur;
+            }
+        } else {
+            cur = None;
+        }
+    }
+    best
+}
+
+/// (eye ink centre, text ink centre) in px at the scale, for the island with the Eyes pet in `state`.
+fn eye_and_text(scale_pct: u32, state: &str, gaze: Option<(f32, f32)>, patch: Value, ev: Option<(&str, Value)>) -> (f32, f32, Rect) {
+    use crate::ui::view::ProximityEvent;
+    let mut p = json!({"pet": "eyes", "size": scale_pct});
+    for (k, x) in patch.as_object().into_iter().flatten() {
+        p[k] = x.clone();
+    }
+    let mut s = Scn::new(base(p), (720.0, 120.0), 1.0, false);
+    s.emit("weather:current", wx());
+    if let Some((n, pl)) = ev {
+        s.emit(n, pl);
+    }
+    let v = s.sim.view.as_mut() as *mut dyn View as *mut IslandView;
+    // SAFETY: the view of this scenario is an IslandView (Scn::new)
+    unsafe {
+        if state != "calm" {
+            (*v).core.shell.react("t", state, &pill_ui_core::shell::react::ReactOpts::ttl(600_000));
+        }
+    }
+    let t = Color::rgba(0.0, 0.0, 0.0, 0.0);
+    let _ = s.draw(t);
+    s.settle(30);
+    if let Some(g) = gaze {
+        s.sim.send_proximity(&ProximityEvent::Gaze(g));
+    }
+    let _ = s.draw(t);
+    s.settle(400);
+    let img = s.draw(t);
+    let (body, pet) = unsafe { ((*v).core.shell.view().body, (*v).debug_pet_rect().expect("the pet is drawn")) };
+    let (px0, px1) = (pet.x.floor() as u32, pet.right().ceil() as u32);
+    let (y0, y1) = (body.top as u32, (body.top + body.height) as u32 - 4);
+    let eyes = ink_rows(&img, px0, px1, y0, y1).expect("eye ink");
+    let (a, b) = (body.left as u32 + 20, px0.saturating_sub(4));
+    let counts: Vec<u32> = (y0..y1 - 2).map(|y| (a..b).filter(|x| { let p = img.px(*x, y); p[3] > 200 && p[0].max(p[1]).max(p[2]) > 140 }).count() as u32).collect();
+    let peak = *counts.iter().max().expect("text ink");
+    let band: Vec<usize> = counts.iter().enumerate().filter(|(_, c)| **c * 2 >= peak).map(|(i, _)| i).collect();
+    let text = ((band[0] + y0 as usize) as u32, (band[band.len() - 1] + y0 as usize) as u32);
+    (((eyes.0 + eyes.1) as f32 + 1.0) / 2.0, ((text.0 + text.1) as f32 + 1.0) / 2.0, pet)
+}
+
+#[test]
+fn the_eyes_pet_stands_on_the_text_line_of_the_row() {
+    let agents = ("agents:changed", json!({"working":1,"waiting":0,"sessions":[{"tool":"claude-code","session":"s1","state":"working","title":"t","cwd":"dev","project":"x","ts":1}]}));
+    let mut worst_calm = 0.0f32;
+    for sc in [80u32, 100, 200] {
+        for (rn, ev) in [("clock", None), ("agents", Some(agents.clone()))] {
+            for st in ["calm", "thinking", "done", "attention", "file", "music", "sleep"] {
+                for (gn, g) in [("none", None), ("above", Some((360.0, -300.0))), ("below", Some((360.0, 400.0)))] {
+                    let (e, t, _) = eye_and_text(sc, st, g, json!({}), ev.clone());
+                    let diff = (e - t).abs();
+                    // the pose lifts of the art (thinking squint, done jump, music dance, sleep droop) and the look amplitude are deliberate
+                    let tol = match (st, gn) {
+                        ("calm", "none") => if sc <= 100 { 0.75 } else { sc as f32 / 100.0 + 0.25 },
+                        ("attention", "none") => 1.75 * (sc as f32 / 100.0).max(1.0), // the startle lifts the eyes about a pixel on purpose
+                        (_, "none") if matches!(st, "thinking" | "file") => (sc as f32 / 100.0).max(1.0) + 0.25,
+                        ("music" | "done" | "sleep", _) => 8.0 * (sc as f32 / 100.0).max(1.0),
+                        _ => 3.5 * sc as f32 / 100.0,
+                    };
+                    eprintln!("EYE {sc} {rn:6} {st:10} {gn:5} eyes {e:5.1} text {t:5.1} diff {:5.2} tol {tol:.2}", e - t);
+                    assert!(diff <= tol, "{sc}% {rn} {st} gaze {gn}: eyes {e} vs text {t}");
+                    if st == "calm" && gn == "none" {
+                        worst_calm = worst_calm.max(diff / (sc as f32 / 100.0));
+                    }
+                }
+            }
+        }
+    }
+    assert!(worst_calm <= 1.0, "calm eyes within 0.5 px (1 css px at 200 %, glyph-band rounding) of the text centre: {worst_calm}");
+}
+
+#[test]
+fn the_legs_characters_eyes_stand_on_the_text_line() {
+    for sc in [80u32, 100, 200] {
+        let mut s = Scn::new(base(json!({"character": "legs", "size": sc})), (720.0, 120.0), 1.0, false);
+        s.emit("weather:current", wx());
+        let t = Color::rgba(0.0, 0.0, 0.0, 0.0);
+        let _ = s.draw(t);
+        s.settle(30);
+        let _ = s.draw(t);
+        s.settle(300);
+        let img = s.draw(t);
+        let v = s.sim.view.as_mut() as *mut dyn View as *mut IslandView;
+        let body = unsafe { (*v).core.shell.view().body };
+        let k = sc as f32 / 100.0;
+        let (bx, by, bh) = (body.left as u32, body.top as u32, body.height as u32);
+        // eyes: the left slot of the capsule (white ovals, 8 .. 30 css px from its left end); text: the clock digits further right
+        let eyes = ink_rows(&img, bx + (4.0 * k) as u32, bx + (30.0 * k) as u32, by, by + bh - 3).expect("eyes");
+        let cx = bx + body.width as u32 / 2;
+        let counts: Vec<u32> = (by..by + bh - 2).map(|y| (cx - (14.0 * k) as u32..cx + (14.0 * k) as u32).filter(|x| { let p = img.px(*x, y); p[3] > 200 && p[0].max(p[1]).max(p[2]) > 140 }).count() as u32).collect();
+        let peak = *counts.iter().max().unwrap();
+        let band: Vec<u32> = counts.iter().enumerate().filter(|(_, c)| **c * 2 >= peak).map(|(i, _)| i as u32 + by).collect();
+        let (e, t) = ((eyes.0 + eyes.1 + 1) as f32 / 2.0, (band[0] + band[band.len() - 1] + 1) as f32 / 2.0);
+        eprintln!("LEGS {sc} eyes {e} text {t}");
+        assert!((e - t).abs() <= 1.0 * k.max(1.0) + 0.5, "{sc}%: legs' eyes {e} vs time text {t}");
+    }
+}

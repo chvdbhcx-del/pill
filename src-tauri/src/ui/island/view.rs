@@ -848,7 +848,7 @@ impl View for IslandView {
             self.pet_rect = None;
             if !self.comp.cfg.id.is_empty() {
                 if self.live_a > 0.0 {
-                    if let Some(r) = self.comp.cap_box(body, s) {
+                    if let Some(r) = self.comp.cap_box(body, s, super::companions::text_mid(body.y, body.h, s)) {
                         self.pet_rect = Some(r);
                         self.comp.draw_pet(cv, r, self.live_a);
                     }
@@ -904,7 +904,8 @@ impl View for IslandView {
             EdgeStyle::Tail => self.comp.draw_tail(cv, body, rb, s),
             EdgeStyle::Legs => {
                 let side = char_side(&self.comp.cfg);
-                let cy = body.y + ((body.h / s - 2.0) / 2.0) * s;
+                // the characters' eyes are drawn about 0.75 px lower than the pet's eye line: they sit on the same text line
+                let cy = super::companions::text_mid(body.y, body.h, s) - 0.75 * s;
                 let cx_ = match side {
                     CharSide::Right => body.right() - 18.0 * s,
                     _ => body.x + 18.0 * s,
@@ -984,5 +985,8 @@ impl IslandView {
     }
     pub fn debug_measured(&self) -> (f64, f64) {
         self.measured
+    }
+    pub fn debug_pet_rect(&self) -> Option<Rect> {
+        self.pet_rect
     }
 }

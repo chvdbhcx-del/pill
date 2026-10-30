@@ -55,6 +55,12 @@ pub fn reserve_px(cfg: &PetCfg) -> f64 {
     (h * ar * (1.0 - slack) + 12.0).ceil() as f64
 }
 
+/// Vertical centre of the text of the live row inside a body at `body_y` with height `body_h` (window px, island size `s`): the row is centred
+/// in the capsule minus the 2 px under it (the liquid edge) and the x-height / cap band of Medeo Sans (measured on the rendered rows) centres 1.5 px below the line box middle (caps 1 px, x-height 2 px).
+pub fn text_mid(body_y: f32, body_h: f32, s: f32) -> f32 {
+    body_y + ((body_h / s - 2.0) / 2.0 + 1.5) * s
+}
+
 /// Pet colours of the edge reactions (`pets.js TINT`) used when the reaction carries none.
 pub fn parse_tint(css: &str) -> Option<Color> {
     let h = css.trim().strip_prefix('#')?;
@@ -259,13 +265,19 @@ impl Companions {
     }
 
     /// Where the pet box is in the capsule: on the floor, 9 px from the end (`pets.css`), for island size `s`.
-    pub fn cap_box(&self, body: Rect, s: f32) -> Option<Rect> {
+    /// `text_mid` = the vertical centre of the live row's text (window px, see [`text_mid`]): the Eyes pet is lifted so its eye line stands on it
+    /// (`pets.css`: the Eyes art is made for the text line); every other pet stands on the capsule floor.
+    pub fn cap_box(&self, body: Rect, s: f32, text_mid: f32) -> Option<Rect> {
         if self.cfg.id.is_empty() {
             return None;
         }
         let (w, h) = box_size(&self.cfg.id, self.cfg.size, Place::Cap, s);
         let h = h.min(body.h);
         let x = if self.cfg.side == Side::Left { body.x + 9.0 * s } else { body.right() - 9.0 * s - w };
+        if self.cfg.id == "eyes" {
+            let y = (text_mid - h * eye_line_y("eyes")).clamp(body.y, (body.bottom() - h + 4.0 * s).max(body.y)); // the art leaves room: the box may hang a little below the 30 px capsule
+            return Some(Rect::new(x, y, w, h));
+        }
         Some(Rect::new(x, body.bottom() - 1.5 * s - h, w, h))
     }
 
@@ -348,11 +360,11 @@ mod tests {
         let mut c = Companions::new();
         c.apply(&json!({"pet": "cat", "pet.side": "right", "pet.size": "m"}), EdgeStyle::Liquid);
         let body = Rect::new(285.0, 8.0, 150.0, 30.0);
-        let r = c.cap_box(body, 1.0).unwrap();
+        let r = c.cap_box(body, 1.0, 15.5).unwrap();
         assert!((r.right() - (435.0 - 9.0)).abs() < 1e-3);
         assert!((r.bottom() - (38.0 - 1.5)).abs() < 1e-3);
         c.apply(&json!({"pet": "cat", "pet.side": "left"}), EdgeStyle::Liquid);
-        assert!((c.cap_box(body, 1.0).unwrap().x - 294.0).abs() < 1e-3);
+        assert!((c.cap_box(body, 1.0, 15.5).unwrap().x - 294.0).abs() < 1e-3);
         assert_eq!(parse_tint("#d8836a").map(|c| (c.r * 255.0).round() as u8), Some(0xd8));
         assert!(parse_tint("var(--accent)").is_none());
     }
