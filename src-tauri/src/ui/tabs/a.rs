@@ -32,6 +32,8 @@ mod weather;
 
 use crate::ui::view::View;
 
+pub(crate) use home::is_cover_ready;
+
 /// Width of a tab's content box: the 680 px panel minus 16 px padding each side.
 pub const W: f32 = 648.0;
 /// Panel chrome around a tab body: `tabH` (the shell's body height, 331 for most tabs) minus this is the content height (60 px header + 11 px bottom).

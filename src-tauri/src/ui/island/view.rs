@@ -8,6 +8,8 @@ use super::live::{self, Painted};
 use super::panel::TabHost;
 use super::shapes;
 use super::sys::{self, SysClock};
+use super::tabfx::Act;
+use crate::ui::tabs::fx::TabFx;
 use crate::ui::view::{Cx, CursorShape, DropEvent, DropPayload, DropPhase, Msg, ProximityEvent, Ticket, View, Waker};
 use glasskit::canvas::{scale_about, translation, mul, Canvas};
 use glasskit::geom::Rect;
@@ -32,6 +34,8 @@ enum Own {
     Remeasure,
     /// a delayed hub query
     Query(Query),
+    /// the screenshot a tab asked for starts once the island has folded away
+    Capture(&'static str),
 }
 
 /// Wakes the idle window at the next scheduled moment (shell timers, hub ticks). Idle = zero CPU: this thread only sleeps.
@@ -196,6 +200,8 @@ impl IslandView {
         v.sync_env(cx);
         v.exec_outs(outs, cx);
         v.apply_settings_side(cx);
+        // the tabs with background duties exist from the start (docs/native-tabs-a.md section 3)
+        v.host.warm(&["home", "shelf", "notifs", "clipboard"], cx);
         v.exec(cx);
         v.started = true;
         v
@@ -247,6 +253,7 @@ impl IslandView {
 
     /// Executes the commands the shell queued and the outs of the core.
     fn exec(&mut self, cx: &mut Cx) {
+        let _ = self.drain_fx(cx);
         for _ in 0..8 {
             let cmds = self.core.take_commands();
             let outs = self.core.take_outs();
@@ -265,6 +272,52 @@ impl IslandView {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         });
+    }
+
+    /// What the tab views asked of the island since the last call: the B tabs through the shared sink, the A tabs through `Msg::Custom` (handled
+    /// in `message`); cards shown meanwhile are recorded by the notifications tab.
+    fn drain_fx(&mut self, cx: &mut Cx) -> bool {
+        let mut any = false;
+        for _ in 0..4 {
+            let fx = crate::ui::tabs::b::take_fx();
+            let recs = self.core.take_toast_recs();
+            if fx.is_empty() && recs.is_empty() {
+                break;
+            }
+            any = true;
+            for f in fx {
+                self.apply_tab_fx(f, cx);
+            }
+            for r in recs {
+                self.host.custom_to("notifs", Box::new(r), cx);
+            }
+        }
+        any
+    }
+
+    fn apply_tab_fx(&mut self, fx: TabFx, cx: &mut Cx) {
+        for a in self.core.tab_fx(fx, cx.now_ms) {
+            match a {
+                Act::Call { cmd, args } => self.run_cmd(cx, cmd, args),
+                Act::Capture { mode } => {
+                    if mode == "record_screen" && self.core.rec_tile.is_some() {
+                        // a running recording is stopped by the same tile, the island stays
+                        self.call(cx, "capture_start", json!({ "mode": mode }), Pending::Fire);
+                    } else {
+                        self.core.shell.collapse("");
+                        let w = cx.waker();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(Duration::from_millis(450));
+                            w.post_custom(Own::Capture(mode));
+                        });
+                    }
+                }
+                Act::OpenAi(id) => self.host.open_overlay("ai_actions", json!({ "id": id }), cx),
+                Act::CloseAi => self.host.close_overlay(cx),
+                Act::AiClosed => self.host.overlay_closed(),
+            }
+        }
+        self.core.pump_notices();
     }
 
     fn run_cmd(&mut self, cx: &mut Cx, cmd: &str, args: Value) {
@@ -310,7 +363,12 @@ impl IslandView {
                 }
                 Out::Run(a) => self.run_action(cx, a),
                 Out::TabShown(id) => self.want_tab = Some(id),
-                Out::TabHidden(id) => self.host.hide(&id, cx),
+                Out::TabHidden(id) => {
+                    if self.host.overlay_open {
+                        self.host.close_overlay(cx);
+                    }
+                    self.host.hide(&id, cx)
+                }
                 Out::Broadcast { name, payload } => {
                     self.host.event_msg(&name, &payload, false, cx);
                 }
@@ -463,8 +521,11 @@ impl View for IslandView {
                     redraw = self.host.other_msg(Msg::Reply { ticket, result }, cx);
                 }
             },
-            Msg::Custom(b) => match b.downcast::<Own>() {
+            Msg::Custom(b) => match b.downcast::<TabFx>() {
+                Ok(fx) => self.apply_tab_fx(*fx, cx),
+                Err(b) => match b.downcast::<Own>() {
                 Ok(o) => match *o {
+                    Own::Capture(mode) => self.call(cx, "capture_start", json!({ "mode": mode }), Pending::Fire),
                     Own::Wake => self.core.tick(0.0, cx.now_ms),
                     Own::Remeasure => {
                         if let Some((w, h)) = self.pending_measure.take() {
@@ -474,6 +535,7 @@ impl View for IslandView {
                     Own::Query(q) => self.call(cx, q.cmd, q.args.clone(), Pending::Answer(q.as_event)),
                 },
                 Err(other) => redraw = self.host.other_msg(Msg::Custom(other), cx),
+                },
             },
             m @ Msg::Open(_) => redraw = self.host.other_msg(m, cx),
         }
@@ -531,6 +593,10 @@ impl View for IslandView {
         let pets_busy = self.comp.tick(dt_ms as f32);
         self.update_window_requests(&v, cx);
         let host_busy = self.host.step(dt_ms, now, cx);
+        if self.drain_fx(cx) {
+            self.exec(cx);
+            cx.request_frame();
+        }
         let rows_busy = self.loops(&v);
         let pulse_busy = self.core.pulse.is_some_and(|(_, t0)| now - t0 < 800.0);
         v.wants_frames || self.pending_measure.is_some() || pets_busy || host_busy || tabs_moving || rows_busy || pulse_busy || self.gpu.gliding() || self.live_a != (if v.live.visible { 1.0 } else { 0.0 }) || self.flare_a != (if v.body.flare_visible { 1.0 } else { 0.0 })
@@ -660,22 +726,40 @@ impl View for IslandView {
     fn on_drop(&mut self, ev: &DropEvent, cx: &mut Cx) -> Response {
         let now = cx.now_ms;
         let files = matches!(ev.payload, Some(DropPayload::Files(_)));
+        let open = self.core.shell.view().panel.visible;
+        // panel open on Home / Shelf: the tab decides (Home: launcher strip first, Shelf: the whole tab); what it does not take falls through
+        if open && self.panel_a > 0.05 && matches!(self.host.cur.as_deref(), Some("home") | Some("shelf")) && (files || ev.phase == DropPhase::Leave) {
+            let (ox, oy, s) = self.panel_origin;
+            let v = self.chrome.views;
+            let mut local = ev.clone();
+            local.pos = ((ev.pos.0 - ox) / s - v.x, (ev.pos.1 - oy) / s - v.y);
+            let r = self.host.on_drop(&local, cx);
+            self.exec(cx);
+            if r.consumed || ev.phase == DropPhase::Leave {
+                return Response::redraw().merge(r);
+            }
+        }
         match ev.phase {
             DropPhase::Enter if files => {
-                if !self.core.shell.view().panel.visible {
+                if !open {
                     self.core.drop_phase(DropStep::Enter, now);
+                    // the shelf's glow on the edge while files hang over the folded island (Pill.setDragPull)
+                    self.core.shell.set_drag_pull(true);
                 }
                 self.exec(cx);
                 return Response::consumed();
             }
             DropPhase::Over => return Response::consumed(),
-            DropPhase::Leave => self.core.drop_phase(DropStep::Leave, now),
+            DropPhase::Leave => {
+                self.core.drop_phase(DropStep::Leave, now);
+                self.core.shell.set_drag_pull(false);
+            }
             DropPhase::Drop => {
+                self.core.shell.set_drag_pull(false);
                 if let Some(DropPayload::Files(f)) = &ev.payload {
                     let paths: Vec<String> = f.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-                    let home = self.host.cur.as_deref() == Some("home") && self.core.shell.view().panel.visible;
                     self.core.drop_phase(DropStep::Landed, now);
-                    self.call(cx, if home { "launcher_add" } else { "shelf_add" }, json!({ "paths": paths }), Pending::Fire);
+                    self.call(cx, "shelf_add", json!({ "paths": paths }), Pending::Fire);
                 }
             }
             _ => {}
@@ -858,6 +942,29 @@ fn _unused(_: TabDir) {}
 
 #[cfg(test)]
 impl IslandView {
+    pub fn dbg_tab(&self) -> Option<String> {
+        self.host.cur.clone()
+    }
+    pub fn dbg_has_tab(&self, id: &str) -> bool {
+        self.host.has(id)
+    }
+    pub fn dbg_placeholder(&self, id: &str) -> bool {
+        self.host.is_placeholder(id)
+    }
+    pub fn dbg_overlay_open(&self) -> bool {
+        self.host.overlay_open
+    }
+    /// Applies a tab effect as if a tab had posted it.
+    pub fn dbg_fx(&mut self, fx: TabFx, cx: &mut Cx) {
+        self.apply_tab_fx(fx, cx);
+        self.exec(cx);
+    }
+    pub fn dbg_views_rect(&self) -> Rect {
+        self.chrome.views
+    }
+    pub fn dbg_panel_origin(&self) -> (f32, f32, f32) {
+        self.panel_origin
+    }
     pub fn debug_measured(&self) -> (f64, f64) {
         self.measured
     }

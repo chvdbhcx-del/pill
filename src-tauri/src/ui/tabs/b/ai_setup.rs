@@ -1102,7 +1102,7 @@ mod tests {
         let _ = crate::ui::tabs::b::take_fx();
         let p = target(&mut t, Id::GoAi);
         click(&mut t, p);
-        assert_eq!(crate::ui::tabs::b::take_fx(), vec![crate::ui::tabs::b::TabFx::GoPage("ai")]);
+        assert_eq!(crate::ui::tabs::b::take_fx(), vec![crate::ui::tabs::fx::TabFx::GoPage("ai")]);
     }
 
     #[test]

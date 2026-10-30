@@ -391,7 +391,7 @@ fn live_on(cfg: &Value) -> bool {
 mod tests {
     use super::*;
     use crate::ui::host::testing::{motion_lock, Sim};
-    use crate::ui::tabs::b::fx_b::{self, TabFx};
+    use crate::ui::tabs::fx::{self as fx_b, TabFx};
     use crate::ui::tabs::b::kit::snap;
     use crate::ui::view::Services;
 
@@ -481,7 +481,7 @@ mod tests {
             assert_eq!(fakes.bus.subscribers(e), 1, "{e}");
         }
         let out = fx_b::take();
-        assert!(out.contains(&TabFx::SetBadge { tab: "agents", count: 1 }), "{out:?}");
+        assert!(out.contains(&TabFx::Badge { tab: "agents", text: "1".into() }), "{out:?}");
         assert!(out.iter().any(|f| matches!(f, TabFx::SetLive { key, row: Some(r) } if key == "agents" && r.key == "wait")), "{out:?}");
         assert!(sim.run(600) > 0, "the rows stagger in, then the frames stop... or the dots keep breathing");
     }
@@ -491,7 +491,7 @@ mod tests {
         let _ = fx_b::take();
         let (mut sim, _fakes) = sim_for("state_change");
         let out = fx_b::take();
-        assert!(out.contains(&TabFx::SetBadge { tab: "agents", count: 1 }), "the event's snapshot (1 waiting) won over the list reply: {out:?}");
+        assert!(out.contains(&TabFx::Badge { tab: "agents", text: "1".into() }), "the event's snapshot (1 waiting) won over the list reply: {out:?}");
         assert!(sim.run(30) > 0, "the dot breathes, so frames keep coming");
     }
 

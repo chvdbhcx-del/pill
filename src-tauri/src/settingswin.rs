@@ -24,7 +24,7 @@ pub fn open(app: &AppHandle, page: Option<&str>) {
     let page = page.map(str::to_ascii_lowercase).filter(|p| PAGES.contains(&p.as_str()));
     // native UI (flag ui.native.settings, never with --web-ui): the host window replaces the WebView one; flag off = exactly the code below
     if crate::ui::settings_view::native_enabled() {
-        crate::ui::settings_view::open_native(page.as_deref());
+        crate::ui::settings_view::open_native(app, page.as_deref());
         return;
     }
     if let Some(w) = app.get_webview_window(LABEL) {

@@ -126,6 +126,7 @@ fn main() {
         .setup(|app| {
             // The island window (the WebView one, or the native Overlay when the flag ui.native.pill is on) is built here, not declared in tauri.conf.json; before every init() below, which look it up by label.
             // The command bar is not: it is created on demand (ui/lazy.rs; command::init builds it at start only when ui.lazyBarSecs = 0).
+            ui::native::start_if_needed(app.handle()); // any native flag (or --native): the UI host first, once
             ui::windows::build_island(app.handle())?;
             store::init(app);
             settings::init(app);

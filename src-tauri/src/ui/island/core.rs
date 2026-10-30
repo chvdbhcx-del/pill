@@ -119,6 +119,8 @@ pub struct Core {
     /// effective edge reaction for the pets / characters: (preset name, css colour)
     pub reaction: (String, String),
     pub now_mono: f64,
+    /// cards shown since the last [`Core::take_toast_recs`] (the notifications tab records them, as `Pill.toast` fed `notif_history_add`)
+    toast_recs: Vec<pill_ui_core::panel::a::notifs::ToastRec>,
     clock: SysClock,
     cmds: CmdQueue,
     outs: Vec<Out>,
@@ -141,6 +143,7 @@ impl Core {
             pulse: None,
             reaction: ("calm".into(), String::new()),
             now_mono: 0.0,
+            toast_recs: Vec::new(),
             clock,
             cmds,
             outs: Vec::new(),
@@ -302,11 +305,7 @@ impl Core {
                     self.shell.react(&source, preset.as_str(), &o);
                 }
                 LiveCmd::Unreact(src) => self.shell.unreact(&src),
-                LiveCmd::Toast(card) => {
-                    let spec = shell_card(&card);
-                    self.cards.insert(card.id.clone(), card);
-                    self.shell.toast(spec);
-                }
+                LiveCmd::Toast(card) => self.show_card(card),
                 LiveCmd::EdgePulse(s) => {
                     if !self.shell.reduce() {
                         self.pulse = Some((s.clamp(0.0, 1.0), self.now_mono));
@@ -321,6 +320,19 @@ impl Core {
                 LiveCmd::Broadcast { name, payload } => self.outs.push(Out::Broadcast { name, payload }),
             }
         }
+    }
+
+    /// Queues a card in the shell (`Pill.toast`) and keeps the typed card for the renderer; the notifications tab gets a record of it.
+    pub fn show_card(&mut self, card: lm::CardSpec) {
+        self.toast_recs.push(toast_rec(&card));
+        let spec = shell_card(&card);
+        self.cards.insert(card.id.clone(), card);
+        self.shell.toast(spec);
+    }
+
+    /// The cards shown since the last call, oldest first.
+    pub fn take_toast_recs(&mut self) -> Vec<pill_ui_core::panel::a::notifs::ToastRec> {
+        std::mem::take(&mut self.toast_recs)
     }
 
     /// Turns the shell's notices into outs and local state.
@@ -400,6 +412,20 @@ pub fn shell_card(c: &lm::CardSpec) -> ShellCard {
         urgent: c.urgent,
         ..Default::default()
     }
+}
+
+/// The notifications tab's record of a card (`ToastRec`): the plain title / sub, the icon glyph name, the tone.
+pub fn toast_rec(c: &lm::CardSpec) -> pill_ui_core::panel::a::notifs::ToastRec {
+    let (title, sub) = match &c.body {
+        CardBody::Text { title, sub } => (title.clone(), sub.clone().unwrap_or_default()),
+        CardBody::Notification { title, body, .. } => (title.clone(), body.clone().unwrap_or_default()),
+        CardBody::Color { hex, rgb, .. } => (hex.clone(), rgb.clone()),
+    };
+    let icon = match &c.icon {
+        Some(lm::CardIcon::Name(n)) => n.as_str().to_string(),
+        _ => String::new(),
+    };
+    pill_ui_core::panel::a::notifs::ToastRec { id: c.id.clone(), title, sub, icon, tone: tone_name(c.tone).to_string(), text: String::new() }
 }
 
 /// How long a row's own enter animation runs (ms), by kind.

@@ -6,7 +6,7 @@
 //! (the island must route Esc to the overlay first while it is open: `is_open` is observable through `TabFx` only, so the island tracks
 //! open/closed itself). Keyboard: Up/Down/Left/Right + Enter or 1-4 pick an action, Esc closes.
 //! Not ported: selecting the result text with the mouse (the web used `user-select: text`); Copy puts all of it on the clipboard.
-use super::fx_b::{emit, TabFx};
+use crate::ui::tabs::fx::{emit, TabFx};
 use super::kit::{self, lang_of, ms_of, route_effects, Bk, Calls, Clicks, Cues, Icons};
 use crate::ui::view::{Cx, Msg, View};
 use glasskit::canvas::Canvas;

@@ -63,6 +63,11 @@ const TICK_MS: u64 = 250;
 const ADD_ID: i64 = i64::MIN;
 
 /// Posted by the cover-colour worker.
+/// True for the answer of the cover-colour worker (the island routes it to this tab).
+pub(crate) fn is_cover_ready(b: &(dyn std::any::Any + Send)) -> bool {
+    b.is::<CoverReady>()
+}
+
 struct CoverReady {
     key: String,
     colors: Option<CoverColors>,

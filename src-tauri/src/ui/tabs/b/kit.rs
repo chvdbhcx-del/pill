@@ -8,7 +8,7 @@
 //! * `message()`: `Msg::Event` -> `model.on_event`, `Msg::Reply` -> [`Calls::take`] -> `model.on_reply`, both followed by [`Calls::run`].
 //! * `step()`   : `model.tick(dt)`, [`Cues`] and control animations, effects drained with [`route_effects`]; returns "still moving".
 //! * `draw()`   : lay out from `rect` (never assume 0,0), refill `Clicks`, paint with the helpers below.
-use super::fx_b::{emit, TabFx};
+use crate::ui::tabs::fx::{emit, TabFx};
 use crate::ui::view::{Cx, Ticket};
 use glasskit::canvas::Canvas;
 use glasskit::ease::{curves, dur, Ease, Lerp, Tween};
@@ -72,11 +72,11 @@ pub fn route_effects(fx: Vec<Effect>, cx: &mut Cx) -> Vec<Effect> {
             Effect::CopyText(t) => cx.set_clipboard_text(&t),
             Effect::Card(c) => emit(TabFx::Card(c)),
             Effect::SetLive { key, row } => emit(TabFx::SetLive { key, row }),
-            Effect::React { key, kind, ttl_ms } => emit(TabFx::React { key, kind, ttl_ms }),
-            Effect::Unreact(k) => emit(TabFx::Unreact(k)),
+            Effect::React { key, kind, ttl_ms } => emit(TabFx::React { key, kind, color: None, ttl_ms }),
+            Effect::Unreact(k) => emit(TabFx::Unreact { key: k }),
             Effect::EdgePulse(s) => emit(TabFx::EdgePulse(s)),
-            Effect::SetBadge { tab, count } => emit(TabFx::SetBadge { tab, count }),
-            Effect::CollapsePill => emit(TabFx::CollapsePill),
+            Effect::SetBadge { tab, count } => emit(TabFx::Badge { tab, text: if count == 0 { String::new() } else { count.to_string() } }),
+            Effect::CollapsePill => emit(TabFx::Collapse { via: None }),
             Effect::VoiceToggle => emit(TabFx::VoiceToggle),
             Effect::GoPage(p) => emit(TabFx::GoPage(p)),
             other => rest.push(other),
@@ -773,11 +773,11 @@ mod tests {
     fn effects_split_into_island_and_view() {
         let (svc, fakes) = Services::fake();
         let mut cx = Cx::headless_with(svc);
-        let _ = super::super::fx_b::take();
+        let _ = crate::ui::tabs::fx::take();
         let rest = route_effects(vec![Effect::CopyText("hi".into()), Effect::CollapsePill, Effect::GoPage("ai"), Effect::ScrollToBottom, Effect::Focus("x")], &mut cx);
         assert_eq!(rest, vec![Effect::ScrollToBottom, Effect::Focus("x")]);
         assert_eq!(cx.clipboard_text().as_deref(), Some("hi"));
-        assert_eq!(super::super::fx_b::take(), vec![TabFx::CollapsePill, TabFx::GoPage("ai")]);
+        assert_eq!(crate::ui::tabs::fx::take(), vec![TabFx::Collapse { via: None }, TabFx::GoPage("ai")]);
         let _ = fakes;
     }
 

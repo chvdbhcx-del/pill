@@ -1,22 +1,9 @@
 //! Bringing the native island up (flag `ui.native.pill`, never with `--web-ui`): host thread, fonts, the backend facade, the Overlay window,
 //! and the hand-over to `pill.rs` (placement / visibility through the `PillWin` seam).
-use super::fonts::FONTS;
 use super::view::IslandView;
 use crate::ui::host::pillwin::NativePillWin;
-use crate::ui::host::{self, NativeWindow};
-use crate::ui::view::Api;
-use serde_json::Value;
-use std::sync::Arc;
+use crate::ui::host::NativeWindow;
 use tauri::AppHandle;
-
-/// The real backend for native views: `ui::api::call` (the same functions the `#[tauri::command]` wrappers call).
-pub struct FacadeApi;
-
-impl Api for FacadeApi {
-    fn call(&self, caller: &str, name: &str, args: Value) -> Result<Value, String> {
-        crate::ui::api::call(name, args, caller)
-    }
-}
 
 /// True when the island must be the native Overlay: the flag is on and the WebView UI is not forced.
 pub fn enabled() -> bool {
@@ -25,10 +12,7 @@ pub fn enabled() -> bool {
 
 /// Creates the Overlay (call instead of `windows::build_pill`, before `pill::init`).
 pub fn start(app: &AppHandle) {
-    crate::ui::api::init(app);
-    host::set_fonts(&FONTS);
-    host::set_api(Arc::new(FacadeApi));
-    let h = host::start();
+    let h = crate::ui::native::ensure_host(app);
     let id = NativeWindow::overlay("pill").spawn(&h, |cx| Box::new(IslandView::new(cx)));
     crate::pill::attach_native(Box::new(NativePillWin::new(h.clone(), id)));
     let app = app.clone();

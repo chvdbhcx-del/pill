@@ -4,10 +4,9 @@
 use super::{BarView, BAR_LABEL};
 use crate::ui::flags;
 use crate::ui::host::{self, HostHandle, NativeWindow, WinEvent};
-use crate::ui::view::{Api, WindowId};
-use serde_json::Value;
+use crate::ui::view::WindowId;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Mutex;
 
 static BAR_ID: AtomicU64 = AtomicU64::new(0);
 static CREATE: Mutex<()> = Mutex::new(());
@@ -25,23 +24,6 @@ pub fn native_active() -> bool {
 /// Same as [`native_active`]; the name `command.rs` and `ui/lazy.rs` use.
 pub fn bar_is_native() -> bool {
     native_active()
-}
-
-/// The `ui::api` facade as the host's backend (idempotent: the last `set_api` wins and they all are this).
-struct Facade;
-
-impl Api for Facade {
-    fn call(&self, caller: &str, name: &str, args: Value) -> Result<Value, String> {
-        crate::ui::api::call(name, args, caller)
-    }
-}
-
-fn wire(app: &tauri::AppHandle) {
-    static ONCE: OnceLock<()> = OnceLock::new();
-    ONCE.get_or_init(|| {
-        crate::ui::api::init(app);
-        host::set_api(Arc::new(Facade));
-    });
 }
 
 /// The window builder: `Popup` kind, 560 x 350, top centre of the monitor under the cursor, hidden, takes the foreground when shown, hides when
@@ -76,8 +58,7 @@ fn ensure(host: &HostHandle) -> WindowId {
 /// `cmd_toggle` for the native bar: show (under the island when it is showing) or hide. The host swallows the open request that follows
 /// a blur-hide within 300 ms (the click that closed the bar must not re-open it).
 pub fn bar_toggle(app: &tauri::AppHandle) {
-    wire(app);
-    let h = host::start();
+    let h = crate::ui::native::ensure_host(app);
     let id = ensure(&h);
     match below_island(&h) {
         Some(y) => h.toggle_below(id, y),

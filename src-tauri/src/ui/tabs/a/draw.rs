@@ -168,6 +168,7 @@ pub enum Source {
 }
 
 /// The answer to [`ImageCache::request`], posted as `Msg::Custom(Box<ImageReady>)` to the view. Feed it to [`ImageCache::ready`].
+#[derive(Clone)]
 pub struct ImageReady {
     pub key: String,
     pub img: Option<Decoded>,
@@ -299,7 +300,10 @@ impl ImageCache {
 
     /// Take a worker's answer. Returns the key when an image was stored (the view repaints), `None` for a failed decode.
     pub fn ready(&mut self, r: ImageReady) -> Option<String> {
-        self.pending.remove(&r.key);
+        // the island hands every answer to every view: only the one that asked keeps it
+        if !self.pending.remove(&r.key) {
+            return None;
+        }
         let ImageReady { key, img } = r;
         img.map(|d| {
             self.insert(&key, d);

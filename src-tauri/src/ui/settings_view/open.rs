@@ -15,19 +15,6 @@ pub fn native_enabled() -> bool {
 
 static OPEN_ID: Mutex<Option<WindowId>> = Mutex::new(None);
 
-struct FacadeApi;
-
-impl Api for FacadeApi {
-    fn call(&self, caller: &str, name: &str, args: Value) -> Result<Value, String> {
-        crate::ui::api::call(name, args, caller)
-    }
-}
-
-fn ensure_api() {
-    static ONCE: OnceLock<()> = OnceLock::new();
-    ONCE.get_or_init(|| host::set_api(Arc::new(FacadeApi)));
-}
-
 pub fn system_lang() -> String {
     use windows::Win32::Globalization::GetUserDefaultUILanguage;
     let id = unsafe { GetUserDefaultUILanguage() };
@@ -90,9 +77,8 @@ fn register(host: &HostHandle) {
 }
 
 /// Opens (or focuses) the native settings window on `page`.
-pub fn open_native(page: Option<&str>) {
-    ensure_api();
-    let host = host::start();
+pub fn open_native(app: &tauri::AppHandle, page: Option<&str>) {
+    let host = crate::ui::native::ensure_host(app);
     register(&host);
     host.open(LABEL, json!({ "page": page }));
 }

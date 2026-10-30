@@ -8,7 +8,6 @@ mod ai_setup;
 mod chat;
 mod chat_pop;
 mod editor;
-mod fx_b;
 mod icons;
 pub mod kit;
 mod note;
@@ -16,8 +15,8 @@ mod note_doc;
 mod text;
 mod timer_card;
 
-#[allow(unused_imports)] // the lead wires these to the island
-pub use fx_b::{emit as emit_fx, take as take_fx, TabFx};
+pub use crate::ui::tabs::fx::take as take_fx;
+pub(crate) use chat::is_picked;
 
 use crate::ui::view::View;
 

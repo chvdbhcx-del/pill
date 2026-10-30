@@ -118,6 +118,11 @@ struct Geo {
     files: Rect,
 }
 
+/// True for the answer of the file picker (the island routes it to this tab).
+pub(crate) fn is_picked(b: &(dyn std::any::Any + Send)) -> bool {
+    b.is::<Picked>()
+}
+
 struct Picked(Vec<PathBuf>);
 
 pub struct ChatScreen {

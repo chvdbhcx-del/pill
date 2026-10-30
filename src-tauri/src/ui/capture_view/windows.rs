@@ -7,9 +7,8 @@
 //! backstop.
 use super::CaptureView;
 use crate::ui::host::{self, IRect, MonitorSel, NativeWindow, WinEvent};
-use crate::ui::view::{Api, WindowId};
-use serde_json::Value;
-use std::sync::{Arc, Mutex, MutexGuard};
+use crate::ui::view::WindowId;
+use std::sync::{Mutex, MutexGuard};
 
 /// The pure gate: the native overlay needs the setting AND no `--web-ui` override.
 pub fn gate(setting: bool, forced: bool) -> bool {
@@ -33,20 +32,9 @@ fn slots() -> MutexGuard<'static, Vec<Slot>> {
     SLOTS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// The backend facade as the `Api` of the host (idempotent: every call sets the same adapter).
-struct Facade;
-
-impl Api for Facade {
-    fn call(&self, caller: &str, name: &str, args: Value) -> Result<Value, String> {
-        crate::ui::api::call(name, args, caller)
-    }
-}
-
 /// Makes sure the facade knows the app and the host reaches it, and hands the host the UI language and the Reduce motion setting.
 pub fn ensure_wired(app: &tauri::AppHandle) -> host::HostHandle {
-    crate::ui::api::init(app);
-    host::set_api(Arc::new(Facade));
-    let h = host::start();
+    let h = crate::ui::native::ensure_host(app);
     h.set_lang(if is_russian() { glasskit::lang::Lang::Ru } else { glasskit::lang::Lang::En });
     host::set_reduce_motion_setting(crate::settings::get_bool("reduceMotion", false));
     h

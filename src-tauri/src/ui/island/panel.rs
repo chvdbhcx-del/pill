@@ -114,12 +114,17 @@ impl View for Placeholder {
 
 struct Slot {
     view: Box<dyn View>,
+    placeholder: bool,
 }
 
 #[derive(Default)]
 pub struct TabHost {
     slots: HashMap<String, Slot>,
     pub cur: Option<String>,
+    /// the `ai_actions` overlay over the clipboard tab (created on the first open, then kept: it paints nothing while closed)
+    overlay: Option<Box<dyn View>>,
+    /// true from `OpenClipAi` until the overlay says `OverlayClosed`: Esc and clicks go to it first
+    pub overlay_open: bool,
     prev: Option<(String, f64)>,
     cur_t0: f64,
     pub dir: Option<TabDir>,
@@ -152,11 +157,66 @@ impl TabHost {
         self.slots.contains_key(id)
     }
 
+    /// Creates the views of the tabs with background duties (docs/native-tabs-a.md section 3) and lets them subscribe: `on_show` then `on_hide`,
+    /// so their events and replies keep flowing while they are not the visible tab, and nothing ticks or draws.
+    pub fn warm(&mut self, ids: &[&str], cx: &mut Cx) {
+        for id in ids {
+            if self.slots.contains_key(*id) {
+                continue;
+            }
+            if let Some(mut view) = crate::ui::tabs::create(id) {
+                guarded(cx, |cx| {
+                    view.on_show(cx);
+                    view.on_hide(cx);
+                });
+                self.slots.insert(id.to_string(), Slot { view, placeholder: false });
+            }
+        }
+    }
+
+    /// True when the tab shows the stand-in (no native view for that id).
+    pub fn is_placeholder(&self, id: &str) -> bool {
+        self.slots.get(id).is_some_and(|s| s.placeholder)
+    }
+
+    /// Every view that exists: the tabs and the overlay.
+    fn all_views(&mut self) -> impl Iterator<Item = &mut Box<dyn View>> {
+        self.slots.values_mut().map(|s| &mut s.view).chain(self.overlay.iter_mut())
+    }
+
+    /// Opens the overlay `name` (`ai_actions`) with `Msg::Open(args)`.
+    pub fn open_overlay(&mut self, name: &str, args: Value, cx: &mut Cx) {
+        if self.overlay.is_none() {
+            self.overlay = crate::ui::tabs::b::create_overlay(name);
+            if let Some(o) = self.overlay.as_mut() {
+                guarded(cx, |cx| o.on_show(cx));
+            }
+        }
+        if let Some(o) = self.overlay.as_mut() {
+            guarded(cx, |cx| o.message(Msg::Open(args), cx));
+            self.overlay_open = true;
+        }
+    }
+
+    /// The tab that owns the overlay asks to close it (or the island collapsed): the overlay closes itself (it cancels a running request) and
+    /// reports `OverlayClosed`.
+    pub fn close_overlay(&mut self, cx: &mut Cx) {
+        if let Some(o) = self.overlay.as_mut() {
+            guarded(cx, |cx| o.on_hide(cx));
+        }
+    }
+
+    pub fn overlay_closed(&mut self) {
+        self.overlay_open = false;
+    }
+
     /// Shows `id` (creating its view the first time); `dir` is the slide direction of this switch.
     pub fn show(&mut self, id: &str, dir: TabDir, ru: bool, cx: &mut Cx, now: f64) {
         if !self.slots.contains_key(id) {
-            let view = crate::ui::tabs::create(id).unwrap_or_else(|| Box::new(Placeholder::new(id, ru)));
-            self.slots.insert(id.to_string(), Slot { view });
+            let real = crate::ui::tabs::create(id);
+            let placeholder = real.is_none();
+            let view = real.unwrap_or_else(|| Box::new(Placeholder::new(id, ru)));
+            self.slots.insert(id.to_string(), Slot { view, placeholder });
         }
         if let Some(old) = self.cur.take() {
             if old != id {
@@ -187,6 +247,14 @@ impl TabHost {
 
     /// An input event in the tab view's own coordinates.
     pub fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
+        if self.overlay_open {
+            if let Some(o) = self.overlay.as_mut() {
+                let r = guarded(cx, |cx| o.event(ev, cx));
+                if r.consumed {
+                    return r;
+                }
+            }
+        }
         match self.cur_view() {
             Some(v) => guarded(cx, |cx| v.event(ev, cx)),
             None => Response::NONE,
@@ -203,9 +271,9 @@ impl TabHost {
     /// A backend event reaches every tab view that exists (they subscribed through the shared `Cx`).
     pub fn event_msg(&mut self, name: &str, payload: &Value, latest: bool, cx: &mut Cx) -> bool {
         let mut redraw = false;
-        for s in self.slots.values_mut() {
+        for v in self.all_views() {
             let m = Msg::Event { name: name.to_string(), payload: payload.clone(), latest };
-            redraw |= guarded(cx, |cx| s.view.message(m, cx)).redraw;
+            redraw |= guarded(cx, |cx| v.message(m, cx)).redraw;
         }
         redraw
     }
@@ -215,8 +283,8 @@ impl TabHost {
         match msg {
             Msg::Reply { ticket, result } => {
                 let mut r = false;
-                for s in self.slots.values_mut() {
-                    r |= guarded(cx, |cx| s.view.message(Msg::Reply { ticket, result: result.clone() }, cx)).redraw;
+                for v in self.all_views() {
+                    r |= guarded(cx, |cx| v.message(Msg::Reply { ticket, result: result.clone() }, cx)).redraw;
                 }
                 r
             }
@@ -227,11 +295,43 @@ impl TabHost {
                 }
                 r
             }
-            m @ Msg::Custom(_) => match self.cur_view() {
-                Some(v) => guarded(cx, |cx| v.message(m, cx)).redraw,
-                None => false,
-            },
+            // ticks, image-decode answers and the notifications record are addressed by type: every view looks at it, the others ignore it
+            Msg::Custom(b) => self.custom(b, cx),
             Msg::Event { .. } => false,
+        }
+    }
+
+    /// A `Msg::Custom` cannot be cloned, so it goes where it belongs: decoded images to every view (a cache that never asked ignores them),
+    /// a cover-colour answer to home, a file-picker answer to chat, anything else (ticks) to the visible tab.
+    fn custom(&mut self, b: Box<dyn std::any::Any + Send>, cx: &mut Cx) -> bool {
+        let b = match b.downcast::<crate::ui::tabs::a::draw::ImageReady>() {
+            Ok(r) => {
+                let mut redraw = false;
+                for v in self.all_views() {
+                    redraw |= guarded(cx, |cx| v.message(Msg::Custom(Box::new((*r).clone())), cx)).redraw;
+                }
+                return redraw;
+            }
+            Err(b) => b,
+        };
+        let owner = if crate::ui::tabs::a::is_cover_ready(&*b) {
+            Some("home".to_string())
+        } else if crate::ui::tabs::b::is_picked(&*b) {
+            Some("chat".to_string())
+        } else {
+            self.cur.clone()
+        };
+        match owner.and_then(|id| self.slots.get_mut(&id)) {
+            Some(s) => guarded(cx, |cx| s.view.message(Msg::Custom(b), cx)).redraw,
+            None => false,
+        }
+    }
+
+    /// Delivers a custom message addressed to the tab `id` (the island's `ToastRec` for the notifications tab).
+    pub fn custom_to(&mut self, id: &str, b: Box<dyn std::any::Any + Send>, cx: &mut Cx) -> bool {
+        match self.slots.get_mut(id) {
+            Some(s) => guarded(cx, |cx| s.view.message(Msg::Custom(b), cx)).redraw,
+            None => false,
         }
     }
 
@@ -253,6 +353,9 @@ impl TabHost {
         }
         if now - self.cur_t0 < 300.0 && self.cur.is_some() {
             keep = true;
+        }
+        if let Some(o) = self.overlay.as_mut() {
+            keep |= guarded(cx, |cx| o.step(dt_ms, cx));
         }
         keep
     }
@@ -276,6 +379,10 @@ impl TabHost {
                 if let Some(s) = self.slots.get_mut(&id) {
                     cv.with_opacity(a * alpha, |cv| cv.with_transform(translation(views.x + dx, views.y), |cv| s.view.draw(cv, th, local, cx)));
                 }
+            }
+            // the overlay covers the whole body of the tab (it paints nothing while closed)
+            if let Some(o) = self.overlay.as_mut() {
+                cv.with_opacity(alpha, |cv| cv.with_transform(translation(views.x, views.y), |cv| o.draw(cv, th, local, cx)));
             }
         });
     }

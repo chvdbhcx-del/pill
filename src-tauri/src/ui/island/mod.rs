@@ -11,6 +11,7 @@ pub mod rows;
 pub mod shapes;
 pub mod start;
 pub mod sys;
+pub mod tabfx;
 pub mod view;
 mod wx_data;
 
@@ -18,6 +19,8 @@ pub use start::{enabled, start};
 
 #[cfg(test)]
 mod snapshots;
+#[cfg(test)]
+mod glue_tests;
 
 /// Helpers for the unit tests of this module tree.
 #[cfg(test)]
