@@ -1,0 +1,19 @@
+{
+  "now": 1761800000000,
+  "scenarios": {
+    "menu": { "args": { "id": 42, "text": "Teh quick brown fox jumpd over the lazy dog. This sentense has a few erors in it, and it is also much longer than it needs to be." }, "replies": {}, "events": [] },
+    "busy": { "args": { "id": 42, "text": "Teh quick brown fox jumpd over the lazy dog." }, "run": "fix", "replies": {}, "events": [] },
+    "result": {
+      "args": { "id": 42, "text": "Teh quick brown fox jumpd over the lazy dog." },
+      "run": "fix",
+      "replies": { "ai_transform": { "ok": true, "text": "The quick brown fox jumped over the lazy dog.\nThis sentence no longer has errors.", "clipped": false } },
+      "events": []
+    },
+    "error_net_off": {
+      "args": { "id": 42, "text": "hello" },
+      "run": "translate",
+      "replies": { "ai_transform": { "ok": false, "error": "net_off" } },
+      "events": []
+    }
+  }
+}
