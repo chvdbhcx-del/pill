@@ -14,6 +14,7 @@
 // Settings read through settings::get_*: capture.folder, capture.videoFolder, capture.fps, capture.encoder (auto|x264|nvenc),
 // capture.ffmpeg, capture.format (mp4|gif), capture.shotAction (both|copy|save), capture.revealAfterSave, hotkey.shotArea/shotFull/ocr/qr/pipette/record.
 use crate::ui::bus::{self, Target};
+use crate::ui::capture_view::windows as cv_windows;
 use crate::{settings, store};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -712,21 +713,44 @@ fn place(w: &WebviewWindow, m: &Mon, show: bool) {
     }
 }
 
+/// The native overlay path is on: setting `ui.native.capture` and no `--web-ui` override (see ui/capture_view/windows.rs).
+fn native_on() -> bool {
+    cv_windows::enabled()
+}
+
+/// Native counterpart of the WebView branch of `open_overlays`: one host window per monitor; reused ones are re-armed with one
+/// `capture:begin` (every native view listens to the bus, and each arms itself for its own label), new ones arm themselves at creation.
+fn open_native(app: &AppHandle, id: u64) {
+    let list: Vec<Mon> = session().as_ref().filter(|s| s.id == id).map(|s| s.shots.iter().map(|x| x.mon.clone()).collect()).unwrap_or_default();
+    let mut reused = false;
+    for m in &list {
+        reused |= cv_windows::open(app, &m.label, m.x, m.y, m.w, m.h, m.scale);
+    }
+    if reused {
+        let _ = bus::emit(app, Target::Label(list.first().map_or("capture-0", |m| m.label.as_str())), "capture:begin", json!({ "id": id }));
+    }
+}
+
 /// Windows (re)positioned hidden; each page reports `capture_ready` once its frame is painted, and only then is it shown.
+/// With the native overlay on (`ui.native.capture`, not `--web-ui`) the windows are host `Fullscreen` windows instead (ui/capture_view).
 fn open_overlays(app: &AppHandle, id: u64) {
-    let a = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        let list: Vec<Mon> = session().as_ref().filter(|s| s.id == id).map(|s| s.shots.iter().map(|x| x.mon.clone()).collect()).unwrap_or_default();
-        for m in &list {
-            let existed = a.get_webview_window(&m.label).is_some();
-            if let Some(w) = ensure_window(&a, &m.label) {
-                place(&w, m, false);
-                if existed {
-                    let _ = bus::emit(&a, Target::Label(m.label.as_str()), "capture:begin", json!({ "id": id }));
+    if native_on() {
+        open_native(app, id);
+    } else {
+        let a = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let list: Vec<Mon> = session().as_ref().filter(|s| s.id == id).map(|s| s.shots.iter().map(|x| x.mon.clone()).collect()).unwrap_or_default();
+            for m in &list {
+                let existed = a.get_webview_window(&m.label).is_some();
+                if let Some(w) = ensure_window(&a, &m.label) {
+                    place(&w, m, false);
+                    if existed {
+                        let _ = bus::emit(&a, Target::Label(m.label.as_str()), "capture:begin", json!({ "id": id }));
+                    }
                 }
             }
-        }
-    });
+        });
+    }
     // Watchdog: a page that never reports (script error, WebView2 missing) must not leave the session half open.
     let a = app.clone();
     std::thread::spawn(move || {
@@ -749,7 +773,7 @@ fn open_overlays(app: &AppHandle, id: u64) {
             // Safety: a topmost full-screen overlay that is no longer the foreground window (focus stolen, alt-tab, keyboard
             // never arrived) is useless and traps the screen: end it after 1.5 s. Failsafe: 600 s at most.
             let fg = unsafe { GetForegroundWindow() };
-            let fg_ok = !shown || a.webview_windows().iter().any(|(l, w)| l.starts_with("capture-") && win_hwnd(w) == Some(fg));
+            let fg_ok = !shown || if native_on() { cv_windows::foreground_ok() } else { a.webview_windows().iter().any(|(l, w)| l.starts_with("capture-") && win_hwnd(w) == Some(fg)) };
             if lost_too_long(&mut lost, fg_ok, Instant::now(), Duration::from_millis(1500)) || t0.elapsed() >= Duration::from_secs(600) {
                 end_session(&a);
                 return;
@@ -759,16 +783,30 @@ fn open_overlays(app: &AppHandle, id: u64) {
 }
 
 fn hide_overlays(app: &AppHandle) {
-    for (label, w) in app.webview_windows() {
-        if label.starts_with("capture-") {
-            let _ = w.hide();
-            // The overlay is shown with SetWindowPos, so the toolkit's own "visible" flag is stale and hide() alone does nothing.
-            if let Some(h) = win_hwnd(&w) {
-                unsafe {
-                    let _ = ShowWindow(h, SW_HIDE);
-                }
+    if native_on() {
+        // Native overlays hide themselves when they get `capture:end` (after their exit animations); the 700 ms backstop below hides
+        // whatever did not, unless a new session has started meanwhile.
+        if let Some(l) = cv_windows::labels().first() {
+            let _ = bus::emit(&app, Target::Label(l.as_str()), "capture:end", json!({}));
+        }
+        std::thread::spawn(|| {
+            std::thread::sleep(Duration::from_millis(700));
+            if session().is_none() {
+                cv_windows::hide_all();
             }
-            let _ = bus::emit(&app, Target::Label(label.as_str()), "capture:end", json!({}));
+        });
+    } else {
+        for (label, w) in app.webview_windows() {
+            if label.starts_with("capture-") {
+                let _ = w.hide();
+                // The overlay is shown with SetWindowPos, so the toolkit's own "visible" flag is stale and hide() alone does nothing.
+                if let Some(h) = win_hwnd(&w) {
+                    unsafe {
+                        let _ = ShowWindow(h, SW_HIDE);
+                    }
+                }
+                let _ = bus::emit(&app, Target::Label(label.as_str()), "capture:end", json!({}));
+            }
         }
     }
     *LAST_END.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
@@ -778,6 +816,9 @@ fn hide_overlays(app: &AppHandle) {
         std::thread::sleep(IDLE_CLOSE + Duration::from_secs(1));
         let idle = LAST_END.lock().unwrap_or_else(|e| e.into_inner()).is_some_and(|t| t.elapsed() >= IDLE_CLOSE);
         if idle && session().is_none() {
+            if native_on() {
+                cv_windows::close_all();
+            }
             for (label, w) in a.webview_windows() {
                 if label.starts_with("capture-") {
                     let _ = w.destroy();
