@@ -215,9 +215,34 @@ struct Gpu {
     res: Res,
 }
 
+/// Text rendering of the native Pill windows. glasskit's default (unhinted symmetric, gamma 2.2 / contrast 0.6) looks soft and heavy at 100 %
+/// scale, and the hinted `natural` mode shows stair-steps on curves and diagonals; `outline` fills the glyph outlines with full 2-D grayscale
+/// antialiasing, so every size is smooth. `PILL_TEXT_MODE` = outline (default) | sym | natural | glasskit (keep the library setting);
+/// `PILL_TEXT_GAMMA` (default 1.8) and `PILL_TEXT_CONTRAST` (default 0.35) tune the weight.
+fn apply_text_mode(gfx: &Gfx) {
+    use windows::core::Interface;
+    use windows::Win32::Graphics::DirectWrite::{IDWriteFactory3, DWRITE_GRID_FIT_MODE_DISABLED, DWRITE_PIXEL_GEOMETRY_FLAT, DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC, DWRITE_RENDERING_MODE1_OUTLINE};
+    let mode = std::env::var("PILL_TEXT_MODE").unwrap_or_default();
+    let render = match mode.as_str() {
+        "glasskit" => return,
+        "sym" => DWRITE_RENDERING_MODE1_NATURAL_SYMMETRIC,
+        _ => DWRITE_RENDERING_MODE1_OUTLINE,
+    };
+    let knob = |name: &str, default: f32| std::env::var(name).ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(default);
+    let (gamma, contrast) = (knob("PILL_TEXT_GAMMA", 1.8), knob("PILL_TEXT_CONTRAST", 0.35));
+    unsafe {
+        if let Ok(f3) = gfx.dw.cast::<IDWriteFactory3>() {
+            if let Ok(p) = f3.CreateCustomRenderingParams(gamma, contrast, contrast, 0.0, DWRITE_PIXEL_GEOMETRY_FLAT, render, DWRITE_GRID_FIT_MODE_DISABLED) {
+                gfx.dc.SetTextRenderingParams(&p);
+            }
+        }
+    }
+}
+
 impl Gpu {
     fn new() -> windows::core::Result<Gpu> {
         let gfx = if std::env::var_os("PILL_FORCE_WARP").is_some() { Gfx::warp()? } else { Gfx::new(None)? };
+        apply_text_mode(&gfx);
         let res = Res::new(&gfx, FONTS.get().copied().unwrap_or(&SYSTEM_FONTS))?;
         Ok(Gpu { gfx, res })
     }
