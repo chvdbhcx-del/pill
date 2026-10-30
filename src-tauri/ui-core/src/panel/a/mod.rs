@@ -195,6 +195,8 @@ pub enum Fx {
     /// Put the keyboard caret in the tab's search box.
     FocusSearch,
     BlurSearch,
+    /// Scroll the named element of the tab into view (keyboard selection).
+    ScrollTo { target: String },
     /// Play an animation on a named element of the tab (`title`, `art`, `row:<id>`, `chip:<id>`, `list`, ...).
     Anim { target: String, anim: Anim },
 }
