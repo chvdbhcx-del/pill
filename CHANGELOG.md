@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.7.1] - 2026-10-31
+
+### Fixed
+- The "Eyes" pet and the legs characters' eyes now stand on the text line of the live row in every row (clock, music, agents): the pet was placed on the capsule floor like the other pets, which put the eyes about 2.5-3.5 px too high. The other pets are unchanged.
+
 ## [0.7.0] - 2026-10-30
 
 ### Removed
