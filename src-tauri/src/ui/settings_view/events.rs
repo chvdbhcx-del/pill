@@ -428,10 +428,12 @@ impl SettingsView {
             Widget,
         }
         let mut k = K::Widget;
+        let mut found = false;
         for r in self.page.rows() {
             if r.fid != fid {
                 continue;
             }
+            found = true;
             k = match &r.ctl {
                 Ctl::Hotkey => K::Hot(match &r.row.control {
                     pill_ui_core::settings::schema::Control::Hotkey { action } => action.to_string(),
@@ -443,6 +445,9 @@ impl SettingsView {
                 Ctl::Custom(n) => K::Custom(n),
                 _ => K::Widget,
             };
+        }
+        if !found {
+            return self.picker_key(fid, ev, activate, cx);
         }
         match k {
             K::Hot(a) if activate => {

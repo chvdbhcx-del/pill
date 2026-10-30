@@ -32,6 +32,7 @@ impl SettingsView {
                 let pg = self.build_page(p);
                 self.page = pg;
                 self.enter_t = Tween::at_rest(1.0);
+                self.focus.set_order(&self.focus_order());
                 self.page_shown(p, cx);
             }
         }

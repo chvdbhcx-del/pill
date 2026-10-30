@@ -119,3 +119,36 @@ impl SettingsView {
         1.0 + 8.0 + STAGE_H + 8.0 + 18.0 + 2.0 + 16.0 * n + 12.0 + 1.0
     }
 }
+
+impl SettingsView {
+    /// Arrow keys move the focused card of the pet / style grid, Enter or Space picks it.
+    pub(super) fn picker_key(&mut self, fid: u32, ev: &glasskit::input::InputEvent, activate: bool, cx: &mut crate::ui::view::Cx) -> glasskit::input::Response {
+        use super::page::Block;
+        use glasskit::input::{InputEvent, KeyCode, Response};
+        let rc = Response { consumed: true, redraw: true, ..Response::NONE };
+        let chars = self.page.blocks.iter().any(|b| matches!(b, Block::Chars(f) if *f == fid));
+        let pets = self.page.blocks.iter().any(|b| matches!(b, Block::Pets(f) if *f == fid));
+        if !chars && !pets {
+            return Response::NONE;
+        }
+        let n = if chars { STYLES.len() } else { self.pets.count_pets.max(1) };
+        if let InputEvent::Key { code, down: true, .. } = ev {
+            match code {
+                KeyCode::Left | KeyCode::Up => self.pets.focus_i = self.pets.focus_i.saturating_sub(1),
+                KeyCode::Right | KeyCode::Down => self.pets.focus_i = (self.pets.focus_i + 1).min(n - 1),
+                _ => {}
+            }
+        }
+        if activate {
+            let i = self.pets.focus_i.min(n - 1);
+            let act = if chars {
+                super::ui::Act::StyleCard(STYLES[i].id.to_string())
+            } else {
+                let ids: Vec<String> = self.model.pets.sections(self.lang()).into_iter().flat_map(|s| s.cards).map(|c| c.id).collect();
+                super::ui::Act::PetCard(ids.get(i).cloned().unwrap_or_default())
+            };
+            self.act(act, cx);
+        }
+        rc
+    }
+}
