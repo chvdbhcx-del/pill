@@ -4,6 +4,7 @@ pub mod clock;
 pub mod color;
 pub mod io;
 pub mod lives;
+pub mod liquid;
 pub mod motion;
 pub mod quiet;
 pub mod react;
