@@ -99,7 +99,17 @@ fn info_of_hmon(hm: HMONITOR) -> Option<MonitorInfo> {
 
 /// Every monitor: the primary first, then left to right (this order is what `MonitorSel::Index` means).
 pub(crate) fn monitors() -> Vec<MonitorInfo> {
-    let mut v: Vec<MonitorInfo> = glasskit::monitors::enumerate().into_iter().filter(|m| m.hmon != 0).filter_map(|m| info_of_hmon(HMONITOR(m.hmon as *mut c_void))).collect();
+    // a plain EnumDisplayMonitors (microseconds): glasskit's `monitors::enumerate` also reads EDID / registry names, which a popup that
+    // re-places itself at every show cannot afford
+    unsafe extern "system" fn collect(hm: HMONITOR, _: HDC, _: *mut RECT, lp: LPARAM) -> BOOL {
+        (*(lp.0 as *mut Vec<HMONITOR>)).push(hm);
+        BOOL(1)
+    }
+    let mut hms: Vec<HMONITOR> = Vec::new();
+    unsafe {
+        let _ = EnumDisplayMonitors(None, None, Some(collect), LPARAM(&mut hms as *mut Vec<HMONITOR> as isize));
+    }
+    let mut v: Vec<MonitorInfo> = hms.into_iter().filter_map(info_of_hmon).collect();
     if v.is_empty() {
         unsafe {
             let hm = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
@@ -1328,6 +1338,9 @@ impl Host {
             return;
         }
         win.geo_at = None;
+        if !win.visible {
+            return; // a hidden window's rectangle is not worth remembering
+        }
         unsafe {
             if IsIconic(win.hwnd).as_bool() {
                 return;
@@ -1856,6 +1869,18 @@ mod tests {
         assert_eq!(r.rect.w(), 1920);
         let r = resolve_placement(&Placement::Cover(MonitorSel::Index(9)), (1.0, 1.0), &mons(), (0, 0), None);
         assert_eq!(r.rect, IRect::new(0, 0, 2560, 1440), "an unknown index falls back to the primary");
+    }
+
+    #[test]
+    fn the_monitor_list_is_primary_first_and_sane() {
+        let m = monitors();
+        assert!(!m.is_empty(), "a desktop session has at least one monitor");
+        assert!(m[0].primary, "the primary comes first (MonitorSel::Index(0))");
+        assert_eq!(m.iter().filter(|x| x.primary).count(), 1);
+        for x in &m {
+            assert!(x.rect.w() > 0 && x.rect.h() > 0 && x.scale >= 0.25 && x.refresh_hz >= 24, "{x:?}");
+            assert!(x.work.w() <= x.rect.w() && x.work.h() <= x.rect.h());
+        }
     }
 
     #[test]

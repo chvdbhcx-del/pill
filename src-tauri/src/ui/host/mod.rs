@@ -215,6 +215,7 @@ impl NativeWindow {
         NativeWindow {
             spec: WindowSpec {
                 size: (720.0, 120.0),
+                title: "pill-main".to_string(), // the WebView window's title: tools that match windows by title keep working
                 placement: Placement::TopCenter { monitor: MonitorSel::Primary, offset_pct: 0.0, below_taskbar: true, margin_top: 0.0 },
                 topmost: true,
                 singleton: true,
@@ -228,6 +229,7 @@ impl NativeWindow {
         NativeWindow {
             spec: WindowSpec {
                 size: (560.0, 350.0),
+                title: "pill-bar".to_string(),
                 placement: Placement::TopCenter { monitor: MonitorSel::UnderCursor, offset_pct: 0.0, below_taskbar: false, margin_top: 7.0 },
                 visible: false,
                 activate_on_show: true,
@@ -259,6 +261,7 @@ impl NativeWindow {
         NativeWindow {
             spec: WindowSpec {
                 placement: Placement::Cover(monitor),
+                title: "pill-capture".to_string(),
                 topmost: true,
                 activate_on_show: true,
                 exclude_from_capture: true,

@@ -650,6 +650,11 @@ impl Cx {
         self.waker.clone()
     }
 
+    /// Posts `msg` to this view's own queue: it arrives in [`View::message`] after the current call (and wakes a frame).
+    pub fn post(&self, msg: Msg) {
+        self.waker.post(msg);
+    }
+
     pub fn clipboard_text(&self) -> Option<String> {
         self.svc.clipboard.get_text()
     }
@@ -926,6 +931,17 @@ mod tests {
         assert_eq!(cx.take_effects(), Effects::default(), "taken effects are cleared");
         cx.clear_hit_region();
         assert!(cx.effects().hit_all && cx.effects().hit_region.is_none());
+    }
+
+    #[test]
+    fn a_view_can_post_to_itself() {
+        let (cx, q) = Cx::headless_queue(Services::null());
+        cx.post(Msg::Open(json!(7)));
+        cx.waker().post_custom(5u32);
+        let got = q.drain();
+        assert_eq!(got.len(), 2);
+        assert!(matches!(&got[0].1, Msg::Open(v) if *v == json!(7)));
+        assert!(matches!(&got[1].1, Msg::Custom(b) if b.downcast_ref::<u32>() == Some(&5)));
     }
 
     #[test]

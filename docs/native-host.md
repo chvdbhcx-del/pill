@@ -172,7 +172,7 @@ test write PNGs (`testing::save_png` for your own).
 
 ## 10. Running the host by hand (the lead)
 
-`cargo test --release` runs the 60-odd headless tests (scheduler, proximity, geometry, focus, queue, Cx, harness, placement, styles).
+`cargo test --release` runs the headless tests, 56 of them new (335 in all; scheduler, proximity, geometry, focus, queue, Cx, harness, placement, styles).
 The `#[ignore]`d tests create real windows; run EACH in its own invocation (the host is a process-wide singleton):
 
 | command | what it does | visible? |
