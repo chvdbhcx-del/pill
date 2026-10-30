@@ -607,6 +607,51 @@ pub fn focus_one(fields: &mut [&mut Field], which: Option<usize>) {
     }
 }
 
+/// Headless snapshots shared by the set-B tests: the PNGs land in `$PILL_SNAP_DIR` (default `<repo>/target-agent/snap/native`), named
+/// `<tab>-<state>-<dark|light>-<1x|2x>.png`; `tools/dev/tabs-b-diff.mjs` puts them next to the web renders.
+#[cfg(test)]
+pub mod snap {
+    use crate::ui::host::testing::{render_view_cx, save_png};
+    use crate::ui::view::{Cx, View};
+    use glasskit::testkit::Image;
+    use glasskit::theme::Theme;
+
+    /// The size of the tab body in the expanded panel (`#views`: 648 x 260; 648 x 346 for the tall tabs note and chat).
+    pub const BODY: (f32, f32) = (648.0, 260.0);
+    pub const BODY_TALL: (f32, f32) = (648.0, 346.0);
+
+    pub fn dir() -> std::path::PathBuf {
+        std::env::var_os("PILL_SNAP_DIR").map(Into::into).unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target-agent/snap/native"))
+    }
+
+    pub fn theme(dark: bool) -> Theme {
+        if dark {
+            Theme::pill_dark()
+        } else {
+            Theme::pill_light()
+        }
+    }
+
+    /// Paints the panel colour first, so the PNG is opaque like the island body.
+    struct OnBg<'a>(&'a mut dyn View);
+    impl View for OnBg<'_> {
+        fn draw(&mut self, cv: &glasskit::canvas::Canvas, th: &Theme, rect: glasskit::geom::Rect, cx: &Cx) {
+            cv.fill_rect(rect, th.bg);
+            self.0.draw(cv, th, rect, cx);
+        }
+    }
+
+    /// Render `view` over the panel colour and save it as `<name>-<dark|light>-<1|2>x.png`; returns the image for assertions.
+    pub fn shoot(view: &mut dyn View, cx: &Cx, name: &str, size: (f32, f32), scale: f32, dark: bool) -> Image {
+        let th = theme(dark);
+        let img = render_view_cx(&mut OnBg(view), cx, size, scale, &th);
+        let d = dir();
+        let _ = std::fs::create_dir_all(&d);
+        save_png(&img, d.join(format!("{name}-{}-{}x.png", if dark { "dark" } else { "light" }, scale as u32)));
+        img
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
