@@ -137,9 +137,10 @@ pub fn init(app: &tauri::App) {
     // the command-bar hotkey is registered (and re-registered live) by hotkeys.rs
 }
 
-/// Idle seconds before the hidden bar window is destroyed: settings key `ui.lazyBarSecs`, default 120, 0 = never, otherwise 5 .. 86400.
+/// Idle seconds before the hidden bar window is destroyed: settings key `ui.lazyBarSecs`, default 0 (never, as before the lazy bar existed;
+/// the web bar is opt-in lazy until it has been checked on screen, the native bar has no WebView to release), otherwise 5 .. 86400.
 pub(crate) fn lazy_bar_secs() -> u64 {
-    lazy_secs_from(settings::get_f64("ui.lazyBarSecs", 120.0))
+    lazy_secs_from(settings::get_f64("ui.lazyBarSecs", 0.0))
 }
 
 fn lazy_secs_from(v: f64) -> u64 {

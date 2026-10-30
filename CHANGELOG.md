@@ -2,10 +2,14 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
-## [Unreleased]
+## [0.6.0] - 2026-10-30
+
+### Added
+- Native UI preview (opt-in): the island, the panel tabs, the command bar (with the uninstall panel), the settings window and the screen-capture overlays are also available as native Rust windows drawn with Direct2D, without WebView2. Start Pill with `--native` (or set `PILL_NATIVE=1`), or turn on `ui.native.pill`, `ui.native.bar`, `ui.native.settings` and `ui.native.capture` individually in `settings.json`; `--web-ui` forces the old web windows. Nothing changes unless you opt in. Pets, characters and every tab were ported with their animations; Reduce motion is respected.
 
 ### Changed
-- Command bar window is created on demand and released when idle, lowering memory. It is built when you press the hotkey and torn down after 120 s hidden (`ui.lazyBarSecs` in settings.json; 0 keeps it alive like before). The first open after an idle period takes a moment longer while the page loads. An uninstall in progress keeps the window alive.
+- The command bar window can be created on demand and released when idle (`ui.lazyBarSecs`, seconds; default 0 = never, as before).
+- Internal: an in-process event bus, a facade that calls every backend command by name, a native window host and a logic crate (`pill-ui-core`) carry the native UI.
 
 ## [0.5.3] - 2026-10-29
 
