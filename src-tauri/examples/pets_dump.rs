@@ -8,6 +8,7 @@ mod pets;
 
 use glasskit::gfx::col;
 use glasskit::{Gfx, Rect};
+use pets::characters::Characters;
 use pets::engine::{catalogue, PetEngine, Side, Size};
 use windows::Win32::Graphics::Direct2D::*;
 use windows::Win32::Graphics::Dxgi::*;
@@ -45,6 +46,7 @@ fn main() {
                 i += 1;
             }
             "--hooks" => hooks = true,
+            "--chars" => {}
             "--side" => {
                 side = if rest[i + 1] == "left" { Side::Left } else { Side::Right };
                 i += 1;
@@ -60,6 +62,10 @@ fn main() {
     let w = warp();
     let gfx = Gfx::new(w.as_ref()).expect("D3D11 / WARP device");
     eprintln!("device: {}", if gfx.warp { "WARP (fallback)" } else { "WARP adapter" });
+    if rest.iter().any(|a| a == "--chars") {
+        dump_chars(&gfx, &out, t, scale);
+        return;
+    }
     let list: Vec<String> = if ids.is_empty() { catalogue().iter().map(|p| p.id.to_string()).collect() } else { ids };
     let states = ["calm", "music", "thinking", "done", "attention", "file", "sleep", "poked"];
     for id in &list {
@@ -109,4 +115,51 @@ fn main() {
         }
         eprintln!("{id}: ok");
     }
+}
+
+/// The capsule characters (tail, legs + eyes) as the Settings preview card draws them (149 x 92 css px), at time `t` ms after the state was set.
+/// The web side calls PillChars.preview with a frozen clock (performance.now = 10000 ms at setState), so absolute time is 10 s + t.
+fn dump_chars(gfx: &Gfx, out: &str, t: f32, scale: f32) {
+    let (w, h) = (149.0f32, 92.0f32);
+    let (cw, ch) = ((w * scale) as u32, (h * scale) as u32);
+    let target = gfx.target(cw, ch).unwrap();
+    let cpu = gfx.cpu_read(cw, ch).unwrap();
+    let names = ["calm", "music", "thinking", "done", "attention", "file", "sleep"];
+    let mut c = Characters::new(&gfx.dc).unwrap();
+    for kind in ["tail", "legs"] {
+        for (si, st) in names.iter().enumerate() {
+            c.set_state(st, None);
+            let frame = |c: &mut Characters, abs: f32, rt: f32, keep: bool| {
+                let look = [0.8 * (abs * 0.7).sin(), 0.4 * (abs * 0.45 + 1.0).sin()];
+                c.set_clock(abs, rt, look);
+                unsafe {
+                    let dc = &gfx.dc;
+                    dc.SetTarget(&target);
+                    dc.BeginDraw();
+                    dc.SetTransform(&glasskit::gfx::mat(scale, 0.0, 0.0));
+                    dc.Clear(Some(&col(0.0, 0.0, 0.0, 1.0)));
+                    if kind == "tail" {
+                        c.draw_tail(dc, 93.3, 28.5, 1.8);
+                    } else {
+                        c.draw_legs(dc, 74.5, 36.0, 1.4);
+                        c.draw_eyes(dc, 74.5, 18.0, 1.15);
+                    }
+                    dc.EndDraw(None, None).unwrap();
+                    dc.SetTarget(None::<&ID2D1Image>);
+                }
+                let _ = keep;
+            };
+            frame(&mut c, 10.0, 0.0, false);
+            frame(&mut c, 10.0 + t / 1000.0, t / 1000.0, true);
+            let mut px = vec![0u8; (cw * ch * 4) as usize];
+            gfx.read_rect(&target, &cpu, windows::Win32::Foundation::RECT { left: 0, top: 0, right: cw as i32, bottom: ch as i32 }, |y, row| {
+                let o = (y as u32 * cw * 4) as usize;
+                px[o..o + row.len()].copy_from_slice(row);
+            })
+            .unwrap();
+            gfx.save_png(&format!("{out}/chars_{kind}_{st}.png"), cw, ch, &px).unwrap();
+            let _ = si;
+        }
+    }
+    eprintln!("chars: ok");
 }

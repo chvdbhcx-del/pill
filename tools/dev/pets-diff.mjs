@@ -25,6 +25,7 @@ const exe = opt('--exe', join(process.env.CARGO_TARGET_DIR || join(repo, 'target
 const out = opt('--out', mkdtempSync(join(tmpdir(), 'pets-diff-')));
 const T = Number(opt('--t', '700'));
 const hooks = flag('--hooks');
+const chars = flag('--chars'); // compare the capsule characters (tail, legs + eyes) instead of the pets
 const threshold = Number(opt('--threshold', '2.5'));
 const side = opt('--side', 'right');
 const BOX = 72, MARGIN = 16, SCALE = 2;
@@ -35,11 +36,47 @@ const STATES = ['calm', 'music', 'thinking', 'done', 'attention', 'file', 'sleep
 const nat = join(out, 'native'), webd = join(out, 'web'), dif = join(out, 'diff');
 [nat, webd, dif].forEach((d) => mkdirSync(d, { recursive: true }));
 if (!existsSync(exe)) throw new Error(`${exe} not found: cargo build --release --example pets_dump`);
-const r = spawnSync(exe, [nat, '--t', String(T), '--scale', String(SCALE), '--box', String(BOX), '--margin', String(MARGIN), '--side', side, ...(hooks ? ['--hooks'] : []), ...ids], { stdio: ['ignore', 'ignore', 'inherit'], windowsHide: true });
+const r = spawnSync(exe, [nat, ...(chars ? ['--chars'] : []), '--t', String(T), '--scale', String(SCALE), '--box', String(BOX), '--margin', String(MARGIN), '--side', side, ...(hooks ? ['--hooks'] : []), ...ids], { stdio: ['ignore', 'ignore', 'inherit'], windowsHide: true });
 if (r.status !== 0) throw new Error('pets_dump failed');
 
 // ---- web side
 const b = await launch({ dsf: SCALE, width: 900, height: 700 });
+if (chars) {
+  // characters.js animates from performance.now(): freeze the clock at 10 s and drive its rAF callback by hand (setState draws at 10 s, then t ms later)
+  const cstates = ['calm', 'music', 'thinking', 'done', 'attention', 'file', 'sleep'], crow = [];
+  try {
+    await b.call('Page.navigate', { url: pathToFileURL(join(here, 'pets-harness.html')).href });
+    await new Promise((r) => setTimeout(r, 1500));
+    for (const kind of ['tail', 'legs']) {
+      const line = { id: kind };
+      for (const st of cstates) {
+        await b.evaluate(`(async () => {
+          const stage = document.getElementById('stage'); stage.innerHTML = '';
+          let cb = null; window.__cb = () => cb; window.requestAnimationFrame = (f) => { cb = f; return 1; }; performance.now = () => 10000;
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          svg.setAttribute('viewBox', '0 0 149 92'); svg.setAttribute('width', 149); svg.setAttribute('height', 92); svg.style.cssText = 'position:absolute;left:0;top:0;background:#000';
+          stage.append(svg);
+          const h = window.PillChars.preview(svg, '${kind}'); h.setState('${st}');
+          window.__cb()(10000 + ${T});
+          return 0;
+        })()`);
+        const shot = await b.call('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 149, height: 92, scale: SCALE } }, 20000);
+        const webPng = Buffer.from(shot.data, 'base64');
+        writeFileSync(join(webd, `chars_${kind}_${st}.png`), webPng);
+        const A = decodePng(webPng), Bm = decodePng(readFileSync(join(nat, `chars_${kind}_${st}.png`)));
+        let sum = 0; const d = Buffer.alloc(A.w * A.h * 4);
+        for (let i = 0; i < A.w * A.h; i++) { const dr = Math.abs(A.px[i * 4] - Bm.px[i * 4]), dg = Math.abs(A.px[i * 4 + 1] - Bm.px[i * 4 + 1]), db = Math.abs(A.px[i * 4 + 2] - Bm.px[i * 4 + 2]); sum += (dr + dg + db) / 3; d[i * 4] = Math.min(255, dr * 4); d[i * 4 + 1] = Math.min(255, dg * 4); d[i * 4 + 2] = Math.min(255, db * 4); d[i * 4 + 3] = 255; }
+        const mean = (sum / (A.w * A.h) / 255) * 100; line[st] = mean;
+        if (mean > threshold) { const W = A.w * 3, o = Buffer.alloc(W * A.h * 4); for (let y = 0; y < A.h; y++) { A.px.copy(o, (y * W) * 4, y * A.w * 4, (y + 1) * A.w * 4); Bm.px.copy(o, (y * W + A.w) * 4, y * A.w * 4, (y + 1) * A.w * 4); d.copy(o, (y * W + 2 * A.w) * 4, y * A.w * 4, (y + 1) * A.w * 4); } writeFileSync(join(dif, `chars_${kind}_${st}.png`), encodePng(W, A.h, o)); }
+      }
+      crow.push(line);
+    }
+  } finally { await b.close(); }
+  console.log(`characters-diff  t=${T} ms  (Settings preview card 149 x 92 css px x${SCALE})  out=${out}`);
+  console.log('kind'.padEnd(8) + cstates.map((s) => s.padEnd(11)).join(''));
+  for (const l of crow) console.log(l.id.padEnd(8) + cstates.map((s) => (l[s].toFixed(2) + (l[s] > threshold ? '*' : '')).padEnd(11)).join(''));
+  process.exit(0);
+}
 const rows = [];
 try {
   await b.call('Page.navigate', { url: pathToFileURL(join(here, 'pets-harness.html')).href });
