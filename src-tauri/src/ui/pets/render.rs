@@ -456,6 +456,7 @@ impl Renderer {
         if self.fx.is_none() {
             self.fx = Some(unsafe { dc.CreateEffect(&CLSID_D2D1Shadow)? });
         }
+        let region = D2D_RECT_F { left: 0.0, top: 0.0, right: ow as f32, bottom: oh as f32 }; // only the used part of the (possibly larger) buffer
         let (a, bb) = {
             let o = self.off.as_ref().unwrap();
             (o.a.clone(), o.b.clone())
@@ -482,8 +483,8 @@ impl Renderer {
                 fx.SetInput(0, &src, true);
                 fx_f32(&fx, 0, (s.0.b * k).max(0.0))?; // CSS drop-shadow: the blur value IS the standard deviation
                 fx_vec4(&fx, 1, [s.1.r, s.1.g, s.1.b, s.1.a])?;
-                dc.DrawImage(&fx.GetOutput()?, Some(&pt(s.0.x * k, s.0.y * k)), None, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_COMPOSITE_MODE_SOURCE_OVER);
-                dc.DrawImage(&src, None, None, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_COMPOSITE_MODE_SOURCE_OVER);
+                dc.DrawImage(&fx.GetOutput()?, Some(&pt(s.0.x * k, s.0.y * k)), Some(&region), D2D1_INTERPOLATION_MODE_LINEAR, D2D1_COMPOSITE_MODE_SOURCE_OVER);
+                dc.DrawImage(&src, None, Some(&region), D2D1_INTERPOLATION_MODE_LINEAR, D2D1_COMPOSITE_MODE_SOURCE_OVER);
                 std::mem::swap(&mut src, &mut dst);
             }
             // 3) onto the real target
@@ -492,7 +493,7 @@ impl Renderer {
                 None => dc.SetTarget(None::<&ID2D1Image>),
             }
             dc.SetTransform(&m3(interp::IDENT));
-            dc.DrawImage(&src, Some(&pt(ox, oy)), None, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_SOURCE_OVER);
+            dc.DrawImage(&src, Some(&pt(ox, oy)), Some(&region), D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_SOURCE_OVER);
             dc.SetTransform(&base_m);
         }
         Ok(())
