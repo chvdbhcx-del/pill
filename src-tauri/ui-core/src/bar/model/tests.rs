@@ -257,6 +257,19 @@ fn empty_results_show_the_tip_only_for_an_empty_query() {
 }
 
 #[test]
+fn recent_items_of_an_empty_box_get_a_section_label() {
+    let mut h = H::new();
+    let a = h.ev(BarEvent::Shown);
+    h.reply(ticket(&a, "cmd_query"), json!([app(1), app(2)]));
+    assert_eq!(h.b.view().recent_label.as_deref(), Some("Recent"));
+    assert_eq!(h.b.view().tip, None);
+    h.search("a", vec![app(1)]);
+    assert_eq!(h.b.view().recent_label, None, "a typed query is not the recent list");
+    h.ev(BarEvent::Hidden);
+    assert_eq!(h.b.view().recent_label, None);
+}
+
+#[test]
 fn hint_rows_are_listed_separately_and_selection_ignores_them() {
     let mut h = H::new();
     open_default(&mut h);

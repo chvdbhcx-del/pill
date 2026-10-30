@@ -192,6 +192,8 @@ pub struct BarView {
     pub answer: Option<AnswerView>,
     /// the empty-state tip / the hint about the AI prefix
     pub tip: Option<String>,
+    /// «Недавнее» / «Recent» over the list while it shows the backend's recent items (an empty box); the JS never drew it
+    pub recent_label: Option<String>,
     pub rows: Vec<RowView>,
     pub hints: Vec<String>,
     pub selected: usize,
@@ -234,6 +236,8 @@ pub struct Bar {
     hints: Vec<Res>,
     words: Vec<String>,
     tip: Option<TipKind>,
+    /// the rows are the backend's recent items (an empty query)
+    recent: bool,
     sel: usize,
     sel_from: Option<usize>,
     fresh: bool,
@@ -293,6 +297,7 @@ impl Bar {
             hints: Vec::new(),
             words: Vec::new(),
             tip: None,
+            recent: false,
             sel: 0,
             sel_from: None,
             fresh: false,
@@ -584,6 +589,7 @@ impl Bar {
         self.items.clear();
         self.hints.clear();
         self.tip = None;
+        self.recent = false;
         self.sel = 0;
         self.sel_from = None;
         self.icons.forget_pending();
@@ -751,6 +757,7 @@ impl Bar {
         self.copied = None;
         self.sub_overrides.clear();
         self.tip = (self.items.is_empty() && empty).then_some(TipKind::Help);
+        self.recent = empty && !self.items.is_empty();
         let new: Vec<String> = self.items.iter().map(|r| r.id.clone()).collect();
         if self.fresh {
             for i in 0..new.len() {
@@ -1150,6 +1157,7 @@ impl Bar {
             },
             dialog_hint: self.dialog.is_open().then(|| self.t(s::DLG).to_string()),
             answer,
+            recent_label: self.recent.then(|| self.t(s::RECENT).to_string()),
             tip: self.tip.map(|k| self.t(if k == TipKind::Ask { s::ASK_TIP } else { s::TIP }).to_string()),
             rows,
             hints,
