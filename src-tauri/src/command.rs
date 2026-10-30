@@ -200,7 +200,7 @@ fn wait_ready(max: Duration) -> bool {
 pub fn cmd_ready(app: AppHandle) {
     *lk(&READY) = true;
     READY_CV.notify_all();
-    if bar_visible(&app) {
+    if !native() && bar_visible(&app) {
         let _ = bus::emit(&app, Target::Label(LABEL), "bar:shown", ());
     }
 }
@@ -220,10 +220,24 @@ pub fn keep_transparent(win: &WebviewWindow) {
     }
 }
 
-fn hide(app: &AppHandle) {
+/// The backend side of the bar going away (either window kind): a running query stops, in-app rows leave memory.
+pub(crate) fn bar_hidden_cleanup() {
     CUR_SEQ.fetch_add(1, Ordering::Relaxed); // a query still running for the closed bar stops early and registers nothing
     *lk(&STORE) = None; // in-app rows (clipboard text, notes) live in memory only while the bar is open
     crate::notes::search_cache_drop(); // so does the note text index
+}
+
+/// The native bar (flag `ui.native.bar`, not forced to the WebView UI) replaces the `bar` WebView window; everything below that touches the window asks first.
+fn native() -> bool {
+    crate::ui::bar_view::bar_is_native()
+}
+
+fn hide(app: &AppHandle) {
+    bar_hidden_cleanup();
+    if native() {
+        crate::ui::bar_view::bar_hide(); // the window's own hidden-event runs the cleanup once more: it is idempotent
+        return;
+    }
     if let Some(win) = app.get_webview_window(LABEL) {
         let _ = win.hide();
         let _ = bus::emit(&app, Target::Label(LABEL), "bar:hidden", ());
@@ -253,6 +267,9 @@ fn place(app: &AppHandle, win: &WebviewWindow) {
 
 /// Is the command bar on screen right now?
 pub(crate) fn bar_visible(app: &AppHandle) -> bool {
+    if native() {
+        return crate::ui::bar_view::bar_is_visible();
+    }
     app.get_webview_window(LABEL).is_some_and(|w| w.is_visible().unwrap_or(false))
 }
 
@@ -264,6 +281,14 @@ pub(crate) fn show(app: &AppHandle) {
 }
 
 fn toggle(app: &AppHandle) {
+    if native() {
+        if !bar_visible(app) {
+            PREV_FG.store(unsafe { GetForegroundWindow() }.0 as isize, Ordering::Relaxed); // the paste target, taken before the bar takes the foreground
+            index_apps_async();
+        }
+        crate::ui::bar_view::bar_toggle(app); // the host owns placement, blur-hide and the re-open guard
+        return;
+    }
     if bar_visible(app) {
         hide(app);
         return;
