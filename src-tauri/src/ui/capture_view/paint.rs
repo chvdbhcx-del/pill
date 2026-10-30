@@ -230,6 +230,9 @@ pub(crate) fn paint(v: &mut CaptureView, cv: &Canvas, theme: &Theme, rect: Rect,
             pos = (from.x as f32 + (pos.0 - from.x as f32) * p, from.y as f32 + (pos.1 - from.y as f32) * p);
         }
         let (o, sc) = show.map_or((1.0, 1.0), |f| (f.opacity as f32, f.scale as f32));
+        // the browser snaps the lens box to whole device px: the 1 px grid lines stay crisp
+        let k = cx.scale.max(0.25);
+        let pos = ((pos.0 * k).round() / k, (pos.1 * k).round() / k);
         let c = (pos.0 + LENS_W / 2.0, pos.1 + LENS_H / 2.0);
         cv.with_opacity(o, |cv| cv.with_scale_about(c, sc, |cv| draw_lens(cv, theme, l, pos)));
     }

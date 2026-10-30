@@ -81,8 +81,9 @@ for (const [name, sc] of Object.entries(scenes)) {
   if (!existsSync(nat)) { console.log(`skip ${name}: no ${nat}`); continue; }
   const b = await launch({ width: W, height: H });
   try {
-    await b.call('Page.addScriptToEvaluateOnNewDocument', { source: stub(sc.mode) });
+    await b.call('Page.enable');
     await b.call('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+    await b.call('Page.addScriptToEvaluateOnNewDocument', { source: stub(sc.mode) });
     await b.call('Page.navigate', { url: page });
     await sleep(1200);
     await sc.run(b);

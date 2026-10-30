@@ -106,7 +106,6 @@ struct Rig {
     raw: Raw,
     vw: f32,
     vh: f32,
-    scale: f32,
     frame: Arc<Vec<u8>>,
 }
 
@@ -139,7 +138,7 @@ fn rig_frame(mode: &str, vw: f32, vh: f32, scale: f32, opts: Options, ru: bool, 
     sim.cx.lang = cx.lang;
     sim.cx.reduced_motion = cx.reduced_motion;
     sim.set_scale(scale);
-    Rig { v, sim, fakes, raw, vw, vh, scale, frame }
+    Rig { v, sim, fakes, raw, vw, vh, frame }
 }
 
 fn rig(mode: &str) -> Rig {
@@ -1097,4 +1096,39 @@ fn web_parity_scenes() {
     r.send(mv(300.0, 200.0));
     save("loupe", &mut r);
     glasskit::ease::force_reduced(None);
+}
+
+/// The export worker makes its own device while the UI thread keeps drawing on another: they must not block each other (an export on a second hardware
+/// device deadlocked next to WARP test devices in one process; the export is software-only now).
+#[test]
+fn the_export_worker_runs_next_to_a_live_device() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let t = std::thread::spawn(move || {
+        unsafe {
+            let _ = ::windows::Win32::System::Com::CoInitializeEx(None, ::windows::Win32::System::Com::COINIT_MULTITHREADED);
+        }
+        let gfx = if std::env::var_os("PILL_TEST_HW_UI").is_some() { glasskit::gfx::Gfx::new(None).unwrap() } else { glasskit::gfx::Gfx::warp().unwrap() };
+        let res = glasskit::text::Res::new(&gfx, &glasskit::fonts::FontSet::system()).unwrap();
+        for _ in 0..40 {
+            let tgt = gfx.target(400, 300).unwrap();
+            unsafe {
+                gfx.dc.SetTarget(&tgt);
+                gfx.dc.BeginDraw();
+                let cv = Canvas::new(&gfx, &res, 1.0);
+                cv.fill_rr(GRect::new(10.0, 10.0, 200.0, 100.0), 8.0, Color::rgb8(200, 30, 30));
+                cv.text(GRect::new(20.0, 20.0, 180.0, 30.0), "device in use", Style::BODY, Color::rgb8(255, 255, 255));
+                let _ = gfx.dc.EndDraw(None, None);
+                gfx.dc.SetTarget(None::<&::windows::Win32::Graphics::Direct2D::ID2D1Image>);
+            }
+        }
+        tx.send(()).unwrap();
+    });
+    let rgba: Vec<u8> = (0..640 * 360).flat_map(|_| [90u8, 120, 160, 255]).collect();
+    let req = cap::io::FlattenRequest { src: CIRect { x: 10, y: 10, w: 300, h: 200 }, cmds: vec![DrawCmd::StrokeRect { rect: cap::Rect::new(20.0, 20.0, 100.0, 60.0), color: "#ff3b30".into(), width: 3.0 }] };
+    for _ in 0..4 {
+        let png = flatten::render_png(&rgba, 640, 360, &req).expect("png");
+        assert!(png.len() > 100);
+    }
+    rx.recv_timeout(std::time::Duration::from_secs(30)).expect("the UI-side thread finished");
+    t.join().unwrap();
 }

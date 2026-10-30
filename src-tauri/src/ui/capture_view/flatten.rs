@@ -1,6 +1,6 @@
 //! The marked-up PNG of a commit: the crop of the frozen frame under the selection with every markup op drawn on top, at frame resolution.
 //!
-//! Done off the UI thread on a Direct2D device of its own (GPU, WARP when there is none): upload the crop, run the SAME `Tools::draw_cmd`
+//! Done off the UI thread on a Direct2D device of its own (software WARP: no contention with the UI thread's GPU device): upload the crop, run the SAME `Tools::draw_cmd`
 //! the overlay uses, read the pixels back, encode with WIC into a memory stream. The bytes go to `capture_commit` as the raw body
 //! (`x-pill-args` = the JSON arguments), exactly what `capture.js` did with `canvas.toBlob`.
 use super::io::{RawJob, RawSink};
@@ -38,12 +38,14 @@ pub fn spawn_commit(job: RawJob, frame: Option<Arc<Vec<u8>>>, fsize: (i32, i32),
     });
 }
 
-/// The PNG for `req` on a fresh device.
+/// The PNG for `req` on a fresh software (WARP) device.
 pub fn render_png(rgba: &[u8], fw: i32, fh: i32, req: &FlattenRequest) -> Result<Vec<u8>> {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED); // WIC wants COM on this thread
     }
-    let gfx = Gfx::new(None)?;
+    // Always the software device: the export is a few draws over one crop, it never competes with the UI thread's GPU device, and a
+    // second hardware device created on a worker next to WARP test devices hung the process (see the test below).
+    let gfx = Gfx::warp()?;
     render_png_on(&gfx, rgba, fw, fh, req)
 }
 
