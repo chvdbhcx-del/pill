@@ -197,7 +197,12 @@ impl HomeView {
             let ia = if t.soon { 0.68 } else { 1.0 };
             cv.with_scale_about(ic.center(), 1.0 + 0.1 * k, |cv| icons::draw(cv, t.icon, ic, th.text2.fade(ia), 1.6));
             let la = if t.soon { 0.85 } else { 1.0 };
-            cv.text(Rect::new(ic.right() + 8.0, r.y, r.right() - 6.0 - (ic.right() + 8.0), r.h), &t.label, Style::new(12.0, 600).ellipsis(), th.text.fade(la));
+            // `.th-tile span`: wraps (overflow-wrap: anywhere) and sits vertically centred next to the icon
+            let lw = r.right() - 6.0 - (ic.right() + 8.0);
+            let st = Style::new(12.0, 600).wrap();
+            let (_, lh) = cv.measure(&t.label, st, lw);
+            let lh = lh.min(r.h);
+            cv.text(Rect::new(ic.right() + 8.0, r.cy() - lh / 2.0, lw, lh), &t.label, st, th.text.fade(la));
         });
     }
 
