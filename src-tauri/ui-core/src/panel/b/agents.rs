@@ -6,6 +6,7 @@
 //! * the read-only "Agents" tab (order 66, opened by `pill.exe --open agents`): every tracked session, waiting first (the order
 //!   comes from agents.rs), project = cwd folder, state text + age, rows enter staggered when the tab opens, move with a flip when
 //!   the order changes, and a state change pops the row's dot. The unread count (`waiting`) goes to the tab badge.
+//!
 //! Backend: `agents_list`, `agents_dismiss {session}`, `agents_open_folder {session}`, `agents_open_code {session}`, `agents_tools`,
 //! `agents_hook_snippets`; events `agents:changed`, `agents:done`, `settings:changed`.
 //! PRIVACY: session titles come from the user's own hook files and are only ever returned as plain strings (never markup).
