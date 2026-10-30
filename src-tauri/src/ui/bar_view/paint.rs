@@ -108,6 +108,7 @@ impl BarView {
         self.measure(cv, &th);
         self.lay = self.compute_lay();
         self.sync_scrolls();
+        self.hits.push((self.lay.body, Tgt::Body)); // lowest priority: every later rectangle wins over it
         let look = self.anim.look(&AnimTarget::Body);
         let body = self.lay.body;
         let origin = (body.cx(), 0.0);
@@ -123,7 +124,6 @@ impl BarView {
             });
         });
         self.paint_context(cv, &th);
-        self.hits.push((body, Tgt::Body));
         self.do_scroll();
     }
 
@@ -556,10 +556,10 @@ impl BarView {
                 }
             })
         });
+        self.hits.push((r, Tgt::Body)); // the menu blocks what is under it
         for h in hits {
             self.hits.push(h);
         }
-        self.hits.push((r, Tgt::Body));
     }
 
     /// The liquid outline along the bottom edge: the body bulges below its straight edge following the curve, the outline fades at both ends.

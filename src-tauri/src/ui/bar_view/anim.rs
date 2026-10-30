@@ -154,7 +154,7 @@ impl AnimPlayer {
         let mut l = Look::REST;
         for (h, c) in &self.held {
             if h == t {
-                l = Self::apply(l, c, 1.0, f32::MAX);
+                l = Self::apply(l, c, 1.0e9, 1.0);
             }
         }
         for a in self.active.iter().filter(|a| a.cue.target == *t) {

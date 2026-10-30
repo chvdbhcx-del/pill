@@ -333,6 +333,8 @@ pub struct BarView {
     want_default_focus: bool,
     pending_scroll: Option<usize>,
     os_sent: bool,
+    /// the keyboard focus ring of a panel control shows only after Tab / arrows (the web's :focus-visible)
+    pub(crate) ring: bool,
     pub(crate) panel_frame: Option<panel::PanelFrame>,
     pub(crate) chev: HashMap<usize, Tween<f32>>,
 }
@@ -343,6 +345,7 @@ impl BarView {
         let mut input = TextInput::new(false, &theme);
         input.style = glasskit::text::Style::new(15.0, 400);
         input.pad = (4.0, 0.0);
+        input.radius = 0.0; // the (clipped-away) focus ring of the field has square corners
         input.model.set_max_len(Some(500));
         let mut bar = Bar::new(os_locale(cx));
         bar.on_event(BarEvent::BodyWidth(L::WINDOW_W), 0.0);
@@ -392,6 +395,7 @@ impl BarView {
             want_default_focus: false,
             pending_scroll: None,
             os_sent: false,
+            ring: false,
             panel_frame: None,
             chev: HashMap::new(),
         }
@@ -427,6 +431,7 @@ impl BarView {
                 Action::FocusInput => self.focus_input(),
                 Action::FocusPanelDefault => {
                     self.want_default_focus = true;
+                    self.ring = false;
                     self.focus = Focus::Panel(None);
                     self.input.set_focused(false);
                 }
@@ -946,6 +951,7 @@ impl BarView {
             }
             Some(Tgt::Ctl(c)) => {
                 if let Some(i) = self.focusables.iter().position(|f| f.control == c) {
+                    self.ring = false;
                     self.focus = Focus::Panel(Some(i));
                     self.input.set_focused(false);
                 }
@@ -1107,6 +1113,7 @@ impl BarView {
             "Tab" | "ArrowDown" | "ArrowUp" => {
                 let dir = if k.key == "ArrowUp" || (k.key == "Tab" && k.shift) { -1 } else { 1 };
                 if let Some(n) = keys::next_focus(&self.focusables, idx, dir) {
+                    self.ring = true;
                     self.focus = Focus::Panel(Some(n));
                 }
                 true

@@ -264,6 +264,7 @@ impl BarView {
         let visible_h = (box_r.h * bl.height).max(0.0);
         let clip = Rect::new(box_r.x, box_r.y, box_r.w, visible_h);
         let step = self.anim.look(&AnimTarget::PanelStep);
+        self.hits.push((box_r, Tgt::Body)); // the box blocks what is under it
         let mut hits: Vec<(Rect, Tgt)> = Vec::new();
         let off = self.uni_scroll.st.offset();
         let ox = box_r.x + L::PANEL_PAD.1;
@@ -299,12 +300,11 @@ impl BarView {
                 self.hits.push((c, t));
             }
         }
-        self.hits.push((box_r, Tgt::Body));
         self.panel_frame = Some(frame);
     }
 
     fn focus_ring(&self, control: Control) -> bool {
-        matches!(self.focus, Focus::Panel(Some(i)) if self.focusables.get(i).is_some_and(|f| f.control == control))
+        self.ring && matches!(self.focus, Focus::Panel(Some(i)) if self.focusables.get(i).is_some_and(|f| f.control == control))
     }
 
     #[allow(clippy::too_many_arguments)]

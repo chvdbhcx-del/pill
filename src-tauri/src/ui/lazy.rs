@@ -169,6 +169,12 @@ fn watch(app: &AppHandle, s: &'static Spec) {
     }
 }
 
+/// Test seam: with the native flag off the lazy table still owns the `bar` label (the WebView window).
+#[cfg(test)]
+pub fn try_get_label_is_web_only() -> bool {
+    spec(windows::BAR).is_some() && !crate::ui::bar_view::bar_is_native()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
