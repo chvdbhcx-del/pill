@@ -839,7 +839,7 @@ mod tests {
     fn plain_text_has_one_line_per_paragraph() {
         let d = Doc::from_html("Список<div>молоко</div><ul><li>а</li></ul>");
         assert_eq!(d.plain_text(), "Список\nмолоко\nа");
-        assert_eq!(d.text_in(Pos::new(0, 2), Pos::new(1, 3)), "ск\nмол");
+        assert_eq!(d.text_in(Pos::new(0, 2), Pos::new(1, 3)), "исок\nмол");
     }
 
     #[test]

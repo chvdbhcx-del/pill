@@ -379,6 +379,10 @@ impl Editor {
                     self.doc.attr_before(a)
                 }
             }
+            _ if self.caret.col == 0 && !self.doc.lines[self.caret.line].is_empty() => {
+                // at the start of a line the browser continues the formatting of the first char
+                Attr { f: self.doc.lines[self.caret.line].at[0].f & FMT_MASK, link: 0 }
+            }
             _ => self.doc.attr_before(self.caret),
         }
     }
