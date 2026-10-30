@@ -37,6 +37,13 @@ pub enum Out {
     Dictate,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DropStep {
+    Enter,
+    Leave,
+    Landed,
+}
+
 /// Hub environment: language, settings, quiet hours, capsule state.
 pub struct IslandEnv<'a> {
     pub ru: bool,
@@ -333,6 +340,27 @@ impl Core {
                 Notice::LiveChanged | Notice::TabMounted(_) | Notice::LangChanged(_) => {}
             }
         }
+    }
+
+    /// A file drag entered / left / landed on the collapsed island (the shelf's drop card).
+    pub fn drop_phase(&mut self, phase: DropStep, now_mono: f64) {
+        use pill_ui_core::live::shelf::ShelfLive;
+        self.now_mono = now_mono;
+        let (ru, quiet, expanded) = self.env_for();
+        let settings = self.settings.clone();
+        let env = IslandEnv { ru, quiet, expanded, settings: &settings };
+        let wall = self.wall();
+        let cmds = match (self.hub.get_mut::<ShelfLive>(), phase) {
+            (Some(s), DropStep::Enter) => s.start_peek(&env, wall),
+            (Some(s), DropStep::Leave) => s.end_peek(),
+            (Some(s), DropStep::Landed) => {
+                s.mark_landed();
+                s.end_peek()
+            }
+            _ => Vec::new(),
+        };
+        self.apply_cmds(cmds);
+        self.pump_notices();
     }
 
     /// Feeds a shell event directly (window layer: pointer, keys, measurements).
