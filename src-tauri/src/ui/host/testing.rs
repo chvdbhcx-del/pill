@@ -21,8 +21,47 @@ use glasskit::testkit::{Harness, Image};
 use glasskit::theme::Theme;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+/// Headless render devices are POOLED: a test thread leases one for its lifetime and hands it back when it ends. Creating a fresh WARP device per
+/// test thread (and tearing it down at thread exit) from dozens of threads at once hung inside Direct3D when the tab tests joined the suite; with the
+/// pool at most as many devices exist as tests run at once, and none is destroyed while others are being made.
+struct Lease(Option<Harness>);
+struct Idle(Harness);
+// SAFETY: a pooled harness is used by one thread at a time (taken from / returned to the pool); WARP and the Direct2D device are free-threaded for that use.
+unsafe impl Send for Idle {}
+static POOL: Mutex<Vec<Idle>> = Mutex::new(Vec::new());
+
+impl Lease {
+    fn take() -> Lease {
+        let idle = POOL.lock().unwrap_or_else(|e| e.into_inner()).pop();
+        match idle {
+            Some(h) => {
+                unsafe {
+                    let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_MULTITHREADED); // WIC wants COM on this thread
+                }
+                Lease(Some(h.0))
+            }
+            None => Lease(Some(Harness::new())),
+        }
+    }
+}
+
+impl std::ops::Deref for Lease {
+    type Target = Harness;
+    fn deref(&self) -> &Harness {
+        self.0.as_ref().expect("leased")
+    }
+}
+
+impl Drop for Lease {
+    fn drop(&mut self) {
+        if let Some(h) = self.0.take() {
+            POOL.lock().unwrap_or_else(|e| e.into_inner()).push(Idle(h));
+        }
+    }
+}
+
 thread_local! {
-    static HARNESS: Harness = Harness::new();
+    static HARNESS: Lease = Lease::take();
 }
 
 /// Serialises tests that flip the process-wide reduced-motion override (`glasskit::ease::force_reduced`).
