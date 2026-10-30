@@ -1,0 +1,38 @@
+{
+  "now": 1761800000000,
+  "note": "Note tab, right-hand card (timer ring + reminders). `replies` answer the backend commands the tab calls on show; `web` lists the clicks the web harness makes before the shot. now = 2025-10-30T04:53:20Z, tz offset 0, clock24.",
+  "scenarios": {
+    "idle": {
+      "replies": { "timer_state": null, "remind_list": [] }
+    },
+    "running": {
+      "replies": {
+        "timer_state": { "active": true, "id": 1, "due_at": 1761800750000, "total_s": 1500 },
+        "remind_list": []
+      }
+    },
+    "reminders-2": {
+      "replies": {
+        "timer_state": null,
+        "remind_list": [
+          { "id": 1, "text": "Позвонить маме", "due_at": 1761901200000, "repeat_rule": "daily", "fired": false },
+          { "id": 2, "text": "Выключить плиту", "due_at": 1761801080000, "repeat_rule": "none", "fired": false }
+        ]
+      }
+    },
+    "running-reminders": {
+      "replies": {
+        "timer_state": { "active": true, "id": 1, "due_at": 1761800750000, "total_s": 1500 },
+        "remind_list": [
+          { "id": 1, "text": "Позвонить маме", "due_at": 1761901200000, "repeat_rule": "daily", "fired": false },
+          { "id": 2, "text": "Выключить плиту", "due_at": 1761801080000, "repeat_rule": "none", "fired": false },
+          { "id": 3, "text": "Отправить отчёт", "due_at": 1761799000000, "repeat_rule": "none", "fired": true }
+        ]
+      }
+    },
+    "custom-editing": {
+      "replies": { "timer_state": null, "remind_list": [] },
+      "web": { "click": [".tn-ctime"] }
+    }
+  }
+}
