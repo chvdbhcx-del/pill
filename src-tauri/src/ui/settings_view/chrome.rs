@@ -63,8 +63,16 @@ impl Side {
         4.0
     }
 
+    /// Total height of the page list (4 px top padding, items, separators, 8 px bottom padding). `item_y` of an unknown id is the top, so
+    /// the sum is made here: this value is the content height of the list's `ScrollState`.
     pub fn list_h() -> f32 {
-        Side::item_y("~") + 8.0
+        let body: f32 = nav::NAV.iter().map(|n| if matches!(n, NavItem::Page(_)) { STRIDE } else { SEP_H }).sum();
+        4.0 + body + 8.0
+    }
+
+    /// y of the item `id` relative to the list top, and its height: what a keyboard move must bring into view.
+    pub fn item_span(id: &str) -> (f32, f32) {
+        (Side::item_y(id), ITEM_H)
     }
 
     pub fn snap_to(&mut self, id: &'static str) {
