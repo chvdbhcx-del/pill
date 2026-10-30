@@ -95,7 +95,7 @@ impl WeatherView {
         let mut model = Weather::new();
         model.set_tz_min(local_tz_min());
         let mk = |l: &str, k: ButtonKind| Button::new(l).kind(k);
-        let v = WeatherView {
+        let mut v = WeatherView {
             vw: model.view(&EnTr),
             model,
             base,
@@ -114,6 +114,7 @@ impl WeatherView {
             res_scroll: ScrollView::new(),
             kbd: false,
         };
+        v.contact.input.style = v.contact.input.style.center(); // .wx-contact { text-align: center }
         v
     }
 
@@ -498,6 +499,17 @@ impl WeatherView {
         if let Vw::Loading { text } = &self.vw {
             txt(cv, o, text, Style::new(12.0, 400).center(), th.dim);
             return;
+        }
+        // the card column depends on the measured text height: measure first so the very first frame is laid out right
+        let text0 = match &self.vw {
+            Vw::Off(x) => x.text.clone(),
+            Vw::City(x) => x.text.clone(),
+            Vw::Error(x) => x.text.clone(),
+            _ => String::new(),
+        };
+        if !text0.is_empty() {
+            let (_, h) = cv.measure(&text0, Style::new(12.0, 400).wrap().center(), 460.0);
+            self.text_h.set(h.ceil().max(18.0));
         }
         let rects = self.card();
         let (badge_icon, badge_key, title, text) = match &self.vw {
