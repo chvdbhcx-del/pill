@@ -215,3 +215,60 @@ fn wizard_steps_and_completion_flag() {
     assert_eq!(t.current(), "general");
     assert!(!t.v.borrow().wiz.active());
 }
+
+fn render_size(t: &mut T, w: f32, h: f32) {
+    let _ = t.sim.render((w, h), &Theme::settings_dark());
+    t.sim.frame.request();
+    t.sim.run(300);
+    let _ = t.sim.render((w, h), &Theme::settings_dark());
+}
+
+#[test]
+fn sidebar_list_scrolls_with_the_wheel_and_reaches_the_last_page() {
+    let _g = motion_lock();
+    for (w, h) in [(1040.0, 760.0), (840.0, 700.0), (1040.0, 1300.0)] {
+        let mut t = boot(json!({"language": "en"}), "general");
+        render_size(&mut t, w, h);
+        let list = t.v.borrow().side.list;
+        let max = chrome::Side::list_h() - list.h;
+        assert!(list.h > 100.0);
+        if max <= 0.0 {
+            continue; // tall window: everything fits, nothing to scroll
+        }
+        assert!(t.v.borrow().side.scroll.max_offset() > 0.0, "list taller than its window at {w}x{h}");
+        t.sim.send(&InputEvent::Wheel { pos: (list.cx(), list.cy()), delta: (0.0, 600.0), mods: Modifiers::NONE, precise: false });
+        t.sim.run(300);
+        let off = t.v.borrow().side.scroll.offset();
+        assert!(off > 10.0, "wheel over the list moved it ({off}) at {w}x{h}");
+        // the last page ("Updates") is now inside the visible window
+        render_size(&mut t, w, h);
+        let y = chrome::Side::item_y("updates");
+        let off = t.v.borrow().side.scroll.offset();
+        assert!(y + 36.0 <= off + list.h + 0.5, "Updates reachable: item bottom {} vs view bottom {}", y + 36.0, off + list.h);
+    }
+}
+
+#[test]
+fn the_page_content_scrolls_with_the_wheel_too() {
+    let _g = motion_lock();
+    let mut t = boot(json!({"language": "en"}), "hotkeys");
+    render_size(&mut t, 1040.0, 600.0);
+    let c = t.v.borrow().content_rect();
+    t.sim.send(&InputEvent::Wheel { pos: (c.cx(), c.cy()), delta: (0.0, 300.0), mods: Modifiers::NONE, precise: false });
+    t.sim.run(300);
+    assert!(t.v.borrow().page.scroll.offset() > 10.0);
+}
+
+#[test]
+fn keyboard_focus_scrolls_a_sidebar_item_into_view() {
+    let _g = motion_lock();
+    let mut t = boot(json!({"language": "en"}), "general");
+    render_size(&mut t, 840.0, 640.0);
+    let mut last = 0.0;
+    for _ in 0..17 {
+        t.key(KeyCode::Tab, Modifiers::NONE);
+        render_size(&mut t, 840.0, 640.0);
+        last = t.v.borrow().side.scroll.offset();
+    }
+    assert!(last > 10.0, "Tab through the list scrolled it ({last})");
+}
