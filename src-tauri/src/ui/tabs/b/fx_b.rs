@@ -26,6 +26,8 @@ pub enum TabFx {
     VoiceToggle,
     /// Open this Settings page (`go('voice')`, `go('ai')`).
     GoPage(&'static str),
+    /// An in-panel overlay of set B closed itself (`ai_actions`): the host tab (clipboard) takes its place back.
+    OverlayClosed(&'static str),
 }
 
 thread_local! {
