@@ -1,0 +1,370 @@
+{
+ "now": 1761800000000,
+ "scenarios": {
+  "fresh": {
+   "replies": {
+    "aisetup_status": {
+     "done": false,
+     "dir": "C:/Users/me/AppData/Roaming/pill/ai",
+     "busy": null,
+     "whisper": {
+      "engine": {
+       "tag": "v1.9.2",
+       "size": 8194445,
+       "host": "github.com",
+       "installed": false
+      },
+      "models": [
+       {
+        "id": "base",
+        "size": 147951465,
+        "host": "huggingface.co",
+        "installed": false
+       },
+       {
+        "id": "small",
+        "size": 487601967,
+        "host": "huggingface.co",
+        "installed": false
+       },
+       {
+        "id": "turbo",
+        "size": 574041195,
+        "host": "huggingface.co",
+        "installed": false
+       }
+      ],
+      "enabled": false,
+      "running": null,
+      "model": "small"
+     },
+     "ollama": {
+      "installed": false,
+      "up": false,
+      "installer": {
+       "host": "ollama.com",
+       "size": 1200000000,
+       "ready": false
+      },
+      "catalog": [
+       {
+        "name": "qwen3:4b",
+        "size": 2600000000
+       },
+       {
+        "name": "llama3.2:3b",
+        "size": 2000000000
+       }
+      ]
+     },
+     "servers": [
+      {
+       "id": "ollama",
+       "name": "Ollama",
+       "url": "http://127.0.0.1:11434/v1",
+       "up": false,
+       "models": []
+      },
+      {
+       "id": "freellm",
+       "name": "FreeLLMAPI",
+       "url": "http://127.0.0.1:3001/v1",
+       "up": false,
+       "models": []
+      }
+     ],
+     "ai": {
+      "on": false,
+      "baseUrl": "",
+      "model": ""
+     }
+    },
+    "voice_has_key": {
+     "has": false
+    }
+   },
+   "events": []
+  },
+  "ready": {
+   "replies": {
+    "aisetup_status": {
+     "done": true,
+     "dir": "C:/Users/me/AppData/Roaming/pill/ai",
+     "busy": null,
+     "whisper": {
+      "engine": {
+       "tag": "v1.9.2",
+       "size": 8194445,
+       "host": "github.com",
+       "installed": true
+      },
+      "models": [
+       {
+        "id": "base",
+        "size": 147951465,
+        "host": "huggingface.co",
+        "installed": true
+       },
+       {
+        "id": "small",
+        "size": 487601967,
+        "host": "huggingface.co",
+        "installed": true
+       },
+       {
+        "id": "turbo",
+        "size": 574041195,
+        "host": "huggingface.co",
+        "installed": false
+       }
+      ],
+      "enabled": true,
+      "running": 8179,
+      "model": "small"
+     },
+     "ollama": {
+      "installed": true,
+      "up": true,
+      "installer": {
+       "host": "ollama.com",
+       "size": 1200000000,
+       "ready": false
+      },
+      "catalog": [
+       {
+        "name": "qwen3:4b",
+        "size": 2600000000
+       },
+       {
+        "name": "llama3.2:3b",
+        "size": 2000000000
+       }
+      ]
+     },
+     "servers": [
+      {
+       "id": "ollama",
+       "name": "Ollama",
+       "url": "http://127.0.0.1:11434/v1",
+       "up": true,
+       "models": [
+        "qwen3:4b"
+       ]
+      },
+      {
+       "id": "freellm",
+       "name": "FreeLLMAPI",
+       "url": "http://127.0.0.1:3001/v1",
+       "up": true,
+       "models": [
+        "auto",
+        "gpt-oss-120b"
+       ]
+      }
+     ],
+     "ai": {
+      "on": true,
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "qwen3:4b"
+     }
+    },
+    "voice_has_key": {
+     "has": true
+    }
+   },
+   "events": []
+  },
+  "downloading": {
+   "replies": {
+    "aisetup_status": {
+     "done": false,
+     "dir": "C:/Users/me/AppData/Roaming/pill/ai",
+     "busy": "whisper",
+     "whisper": {
+      "engine": {
+       "tag": "v1.9.2",
+       "size": 8194445,
+       "host": "github.com",
+       "installed": false
+      },
+      "models": [
+       {
+        "id": "base",
+        "size": 147951465,
+        "host": "huggingface.co",
+        "installed": false
+       },
+       {
+        "id": "small",
+        "size": 487601967,
+        "host": "huggingface.co",
+        "installed": false
+       },
+       {
+        "id": "turbo",
+        "size": 574041195,
+        "host": "huggingface.co",
+        "installed": false
+       }
+      ],
+      "enabled": false,
+      "running": null,
+      "model": "small"
+     },
+     "ollama": {
+      "installed": false,
+      "up": false,
+      "installer": {
+       "host": "ollama.com",
+       "size": 1200000000,
+       "ready": false
+      },
+      "catalog": [
+       {
+        "name": "qwen3:4b",
+        "size": 2600000000
+       },
+       {
+        "name": "llama3.2:3b",
+        "size": 2000000000
+       }
+      ]
+     },
+     "servers": [
+      {
+       "id": "ollama",
+       "name": "Ollama",
+       "url": "http://127.0.0.1:11434/v1",
+       "up": false,
+       "models": []
+      },
+      {
+       "id": "freellm",
+       "name": "FreeLLMAPI",
+       "url": "http://127.0.0.1:3001/v1",
+       "up": false,
+       "models": []
+      }
+     ],
+     "ai": {
+      "on": false,
+      "baseUrl": "",
+      "model": ""
+     }
+    },
+    "voice_has_key": {
+     "has": false
+    }
+   },
+   "events": [
+    {
+     "name": "aisetup:progress",
+     "payload": {
+      "id": "whisper",
+      "item": "small",
+      "phase": "download",
+      "done": 204792826,
+      "total": 487601967,
+      "message": ""
+     }
+    }
+   ]
+  },
+  "error": {
+   "replies": {
+    "aisetup_status": {
+     "done": false,
+     "dir": "C:/Users/me/AppData/Roaming/pill/ai",
+     "busy": null,
+     "whisper": {
+      "engine": {
+       "tag": "v1.9.2",
+       "size": 8194445,
+       "host": "github.com",
+       "installed": false
+      },
+      "models": [
+       {
+        "id": "base",
+        "size": 147951465,
+        "host": "huggingface.co",
+        "installed": false
+       },
+       {
+        "id": "small",
+        "size": 487601967,
+        "host": "huggingface.co",
+        "installed": false
+       },
+       {
+        "id": "turbo",
+        "size": 574041195,
+        "host": "huggingface.co",
+        "installed": false
+       }
+      ],
+      "enabled": false,
+      "running": null,
+      "model": "small"
+     },
+     "ollama": {
+      "installed": false,
+      "up": false,
+      "installer": {
+       "host": "ollama.com",
+       "size": 1200000000,
+       "ready": false
+      },
+      "catalog": [
+       {
+        "name": "qwen3:4b",
+        "size": 2600000000
+       },
+       {
+        "name": "llama3.2:3b",
+        "size": 2000000000
+       }
+      ]
+     },
+     "servers": [
+      {
+       "id": "ollama",
+       "name": "Ollama",
+       "url": "http://127.0.0.1:11434/v1",
+       "up": false,
+       "models": []
+      },
+      {
+       "id": "freellm",
+       "name": "FreeLLMAPI",
+       "url": "http://127.0.0.1:3001/v1",
+       "up": false,
+       "models": []
+      }
+     ],
+     "ai": {
+      "on": false,
+      "baseUrl": "",
+      "model": ""
+     }
+    },
+    "voice_has_key": {
+     "has": false
+    }
+   },
+   "events": [
+    {
+     "name": "aisetup:progress",
+     "payload": {
+      "id": "whisper",
+      "item": "small",
+      "phase": "error",
+      "done": 0,
+      "total": 0,
+      "message": "SHA-256 mismatch"
+     }
+    }
+   ]
+  }
+ }
+}
