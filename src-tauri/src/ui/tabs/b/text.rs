@@ -596,8 +596,8 @@ impl TextScreen {
     fn draw_qr(&mut self, cv: &Canvas, th: &Theme, lay: &Lay, q: &QrView, t: f32) {
         cv.with_opacity(t, |cv| {
             cv.fill_rr(lay.area, 16.0, th.card.fade(0.92));
-            let total = ((q.size + 2 * q.quiet) * q.px) as f32;
-            let total = total.min(QR_SIDE.max(total));
+            // like the web canvas (190 css px, `image-rendering: pixelated`): the modules fill the card, edges snapped to device pixels
+            let total = QR_SIDE;
             let card = lay.qr_card(total);
             let s = cv.scale;
             let card = Rect::new(snap(card.x, s), snap(card.y, s), total, total);
@@ -605,7 +605,7 @@ impl TextScreen {
             cv.with_scale_about(card.center(), pop, |cv| {
                 cv.with_clip_rr(card, 12.0, |cv| {
                     cv.fill_rect(card, Color::rgb8(255, 255, 255));
-                    let px = q.px as f32;
+                    let px = total / (q.size + 2 * q.quiet) as f32;
                     for (x, y, run) in qr_runs(&q.rows) {
                         let x0 = card.x + (x + q.quiet) as f32 * px;
                         let y0 = card.y + (y + q.quiet) as f32 * px;
