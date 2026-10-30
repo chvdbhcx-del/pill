@@ -15,6 +15,9 @@ mod wx_data;
 
 pub use view::IslandView;
 
+#[cfg(test)]
+mod snapshots;
+
 /// Helpers for the unit tests of this module tree.
 #[cfg(test)]
 pub mod tests_support {

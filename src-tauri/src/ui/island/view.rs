@@ -145,10 +145,10 @@ pub struct IslandView {
 impl IslandView {
     /// Built on the host thread. Reads the settings, subscribes to the island's events and starts the model.
     pub fn new(cx: &mut Cx) -> IslandView {
-        Self::with_clock(cx, SysClock::real())
+        Self::with_parts(cx, SysClock::real(), &sys::os_lang())
     }
 
-    pub fn with_clock(cx: &mut Cx, clock: SysClock) -> IslandView {
+    pub fn with_parts(cx: &mut Cx, clock: SysClock, os_lang: &str) -> IslandView {
         for e in ISLAND_EVENTS {
             if *e == "audio:bands" {
                 cx.subscribe_latest(e);
@@ -156,7 +156,7 @@ impl IslandView {
                 cx.subscribe(e);
             }
         }
-        let mut core = Core::new(&sys::os_lang(), clock);
+        let mut core = Core::new(os_lang, clock);
         let settings = cx.call("settings_get", Value::Null).ok().filter(|v| v.is_object()).unwrap_or_else(|| json!({}));
         let outs = core.start(settings, cx.now_ms);
         let mut v = IslandView {
