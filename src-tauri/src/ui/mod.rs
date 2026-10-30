@@ -10,3 +10,4 @@ pub mod view;
 pub mod windows;
 pub mod pets;
 pub mod tabs;
+pub mod settings_view;
