@@ -13,12 +13,10 @@ use glasskit::canvas::Canvas;
 use glasskit::geom::Rect;
 use glasskit::input::{Cursor, InputEvent, KeyCode, Response};
 use glasskit::scroll::ScrollView;
-use std::cell::Cell;
-use glasskit::text::Style;
+use std::cell::{Cell, RefCell};
 use glasskit::theme::Theme;
-use pill_ui_core::panel::b::ai_actions::{Act, Action, AiActions, MenuItem, Screen, View as Vm, ACTS};
+use pill_ui_core::panel::b::ai_actions::{Action, AiActions, MenuItem, Screen, View as Vm, ACTS};
 use pill_ui_core::panel::b::Reply;
-use serde_json::Value;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum K {
@@ -43,9 +41,13 @@ pub struct AiActionsScreen {
     rect: Rect,
     /// the result box (rect) and its text height, set by the paint for `event` / `step`
     out: Cell<(Rect, f32)>,
+    /// click targets collected by the paint (`paint` has `&self`), moved into `clicks` after it
+    hits: RefCell<Vec<(K, Rect)>>,
     /// the view model of the last frame (kept while the exit animation plays)
     last: Option<Vm>,
     sel: usize,
+    /// the arrow keys were used: the focused option is drawn lit (and ringed)
+    kbd: bool,
     carry: f64,
     announced_close: bool,
 }
@@ -61,8 +63,10 @@ impl AiActionsScreen {
             scroll: ScrollView::new(),
             rect: Rect::default(),
             out: Cell::new((Rect::default(), 0.0)),
+            hits: RefCell::new(Vec::new()),
             last: None,
             sel: 0,
+            kbd: false,
             carry: 0.0,
             announced_close: false,
         }
@@ -128,6 +132,7 @@ impl View for AiActionsScreen {
                     return Response { consumed: true, redraw: true, ..Response::NONE };
                 }
                 KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right if in_menu => {
+                    self.kbd = true;
                     // a 2 x 2 grid in reading order
                     self.sel = match code {
                         KeyCode::Left => self.sel.saturating_sub(1),
@@ -174,6 +179,7 @@ impl View for AiActionsScreen {
                 let id = args["id"].as_i64().or_else(|| args["id"].as_str().and_then(|s| s.parse().ok())).unwrap_or(0);
                 self.model.set_lang(lang_of(cx));
                 self.sel = 0;
+                self.kbd = false;
                 self.announced_close = false;
                 self.act(Action::Open { id }, cx);
             }
@@ -221,12 +227,17 @@ impl View for AiActionsScreen {
             self.last = None;
         }
         let Some(v) = self.last.clone() else { return };
+        self.hits.borrow_mut().clear();
         let panel = |cv: &Canvas| self.paint(cv, th, rect, &v, cx);
         let x = self.cues.xf("ai-panel");
         if x.alpha >= 1.0 && x.dy == 0.0 {
             panel(cv);
         } else {
             cv.with_opacity(x.alpha, |cv| cv.with_offset(0.0, x.dy, panel));
+        }
+        self.clicks.begin();
+        for (k, r) in self.hits.borrow_mut().drain(..) {
+            self.clicks.add(k, r);
         }
     }
 }
@@ -243,6 +254,7 @@ impl AiActionsScreen {
         ic.draw(cv, "sparkles", Rect::new(head.x + 12.0, head.cy() - 8.0, 16.0, 16.0), th.accent);
         cv.text(Rect::new(head.x + 36.0, head.y, head.w - 36.0 - 36.0, head.h), &v.title, th.small(600).size(13.0).ellipsis(), th.text);
         let x_r = Rect::new(head.right() - 32.0, head.y, 28.0, 28.0);
+        self.hits.borrow_mut().push((K::Close, x_r));
         kit::button(cv, th, ic, x_r, "", Some("x"), Bk::Icon, c.hover_amt(&K::Close), c.press_scale(&K::Close, 0.92), true);
         let body = Rect::new(rect.x, head.bottom() + 8.0, rect.w, rect.bottom() - head.bottom() - 8.0);
         let body_x = self.cues.xf("ai-body");
@@ -262,6 +274,7 @@ impl AiActionsScreen {
         for (i, it) in items.iter().enumerate() {
             let r = Rect::new(grid.x + (i % 2) as f32 * (grid.w / 2.0 + 4.0), grid.y + (i / 2) as f32 * 60.0, grid.w / 2.0 - 4.0, 52.0);
             let k = K::Opt(i);
+            self.hits.borrow_mut().push((k.clone(), r));
             let h = self.clicks.hover_amt(&k).max(if self.sel == i && self.is_keyboard() { 1.0 } else { 0.0 });
             cv.with_scale_about(r.center(), self.clicks.press_scale(&k, 0.98), |cv| {
                 cv.fill_rr(r, 12.0, th.card.mix(th.raised, h));
@@ -280,7 +293,7 @@ impl AiActionsScreen {
 
     /// Arrow keys light an option; the pointer hover does the same by itself.
     fn is_keyboard(&self) -> bool {
-        self.clicks.hovered().is_none()
+        self.kbd && self.clicks.hovered().is_none()
     }
 
     fn working(&self, cv: &Canvas, th: &Theme, body: Rect, label: &str, cancel: &str, cx: &Cx) {
@@ -301,6 +314,7 @@ impl AiActionsScreen {
     }
 
     fn btn_at(&self, cv: &Canvas, th: &Theme, r: Rect, label: &str, icon: Option<&str>, kind: Bk, k: &K) {
+        self.hits.borrow_mut().push((k.clone(), r));
         kit::button(cv, th, &self.icons, r, label, icon, kind, self.clicks.hover_amt(k), self.clicks.press_scale(k, 0.96), true);
     }
 
@@ -353,5 +367,102 @@ impl AiActionsScreen {
         let out = Rect::new(body.x + 4.0, body.y, body.w - 8.0, btns.y - 8.0 - body.y);
         cv.fill_rr(out, 12.0, th.red_bg);
         cv.text(out.inset(12.0), text, th.body().wrap(), th.red);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::host::testing::{motion_lock, Sim};
+    use crate::ui::tabs::b::kit::snap;
+    use crate::ui::view::Services;
+    use glasskit::input::{Buttons, Modifiers, MouseButton};
+    use serde_json::json;
+
+    fn sim() -> (Sim, crate::ui::view::Fakes) {
+        let (svc, f) = Services::fake();
+        f.api.reply("ai_clip_text", Ok(json!("Hello, world")));
+        f.api.reply("ai_transform", Ok(json!({ "ok": true, "text": "Hello, world, shortened and then some longer text to see the wrapping of the output box in the result screen", "clipped": false })));
+        f.api.reply("clip_paste_text", Ok(json!("pasted")));
+        let mut s = Sim::with_services(Box::new(AiActionsScreen::new()), svc);
+        s.cx.reduced_motion = true;
+        s.show();
+        (s, f)
+    }
+
+    fn click(s: &mut Sim, p: (f32, f32)) {
+        let mv = InputEvent::MouseMove { pos: p, mods: Modifiers::NONE, buttons: Buttons::NONE };
+        s.send(&mv);
+        s.send(&InputEvent::MouseDown { pos: p, button: MouseButton::Left, mods: Modifiers::NONE, clicks: 1 });
+        s.send(&InputEvent::MouseUp { pos: p, button: MouseButton::Left, mods: Modifiers::NONE });
+        s.pump();
+    }
+
+    fn open(s: &mut Sim) {
+        s.deliver(Msg::Open(json!({ "id": 5 })));
+        s.render(snap::BODY, &Theme::pill_dark());
+    }
+
+    fn calls(f: &crate::ui::view::Fakes) -> Vec<String> {
+        f.api.calls().into_iter().map(|c| c.name).collect()
+    }
+
+    #[test]
+    fn closed_view_paints_nothing_and_ignores_input() {
+        let _g = motion_lock();
+        let (mut s, _f) = sim();
+        let img = s.render(snap::BODY, &Theme::pill_dark());
+        assert_eq!(img.count(None, |p| p[3] > 0), 0);
+        assert!(!s.send(&InputEvent::Char('x')).consumed);
+    }
+
+    #[test]
+    fn an_action_runs_the_transform_and_shows_the_result() {
+        let _g = motion_lock();
+        let (mut s, f) = sim();
+        open(&mut s);
+        click(&mut s, (100.0, 60.0));
+        s.pump();
+        s.render(snap::BODY, &Theme::pill_dark());
+        let c = f.api.calls();
+        assert_eq!(c[0].name, "ai_clip_text");
+        assert_eq!(c[0].args, json!({ "id": 5 }));
+        let t = c.iter().find(|c| c.name == "ai_transform").expect("transform");
+        assert_eq!(t.args, json!({ "text": "Hello, world", "action": "translate" }));
+        // Copy / Paste exist now: Paste puts the text through the backend
+        let l = s.render(snap::BODY, &Theme::pill_dark());
+        assert!(l.count(None, |p| p[3] > 0) > 5000);
+    }
+
+    #[test]
+    fn keyboard_picks_and_escape_closes() {
+        let _g = motion_lock();
+        let (mut s, f) = sim();
+        open(&mut s);
+        let _ = crate::ui::tabs::b::take_fx();
+        s.send(&InputEvent::Key { code: KeyCode::Char('3'), mods: Modifiers::NONE, down: true, repeat: false });
+        s.pump();
+        assert_eq!(calls(&f)[0], "ai_clip_text");
+        s.send(&InputEvent::Key { code: KeyCode::Escape, mods: Modifiers::NONE, down: true, repeat: false });
+        assert!(crate::ui::tabs::b::take_fx().contains(&TabFx::OverlayClosed("ai_actions")));
+        assert!(calls(&f).contains(&"ai_transform_cancel".to_string()) || !calls(&f).contains(&"ai_transform".to_string()));
+    }
+
+    #[test]
+    fn snapshots() {
+        let _g = motion_lock();
+        for dark in [true, false] {
+            for scale in [1.0, 2.0] {
+                let (mut s, f) = sim();
+                s.cx.scale = scale;
+                open(&mut s);
+                snap::shoot(&mut *s.view, &s.cx, "ai-actions-menu", snap::BODY, scale, dark);
+                click(&mut s, (100.0, 60.0));
+                snap::shoot(&mut *s.view, &s.cx, "ai-actions-busy", snap::BODY, scale, dark);
+                s.pump();
+                snap::shoot(&mut *s.view, &s.cx, "ai-actions-result", snap::BODY, scale, dark);
+                let _ = f;
+            }
+        }
     }
 }
