@@ -243,6 +243,8 @@ pub enum Effect {
     EditorExec(&'static str),
     /// collapse the pill (after a paste)
     CollapsePill,
+    /// start/stop dictation (PillVoice.toggle)
+    VoiceToggle,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct LiveRow {

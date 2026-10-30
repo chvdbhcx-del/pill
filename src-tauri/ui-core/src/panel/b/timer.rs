@@ -99,6 +99,7 @@ fn civil(days: i64) -> (i64, u32, u32) {
 }
 
 pub struct Wall {
+    pub year: i64,
     pub days: i64,
     pub hour: u32,
     pub min: u32,
@@ -110,8 +111,8 @@ pub fn wall(ms: i64, tz_min: i32) -> Wall {
     let local = ms + tz_min as i64 * 60_000;
     let days = local.div_euclid(86_400_000);
     let secs = local.rem_euclid(86_400_000) / 1000;
-    let (_, month, day) = civil(days);
-    Wall { days, hour: (secs / 3600) as u32, min: ((secs % 3600) / 60) as u32, weekday: (days + 4).rem_euclid(7) as usize, month, day }
+    let (year, month, day) = civil(days);
+    Wall { year, days, hour: (secs / 3600) as u32, min: ((secs % 3600) / 60) as u32, weekday: (days + 4).rem_euclid(7) as usize, month, day }
 }
 
 const WD_RU: [&str; 7] = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
