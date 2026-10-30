@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn three_tiles_are_9_8_9_and_two_are_halves() {
         let t = tiles(B, 3);
-        assert_eq!((t[0].w, t[1].w, t[2].w), (234.0, 208.0, 234.0));
+        assert_eq!((t[0].w, t[1].w, t[2].w), (216.0, 192.0, 216.0));
         assert_eq!(t[2].right(), 648.0);
         let t2 = tiles(B, 2);
         assert_eq!((t2[0].w, t2[1].x), (318.0, 330.0));

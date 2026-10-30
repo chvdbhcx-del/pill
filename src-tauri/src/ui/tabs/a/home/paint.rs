@@ -7,7 +7,6 @@ use glasskit::geom::Rect;
 use glasskit::text::Style;
 use glasskit::theme::Theme;
 use windows::Foundation::Numerics::Matrix3x2;
-use windows::Win32::Graphics::Direct2D::Common::*;
 use windows::Win32::Graphics::Direct2D::*;
 
 const NEUTRAL_ACC: Color = Color::rgb8(0x8b, 0x8b, 0x8b);

@@ -229,7 +229,7 @@ fn keyboard_tab_walks_the_tiles_and_enter_activates() {
     assert_eq!(r.calls_to("sys_set").len(), before + 1);
     assert_eq!(r.calls_to("sys_set")[0]["key"], "wifi");
     // tab past the end leaves the tab
-    for _ in 0..20 {
+    for _ in 0..r.v.focus_items().len() {
         r.ev(key(KeyCode::Tab));
     }
     assert!(r.v.focus.is_none());

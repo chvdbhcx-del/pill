@@ -33,7 +33,7 @@ use pill_ui_core::panel::a::anim::AnimKind;
 use pill_ui_core::panel::a::launcher::Pt as MPt;
 use pill_ui_core::panel::a::shelf::{Action, Chip, ChipTile, MenuView, Shelf, View as SV};
 use pill_ui_core::panel::a::util::Wall;
-use pill_ui_core::panel::a::{Anim, BackendCall, EnTr, Fx, RuTr, Tr};
+use pill_ui_core::panel::a::{BackendCall, EnTr, Fx, RuTr, Tr};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use windows::Foundation::Numerics::Matrix3x2;

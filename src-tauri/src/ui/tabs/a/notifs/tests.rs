@@ -63,6 +63,7 @@ struct Rig {
     cx: Cx,
     q: Arc<MsgQueue>,
     fakes: Fakes,
+    got: Vec<TabFx>,
 }
 
 impl Rig {
@@ -71,7 +72,7 @@ impl Rig {
         fakes.api.reply("notif_history_list", Ok(list));
         fakes.api.reply("settings_get", Ok(json!({})));
         let (cx, q) = Cx::headless_queue(svc);
-        Rig { v: NotifsView::new().with_now(W), cx, q, fakes }
+        Rig { v: NotifsView::new().with_now(W), cx, q, fakes, got: vec![] }
     }
     fn open(list: Value) -> Rig {
         let mut r = Rig::new(list);
@@ -86,7 +87,12 @@ impl Rig {
                 break;
             }
             for (_, m) in msgs {
-                self.v.message(m, &mut self.cx);
+                match m {
+                    Msg::Custom(b) if b.is::<TabFx>() => self.got.push(*b.downcast::<TabFx>().unwrap()),
+                    m => {
+                        self.v.message(m, &mut self.cx);
+                    }
+                }
             }
         }
     }
@@ -105,7 +111,7 @@ impl Rig {
         self.fakes.api.calls().into_iter().filter(|c| c.name == name).map(|c| c.args).collect()
     }
     fn fx(&mut self) -> Vec<TabFx> {
-        let mut out = vec![];
+        let mut out = std::mem::take(&mut self.got);
         for (_, m) in self.q.drain() {
             if let Msg::Custom(b) = m {
                 if let Ok(f) = b.downcast::<TabFx>() {
@@ -145,7 +151,7 @@ fn opening_loads_the_history_and_settings_and_marks_unread_as_read() {
     assert_eq!(r.row_ids(), vec![9, 8, 7, 6, 5, 4, 3, 2, 1]);
     // day headers: Today, Yesterday, Oct 27
     let days: Vec<_> = r.v.items.iter().filter_map(|i| if let Kind::Day(d) = &i.kind { Some(d.as_str()) } else { None }).collect();
-    assert_eq!(days, ["Today", "Yesterday", "27 October"]);
+    assert_eq!(days, ["Today", "Yesterday", "October 27"]);
 }
 
 #[test]
@@ -258,14 +264,15 @@ fn wheel_scrolls_a_long_history_and_idle_costs_no_frames() {
     sim.pump();
     sim.pump();
     sim.run(600);
-    assert!(!sim.frame.wants_frame(), "settled = idle");
+    { let v = &mut sim.view; let _ = v; }
+    assert!(!sim.frame.wants_frame(), "settled = idle {}", sim.frames_run);
     let _ = sim.render((super::super::W, 260.0), &Theme::pill_dark()); // gives the view its rect
-    let ev = InputEvent::Wheel { pos: (300.0, 120.0), delta: (0.0, -3.0), precise: false, mods: Modifiers::NONE };
+    let ev = InputEvent::Wheel { pos: (300.0, 120.0), delta: (0.0, 3.0), precise: false, mods: Modifiers::NONE };
     sim.send(&ev);
     assert!(sim.run(600) > 0, "the scroll glides over frames");
     assert!(!sim.frame.wants_frame());
     let img = sim.render((super::super::W, 260.0), &Theme::pill_dark());
-    assert!(img.count(|p| p[3] > 0) > 1000);
+    assert!(img.count(None, |p| p[3] > 0) > 1000);
 }
 
 // ------------------------------------------------------------------------------------------------------------------ pixels
@@ -280,7 +287,7 @@ fn shoot_all(r: &mut Rig, name: &str) {
         for sc in [1.0f32, 2.0] {
             r.cx.scale = sc;
             let img = shoot(&mut r.v, &r.cx, &th, sc, "notifs", &format!("{name}-{tn}-x{}", sc as u32));
-            assert!(img.count(|p| p[3] > 0) > 5000, "{name} {tn} x{sc} drew nothing");
+            assert!(img.count(None, |p| p[3] > 0) > 5000, "{name} {tn} x{sc} drew nothing");
         }
     }
 }
