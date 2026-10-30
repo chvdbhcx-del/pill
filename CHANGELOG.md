@@ -2,6 +2,13 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.6.1] - 2026-10-30
+
+### Fixed
+- Native UI: the pets and the characters (tail, legs, eyes) animate again: the reaction state was re-applied on every frame, which restarted the blinking, glancing and breathing before they could show.
+- Native UI: the settings sidebar scrolls (mouse wheel, Tab) down to the last page; its list height was computed as 12 px.
+- Native UI: text is drawn as glyph outlines with full 2-D antialiasing, so curves and diagonals no longer show stair-steps. `PILL_TEXT_MODE` (outline, sym, natural, glasskit), `PILL_TEXT_GAMMA` and `PILL_TEXT_CONTRAST` tune it.
+
 ## [0.6.0] - 2026-10-30
 
 ### Added
