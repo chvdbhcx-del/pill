@@ -9,3 +9,4 @@ pub mod lazy;
 pub mod view;
 pub mod windows;
 pub mod pets;
+pub mod tabs;
