@@ -10,3 +10,5 @@ pub mod view;
 pub mod windows;
 pub mod pets;
 pub mod tabs;
+#[allow(dead_code)] // the native island (flag ui.native.pill); nothing builds it while the flag is off
+pub mod island;
