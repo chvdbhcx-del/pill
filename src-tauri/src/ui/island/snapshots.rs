@@ -271,3 +271,74 @@ fn the_capsule_is_sized_from_the_measured_row_like_the_web() {
     assert_eq!(body.width, 150.0);
     assert_eq!(body.left, 285.0);
 }
+
+fn pet_scn(id: &str) -> Scn {
+    let mut s = Scn::new(base(json!({ "pet": id })), (720.0, 120.0), 1.0, false);
+    s.emit("weather:current", wx());
+    let t = Color::rgba(0.0, 0.0, 0.0, 0.0);
+    let _ = s.draw(t); // creates the engine; the view asks for a frame to start it
+    s.settle(10);
+    s
+}
+
+#[test]
+fn a_calm_pet_keeps_moving_while_the_island_is_visible() {
+    for id in ["eyes", "cat"] {
+        let mut s = pet_scn(id);
+        let t = Color::rgba(0.0, 0.0, 0.0, 0.0);
+        let a = s.draw(t);
+        let frames0 = s.sim.frames_run;
+        let mut changed = false;
+        // 5 s of display frames: breathing / blinking must change the pixels at some moment
+        for _ in 0..60 {
+            s.settle(20);
+            if s.draw(t).diff(&a, 2) > 0 {
+                changed = true;
+                break;
+            }
+        }
+        assert!(changed, "{id}: no pixel of the pet ever changed in ~5 s");
+        assert!(s.sim.frames_run > frames0, "{id}: no frames were run");
+    }
+}
+
+#[test]
+fn the_pet_wakes_an_idle_island_for_its_blink() {
+    let mut s = pet_scn("eyes");
+    let t = Color::rgba(0.0, 0.0, 0.0, 0.0);
+    let base_img = s.draw(t);
+    s.settle(2000); // let everything settle (idle if the pet is idle)
+    let before = s.sim.frames_run;
+    let (mut woke, mut changed) = (false, false);
+    // real time: the alarm thread sleeps until the pet's next idle behaviour (2.4 - 7 s) and posts a message
+    for _ in 0..200 {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        s.sim.now_ms += 50.0;
+        s.sim.pump();
+        s.settle(30);
+        if s.sim.frames_run > before + 40 {
+            woke = true;
+        }
+        if s.draw(t).diff(&base_img, 2) > 0 {
+            changed = true;
+        }
+        if woke && changed {
+            break;
+        }
+    }
+    assert!(woke && changed, "the idle pet never woke the island (frames {} -> {})", before, s.sim.frames_run);
+}
+
+#[test]
+fn the_eyes_follow_the_cursor() {
+    use crate::ui::view::ProximityEvent;
+    let mut s = pet_scn("eyes");
+    let t = Color::rgba(0.0, 0.0, 0.0, 0.0);
+    s.sim.send_proximity(&ProximityEvent::Gaze((-600.0, 40.0)));
+    s.settle(60);
+    let left = s.draw(t);
+    s.sim.send_proximity(&ProximityEvent::Gaze((1400.0, 40.0)));
+    s.settle(60);
+    let right = s.draw(t);
+    assert!(left.diff(&right, 2) > 0, "looking left and right must look different");
+}

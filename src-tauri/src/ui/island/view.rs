@@ -268,13 +268,15 @@ impl IslandView {
             }
             self.exec_outs(outs, cx);
         }
-        let now = cx.now_ms;
+        self.arm_alarm(cx.now_ms);
+    }
+
+    /// Next moment something is due while the window idles: shell timers, the hub tick, the pet's idle behaviour (blink / glance / twitch).
+    fn arm_alarm(&mut self, now: f64) {
         let wake = self.core.shell.next_wakeup().map(|d| (d - now).max(0.0));
         let hub = self.core.tick_hub(now).map(|ms| ms as f64);
-        self.alarm.set(match (wake, hub) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        });
+        let pet = self.comp.wake_in(now);
+        self.alarm.set([wake, hub, pet].into_iter().flatten().reduce(f64::min));
     }
 
     /// What the tab views asked of the island since the last call: the B tabs through the shared sink, the A tabs through `Msg::Custom` (handled
@@ -601,7 +603,8 @@ impl View for IslandView {
         self.comp.set_reaction(&name, &color);
         self.comp.set_reduced(reduced);
         self.comp.set_theme(self.light());
-        let pets_busy = self.comp.tick(dt_ms as f32);
+        let pets_busy = self.comp.tick(now);
+        self.arm_alarm(now);
         self.update_window_requests(&v, cx);
         let host_busy = self.host.step(dt_ms, now, cx);
         if self.drain_fx(cx) {
@@ -893,6 +896,9 @@ impl View for IslandView {
         }
         // ---- the liquid edge and the capsule characters hang below / outside the body
         let pulse = self.core.pulse.map_or(0.0, |(a, t0)| a * (1.0 - ((now - t0) / 800.0) as f32).clamp(0.0, 1.0));
+        if self.comp.take_created() {
+            cx.post(Msg::Custom(Box::new(Own::Wake))); // a fresh engine: tick + draw it so it starts moving
+        }
         shapes::paint_edge(cv, &v.edge, (v.strip.x as f32, v.strip.y as f32), pulse, v.reduced);
         match self.comp.style {
             EdgeStyle::Tail => self.comp.draw_tail(cv, body, rb, s),
