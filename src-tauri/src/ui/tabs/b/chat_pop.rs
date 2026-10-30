@@ -278,6 +278,8 @@ pub struct SetPop {
     pub select: Select,
     models: Vec<String>,
     rect: Rect,
+    /// where the model dropdown was drawn (window coordinates), for its events
+    pub model_rect: Rect,
     dots: HashMap<usize, Tween<f32>>,
 }
 
@@ -298,7 +300,7 @@ fn tone_color(th: &Theme, t: Tone) -> Color {
 
 impl SetPop {
     pub fn new() -> SetPop {
-        SetPop { pres: Presence::default(), last: None, scroll: ScrollView::new(), select: Select::new(&[], None), models: vec![], rect: Rect::default(), dots: HashMap::new() }
+        SetPop { pres: Presence::default(), last: None, scroll: ScrollView::new(), select: Select::new(&[], None), models: vec![], rect: Rect::default(), model_rect: Rect::default(), dots: HashMap::new() }
     }
 
     pub fn sync(&mut self, v: &SettingsView, reduced: bool) {
@@ -449,6 +451,7 @@ impl SetPop {
                         y += 16.0 + 4.0;
                         let sw = cv.text_width(&v.scan_label, th.btn_text()) + 2.0 * th.m.btn_pad_x;
                         let mr = Rect::new(ox, y, cw - sw - 8.0, 32.0);
+                        self.model_rect = mr;
                         if self.models.is_empty() {
                             mdl.ti.placeholder = v.model_placeholder.clone();
                             if field(cv, th, mdl, mr) {

@@ -7,7 +7,7 @@
 //!
 //! Selection: drag inside one message (assistant answers through the markdown view, user bubbles through their text layout); Ctrl+C copies it,
 //! a click on a code block's Copy button copies the code. Selection across messages is not supported (one message at a time).
-use super::chat_pop::{HistPop, SetPop, K, HIST_W};
+use super::chat_pop::{HistPop, SetPop, K};
 use super::kit::{self, Bk, Calls, Clicks, Cues, Field, Icons};
 use crate::ui::view::{Cx, DropEvent, DropPayload, DropPhase, Msg, View};
 use glasskit::canvas::Canvas;
@@ -477,6 +477,7 @@ impl ChatScreen {
                 let cp = self.content_pos(*pos);
                 self.clear_selection();
                 let Some(i) = self.item_at(cp.1) else { return Response::consumed() };
+                let sv_w = self.sv_width();
                 let it = &mut self.items[i];
                 if let (Some(md), true) = (it.md.as_mut(), cp.0 >= COL_X) {
                     let local = (cp.0 - COL_X, cp.1 - it.y);
@@ -504,7 +505,7 @@ impl ChatScreen {
                     }
                 }
                 if let Some(b) = it.bubble.as_ref() {
-                    let bx = self.sv_width() - b.w;
+                    let bx = sv_w - b.w;
                     if cp.0 >= bx && cp.0 <= bx + b.w {
                         let idx = b.lay.index_at((cp.0 - bx - 16.0, cp.1 - it.y - 9.0));
                         if *clicks >= 3 {
@@ -640,12 +641,12 @@ fn read_picked(p: &std::path::Path) -> Option<PickedFile> {
 fn pick_files() -> Vec<PathBuf> {
     use windows::core::PWSTR;
     use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
-    use windows::Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, FOS_ALLOWMULTIPLESELECT, FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH};
+    use windows::Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, FOS_ALLOWMULTISELECT, FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH};
     let mut out = Vec::new();
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         if let Ok(dlg) = CoCreateInstance::<_, IFileOpenDialog>(&FileOpenDialog, None, CLSCTX_INPROC_SERVER) {
-            let _ = dlg.SetOptions(FOS_ALLOWMULTIPLESELECT | FOS_FORCEFILESYSTEM);
+            let _ = dlg.SetOptions(FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM);
             if dlg.Show(None).is_ok() {
                 if let Ok(items) = dlg.GetResults() {
                     for i in 0..items.GetCount().unwrap_or(0) {
@@ -1207,7 +1208,7 @@ impl ChatScreen {
             _ => "",
         };
         let about = (x0 + w / 2.0, y + it.h / 2.0);
-        let draw = |cv: &Canvas| match it.role {
+        let mut draw = |cv: &Canvas| match it.role {
             Role::User => {
                 let Some(b) = &it.bubble else { return };
                 let br = Rect::new(x0 + w - b.w, y, b.w, b.lay.height() + 18.0);
