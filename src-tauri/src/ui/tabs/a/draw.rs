@@ -381,18 +381,13 @@ mod tests {
 
     #[test]
     fn png_bytes_decode_to_premultiplied_bgra_and_shrink() {
-        // a 2x2 PNG written by the kit's own WIC encoder
-        com_init();
-        let g = glasskit::gfx::Gfx::warp().expect("warp");
-        let px = [255u8, 0, 0, 255].repeat(4); // BGRA straight, opaque blue
-        let dir = std::env::temp_dir().join("pill-tabs-a-draw-test.png");
-        g.save_png(dir.to_str().unwrap(), 2, 2, &px).unwrap();
-        let bytes = std::fs::read(&dir).unwrap();
+        // a 2x2 PNG written by the test helper (opaque blue)
+        let bytes = crate::ui::tabs::a::snap::png_bytes(2, 2, [0, 0, 255, 255], [0, 0, 255, 255]);
         let d = decode_bytes(&bytes, 64).expect("decodes");
         assert_eq!((d.w, d.h), (2, 2));
         assert_eq!(&d.bgra[..4], &[255, 0, 0, 255]);
-        let big = g.save_png(dir.to_str().unwrap(), 8, 4, &[10u8, 20, 30, 255].repeat(32));
-        assert!(big.is_ok());
+        let dir = std::env::temp_dir().join(format!("pill-tabs-a-draw-test-{}.png", std::process::id()));
+        std::fs::write(&dir, crate::ui::tabs::a::snap::png_bytes(8, 4, [10, 20, 30, 255], [10, 20, 30, 255])).unwrap();
         let d2 = decode_file(&dir, 4).expect("file decodes");
         assert_eq!((d2.w, d2.h), (4, 2), "longer side shrunk to 4, aspect kept");
         assert!(decode_bytes(b"not an image at all", 64).is_none());

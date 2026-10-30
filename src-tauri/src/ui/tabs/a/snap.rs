@@ -72,22 +72,58 @@ impl View for OnBgRef<'_> {
     }
 }
 
-/// A `w` x `h` PNG whose upper half is `top` and lower half `bottom` (RGBA), written through the kit's WIC encoder.
+/// A `w` x `h` PNG whose upper half is `top` and lower half `bottom` (RGBA). Encoded by hand (stored deflate blocks): no Direct3D device, no COM, so
+/// tests that run in parallel never fight over a second WARP device.
 pub fn png_bytes(w: u32, h: u32, top: [u8; 4], bottom: [u8; 4]) -> Vec<u8> {
-    super::draw::com_init();
-    let g = glasskit::gfx::Gfx::warp().expect("warp");
-    let mut px = Vec::with_capacity((w * h * 4) as usize);
+    let mut raw = Vec::with_capacity(((w * 4 + 1) * h) as usize);
     for y in 0..h {
+        raw.push(0); // filter: none
         let c = if y < h / 2 { top } else { bottom };
         for _ in 0..w {
-            px.extend_from_slice(&[c[2], c[1], c[0], c[3]]);
+            raw.extend_from_slice(&c);
         }
     }
-    let path = std::env::temp_dir().join(format!("pill-tabs-a-{}-{}x{}.png", std::process::id(), w, h));
-    g.save_png(path.to_str().unwrap(), w, h, &px).expect("png");
-    let b = std::fs::read(&path).expect("read png");
-    let _ = std::fs::remove_file(&path);
-    b
+    // zlib stream of stored blocks
+    let mut z = vec![0x78, 0x01];
+    let mut chunks = raw.chunks(65535).peekable();
+    while let Some(c) = chunks.next() {
+        z.push(chunks.peek().is_none() as u8);
+        z.extend_from_slice(&(c.len() as u16).to_le_bytes());
+        z.extend_from_slice(&(!(c.len() as u16)).to_le_bytes());
+        z.extend_from_slice(c);
+    }
+    let (mut a1, mut a2) = (1u32, 0u32);
+    for b in &raw {
+        a1 = (a1 + *b as u32) % 65521;
+        a2 = (a2 + a1) % 65521;
+    }
+    z.extend_from_slice(&((a2 << 16) | a1).to_be_bytes());
+    let crc = |d: &[u8]| {
+        let mut c = 0xffff_ffffu32;
+        for b in d {
+            c ^= *b as u32;
+            for _ in 0..8 {
+                c = if c & 1 != 0 { 0xedb8_8320 ^ (c >> 1) } else { c >> 1 };
+            }
+        }
+        !c
+    };
+    let chunk = |out: &mut Vec<u8>, t: &[u8; 4], d: &[u8]| {
+        out.extend_from_slice(&(d.len() as u32).to_be_bytes());
+        let mut td = t.to_vec();
+        td.extend_from_slice(d);
+        out.extend_from_slice(&td);
+        out.extend_from_slice(&crc(&td).to_be_bytes());
+    };
+    let mut out = vec![137, 80, 78, 71, 13, 10, 26, 10];
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&w.to_be_bytes());
+    ihdr.extend_from_slice(&h.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+    chunk(&mut out, b"IHDR", &ihdr);
+    chunk(&mut out, b"IDAT", &z);
+    chunk(&mut out, b"IEND", &[]);
+    out
 }
 
 /// The same as a `data:image/png;base64,` URL (what `clip_image` and the media thumbnail answer with).

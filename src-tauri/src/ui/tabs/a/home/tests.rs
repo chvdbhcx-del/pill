@@ -21,23 +21,7 @@ fn motion(reduced: bool) -> Calm {
 
 /// A real (tiny, two-colour) PNG as the `data:` URL the backend hands the cover out in.
 fn cover_url() -> String {
-    use base64::Engine;
-    crate::ui::tabs::a::draw::com_init();
-    let g = glasskit::gfx::Gfx::warp().expect("warp");
-    let (w, h) = (32usize, 32usize);
-    let mut px = Vec::with_capacity(w * h * 4);
-    for y in 0..h {
-        for x in 0..w {
-            let top = y < h / 2;
-            let _ = x;
-            px.extend_from_slice(if top { &[90u8, 60, 220, 255] } else { &[200u8, 120, 40, 255] });
-        }
-    }
-    let path = std::env::temp_dir().join("pill-home-cover-test.png");
-    g.save_png(path.to_str().unwrap(), w as u32, h as u32, &px).unwrap();
-    let bytes = std::fs::read(&path).unwrap();
-    let _ = std::fs::remove_file(&path);
-    format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))
+    crate::ui::tabs::a::snap::png_data_url(32, 32, [220, 60, 90, 255], [40, 120, 200, 255])
 }
 
 fn media(playing: bool, with_cover: bool) -> Value {
