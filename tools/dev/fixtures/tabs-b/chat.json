@@ -1,0 +1,332 @@
+{
+ "now": 1793343600000,
+ "scenarios": {
+  "chat-empty": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": []
+   }
+  },
+  "chat-answer": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": [
+     {
+      "id": 1,
+      "title": "Как работает VPN",
+      "updated_at": 1793340000000
+     },
+     {
+      "id": 2,
+      "title": "Письмо о переносе встречи",
+      "updated_at": 1793250000000
+     },
+     {
+      "id": 3,
+      "title": "Идеи на выходные",
+      "updated_at": 1792911600000
+     }
+    ],
+    "chat_messages": [
+     {
+      "id": 1,
+      "role": "user",
+      "content": "Объясни простыми словами, как работает VPN"
+     },
+     {
+      "id": 2,
+      "role": "assistant",
+      "content": "## Как работает VPN\n\nVPN создаёт **зашифрованный туннель** между вашим компьютером и сервером. Вот что важно:\n\n- трафик шифруется до выхода из устройства\n- сайты видят адрес сервера, а не ваш\n- провайдер видит только соединение с VPN\n\nПроверить адрес можно командой `curl ifconfig.me`. Пример на Rust:\n\n```rust\nfn main() {\n    let key = derive_key(\"secret\");\n    println!(\"tunnel up: {}\", key.len());\n}\n```\n\nПодробнее читайте в [документации WireGuard](https://www.wireguard.com/)."
+     }
+    ],
+    "chat_retry": {
+     "ok": true,
+     "thread": 1,
+     "run": 8
+    }
+   }
+  },
+  "chat-streaming": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": [],
+    "chat_send": {
+     "ok": true,
+     "thread": 1,
+     "run": 7
+    }
+   },
+   "events": [
+    {
+     "name": "chat:delta",
+     "payload": {
+      "thread": 1,
+      "run": 7,
+      "text": "## Как работает VPN\n\nVPN создаёт **зашифрованный туннель** между вашим компьютером и сервером. Вот что важно:\n\n- трафик шифруется до выхода из устройства"
+     },
+     "after_ms": 100
+    },
+    {
+     "name": "chat:delta",
+     "payload": {
+      "thread": 1,
+      "run": 7,
+      "text": "\n- сайты видят адрес сервера, а не ваш\n- провайдер видит только соединение с VPN\n\n"
+     },
+     "after_ms": 60
+    },
+    {
+     "name": "chat:delta",
+     "payload": {
+      "thread": 1,
+      "run": 7,
+      "text": "Проверить адрес можно командой `curl ifconfig.me`. Пример на Rust:\n\n```rust\nfn main() {\n    let key = derive_key(\"secret\");\n    println!(\"tu"
+     },
+     "after_ms": 60
+    }
+   ],
+   "text": "Объясни простыми словами, как работает VPN"
+  },
+  "chat-typing-dots": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": [],
+    "chat_send": {
+     "ok": true,
+     "thread": 1,
+     "run": 7
+    }
+   },
+   "text": "Объясни простыми словами, как работает VPN"
+  },
+  "chat-history-popover": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": [
+     {
+      "id": 1,
+      "title": "Как работает VPN",
+      "updated_at": 1793340000000
+     },
+     {
+      "id": 2,
+      "title": "Письмо о переносе встречи",
+      "updated_at": 1793250000000
+     },
+     {
+      "id": 3,
+      "title": "Идеи на выходные",
+      "updated_at": 1792911600000
+     }
+    ],
+    "chat_messages": [
+     {
+      "id": 1,
+      "role": "user",
+      "content": "Объясни простыми словами, как работает VPN"
+     },
+     {
+      "id": 2,
+      "role": "assistant",
+      "content": "VPN шифрует трафик и скрывает ваш адрес."
+     }
+    ]
+   }
+  },
+  "chat-settings-popover": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [
+     {
+      "id": "ollama",
+      "up": true,
+      "models": [
+       "qwen3:8b"
+      ]
+     }
+    ],
+    "chat_threads": []
+   }
+  },
+  "chat-offline": {
+   "replies": {
+    "ai_config": {
+     "on": false,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": []
+   }
+  }
+ }
+}

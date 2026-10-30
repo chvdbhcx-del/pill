@@ -3,6 +3,7 @@
 use crate::ui::view::View;
 pub mod a;
 pub mod b;
+pub mod fx;
 
 /// A fresh view for the tab `id` (ids as in pill-ui-core panel::a::tabs), or None while it is not ported yet.
 #[allow(dead_code)] // used once the island view lands

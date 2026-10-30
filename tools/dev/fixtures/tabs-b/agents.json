@@ -1,0 +1,30 @@
+{
+  "now": 1761800000000,
+  "scenarios": {
+    "list": {
+      "replies": {
+        "settings_get": {},
+        "agents_list": {
+          "working": 1,
+          "waiting": 1,
+          "sessions": [
+            { "tool": "claude-code", "session": "s-wait", "state": "waiting", "title": "# Allow **npm test** to run in `island-replica`?", "cwd": "C:/Users/usr/Documents/Проекты/island-replica", "project": "island-replica", "ts": 1761799880000 },
+            { "tool": "claude-code", "session": "s-work", "state": "working", "title": "Refactor the pill panel into native tabs", "cwd": "C:/Users/usr/Documents/Проекты/pill", "project": "pill", "ts": 1761799300000 },
+            { "tool": "codex", "session": "s-idle", "state": "stale", "title": "", "cwd": "C:/Users/usr/work/notes", "project": "notes", "ts": 1761792800000 }
+          ]
+        }
+      },
+      "events": []
+    },
+    "empty": {
+      "replies": { "settings_get": {}, "agents_list": { "working": 0, "waiting": 0, "sessions": [] } },
+      "events": []
+    },
+    "state_change": {
+      "replies": { "settings_get": {}, "agents_list": { "working": 1, "waiting": 0, "sessions": [ { "tool": "claude-code", "session": "s-wait", "state": "working", "title": "Allow npm test", "cwd": "C:/Users/usr/island-replica", "project": "island-replica", "ts": 1761799880000 } ] } },
+      "events": [
+        { "name": "agents:changed", "payload": { "working": 0, "waiting": 1, "sessions": [ { "tool": "claude-code", "session": "s-wait", "state": "waiting", "title": "Allow npm test", "cwd": "C:/Users/usr/island-replica", "project": "island-replica", "ts": 1761799880000 } ] } }
+      ]
+    }
+  }
+}

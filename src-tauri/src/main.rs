@@ -124,9 +124,9 @@ fn main() {
             notifhist::notif_history_add, notifhist::notif_history_list, notifhist::notif_history_clear, notifhist::notif_history_mark_read, notifhist::notif_history_remove,
         ])
         .setup(|app| {
-            // The island window is built here, not declared in tauri.conf.json; before every init() below, which look it up by label.
+            // The island window (the WebView one, or the native Overlay when the flag ui.native.pill is on) is built here, not declared in tauri.conf.json; before every init() below, which look it up by label.
             // The command bar is not: it is created on demand (ui/lazy.rs; command::init builds it at start only when ui.lazyBarSecs = 0).
-            ui::windows::build_pill(app.handle())?;
+            ui::windows::build_island(app.handle())?;
             store::init(app);
             settings::init(app);
             pill::init(app);

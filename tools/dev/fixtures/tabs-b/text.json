@@ -1,0 +1,30 @@
+{
+  "now": 1767225600000,
+  "scenarios": {
+    "tools": {
+      "text": "Hello brave new world.\nsecond line here, with a few words to fill the area; and a third sentence follows!\n",
+      "selection": [0, 22],
+      "replies": {},
+      "events": []
+    },
+    "stats": {
+      "text": "The quick brown fox jumps over the lazy dog. It was a sunny day. Nobody minded the fox.",
+      "action": {"tool": "count"},
+      "replies": {},
+      "events": []
+    },
+    "qr": {
+      "text": "https://example.com/pill",
+      "action": {"tool": "qr"},
+      "replies": {},
+      "events": []
+    },
+    "ai-busy": {
+      "text": "Short sentence that the model is busy shortening right now.",
+      "mode": "ai",
+      "action": {"ai": "shorten"},
+      "replies": {"ai_transform": {"ok": true, "text": "Short."}},
+      "events": []
+    }
+  }
+}
