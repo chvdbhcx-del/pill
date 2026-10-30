@@ -178,7 +178,6 @@ fn reduced_motion_switches_pages_at_once() {
     assert!(t.v.borrow().leaving.is_none(), "no exit slide under reduced motion");
     assert_eq!(t.current(), "appearance");
     assert!(t.v.borrow().enter_t.finished());
-    glasskit::ease::force_reduced(None);
 }
 
 #[test]
