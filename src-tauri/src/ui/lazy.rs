@@ -70,6 +70,9 @@ pub fn try_get(app: &AppHandle, label: &str) -> Option<WebviewWindow> {
 /// The live window, built hidden when there is none. May block (it waits for a running teardown and for the build): worker threads only.
 pub fn get_or_create(app: &AppHandle, label: &str) -> Option<WebviewWindow> {
     let s = spec(label)?;
+    if label == windows::BAR && crate::ui::bar_view::bar_is_native() {
+        return None; // the command bar is a native window in this run: no WebView is built for it
+    }
     let _g = lk(&GATE);
     if let Some(w) = app.get_webview_window(s.label) {
         return Some(w);
@@ -164,6 +167,12 @@ fn watch(app: &AppHandle, s: &'static Spec) {
             }
         }
     }
+}
+
+/// Test seam: with the native flag off the lazy table still owns the `bar` label (the WebView window).
+#[cfg(test)]
+pub fn try_get_label_is_web_only() -> bool {
+    spec(windows::BAR).is_some() && !crate::ui::bar_view::bar_is_native()
 }
 
 #[cfg(test)]

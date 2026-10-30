@@ -34,6 +34,9 @@ pub fn build_pill(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 
 /// The command bar: created hidden; command.rs places, shows and focuses it.
 pub fn build_bar(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    if crate::ui::bar_view::bar_is_native() {
+        return Err(tauri::Error::WindowNotFound); // flag ui.native.bar: the bar is a native window, never a WebView
+    }
     WebviewWindowBuilder::new(app, BAR, WebviewUrl::App("bar.html".into()))
         .title("pill-bar")
         .inner_size(560.0, 350.0)
