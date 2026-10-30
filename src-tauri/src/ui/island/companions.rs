@@ -80,6 +80,9 @@ pub struct Companions {
     /// where the face is (window px) for the gaze: set while drawing
     face: Option<(f32, f32)>,
     pub eyes_at: Option<(f32, f32)>,
+    /// host clock of the last `tick`: the engines get the REAL time since then (the host hands a nominal frame after an idle gap)
+    last_tick: Option<f64>,
+    created: bool,
 }
 
 impl Companions {
@@ -124,8 +127,12 @@ impl Companions {
 
     /// The effective edge reaction (`calm`, `music`, ...) and its colour (css hex or empty).
     pub fn set_reaction(&mut self, name: &str, color: &str) {
+        let tint = parse_tint(color);
+        if self.state == name && self.tint == tint {
+            return; // the view calls this every frame: re-applying the same state would restart the pet (cancels blinks, resets the breath)
+        }
         self.state = name.to_string();
-        self.tint = parse_tint(color);
+        self.tint = tint;
         if let Some(p) = &mut self.pet {
             p.set_state(name, self.tint);
         }
@@ -187,7 +194,12 @@ impl Companions {
     }
 
     /// Advances the pet and the characters; true while something moves (the view keeps asking for frames).
-    pub fn tick(&mut self, dt_ms: f32) -> bool {
+    pub fn tick(&mut self, now_ms: f64) -> bool {
+        let dt_ms = match self.last_tick {
+            Some(t) => (now_ms - t).clamp(0.0, 5000.0) as f32,
+            None => 16.0,
+        };
+        self.last_tick = Some(now_ms);
         let mut busy = false;
         if let Some(p) = &mut self.pet {
             busy |= p.tick(dt_ms) == NeedsFrame::Yes;
@@ -206,6 +218,17 @@ impl Companions {
         self.pet.as_ref().and_then(|p| p.next_wake_ms())
     }
 
+    /// Ms (host clock) until the pet has something to do again, counted from `now_ms`; `None` = no pet / reduced motion.
+    pub fn wake_in(&self, now_ms: f64) -> Option<f64> {
+        let behind = self.last_tick.map_or(0.0, |t| (now_ms - t).max(0.0));
+        self.next_wake_ms().map(|w| (w as f64 - behind).max(0.0))
+    }
+
+    /// True once after an engine was created (in `draw`): the view must tick and draw again to start it.
+    pub fn take_created(&mut self) -> bool {
+        std::mem::take(&mut self.created)
+    }
+
     fn ensure(&mut self, cv: &Canvas) {
         if self.pet.is_none() {
             if let Ok(mut p) = PetEngine::with_context(cv.dc) {
@@ -215,6 +238,7 @@ impl Companions {
                 }
                 p.set_state(&self.state, self.tint);
                 self.pet = Some(p);
+                self.created = true;
             }
         }
         if self.chars.is_none() && matches!(self.style, EdgeStyle::Tail | EdgeStyle::Legs) {
@@ -223,6 +247,7 @@ impl Companions {
                 c.set_light_island(self.light);
                 c.set_state(&self.state, self.tint);
                 self.chars = Some(c);
+                self.created = true;
             }
         }
     }
@@ -330,5 +355,88 @@ mod tests {
         assert!((c.cap_box(body, 1.0).unwrap().x - 294.0).abs() < 1e-3);
         assert_eq!(parse_tint("#d8836a").map(|c| (c.r * 255.0).round() as u8), Some(0xd8));
         assert!(parse_tint("var(--accent)").is_none());
+    }
+
+    fn shot(c: &mut Companions, h: &glasskit::testkit::Harness) -> glasskit::testkit::Image {
+        h.render(60, 40, 1.0, Color::rgba(0.0, 0.0, 0.0, 1.0), |cv| c.draw_pet(cv, Rect::new(5.0, 5.0, 50.0, 30.0), 1.0))
+    }
+
+    fn eyes() -> (Companions, glasskit::testkit::Harness) {
+        let h = glasskit::testkit::Harness::new();
+        let mut c = Companions::new();
+        c.apply(&json!({"pet": "eyes"}), EdgeStyle::Liquid);
+        let _ = shot(&mut c, &h); // creates the engine
+        assert!(c.take_created(), "the first draw reports the new engine so the view can start it");
+        (c, h)
+    }
+
+    #[test]
+    fn the_pet_gets_real_elapsed_time_after_an_idle_gap_and_wakes_on_schedule() {
+        let (mut c, h) = eyes();
+        c.tick(0.0);
+        let first = shot(&mut c, &h);
+        let wake = c.wake_in(0.0).expect("an idle pet announces its next behaviour (the view arms its alarm with it)");
+        assert!(wake > 0.0 && wake < 7500.0, "{wake}");
+        // the host sleeps; the alarm fires 8 s later and the next frame carries a nominal 16 ms: the engine must still be 8 s older
+        let mut moved = false;
+        for k in 0..40 {
+            c.tick(8000.0 + k as f64 * 16.0);
+            if shot(&mut c, &h).diff(&first, 2) > 0 {
+                moved = true;
+                break;
+            }
+        }
+        assert!(moved, "after 8 s of real time the pet blinked / glanced");
+        assert!(c.wake_in(8000.0 + 16.0 * 40.0).is_some());
+    }
+
+    #[test]
+    fn the_gaze_moves_the_eyes_and_clears() {
+        let (mut c, h) = eyes();
+        c.tick(0.0);
+        c.gaze(Some((-500.0, 20.0)));
+        for k in 1..30 {
+            c.tick(k as f64 * 16.0);
+        }
+        let left = shot(&mut c, &h);
+        c.gaze(Some((900.0, 20.0)));
+        for k in 30..60 {
+            c.tick(k as f64 * 16.0);
+        }
+        let right = shot(&mut c, &h);
+        assert!(left.diff(&right, 2) > 0);
+    }
+
+    #[test]
+    fn a_calm_pet_asks_for_frames_while_it_breathes() {
+        let h = glasskit::testkit::Harness::new();
+        for id in crate::ui::pets::engine::catalogue().iter().map(|p| p.id) {
+            let mut c = Companions::new();
+            c.apply(&json!({ "pet": id }), EdgeStyle::Liquid);
+            let _ = shot(&mut c, &h);
+            let busy = (0..120).filter(|k| c.tick(*k as f64 * 16.0)).count();
+            assert!(busy > 100, "{id}: the breathing rig must keep frames coming ({busy}/120)");
+        }
+    }
+
+    #[test]
+    fn re_applying_the_same_reaction_every_frame_does_not_freeze_the_pet() {
+        // the view feeds the effective reaction on every step; the engine must only see a CHANGE
+        let (mut c, h) = eyes();
+        c.set_reaction("calm", "");
+        c.tick(0.0);
+        let first = shot(&mut c, &h);
+        let mut moved = false;
+        for k in 1..800 {
+            c.set_reaction("calm", "");
+            c.tick(k as f64 * 16.0);
+            if shot(&mut c, &h).diff(&first, 2) > 0 {
+                moved = true;
+                break;
+            }
+        }
+        assert!(moved, "12 s of frames with the reaction re-applied each frame: the pet never moved");
+        c.set_reaction("music", "#d8836a");
+        assert_eq!(c.state, "music", "a real change still goes through");
     }
 }
