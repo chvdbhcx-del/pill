@@ -1,0 +1,1039 @@
+{
+ "now": 1793343600000,
+ "tz": "Europe/Moscow",
+ "common": {
+  "replies": {
+   "settings_get": {
+    "theme": "dark",
+    "language": "ru",
+    "reduceMotion": true,
+    "size": 100,
+    "clock24": true,
+    "lastTab": "",
+    "live.agents": true,
+    "net.ai": true,
+    "pinned": true,
+    "autoHide": false
+   },
+   "settings_info": {
+    "version": "0.5.3"
+   },
+   "battery_state": null,
+   "weather_get": null,
+   "pill_monitors": []
+  }
+ },
+ "scenarios": {
+  "note-formatted": {
+   "replies": {
+    "note_list": [
+     {
+      "id": 1,
+      "title": "Список покупок"
+     },
+     {
+      "id": 2,
+      "title": "Идеи для проекта"
+     },
+     {
+      "id": 3,
+      "title": "Рецепт борща"
+     },
+     {
+      "id": 4,
+      "title": "Номер заказа 48213"
+     }
+    ],
+    "note_get": {
+     "id": 1,
+     "title": "Список покупок",
+     "body_html": "<b>Список покупок</b><div>Купить <i>завтра</i> до <s>обеда</s>: <mark>молоко</mark> и <a href=\"https://example.com/menu\">рецепт</a></div><ul><li>Хлеб <b>ржаной</b></li><li>Сыр</li><li>Яблоки</li></ul><ol><li>Позвонить в банк</li><li>Оплатить интернет</li></ol><div><input type=\"checkbox\" checked=\"\">&nbsp;Сделано</div><div><input type=\"checkbox\">&nbsp;Ещё не сделано</div>",
+     "folder_id": null
+    },
+    "note_save": {
+     "id": 1,
+     "title": "Список покупок"
+    },
+    "timer_state": {
+     "active": false
+    },
+    "remind_list": []
+   }
+  },
+  "note-empty": {
+   "replies": {
+    "note_list": [
+     {
+      "id": 1,
+      "title": ""
+     }
+    ],
+    "note_get": {
+     "id": 1,
+     "title": "",
+     "body_html": "",
+     "folder_id": null
+    },
+    "note_save": {
+     "id": 1,
+     "title": ""
+    },
+    "timer_state": {
+     "active": false
+    },
+    "remind_list": []
+   }
+  },
+  "note-checklist": {
+   "replies": {
+    "note_list": [
+     {
+      "id": 1,
+      "title": "План на неделю"
+     },
+     {
+      "id": 2,
+      "title": "Идеи для проекта"
+     },
+     {
+      "id": 3,
+      "title": "Рецепт борща"
+     },
+     {
+      "id": 4,
+      "title": "Номер заказа 48213"
+     }
+    ],
+    "note_get": {
+     "id": 1,
+     "title": "План на неделю",
+     "body_html": "<b>План на неделю</b><div><input type=\"checkbox\" checked=\"\">&nbsp;Собрать отчёт</div><div><input type=\"checkbox\" checked=\"\">&nbsp;Отправить счёт</div><div><input type=\"checkbox\">&nbsp;Записаться к врачу</div><div><input type=\"checkbox\">&nbsp;Купить билеты</div><div><input type=\"checkbox\">&nbsp;</div>",
+     "folder_id": null
+    },
+    "note_save": {
+     "id": 1,
+     "title": "План на неделю"
+    },
+    "timer_state": {
+     "active": false
+    },
+    "remind_list": []
+   }
+  },
+  "timer-idle": {
+   "replies": {
+    "note_list": [
+     {
+      "id": 1,
+      "title": "Список покупок"
+     },
+     {
+      "id": 2,
+      "title": "Идеи для проекта"
+     },
+     {
+      "id": 3,
+      "title": "Рецепт борща"
+     },
+     {
+      "id": 4,
+      "title": "Номер заказа 48213"
+     }
+    ],
+    "note_get": {
+     "id": 1,
+     "title": "Список покупок",
+     "body_html": "<b>Список покупок</b><div>Купить <i>завтра</i> до <s>обеда</s>: <mark>молоко</mark> и <a href=\"https://example.com/menu\">рецепт</a></div><ul><li>Хлеб <b>ржаной</b></li><li>Сыр</li><li>Яблоки</li></ul><ol><li>Позвонить в банк</li><li>Оплатить интернет</li></ol><div><input type=\"checkbox\" checked=\"\">&nbsp;Сделано</div><div><input type=\"checkbox\">&nbsp;Ещё не сделано</div>",
+     "folder_id": null
+    },
+    "note_save": {
+     "id": 1,
+     "title": "Список покупок"
+    },
+    "timer_state": {
+     "active": false
+    },
+    "remind_list": []
+   }
+  },
+  "reminders-empty": {
+   "alias": "timer-idle"
+  },
+  "timer-running-ring": {
+   "replies": {
+    "note_list": [
+     {
+      "id": 1,
+      "title": "Список покупок"
+     },
+     {
+      "id": 2,
+      "title": "Идеи для проекта"
+     },
+     {
+      "id": 3,
+      "title": "Рецепт борща"
+     },
+     {
+      "id": 4,
+      "title": "Номер заказа 48213"
+     }
+    ],
+    "note_get": {
+     "id": 1,
+     "title": "Список покупок",
+     "body_html": "<b>Список покупок</b><div>Купить <i>завтра</i> до <s>обеда</s>: <mark>молоко</mark> и <a href=\"https://example.com/menu\">рецепт</a></div><ul><li>Хлеб <b>ржаной</b></li><li>Сыр</li><li>Яблоки</li></ul><ol><li>Позвонить в банк</li><li>Оплатить интернет</li></ol><div><input type=\"checkbox\" checked=\"\">&nbsp;Сделано</div><div><input type=\"checkbox\">&nbsp;Ещё не сделано</div>",
+     "folder_id": null
+    },
+    "note_save": {
+     "id": 1,
+     "title": "Список покупок"
+    },
+    "timer_state": {
+     "active": true,
+     "id": 1,
+     "due_at": 1793344350000,
+     "total_s": 1500
+    },
+    "remind_list": [
+     {
+      "id": 11,
+      "text": "Позвонить маме",
+      "due_at": 1793426400000,
+      "repeat_rule": "daily",
+      "fired": false
+     },
+     {
+      "id": 12,
+      "text": "Выключить плиту",
+      "due_at": 1793344680000,
+      "repeat_rule": "none",
+      "fired": false
+     }
+    ]
+   }
+  },
+  "reminders-2": {
+   "alias": "timer-running-ring"
+  },
+  "custom-editing": {
+   "replies": {
+    "note_list": [
+     {
+      "id": 1,
+      "title": "Список покупок"
+     },
+     {
+      "id": 2,
+      "title": "Идеи для проекта"
+     },
+     {
+      "id": 3,
+      "title": "Рецепт борща"
+     },
+     {
+      "id": 4,
+      "title": "Номер заказа 48213"
+     }
+    ],
+    "note_get": {
+     "id": 1,
+     "title": "Список покупок",
+     "body_html": "<b>Список покупок</b><div>Купить <i>завтра</i> до <s>обеда</s>: <mark>молоко</mark> и <a href=\"https://example.com/menu\">рецепт</a></div><ul><li>Хлеб <b>ржаной</b></li><li>Сыр</li><li>Яблоки</li></ul><ol><li>Позвонить в банк</li><li>Оплатить интернет</li></ol><div><input type=\"checkbox\" checked=\"\">&nbsp;Сделано</div><div><input type=\"checkbox\">&nbsp;Ещё не сделано</div>",
+     "folder_id": null
+    },
+    "note_save": {
+     "id": 1,
+     "title": "Список покупок"
+    },
+    "timer_state": {
+     "active": false
+    },
+    "remind_list": []
+   }
+  },
+  "chat-empty": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": []
+   }
+  },
+  "chat-answer": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": [
+     {
+      "id": 1,
+      "title": "Как работает VPN",
+      "updated_at": 1793340000000
+     },
+     {
+      "id": 2,
+      "title": "Письмо о переносе встречи",
+      "updated_at": 1793250000000
+     },
+     {
+      "id": 3,
+      "title": "Идеи на выходные",
+      "updated_at": 1792911600000
+     }
+    ],
+    "chat_messages": [
+     {
+      "id": 1,
+      "role": "user",
+      "content": "Объясни простыми словами, как работает VPN"
+     },
+     {
+      "id": 2,
+      "role": "assistant",
+      "content": "## Как работает VPN\n\nVPN создаёт **зашифрованный туннель** между вашим компьютером и сервером. Вот что важно:\n\n- трафик шифруется до выхода из устройства\n- сайты видят адрес сервера, а не ваш\n- провайдер видит только соединение с VPN\n\nПроверить адрес можно командой `curl ifconfig.me`. Пример на Rust:\n\n```rust\nfn main() {\n    let key = derive_key(\"secret\");\n    println!(\"tunnel up: {}\", key.len());\n}\n```\n\nПодробнее читайте в [документации WireGuard](https://www.wireguard.com/)."
+     }
+    ]
+   }
+  },
+  "chat-streaming": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": [],
+    "chat_send": {
+     "ok": true,
+     "thread": 1,
+     "run": 7
+    }
+   },
+   "events": [
+    {
+     "name": "chat:delta",
+     "payload": {
+      "thread": 1,
+      "run": 7,
+      "text": "## Как работает VPN\n\nVPN создаёт **зашифрованный туннель** между вашим компьютером и сервером. Вот что важно:\n\n- трафик шифруется до выхода из устройства\n- сайты видят адрес сервера, а не ваш\n- провайдер видит только соединение с VPN\n\nПроверить адрес можно командой `curl ifconfig.me`. Пример на Rust:\n\n```rust\nfn main() {\n    let key = derive_key(\"secret\");\n    println!(\"tu"
+     },
+     "after_ms": 100
+    }
+   ],
+   "text": "Объясни простыми словами, как работает VPN"
+  },
+  "chat-typing-dots": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": [],
+    "chat_send": {
+     "ok": true,
+     "thread": 1,
+     "run": 7
+    }
+   },
+   "text": "Объясни простыми словами, как работает VPN"
+  },
+  "chat-history-popover": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": [
+     {
+      "id": 1,
+      "title": "Как работает VPN",
+      "updated_at": 1793340000000
+     },
+     {
+      "id": 2,
+      "title": "Письмо о переносе встречи",
+      "updated_at": 1793250000000
+     },
+     {
+      "id": 3,
+      "title": "Идеи на выходные",
+      "updated_at": 1792911600000
+     }
+    ],
+    "chat_messages": [
+     {
+      "id": 1,
+      "role": "user",
+      "content": "Объясни простыми словами, как работает VPN"
+     },
+     {
+      "id": 2,
+      "role": "assistant",
+      "content": "VPN шифрует трафик и скрывает ваш адрес."
+     }
+    ]
+   }
+  },
+  "chat-settings-popover": {
+   "replies": {
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [
+     {
+      "id": "ollama",
+      "up": true,
+      "models": [
+       "qwen3:8b"
+      ]
+     }
+    ],
+    "chat_threads": []
+   }
+  },
+  "chat-offline": {
+   "replies": {
+    "ai_config": {
+     "on": false,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": [],
+    "chat_threads": []
+   }
+  },
+  "text-tools": {
+   "text": "привет, мир! Это тестовый текст для проверки инструментов.\nВторая строка с  лишними  пробелами.\nhttps://example.com/pill?utm=1",
+   "replies": {}
+  },
+  "text-stats": {
+   "text": "привет, мир! Это тестовый текст для проверки инструментов.\nВторая строка с  лишними  пробелами.\nhttps://example.com/pill?utm=1",
+   "replies": {}
+  },
+  "text-qr": {
+   "text": "https://example.com/pill?utm=1",
+   "replies": {}
+  },
+  "text-ai-busy": {
+   "text": "привет, мир! Это тестовый текст для проверки инструментов.\nВторая строка с  лишними  пробелами.\nhttps://example.com/pill?utm=1",
+   "replies": {
+    "ai_transform": {
+     "__pending": true
+    },
+    "ai_config": {
+     "on": true,
+     "baseUrl": "http://127.0.0.1:11434/v1",
+     "model": "qwen3:8b",
+     "preset": "ollama",
+     "hasKey": false,
+     "urlError": ""
+    },
+    "net_features_status": {
+     "features": [
+      {
+       "id": "ai",
+       "hosts": [
+        "127.0.0.1"
+       ]
+      }
+     ]
+    },
+    "ai_models": {
+     "ok": true,
+     "models": [
+      "qwen3:8b",
+      "llama3.2:3b"
+     ]
+    },
+    "ai_probe": []
+   }
+  },
+  "agents-list": {
+   "replies": {
+    "agents_list": {
+     "sessions": [
+      {
+       "tool": "claude-code",
+       "session": "a1",
+       "state": "waiting",
+       "title": "Запустить миграцию базы данных?",
+       "cwd": "C:\\Users\\usr\\Documents\\Проекты\\island-replica",
+       "project": "island-replica",
+       "ts": 1793343505000
+      },
+      {
+       "tool": "claude-code",
+       "session": "b2",
+       "state": "working",
+       "title": "## Переписываю вкладку **чата** на Rust",
+       "cwd": "C:\\Users\\usr\\Documents\\Проекты\\macshell",
+       "project": "macshell",
+       "ts": 1793343180000
+      },
+      {
+       "tool": "codex",
+       "session": "c3",
+       "state": "done",
+       "title": "Готово: тесты зелёные",
+       "cwd": "C:\\Users\\usr\\Documents\\Проекты\\tg-import",
+       "project": "tg-import",
+       "ts": 1793341080000
+      }
+     ],
+     "working": 1,
+     "waiting": 1
+    }
+   }
+  },
+  "agents-empty": {
+   "replies": {
+    "agents_list": {
+     "sessions": [],
+     "working": 0,
+     "waiting": 0
+    }
+   }
+  },
+  "ai-actions-menu": {
+   "replies": {
+    "ai_clip_text": "Hello team, I would like to reschedule our meeting to Friday because the release got delayed. Please let me know if that works for you."
+   }
+  },
+  "ai-actions-busy": {
+   "replies": {
+    "ai_clip_text": "Hello team, I would like to reschedule our meeting to Friday because the release got delayed. Please let me know if that works for you.",
+    "ai_transform": {
+     "__pending": true
+    }
+   }
+  },
+  "ai-actions-result": {
+   "replies": {
+    "ai_clip_text": "Hello team, I would like to reschedule our meeting to Friday because the release got delayed. Please let me know if that works for you.",
+    "ai_transform": {
+     "ok": true,
+     "text": "Привет, команда! Я хотел бы перенести нашу встречу на пятницу, потому что релиз задержался. Дайте знать, подходит ли вам это.",
+     "clipped": false
+    }
+   }
+  },
+  "aisetup-fresh": {
+   "replies": {
+    "aisetup_status": {
+     "done": false,
+     "dir": "C:\\Users\\usr\\AppData\\Roaming\\Pill\\ai",
+     "busy": null,
+     "whisper": {
+      "engine": {
+       "installed": false,
+       "tag": "v1.7.4",
+       "host": "github.com",
+       "size": 4200000
+      },
+      "models": [
+       {
+        "id": "base",
+        "size": 148000000,
+        "installed": false,
+        "host": "huggingface.co"
+       },
+       {
+        "id": "small",
+        "size": 487000000,
+        "installed": false,
+        "host": "huggingface.co"
+       },
+       {
+        "id": "turbo",
+        "size": 574000000,
+        "installed": false,
+        "host": "huggingface.co"
+       }
+      ],
+      "enabled": false,
+      "running": null,
+      "model": ""
+     },
+     "ollama": {
+      "installed": false,
+      "up": false,
+      "installer": {
+       "ready": false,
+       "size": 1100000000
+      },
+      "catalog": [
+       {
+        "name": "qwen3:4b",
+        "size": 2600000000
+       },
+       {
+        "name": "llama3.2:3b",
+        "size": 2000000000
+       },
+       {
+        "name": "gemma3:4b",
+        "size": 3300000000
+       }
+      ]
+     },
+     "servers": [
+      {
+       "id": "ollama",
+       "name": "Ollama",
+       "url": "http://127.0.0.1:11434",
+       "up": false,
+       "models": []
+      },
+      {
+       "id": "lmstudio",
+       "name": "LM Studio",
+       "url": "http://127.0.0.1:1234",
+       "up": false,
+       "models": []
+      }
+     ],
+     "ai": {
+      "on": false,
+      "baseUrl": "",
+      "model": ""
+     }
+    },
+    "voice_has_key": {
+     "has": false
+    }
+   }
+  },
+  "aisetup-ready": {
+   "replies": {
+    "aisetup_status": {
+     "done": true,
+     "dir": "C:\\Users\\usr\\AppData\\Roaming\\Pill\\ai",
+     "busy": null,
+     "whisper": {
+      "engine": {
+       "installed": true,
+       "tag": "v1.7.4",
+       "host": "github.com",
+       "size": 4200000
+      },
+      "models": [
+       {
+        "id": "base",
+        "size": 148000000,
+        "installed": false,
+        "host": "huggingface.co"
+       },
+       {
+        "id": "small",
+        "size": 487000000,
+        "installed": true,
+        "host": "huggingface.co"
+       },
+       {
+        "id": "turbo",
+        "size": 574000000,
+        "installed": false,
+        "host": "huggingface.co"
+       }
+      ],
+      "enabled": true,
+      "running": 8179,
+      "model": "small"
+     },
+     "ollama": {
+      "installed": true,
+      "up": true,
+      "installer": {
+       "ready": true,
+       "size": 1100000000
+      },
+      "catalog": [
+       {
+        "name": "qwen3:4b",
+        "size": 2600000000
+       },
+       {
+        "name": "llama3.2:3b",
+        "size": 2000000000
+       }
+      ]
+     },
+     "servers": [
+      {
+       "id": "ollama",
+       "name": "Ollama",
+       "url": "http://127.0.0.1:11434",
+       "up": true,
+       "models": [
+        "qwen3:8b",
+        "llama3.2:3b"
+       ]
+      },
+      {
+       "id": "lmstudio",
+       "name": "LM Studio",
+       "url": "http://127.0.0.1:1234",
+       "up": false,
+       "models": []
+      }
+     ],
+     "ai": {
+      "on": true,
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "qwen3:8b"
+     }
+    },
+    "voice_has_key": {
+     "has": true
+    }
+   }
+  },
+  "aisetup-downloading": {
+   "replies": {
+    "aisetup_status": {
+     "done": false,
+     "dir": "C:\\Users\\usr\\AppData\\Roaming\\Pill\\ai",
+     "busy": null,
+     "whisper": {
+      "engine": {
+       "installed": false,
+       "tag": "v1.7.4",
+       "host": "github.com",
+       "size": 4200000
+      },
+      "models": [
+       {
+        "id": "base",
+        "size": 148000000,
+        "installed": false,
+        "host": "huggingface.co"
+       },
+       {
+        "id": "small",
+        "size": 487000000,
+        "installed": false,
+        "host": "huggingface.co"
+       },
+       {
+        "id": "turbo",
+        "size": 574000000,
+        "installed": false,
+        "host": "huggingface.co"
+       }
+      ],
+      "enabled": false,
+      "running": null,
+      "model": ""
+     },
+     "ollama": {
+      "installed": false,
+      "up": false,
+      "installer": {
+       "ready": false,
+       "size": 1100000000
+      },
+      "catalog": [
+       {
+        "name": "qwen3:4b",
+        "size": 2600000000
+       },
+       {
+        "name": "llama3.2:3b",
+        "size": 2000000000
+       },
+       {
+        "name": "gemma3:4b",
+        "size": 3300000000
+       }
+      ]
+     },
+     "servers": [
+      {
+       "id": "ollama",
+       "name": "Ollama",
+       "url": "http://127.0.0.1:11434",
+       "up": false,
+       "models": []
+      },
+      {
+       "id": "lmstudio",
+       "name": "LM Studio",
+       "url": "http://127.0.0.1:1234",
+       "up": false,
+       "models": []
+      }
+     ],
+     "ai": {
+      "on": false,
+      "baseUrl": "",
+      "model": ""
+     }
+    },
+    "aisetup_whisper_install": {
+     "ok": true
+    },
+    "voice_has_key": {
+     "has": false
+    }
+   },
+   "events": [
+    {
+     "name": "aisetup:progress",
+     "payload": {
+      "id": "whisper",
+      "item": "small",
+      "phase": "download",
+      "done": 187000000,
+      "total": 487000000,
+      "message": ""
+     },
+     "after_ms": 100
+    }
+   ]
+  },
+  "aisetup-error": {
+   "replies": {
+    "aisetup_status": {
+     "done": false,
+     "dir": "C:\\Users\\usr\\AppData\\Roaming\\Pill\\ai",
+     "busy": null,
+     "whisper": {
+      "engine": {
+       "installed": false,
+       "tag": "v1.7.4",
+       "host": "github.com",
+       "size": 4200000
+      },
+      "models": [
+       {
+        "id": "base",
+        "size": 148000000,
+        "installed": false,
+        "host": "huggingface.co"
+       },
+       {
+        "id": "small",
+        "size": 487000000,
+        "installed": false,
+        "host": "huggingface.co"
+       },
+       {
+        "id": "turbo",
+        "size": 574000000,
+        "installed": false,
+        "host": "huggingface.co"
+       }
+      ],
+      "enabled": false,
+      "running": null,
+      "model": ""
+     },
+     "ollama": {
+      "installed": false,
+      "up": false,
+      "installer": {
+       "ready": false,
+       "size": 1100000000
+      },
+      "catalog": [
+       {
+        "name": "qwen3:4b",
+        "size": 2600000000
+       },
+       {
+        "name": "llama3.2:3b",
+        "size": 2000000000
+       },
+       {
+        "name": "gemma3:4b",
+        "size": 3300000000
+       }
+      ]
+     },
+     "servers": [
+      {
+       "id": "ollama",
+       "name": "Ollama",
+       "url": "http://127.0.0.1:11434",
+       "up": false,
+       "models": []
+      },
+      {
+       "id": "lmstudio",
+       "name": "LM Studio",
+       "url": "http://127.0.0.1:1234",
+       "up": false,
+       "models": []
+      }
+     ],
+     "ai": {
+      "on": false,
+      "baseUrl": "",
+      "model": ""
+     }
+    },
+    "aisetup_whisper_install": {
+     "ok": false,
+     "error": "download failed: connection reset (huggingface.co)"
+    },
+    "voice_has_key": {
+     "has": false
+    }
+   }
+  }
+ }
+}
