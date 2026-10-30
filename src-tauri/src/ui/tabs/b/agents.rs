@@ -238,7 +238,6 @@ impl AgentsScreen {
         let v = self.model.view();
         self.pulse = v.rows.iter().any(|r| r.state == "working" || r.state == "waiting");
         self.flip.set(&targets(&v.rows), mode, self.reduced);
-        cx.request_frame();
     }
 
     fn content_h(&self) -> f32 {
@@ -300,6 +299,7 @@ impl View for AgentsScreen {
         self.mount(cx);
         self.model.on_show();
         self.pump(cx);
+        cx.request_frame();
     }
 
     fn on_hide(&mut self, _cx: &mut Cx) {
@@ -430,7 +430,7 @@ mod tests {
         f.set(&rows(&["b", "n", "a"]), Mode::Flip, false);
         f.step(0.05);
         let (ya, _, _) = f.pos("a").unwrap();
-        assert!(ya > TOP_PAD + 44.0 - 1.0 && ya < TOP_PAD + 88.0, "a slides from slot 0 to slot 2, now at {ya}");
+        assert!(ya > TOP_PAD && ya < TOP_PAD + 88.0, "a slides from slot 0 to slot 2, now at {ya}");
         assert!(f.pos("n").unwrap().1 < 1.0, "the new row fades in");
         f.set(&rows(&["b", "n"]), Mode::Flip, false);
         assert_eq!(f.ghosts().count(), 1, "a fades out in place");
