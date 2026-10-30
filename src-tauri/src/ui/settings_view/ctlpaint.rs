@@ -30,7 +30,9 @@ impl SettingsView {
             Ctl::Toggle(t) | Ctl::Backend(t, _) => {
                 t.set_enabled(enabled);
                 t.set_focus(ring.0, ring.1);
-                t.draw(cv, th, cr);
+                // the switch knob is white in settings.css; the theme's `thumb` colour belongs to the slider
+                let tt = glasskit::theme::Theme { thumb: glasskit::color::Color::rgb8(255, 255, 255), ..*th };
+                t.draw(cv, &tt, cr);
             }
             Ctl::Slider(s) => {
                 s.set_enabled(enabled);
