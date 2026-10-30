@@ -83,7 +83,7 @@ impl Decoded {
     }
 }
 
-fn com_init() {
+pub(crate) fn com_init() {
     // MTA on pool threads; on the UI thread (STA) this returns RPC_E_CHANGED_MODE, which is fine: COM is up either way
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);

@@ -13,7 +13,7 @@ mod paint;
 mod tests;
 
 use super::core::{Base, Incoming, Local, Ticker};
-use super::draw::Source;
+use super::draw::{ImageCache, Source};
 use crate::ui::view::{Cx, Msg, View};
 use base64::Engine;
 use glasskit::canvas::Canvas;
@@ -88,6 +88,10 @@ pub struct ClipboardView {
     /// rows being deleted (their `Collapse` cue shrinks the height)
     pub(crate) collapsing: std::collections::HashSet<i64>,
     pub(crate) sel_id: Option<i64>,
+    /// the reload that follows a delete / wipe waits for the exit cues (the JS `await gone`)
+    deferred: Vec<BackendCall>,
+    /// tests: a fixed wall clock for the "3 min" labels
+    now: Option<i64>,
 }
 
 impl ClipboardView {
@@ -100,7 +104,12 @@ impl ClipboardView {
         input.radius = 12.0;
         ClipboardView {
             model: Clipboard::new(),
-            base: Base::new(),
+            base: {
+                let mut b = Base::new();
+                // 32 logical px tiles: 128 px thumbnails are enough up to 4x; 8 MB holds ~120 of them
+                b.images = ImageCache::new(8 * 1024 * 1024, 128);
+                b
+            },
             input,
             scroll: {
                 let mut s = ScrollView::new();
@@ -129,7 +138,15 @@ impl ClipboardView {
             lay: Vec::new(),
             collapsing: Default::default(),
             sel_id: None,
+            deferred: Vec::new(),
+            now: None,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_now(mut self, ms: i64) -> ClipboardView {
+        self.now = Some(ms);
+        self
     }
 
     pub(crate) fn tr(&self) -> &'static dyn Tr {
@@ -142,7 +159,7 @@ impl ClipboardView {
 
     pub(crate) fn vm(&mut self) -> &Vm {
         if self.dirty || self.vm.is_none() {
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+            let now = self.now.unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64));
             self.vm = Some(self.model.view(self.tr(), now));
             self.dirty = false;
         }
@@ -158,6 +175,10 @@ impl ClipboardView {
     /// After every model interaction: route its effects, refresh the view-model, wake the ticker.
     fn settle(&mut self, cx: &mut Cx) {
         let fxs = self.model.take_fx();
+        self.settle_with(cx, fxs);
+    }
+
+    fn settle_with(&mut self, cx: &mut Cx, fxs: Vec<pill_ui_core::panel::a::Fx>) {
         let locals = self.base.route_fx(cx, fxs);
         for l in locals {
             match l {
@@ -201,7 +222,7 @@ impl ClipboardView {
     }
 
     /// Advance the model clock to `cx.now_ms`; returns its due calls.
-    fn sync_clock(&mut self, cx: &mut Cx) {
+    fn sync_clock(&mut self, cx: &mut Cx) -> bool {
         let now = cx.now_ms;
         let dt = self.last_ms.map_or(0.0, |l| (now - l).max(0.0));
         self.last_ms = Some(now);
@@ -210,8 +231,33 @@ impl ClipboardView {
             let calls = self.model.tick(dt);
             if !calls.is_empty() {
                 self.run(cx, calls);
+                return true;
             }
         }
+        false
+    }
+
+    /// A tick of the model clock: redraw only when it changed something (a due call, an effect, a label such as "2 min").
+    fn on_tick(&mut self, cx: &mut Cx) -> Response {
+        let before = self.vm.take();
+        let ran = self.sync_clock(cx);
+        let fxs = self.model.take_fx();
+        self.dirty = true;
+        let changed = ran || !fxs.is_empty() || before.as_ref() != Some(self.vm());
+        if !changed {
+            return Response::NONE;
+        }
+        self.settle_with(cx, fxs);
+        Response::redraw()
+    }
+
+    /// The reload that follows a delete / wipe starts once the exit cues are over (JS: `await gone; load()`).
+    fn flush_deferred(&mut self, cx: &mut Cx) {
+        if self.deferred.is_empty() || self.model.items().iter().any(|c| self.base.player.is_active(&format!("row:{}", c.id))) {
+            return;
+        }
+        let calls = std::mem::take(&mut self.deferred);
+        self.run(cx, calls);
     }
 
     fn want_ticker_ms(&self, now: f64) -> u64 {
@@ -287,13 +333,13 @@ impl ClipboardView {
                     self.base.images.request(&cx.waker(), &format!("clip:{id}"), Source::Bytes(bytes));
                 }
             }
+            "clip_wipe" => self.base.images.clear(),
             "clip_list" => {
                 let ids: Vec<i64> = self.model.items().iter().map(|c| c.id).collect();
+                // held exit / collapse end states: the rebuilt list shows every row at rest again
                 for t in self.base.player.finished() {
-                    if let Some(id) = t.strip_prefix("row:").and_then(|s| s.parse::<i64>().ok()) {
-                        if !ids.contains(&id) || self.collapsing.contains(&id) {
-                            self.base.player.release(&t);
-                        }
+                    if t.starts_with("row:") {
+                        self.base.player.release(&t);
                     }
                 }
                 self.hl.retain(|id, _| ids.contains(id));
@@ -305,7 +351,11 @@ impl ClipboardView {
             }
             _ => {}
         }
-        self.run(cx, calls);
+        if matches!(cmd, "clip_delete" | "clip_wipe") && self.model.items().iter().any(|c| self.base.player.is_active(&format!("row:{}", c.id))) {
+            self.deferred.extend(calls);
+        } else {
+            self.run(cx, calls);
+        }
         self.select_hl();
         self.settle(cx);
     }
@@ -341,6 +391,7 @@ impl ClipboardView {
                         Act::Pin => Action::Pin(id),
                         Act::Del => {
                             self.collapsing.insert(id);
+                            self.base.images.remove(&format!("clip:{id}"));
                             Action::Delete(id)
                         }
                     };
@@ -430,10 +481,7 @@ impl View for ClipboardView {
                 self.settle(cx);
             }
             Incoming::Result { cmd, args, result } => self.on_result(cx, cmd, args, result),
-            Incoming::Tick(_) => {
-                self.sync_clock(cx);
-                self.settle(cx);
-            }
+            Incoming::Tick(_) => return self.on_tick(cx),
             Incoming::Image(_) => self.dirty = true,
             Incoming::Other(_) => return Response::NONE,
         }
@@ -444,6 +492,7 @@ impl View for ClipboardView {
         self.sync_clock(cx);
         let dt = (dt_ms / 1000.0) as f32;
         let mut busy = self.base.player.step(dt_ms);
+        self.flush_deferred(cx);
         busy |= self.scroll.step(dt);
         busy |= self.input.busy();
         for t in self.hl.values_mut() {
@@ -564,7 +613,11 @@ impl View for ClipboardView {
                 Response { consumed: true, redraw: true, ..Response::NONE }
             }
             InputEvent::Focus(false) => {
+                // the window lost the keyboard: the field and the model must agree (no `set_focus` back to the host)
+                self.focused = false;
                 self.input.set_focused(false);
+                self.model.set_search_focused(false);
+                self.retune_ticker(cx);
                 Response::redraw()
             }
             _ => Response::NONE,

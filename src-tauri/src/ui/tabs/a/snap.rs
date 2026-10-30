@@ -71,3 +71,27 @@ impl View for OnBgRef<'_> {
         self.0.draw(cv, theme, rect, cx)
     }
 }
+
+/// A `w` x `h` PNG whose upper half is `top` and lower half `bottom` (RGBA), written through the kit's WIC encoder.
+pub fn png_bytes(w: u32, h: u32, top: [u8; 4], bottom: [u8; 4]) -> Vec<u8> {
+    super::draw::com_init();
+    let g = glasskit::gfx::Gfx::warp().expect("warp");
+    let mut px = Vec::with_capacity((w * h * 4) as usize);
+    for y in 0..h {
+        let c = if y < h / 2 { top } else { bottom };
+        for _ in 0..w {
+            px.extend_from_slice(&[c[2], c[1], c[0], c[3]]);
+        }
+    }
+    let path = std::env::temp_dir().join(format!("pill-tabs-a-{}-{}x{}.png", std::process::id(), w, h));
+    g.save_png(path.to_str().unwrap(), w, h, &px).expect("png");
+    let b = std::fs::read(&path).expect("read png");
+    let _ = std::fs::remove_file(&path);
+    b
+}
+
+/// The same as a `data:image/png;base64,` URL (what `clip_image` and the media thumbnail answer with).
+pub fn png_data_url(w: u32, h: u32, top: [u8; 4], bottom: [u8; 4]) -> String {
+    use base64::Engine;
+    format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png_bytes(w, h, top, bottom)))
+}

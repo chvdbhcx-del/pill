@@ -149,7 +149,8 @@ impl ShelfView {
     // ------------------------------------------------------------------------------------------------------------ model plumbing
 
     fn frame(&self) -> Frame {
-        frame(self.base.rect, !self.v.empty)
+        // tab-local: events are translated by the drawn origin, `draw` shifts the canvas by it
+        frame(Rect::new(0.0, 0.0, self.base.rect.w, self.base.rect.h), !self.v.empty)
     }
 
     fn cols(&self) -> usize {
@@ -196,8 +197,12 @@ impl ShelfView {
 
     /// Run the model's calls, route its effects, rebuild the cached view.
     fn sync(&mut self, cx: &mut Cx, calls: Vec<BackendCall>) {
-        self.base.calls.run(cx, calls);
         let fxs = self.model.take_fx();
+        self.sync_with(cx, calls, fxs);
+    }
+
+    fn sync_with(&mut self, cx: &mut Cx, calls: Vec<BackendCall>, fxs: Vec<Fx>) {
+        self.base.calls.run(cx, calls);
         let fxs = self.filter_fx(fxs);
         self.base.route_fx(cx, fxs);
         self.refresh(cx);
@@ -551,7 +556,16 @@ impl View for ShelfView {
         match self.base.classify(msg, cx) {
             Incoming::Event { name, payload } => calls = self.model.on_event(&name, &payload),
             Incoming::Result { cmd, args, result } => calls = self.feed_result(cmd, &args, result),
-            Incoming::Tick(_) => calls = self.advance(cx),
+            Incoming::Tick(_) => {
+                // the coarse model clock: an idle shelf must not repaint 4 times a second, only when the clock changed something
+                let calls = self.advance(cx);
+                let fxs = self.model.take_fx();
+                if calls.is_empty() && fxs.is_empty() && self.model.view(tr(self.ru), Wall::new(0, 0)) == self.v {
+                    return Response::NONE;
+                }
+                self.sync_with(cx, calls, fxs);
+                return Response::redraw();
+            }
             Incoming::Image(_) | Incoming::Other(_) => {}
         }
         self.sync(cx, calls);
@@ -583,7 +597,7 @@ impl View for ShelfView {
             }
         };
         self.sync(cx, calls);
-        if matches!(ev.phase, DropPhase::Enter) {
+        if matches!(ev.phase, DropPhase::Enter | DropPhase::Drop) {
             Response { consumed: true, redraw: true, ..Response::NONE }
         } else {
             Response::redraw()
@@ -737,6 +751,17 @@ impl View for ShelfView {
 
     fn draw(&mut self, cv: &Canvas, th: &Theme, rect: Rect, cx: &Cx) {
         self.base.rect = rect;
+        cv.with_offset(rect.x, rect.y, |cv| self.draw_local(cv, th, cx));
+    }
+
+    fn on_dpi(&mut self, _scale: f32, _cx: &mut Cx) {
+        // thumbnails are decoded at 96 px, enough for 36 logical px at 2.5x; bitmaps are re-made per device context by the cache
+    }
+}
+
+impl ShelfView {
+    /// Everything in tab-local coordinates (origin = the tab's top-left).
+    fn draw_local(&mut self, cv: &Canvas, th: &Theme, cx: &Cx) {
         self.sync_scroll();
         let f = self.frame();
         let now = cx.now_ms;
@@ -795,10 +820,6 @@ impl View for ShelfView {
             });
         }
         self.draw_menu(cv, th);
-    }
-
-    fn on_dpi(&mut self, _scale: f32, _cx: &mut Cx) {
-        // thumbnails are decoded at 96 px, enough for 36 logical px at 2.5x; bitmaps are re-made per device context by the cache
     }
 }
 
