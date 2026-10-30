@@ -140,6 +140,23 @@ impl Kv for MemKv {
     }
 }
 
+/// A `Kv` shared by several models of one tab (single-threaded: UI thread only).
+#[derive(Clone)]
+pub struct SharedKv(pub std::rc::Rc<std::cell::RefCell<dyn Kv>>);
+impl SharedKv {
+    pub fn new<K: Kv + 'static>(k: K) -> Self {
+        SharedKv(std::rc::Rc::new(std::cell::RefCell::new(k)))
+    }
+}
+impl Kv for SharedKv {
+    fn get(&self, k: &str) -> Option<String> {
+        self.0.borrow().get(k)
+    }
+    fn set(&mut self, k: &str, v: &str) {
+        self.0.borrow_mut().set(k, v)
+    }
+}
+
 /// Animation kinds the renderer plays (durations/easing are the JS ones). `target` of a cue names the element/row.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Anim {
