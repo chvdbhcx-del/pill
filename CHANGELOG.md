@@ -7,6 +7,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 ### Removed
 - The web (WebView2) interface and the `--web-ui` / `--native` switches (also `PILL_WEB_UI`, `PILL_NATIVE` and the `ui.native.*` / `ui.lazyBarSecs` settings keys). Pill is native only: no WebView2 process is ever started, and the installer no longer carries the WebView2 bootstrapper.
 
+### Fixed
+- The "Eyes" pet no longer sits above the text line while the AI is thinking (the thinking pose lifted it by 2.5 units; now 0.8).
+
 ## [0.6.1] - 2026-10-30
 
 ### Fixed
