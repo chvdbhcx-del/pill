@@ -245,6 +245,8 @@ pub enum Effect {
     CollapsePill,
     /// start/stop dictation (PillVoice.toggle)
     VoiceToggle,
+    /// jump to another Settings page (`go('voice')`, `go('ai')`)
+    GoPage(&'static str),
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct LiveRow {
