@@ -1,5 +1,4 @@
-//! The native command bar (Wave "bar" of the WebView -> native rewrite): `BarView` is the `View` of the popup window `bar`. It replaces
-//! `bar.html` + `bar.js` + `uninstall-ui.js` + `md-lite.js` and draws with glasskit; all behaviour lives in the pure model
+//! The native command bar: `BarView` is the `View` of the popup window `bar`. It draws with glasskit; all behaviour lives in the pure model
 //! `pill_ui_core::bar` (`Bar::on_event` / `tick` / `view`), this file only translates:
 //!
 //! * host `InputEvent`s / `Msg`s -> `BarEvent`s, and the model's `Action`s -> backend calls (`Cx::call_async`, answered with `BarEvent::Reply`),

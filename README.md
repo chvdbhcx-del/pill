@@ -32,7 +32,7 @@ Project page: <https://chvdbhcx-del.github.io/pill/> (source in `docs/index.html
 - **Panel** with clipboard history, a file shelf, text tools, AI chat, notes with reminders and a timer, weather and quick system controls.
 - **Pets and characters** that live in the capsule and react to the island.
 - **Private by default.** Network features are opt-in; clipboard history stays on your machine.
-- **Small and quiet.** Rust + a WebView page set written in plain HTML/CSS/JS, no framework, no telemetry.
+- **Small and quiet.** Rust only: native Direct2D windows, no web view, no browser engine, no telemetry.
 
 ## Live events
 
@@ -143,17 +143,17 @@ The AI setup wizard downloads Ollama or Whisper only when you press its buttons.
 
 Download `Pill_<version>_x64-setup.exe` from the [latest release](../../releases/latest) and run it (English and Russian installer pages). Updates are optional: *Settings → Updates → Check now*. Every update is signed and verified before it is installed.
 
-The installer is not code-signed yet, so Windows SmartScreen warns on first run: see [docs/SIGNING.md](docs/SIGNING.md). Requires Windows 10 or 11 and WebView2 (included in Windows 11).
+The installer is not code-signed yet, so Windows SmartScreen warns on first run: see [docs/SIGNING.md](docs/SIGNING.md). Requires Windows 10 or 11 (no WebView2 needed).
 
 What changed in each version is in [CHANGELOG.md](CHANGELOG.md); the notes of every release are also on the [releases page](../../releases).
 
 ## Build from source
 
-Requirements: Windows 10/11, [Rust](https://rustup.rs/), Node.js 18+, WebView2 (included in Windows 11).
+Requirements: Windows 10/11, [Rust](https://rustup.rs/), Node.js 18+ (only for the Tauri CLI that builds the installer).
 
 ```powershell
 npm install
-npm run tauri dev                 # run with live front-end
+npm run tauri dev                 # run the app
 npm run tauri build -- --bundles nsis
 ```
 
@@ -169,7 +169,7 @@ The signing key is generated once (`npx tauri signer generate -w %USERPROFILE%\.
 
 ### Releasing via CI
 
-The workflow files in `ci-templates/` are meant to be copied to `.github/workflows/` (GitHub only accepts a push there from a token with the `workflow` scope: `gh auth refresh -s workflow`). `release.yml` does the same on GitHub: bump `version` in `src-tauri/tauri.conf.json`, update `CHANGELOG.md`, then push a tag `v<version>` (or run the workflow by hand). It builds the NSIS installer and uploads it with its `.sig` and `latest.json` to the release of that tag. The repository owner must first add the secret `TAURI_SIGNING_PRIVATE_KEY` (the content of the updater key file; plus `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if it has a password); without it the workflow stops at the first step. `ci-templates/ci.yml` runs `cargo check`, `cargo test` and a syntax check of `src/*.js` on every push and pull request to `main`.
+The workflow files in `ci-templates/` are meant to be copied to `.github/workflows/` (GitHub only accepts a push there from a token with the `workflow` scope: `gh auth refresh -s workflow`). `release.yml` does the same on GitHub: bump `version` in `src-tauri/tauri.conf.json`, update `CHANGELOG.md`, then push a tag `v<version>` (or run the workflow by hand). It builds the NSIS installer and uploads it with its `.sig` and `latest.json` to the release of that tag. The repository owner must first add the secret `TAURI_SIGNING_PRIVATE_KEY` (the content of the updater key file; plus `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if it has a password); without it the workflow stops at the first step. `ci-templates/ci.yml` runs `cargo check`, `cargo test` on every push and pull request to `main`.
 
 ### Packaging
 
@@ -177,7 +177,7 @@ The workflow files in `ci-templates/` are meant to be copied to `.github/workflo
 
 ### Development tools
 
-`tools/dev` has scripts for checking the running app over the WebView2 debug port (evaluate JS, CPU profile, island transition audit) and a screen-based sideways-jump detector: see [tools/dev/README.md](tools/dev/README.md).
+`tools/dev` has a memory report (`mem.ps1`) and a screen-based sideways-jump detector (`jump-detect.ps1`): see [tools/dev/README.md](tools/dev/README.md).
 
 ## License
 

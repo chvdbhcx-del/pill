@@ -345,7 +345,7 @@ pub fn chat_delete(thread: i64) -> bool {
     .is_some_and(|n| n > 0)
 }
 
-/// Open a link from an answer in the default browser (never inside the webview). http(s) only.
+/// Open a link from an answer in the default browser (never inside the app). http(s) only.
 pub fn chat_open_link(url: String) -> bool {
     use windows::core::{HSTRING, PCWSTR};
     use windows::Win32::Foundation::HWND;

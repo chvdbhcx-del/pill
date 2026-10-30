@@ -616,7 +616,7 @@ pub fn focus_one(fields: &mut [&mut Field], which: Option<usize>) {
 }
 
 /// Headless snapshots shared by the set-B tests: the PNGs land in `$PILL_SNAP_DIR` (default `<repo>/target-agent/snap/native`), named
-/// `<tab>-<state>-<dark|light>-<1x|2x>.png`; `tools/dev/tabs-b-diff.mjs` puts them next to the web renders.
+/// `<tab>-<state>-<dark|light>-<1x|2x>.png`.
 #[cfg(test)]
 pub mod snap {
     use crate::ui::host::testing::{render_view_cx, save_png};

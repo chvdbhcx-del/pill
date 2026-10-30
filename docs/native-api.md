@@ -1,5 +1,7 @@
 # Native API facade (`src-tauri/src/ui/api.rs`)
 
+> **Since 0.7.0 there is no web (WebView2) UI.** The native UI described here is the only one: the `ui.native.*` keys, `--native`, `--web-ui`, `PILL_NATIVE` / `PILL_WEB_UI`, `ui/flags.rs`, `ui/lazy.rs` and `ui/windows.rs` are gone, and every gate / "flag off" / "web" comparison below is history (v0.6.1 is the last release that still contains the web code).
+
 The native UI has no WebView, so it cannot `invoke('name', {..})`. `ui::api` is the in-process equivalent: the same command names, the same
 argument objects, the same results, calling the very same Rust functions the `#[tauri::command]` wrappers are. No command signature or behaviour
 was changed; the old web UI keeps working while both exist. Events go the other way through `ui::bus::subscribe` (see "Events").

@@ -1,5 +1,7 @@
 # Native panel set B (`src-tauri/src/ui/tabs/b`)
 
+> **Since 0.7.0 there is no web (WebView2) UI.** The native UI described here is the only one: the `ui.native.*` keys, `--native`, `--web-ui`, `PILL_NATIVE` / `PILL_WEB_UI`, `ui/flags.rs`, `ui/lazy.rs` and `ui/windows.rs` are gone, and every gate / "flag off" / "web" comparison below is history (v0.6.1 is the last release that still contains the web code).
+
 The native views of the Note (with the timer ring and the reminders), Text, Chat and Agents tabs and of the two overlays `ai_actions` and
 `ai_setup`. Models are the pure ones in `ui-core/src/panel/b/*`; the views own them, run their `BackendCall`s through `Cx::call_async`, feed
 the replies back with `on_reply`, subscribe to the backend events they handle, drain `take_effects()` / `take_anims()` and paint with glasskit.

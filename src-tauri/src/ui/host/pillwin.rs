@@ -1,7 +1,5 @@
-//! The seam between `pill.rs` and the island window. `pill.rs` today drives a Tauri WebView window through `me()` (an HWND in a global),
-//! `SetWindowPos`, `ShowWindow`, `set_ignore` and `MonitorFromWindow`; everything it needs from the window is this trait, so it can drive
-//! either that window or the native Overlay. [`NativePillWin`] is the native implementation (commands to the host thread). `pill.rs` is NOT
-//! rewired here: a later step swaps its `hwnd` global for a `Box<dyn PillWin>`.
+//! The seam between `pill.rs` and the island window. `pill.rs` drives the island Overlay only through this trait
+//! (placement, show / hide, capture affinity). [`NativePillWin`] is the implementation (commands to the host thread).
 //!
 //! All sizes and positions are PHYSICAL screen px, exactly as `pill.rs::place` computes them.
 use super::{HostHandle, IRect};

@@ -1,5 +1,7 @@
 # Native capture overlay (`src-tauri/src/ui/capture_view`)
 
+> **Since 0.7.0 there is no web (WebView2) UI.** The native UI described here is the only one: the `ui.native.*` keys, `--native`, `--web-ui`, `PILL_NATIVE` / `PILL_WEB_UI`, `ui/flags.rs`, `ui/lazy.rs` and `ui/windows.rs` are gone, and every gate / "flag off" / "web" comparison below is history (v0.6.1 is the last release that still contains the web code).
+
 The Rust replacement of `capture.html` + `capture.js` + `capture.css` (the screenshot / OCR / QR / colour-picker / record-area overlay).
 Logic = `pill_ui_core::capture::CaptureModel` (60 tests); this module is the renderer and the wiring. The recording capsule, timer and
 result cards are `live` rows of the island, not part of this.

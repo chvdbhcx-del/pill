@@ -1,5 +1,7 @@
 # Native panel tabs, set A (`src-tauri/src/ui/tabs/a*`)
 
+> **Since 0.7.0 there is no web (WebView2) UI.** The native UI described here is the only one: the `ui.native.*` keys, `--native`, `--web-ui`, `PILL_NATIVE` / `PILL_WEB_UI`, `ui/flags.rs`, `ui/lazy.rs` and `ui/windows.rs` are gone, and every gate / "flag off" / "web" comparison below is history (v0.6.1 is the last release that still contains the web code).
+
 Home (media + launcher strip), Weather, Controls, Notifications, Clipboard, Shelf as native `View`s drawn inside the expanded island panel.
 Models are `pill_ui_core::panel::a::*` (pure, tested); the views here only own a model, feed it, execute its `BackendCall`s, play its `Anim`
 cues and draw. Set B (note, text, chat, agents, ai) is `ui/tabs/b*`.

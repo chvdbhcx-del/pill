@@ -195,7 +195,7 @@ mod tests {
             }
         }
         let events = contract_events();
-        assert!(events.len() >= 56, "event parse looks broken: {}", events.len());
+        assert!(events.len() >= 45, "event parse looks broken: {}", events.len());
         let missing: Vec<_> = events.iter().filter(|e| !text.contains(&format!("\"{e}\""))).collect();
         assert!(missing.is_empty(), "contract events nobody emits: {missing:?}");
     }

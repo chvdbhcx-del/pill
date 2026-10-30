@@ -1,5 +1,7 @@
 # The native island (`src-tauri/src/ui/island`)
 
+> **Since 0.7.0 there is no web (WebView2) UI.** The native UI described here is the only one: the `ui.native.*` keys, `--native`, `--web-ui`, `PILL_NATIVE` / `PILL_WEB_UI`, `ui/flags.rs`, `ui/lazy.rs` and `ui/windows.rs` are gone, and every gate / "flag off" / "web" comparison below is history (v0.6.1 is the last release that still contains the web code).
+
 The always-resident `pill` window as a `ui::view::View` on the native host (Overlay window), replacing `pill.html` + `pill.js` + `live-*.js` +
 `pets*.js` + `characters.js` when the flag `ui.native.pill` is on. Flag off (default): nothing here runs and the WebView island is built exactly as
 before. `pill.exe --web-ui` / `PILL_WEB_UI=1` beat the flag (`ui::flags`).

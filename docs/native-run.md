@@ -2,22 +2,21 @@
 
 ## Switches
 
+Pill is native only (since 0.7.0): there is no web UI and nothing to switch on. Diagnostic environment variables:
+
 | what | how |
 |---|---|
-| everything native for this run | `pill.exe --native` or env `PILL_NATIVE=1` (the four keys below are not touched) |
-| per surface, persistent | settings.json keys `ui.native.pill` (island + panel tabs), `ui.native.bar` (command bar), `ui.native.settings` (settings window), `ui.native.capture` (screenshot overlay); all default `false` |
-| back to the WebView UI | `pill.exe --web-ui` or env `PILL_WEB_UI=1`: wins over the keys AND over `--native` |
 | software renderer | `PILL_FORCE_WARP=1` |
 | layered-window present path (no DirectComposition) | `PILL_FORCE_LAYERED=1` |
 | host loop trace on stderr | `PILL_HOST_TRACE=1` |
+| open a window from the command line | `pill.exe --open settings` / `--open agents` (a second launch is forwarded to the running instance) |
 
-Flags off and no `--native`: nothing native starts, the app is the WebView app byte for byte. With any flag on there is no WebView window for that
-surface (island: `build_island`; bar: `build_bar` / `lazy`; settings: `settingswin::open`; capture: `open_overlays`).
+No WebView2 process is ever created: `tools/dev/mem.ps1` lists any `msedgewebview2.exe` that belongs to Pill, and there should be none.
 
 ## How it is wired (glue)
 
 * `ui::native::ensure_host(app)` (idempotent): `ui::api::init`, Medeo Sans, the facade as the host's `Api`, `host::start`. The island, the bar,
-  the settings opener and the capture overlay all call it; `main.rs` calls `native::start_if_needed` first when any flag is on.
+  the settings opener and the capture overlay all call it; `ui::island::start` (called first from `main.rs` setup) brings the host up.
 * `ui::tabs::fx::TabFx` is the only tab -> island message. A tabs post it with `cx.post(Msg::Custom)`, B tabs and overlays with `fx::emit`; the
   island drains `tabs::b::take_fx()` after every call into a view (`IslandView::drain_fx`) and applies it in `island/tabfx.rs`.
 
@@ -29,7 +28,7 @@ surface (island: `build_island`; bar: `build_bar` / `lazy`; settings: `settingsw
   | `React` / `Unreact` / `EdgePulse` / `EdgeColor` / `DragPull` | reaction resolver / edge halo / edge colour / drag-pull glow |
   | `Badge` | counter on the tab button (empty or 0 hides) |
   | `Collapse` / `Expand` / `SetPinned` | shell (`SetPinned` also persists `pinned`) |
-  | `OpenCommandBar` / `VoiceToggle` / `GoPage(p)` | backend `cmd_toggle` / `voice_toggle` / `settings_open {page}` (native or web settings, by the flag) |
+  | `OpenCommandBar` / `VoiceToggle` / `GoPage(p)` | backend `cmd_toggle` / `voice_toggle` / `settings_open {page}`  |
   | `StartCapture{mode}` | collapse, 450 ms later `capture_start {mode}` (at once for `record_screen` while recording) |
   | `OpenClipAi` / `CloseClipAi` / `OverlayClosed` | the `ai_actions` overlay over the tab body: Esc and clicks go to it first |
 * Tabs with background duties (home, shelf, notifs, clipboard) are created at start (`TabHost::warm`: `on_show` + `on_hide`), so they keep
@@ -47,7 +46,7 @@ surface (island: `build_island`; bar: `build_bar` / `lazy`; settings: `settingsw
 * A B-tab `SetLive` row with the same id as a hub row replaces it (same as `Pill.setLive` key semantics on the web).
 * Nothing here was verified on a real screen: tests are headless (Sim + WARP).
 
-## On-screen checklist for the lead (prioritised, run `pill.exe --native`)
+## On-screen checklist for the lead (prioritised, run `pill.exe`)
 
 1. Start: no WebView window appears at all (Task Manager: no msedgewebview2 children), island sits top centre, no console window, no crash.
 2. Hover opens the panel, leaving folds it; liquid edge reacts; click-through works around the capsule.
@@ -63,4 +62,4 @@ surface (island: `build_island`; bar: `build_bar` / `lazy`; settings: `settingsw
 12. Capture: Home tiles collapse the island, then the native overlay appears on every monitor; area / window / record work; recording capsule + Stop.
 13. Weather: with weather enabled in Settings the folded clock shows temperature and icon without opening the weather tab; tab works when opened.
 14. Reduce motion (Windows or setting) = no motion anywhere; light theme; DPI 125 / 150 / 200 % and two monitors; pets and characters.
-15. Rollback: `pill.exe --web-ui` (and `--native --web-ui`) gives the WebView UI; idle CPU of the native run is near zero (no frames when nothing moves).
+15. Idle CPU is near zero (no frames when nothing moves). Rollback to the web UI is only possible by installing v0.6.1.

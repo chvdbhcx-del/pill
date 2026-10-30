@@ -223,7 +223,7 @@ pub fn shelf_drag_out(app: AppHandle, ids: Vec<i64>) -> String {
 }
 
 unsafe fn do_drag(paths: &[String]) -> &'static str {
-    let _ = OleInitialize(None); // no-op / harmless error if the webview already initialised this thread
+    let _ = OleInitialize(None); // no-op / harmless error if this thread is already initialised
     let mut pidls: Vec<*mut ITEMIDLIST> = Vec::new();
     for p in paths {
         let mut pidl: *mut ITEMIDLIST = std::ptr::null_mut();

@@ -1,5 +1,7 @@
 # Native window host (`src-tauri/src/ui/host`)
 
+> **Since 0.7.0 there is no web (WebView2) UI.** The native UI described here is the only one: the `ui.native.*` keys, `--native`, `--web-ui`, `PILL_NATIVE` / `PILL_WEB_UI`, `ui/flags.rs`, `ui/lazy.rs` and `ui/windows.rs` are gone, and every gate / "flag off" / "web" comparison below is history (v0.6.1 is the last release that still contains the web code).
+
 The one place every native Pill surface lives. Wave 2 of the WebView2 -> native-Rust rewrite. Views (bar, settings, capture, panel tabs,
 island, pets) implement `ui::view::View`; the host owns windows, input, DPI, frames and presentation. `docs/native-ui-contract.md` lists the
 backend names a view calls; this file is how a view runs.

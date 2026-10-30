@@ -1,6 +1,5 @@
 //! Tests for i18n: language resolution, the `Tr` implementations, fmt / plural helpers and the generated catalogue.
-//! The extraction itself (idempotence, grep-count tolerance) is tested by tools/dev/extract-i18n.test.mjs; here the generated
-//! table is validated from the Rust side so a hand edit or a stale regeneration shows up in `cargo test`.
+//! The table is validated from the Rust side so a hand edit shows up in `cargo test`.
 use super::*;
 use std::collections::HashSet;
 

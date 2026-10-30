@@ -19,14 +19,14 @@
 //!   objects with a missing side.
 //! * [`fmt`] - fills the `{0}`, `{1}` placeholders the extractor writes for template / concatenation parts, and the plural helpers
 //!   ([`plural_ru`], [`plural_en`], [`plural`]) for the few call sites whose text depends on a count.
-//! * The catalogue ([`ENTRIES`], generated into `table.rs` by `tools/dev/extract-i18n.mjs`): every static pair of the web UI,
+//! * The catalogue ([`ENTRIES`], frozen in `table.rs`): every static pair of the former web UI,
 //!   deduplicated and sorted by content-addressed id ([`id_of`]); [`lookup`] / [`lookup_pair`] / [`find_by_en`] search it. The
-//!   renderer-facing code does not need it to translate (the literals are inline); it exists so a test can prove that no web
+//!   renderer-facing code does not need it to translate (the literals are inline); it exists so a test can prove that no
 //!   string was forgotten (`known(ru, en)`), and so data-driven text (settings search index, command palette) can be looked up.
 //!
 //! Ids are FNV-1a 64 of `en + "\0" + ru` - a function of the text only, so regenerating the table never renumbers anything and
 //! two agents adding the same string always agree on its id. Dynamic sites the extractor cannot flatten (plural expressions,
-//! computed text) are counted in [`DYNAMIC_SITES`] and listed by `node tools/dev/extract-i18n.mjs --report`.
+//! computed text) are counted in [`DYNAMIC_SITES`].
 use std::fmt::Display;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;

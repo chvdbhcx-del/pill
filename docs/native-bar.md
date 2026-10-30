@@ -1,5 +1,7 @@
 # Native command bar (`src-tauri/src/ui/bar_view`)
 
+> **Since 0.7.0 there is no web (WebView2) UI.** The native UI described here is the only one: the `ui.native.*` keys, `--native`, `--web-ui`, `PILL_NATIVE` / `PILL_WEB_UI`, `ui/flags.rs`, `ui/lazy.rs` and `ui/windows.rs` are gone, and every gate / "flag off" / "web" comparison below is history (v0.6.1 is the last release that still contains the web code).
+
 The native replacement of `bar.html` + `bar.js` + `bar-ready.js` + `uninstall-ui.js` + `md-lite.js`. `BarView` is the `View` of the host Popup window
 `bar` (`docs/native-host.md`). All behaviour is the pure model `pill_ui_core::bar` (`Bar::on_event / tick / view`, 185 tests); this module translates
 host input into `BarEvent`s, executes the model's `Action`s and draws its `BarView` view-model with glasskit.

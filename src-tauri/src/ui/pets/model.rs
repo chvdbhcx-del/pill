@@ -1,4 +1,4 @@
-//! Data model of one exported pet (tools/dev/export-pets.mjs -> data/<id>.json) and its loader.
+//! Data model of one exported pet (data/<id>.json) and its loader.
 //!
 //! Schema (all numbers are CSS px = SVG user units of the pet's viewBox, times in ms, angles in degrees):
 //!   nodes[]  {t: tag (div|svg|g|path|circle|ellipse|rect), p: parent index (-1 root), a: attributes, c: class names}

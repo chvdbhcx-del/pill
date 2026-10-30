@@ -1,5 +1,4 @@
-//! Headless snapshots of the island (WARP, Medeo Sans) in the states the web reference harness renders (`tools/dev/island-web-ref.mjs`,
-//! pictures in `target-agent/web-ref`). PNGs land in `target-agent/island-native/<scenario>.png` (+ `.grey.png` on #6b6f76) for a side by side
+//! Headless snapshots of the island (WARP, Medeo Sans) in a set of scenarios. PNGs land in `target-agent/island-native/<scenario>.png` (+ `.grey.png` on #6b6f76) for a side by side
 //! look; the assertions only check what is certain (sizes, transparency, that the right thing is on screen).
 use super::fonts::FONTS;
 use super::sys::SysClock;

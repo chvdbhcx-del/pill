@@ -884,7 +884,7 @@ mod tests {
         assert!(screen(&mut s).editor().selected_text().starts_with("Список покупок"));
     }
 
-    // ---- snapshots over the same scenarios the web harness renders (tools/dev/fixtures/tabs-b) ----
+    // ---- snapshots over the scenarios in tests/fixtures/tabs-b ----
 
     const DEFAULTS: &str = include_str!("../../../../tests/fixtures/tabs-b/_defaults.json");
     const TIMER_FIX: &str = include_str!("../../../../tests/fixtures/tabs-b/timer.json");

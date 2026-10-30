@@ -1,7 +1,7 @@
 //! Tests of the native capture overlay: event -> model wiring, backend calls, the PNG export, the gate, and headless snapshots.
 //!
 //! Snapshots are rendered on WARP through `host::testing::Sim`. They are asserted on (pixels in known places) and, when
-//! `PILL_CAPTURE_DUMP=<dir>` is set, written as PNGs so a human (or `tools/dev/capture-diff.mjs`) can look at them.
+//! `PILL_CAPTURE_DUMP=<dir>` is set, written as PNGs so a human can look at them.
 use super::io::{Backend, RawSink};
 use super::*;
 use crate::ui::host::testing::{motion_lock, Sim};
@@ -1037,7 +1037,7 @@ fn commit_kinds_map_to_the_backend_words() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------
-// Scenes for `tools/dev/capture-diff.mjs`: the same scripts run in the web page, then both PNGs are compared
+// Scenes for eyeballing the overlay (PNG dumps)
 // ---------------------------------------------------------------------------------------------------------------------------------------
 
 #[test]

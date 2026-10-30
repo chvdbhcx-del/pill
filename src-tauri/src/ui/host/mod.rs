@@ -11,7 +11,7 @@
 //!   `focus` (blur / watchdog policies), `ui::view` (queue, Cx). `testing` renders and drives views headlessly on WARP.
 //!
 //! # Lifecycle and `ExitRequested`
-//! `main.rs` already answers `RunEvent::ExitRequested { code: None }` with `prevent_exit()`, so closing the last WebView window never ends the
+//! `main.rs` already answers `RunEvent::ExitRequested { code: None }` with `prevent_exit()`, so closing the last window never ends the
 //! process; tray "Quit" calls `app.exit(0)` (a `Some(code)` request) which does end it. Native windows are invisible to Tauri: they neither
 //! keep the app alive nor block its exit. The host thread is a daemon: on `app.exit` call [`shutdown`] first (destroys the windows and
 //! stops the loop, joins within 2 s) or just let the process end. [`HostHandle::open_windows`] says how many native windows are alive, for
@@ -172,7 +172,7 @@ impl std::fmt::Debug for WindowSpec {
     }
 }
 
-/// Builder for a [`WindowSpec`]. Start from the constructor of the kind; the defaults are what the old WebView windows had.
+/// Builder for a [`WindowSpec`]. Start from the constructor of the kind; the defaults are the island / bar / settings / capture window shapes.
 ///
 /// ```ignore
 /// let id = NativeWindow::popup("bar")
@@ -215,7 +215,7 @@ impl NativeWindow {
         NativeWindow {
             spec: WindowSpec {
                 size: (720.0, 120.0),
-                title: "pill-main".to_string(), // the WebView window's title: tools that match windows by title keep working
+                title: "pill-main".to_string(), // the island window's title: tools that match windows by title keep working
                 placement: Placement::TopCenter { monitor: MonitorSel::Primary, offset_pct: 0.0, below_taskbar: true, margin_top: 0.0 },
                 topmost: true,
                 singleton: true,
@@ -616,7 +616,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builder_defaults_match_the_webview_windows() {
+    fn builder_defaults_match_the_window_shapes() {
         let o = NativeWindow::overlay("pill").into_spec();
         assert_eq!((o.kind, o.size, o.topmost, o.activate_on_show, o.visible), (WindowKind::Overlay, (720.0, 120.0), true, false, true));
         assert!(matches!(o.placement, Placement::TopCenter { below_taskbar: true, .. }));

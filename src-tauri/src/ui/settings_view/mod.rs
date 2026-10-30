@@ -1,7 +1,7 @@
-//! The native Settings window (wave "settings" of the WebView2 -> native rewrite): `SettingsView: View` over the pure model of
+//! The native Settings window: `SettingsView: View` over the pure model of
 //! `pill_ui_core::settings` (declarative schema, `SettingsModel`, search, wizard, flows) and glasskit controls. See `docs/native-settings.md`.
 //!
-//! * `mod.rs`      the view struct and the `View` impl;  `open.rs` window creation, geometry memory, the `settingswin.rs` gate, the backend facade
+//! * `mod.rs`      the view struct and the `View` impl;  `open.rs` window creation, geometry memory, the `settingswin.rs` opener, the backend facade
 //! * `nav.rs`      building / switching pages;  `paint.rs` the frame;  `events.rs` input routing;  `acts.rs` clicks, calls and their replies
 //! * `page.rs`     page / row / control types;  `rows.rs` `cardpaint.rs` `ctlpaint.rs` `keys.rs` rows and their controls
 //! * `chrome.rs`   title bar, sidebar, search;  `wizard.rs` first-run wizard;  `picker.rs` pet and island cards;  `custom.rs` the 12 `Custom` widgets

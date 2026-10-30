@@ -1,4 +1,4 @@
-//! The native island (flag `ui.native.pill`): the always-resident `pill` window as a `View`. See docs/native-island.md.
+//! The native island: the always-resident `pill` window as a `View`. See docs/native-island.md.
 pub mod chrome;
 pub mod companions;
 pub mod core;

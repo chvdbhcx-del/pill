@@ -1,5 +1,5 @@
 //! Headless tests of the native settings window: control -> model wiring, navigation, search, wizard, recorder, gating, and PNG snapshots
-//! (`PILL_SNAP_DIR=<dir> cargo test --release settings_view` writes them; compare with `tools/dev/settings-diff.mjs`).
+//! (`PILL_SNAP_DIR=<dir> cargo test --release settings_view` writes them).
 use super::*;
 use crate::ui::host::testing::{motion_lock, save_png, Sim};
 use crate::ui::view::{Fakes, Services};

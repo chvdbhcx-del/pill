@@ -1,5 +1,4 @@
-//! Native pet engine (wave 1 of the WebView -> native rewrite): every pet of src/pets*.js and the capsule characters of src/characters.js,
-//! drawn with Direct2D from data exported out of the web version (tools/dev/export-pets.mjs). Consumers arrive with the shell wave.
+//! Native pet engine: every pet and the capsule characters, drawn with Direct2D from frozen data (`data/*.json`, one file per pet).
 #![allow(dead_code)]
 
 pub mod characters;

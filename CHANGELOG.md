@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.7.0] - 2026-10-30
+
+### Removed
+- The web (WebView2) interface and the `--web-ui` / `--native` switches (also `PILL_WEB_UI`, `PILL_NATIVE` and the `ui.native.*` / `ui.lazyBarSecs` settings keys). Pill is native only: no WebView2 process is ever started, and the installer no longer carries the WebView2 bootstrapper.
+
 ## [0.6.1] - 2026-10-30
 
 ### Fixed
