@@ -916,6 +916,7 @@ mod tests {
 
     #[test]
     fn first_sync_is_quiet_then_new_rows_rise_in() {
+        let _g = crate::ui::host::testing::motion_lock(); // other tests flip the global reduced-motion override
         let mut a = RowAnimator::new();
         a.sync(&[1, 2]);
         assert!(a.places().iter().all(|p| p.alpha == 1.0 && p.rise == 0.0), "the first draw of a visit has no enter animation");
@@ -935,6 +936,7 @@ mod tests {
 
     #[test]
     fn whole_list_appearing_is_left_to_the_list_cue() {
+        let _g = crate::ui::host::testing::motion_lock(); // other tests flip the global reduced-motion override
         let mut a = RowAnimator::new();
         a.sync(&[]);
         a.sync(&[7]);
@@ -943,6 +945,7 @@ mod tests {
 
     #[test]
     fn rows_that_stay_slide_to_their_new_place_and_vanished_ones_fade() {
+        let _g = crate::ui::host::testing::motion_lock(); // other tests flip the global reduced-motion override
         let mut a = RowAnimator::new();
         a.sync(&[1, 2, 3]);
         a.sync(&[2, 3]); // 1 vanished without a collapse
@@ -965,6 +968,7 @@ mod tests {
 
     #[test]
     fn collapse_shrinks_the_row_and_pulls_the_rest_up() {
+        let _g = crate::ui::host::testing::motion_lock(); // other tests flip the global reduced-motion override
         let mut a = RowAnimator::new();
         a.sync(&[1, 2]);
         a.collapse(1);
@@ -982,6 +986,7 @@ mod tests {
 
     #[test]
     fn reduced_motion_jumps_everything() {
+        let _g = crate::ui::host::testing::motion_lock(); // other tests flip the global reduced-motion override
         let mut a = RowAnimator::new();
         a.set_reduced(true);
         a.sync(&[1, 2]);
@@ -995,6 +1000,7 @@ mod tests {
 
     #[test]
     fn ring_arc_is_linear_over_a_quarter_second_and_fades_in_without_a_sweep() {
+        let _g = crate::ui::host::testing::motion_lock(); // other tests flip the global reduced-motion override
         let mut r = RingAnim::new();
         r.set(false, 1.0);
         assert_eq!(r.value(), (1.0, 0.0));
