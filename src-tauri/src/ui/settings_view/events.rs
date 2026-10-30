@@ -527,3 +527,18 @@ impl SettingsView {
         }
     }
 }
+
+#[cfg(test)]
+impl SettingsView {
+    /// Window-space rectangle of the hit registered for `act` in the last frame (tests click through it).
+    pub(super) fn hit_rect(&self, act: &Act) -> Option<Rect> {
+        let o = self.ui.page_origin;
+        self.ui.hits.iter().rev().find(|h| &h.act == act).map(|h| if h.page { h.rect.offset(o.0, o.1) } else { h.rect })
+    }
+
+    /// Window-space rectangle of the control of row `id` (last frame).
+    pub(super) fn ctl_rect_of(&self, id: &str) -> Option<Rect> {
+        let o = self.ui.page_origin;
+        self.page.rows().find(|r| r.row.id == id).map(|r| r.ctl_rect.offset(o.0, o.1))
+    }
+}

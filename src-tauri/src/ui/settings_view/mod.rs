@@ -262,3 +262,6 @@ impl View for SettingsView {
         cx.request_frame();
     }
 }
+
+#[cfg(test)]
+mod tests2;

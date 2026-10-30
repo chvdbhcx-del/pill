@@ -75,8 +75,6 @@ impl SettingsView {
         let (w, h) = box_size(id, size, Place::Stage, 1.0);
         let x = if side == Side::Right { st.cx() + 62.0 - w } else { st.cx() - 62.0 };
         let r = Rect::new(x, st.y + 56.0 - h, w, h);
-        let o = self.ui.page_origin;
-        let wr = Rect::new(r.x + o.0, r.y + o.1, r.w, r.h);
         let reduce = self.reduce();
         let scale = cv.scale;
         if !self.pets.engines.contains_key(id) {
@@ -86,7 +84,7 @@ impl SettingsView {
         }
         if let Some(e) = self.pets.engines.get_mut(id) {
             e.set_reduced(reduce);
-            if e.preview(cv.dc, id, state, side, wr, scale).is_err() {
+            if e.preview(cv.dc, id, state, side, r, scale).is_err() {
                 self.pets.engines.remove(id);
             }
         }

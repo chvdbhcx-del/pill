@@ -163,7 +163,6 @@ impl SettingsView {
 
     fn paint_character(&mut self, cv: &glasskit::canvas::Canvas, st: Rect, s: f32, tail: bool, state: &str) {
         let name = pet_state_for(state);
-        let o = self.ui.page_origin;
         let reduce = self.reduce();
         let slot = if tail { &mut self.pets.tail } else { &mut self.pets.legs };
         if slot.is_none() {
@@ -178,9 +177,10 @@ impl SettingsView {
                 c.set_state(name, None);
             }
             if tail {
-                c.draw_tail(cv.dc, o.0 + st.x + (X1 - 4.0) * s, o.1 + st.y + (BASE - 8.0) * s, cv.scale * s);
+                c.draw_tail(cv.dc, st.x + (X1 - 4.0) * s, st.y + (BASE - 8.0) * s, s);
             } else {
-                c.draw_legs(cv.dc, o.0 + st.x + 74.5 * s, o.1 + st.y + BASE * s, cv.scale * s);
+                c.draw_legs(cv.dc, st.x + 74.5 * s, st.y + BASE * s, s);
+                c.draw_eyes(cv.dc, st.x + 74.5 * s, st.y + 17.0 * s, s);
             }
         }
     }
