@@ -41,6 +41,7 @@ mod whatsnew;
 mod report;
 mod openarg;
 mod uninstall;
+mod ui;
 
 fn main() {
     // `pill.exe --uninstall-admin <port>:<token>`: the elevated helper of the uninstaller (uninstall/admin.rs); nothing else starts in that process

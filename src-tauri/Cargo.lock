@@ -1393,6 +1393,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "glasskit"
+version = "0.1.0"
+source = "git+https://github.com/chvdbhcx-del/glass-widgets?rev=0896c4f#0896c4f87ee4de3f6af3999f550133f48d956f71"
+dependencies = [
+ "serde_json",
+ "windows 0.58.0",
+]
+
+[[package]]
 name = "glib"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2722,6 +2731,7 @@ name = "pill"
 version = "0.5.3"
 dependencies = [
  "base64 0.22.1",
+ "glasskit",
  "png",
  "qrcode",
  "rqrr",
