@@ -28,10 +28,15 @@
 pub mod anim;
 pub mod calls;
 pub mod hotkey;
+pub mod nav;
 mod pages;
+pub mod pickers;
 pub mod providers;
 pub mod schema;
+pub mod search;
 pub mod tr;
+pub mod whatsnew;
+pub mod wizard;
 
 pub use calls::BackendCall;
 pub use schema::{schema, Control, Page, Row};
