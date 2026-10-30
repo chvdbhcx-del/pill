@@ -257,12 +257,13 @@ const POKE_COOLDOWN: f64 = 1000.0;
 const POKE_MS: f64 = 1400.0;
 
 impl Sim {
-    pub fn new(pet: Arc<Pet>, left: bool, seed: u64) -> Sim {
+    /// A pet created directly in `state` (pets.js create({state}): no transition from calm, the tint is already there).
+    pub fn new(pet: Arc<Pet>, left: bool, seed: u64, state: usize, accent: Option<[f32; 3]>) -> Sim {
         let n = pet.nodes.len();
         let hook = super::hooks::Hook::for_pet(&pet);
         let mut s = Sim {
             left,
-            state: 0,
+            state: state.min(STATES.len() - 1),
             reduced: false,
             energy: None,
             look: [0.0; 2],
@@ -298,7 +299,7 @@ impl Sim {
         };
         s.idle_at = 1200.0 + (s.rng.f32() * 2500.0) as f64;
         s.recompose(true, true);
-        s.tint.set(TINT[0], 0.0, true);
+        s.tint.set(accent.or(TINT[s.state]), 0.0, true);
         s.cur.copy_from_slice(&s.target.clone());
         s.hook_state_changed();
         s
@@ -1151,5 +1152,28 @@ fn merge_lerp(out: &mut Ov, a: &Ov, b: &Ov, t: f32, w: f32, h: f32) {
         out.has_d = true;
         out.d.segs.clear();
         out.d.segs.extend_from_slice(&a.d.segs);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sim(id: &str, state: usize) -> Sim {
+        let pet = Arc::new(Pet::parse(raw(id).unwrap()).unwrap());
+        let mut s = Sim::new(pet, false, 1, state, None);
+        s.set_idle(false);
+        s
+    }
+
+    #[test]
+    fn debug_dots() {
+        let mut s = sim("cat", 2);
+        for _ in 0..70 {
+            s.tick(10.0);
+        }
+        for i in [73usize, 74, 75] {
+            eprintln!("{i}: style o={} dn={} fi={:?} ov.o={:?} tf={:?} m={:?}", s.cur[i].o, s.cur[i].dn, s.cur[i].fi.c, s.ov[i].o, s.ov[i].tf, s.local_matrix(i));
+        }
     }
 }

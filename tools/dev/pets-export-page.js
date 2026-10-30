@@ -130,6 +130,13 @@
     }
     return out;
   }
+  // the browser re-serialises the `d` attribute ("M0 0L1 1" -> "M 0 0 L 1 1"): compare against that form so only real CSS overrides are exported
+  const dProbe = document.createElementNS('http://www.w3.org/2000/svg', 'path'), dSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'), dCache = new Map();
+  dSvg.style.cssText = 'position:absolute;visibility:hidden'; dSvg.append(dProbe); document.body.append(dSvg);
+  function normD(d) {
+    if (!dCache.has(d)) { dProbe.setAttribute('d', d); const m = /^path\("(.*)"\)$/.exec(getComputedStyle(dProbe).d); dCache.set(d, m ? m[1] : d); }
+    return dCache.get(d);
+  }
   function readStyle(el, inst) {
     const cs = getComputedStyle(el), s = {};
     if (cs.display === 'none') { s.dn = 1; return s; }
@@ -153,7 +160,7 @@
         if (da) s.da = da;
         if (num(cs.strokeDashoffset)) s.dof = r4(num(cs.strokeDashoffset));
       }
-      if (el.tagName === 'path') { const m = /^path\("(.*)"\)$/.exec(cs.d); if (m && m[1] !== el.getAttribute('d')) s.d = m[1]; }
+      if (el.tagName === 'path') { const m = /^path\("(.*)"\)$/.exec(cs.d); if (m && m[1] !== normD(el.getAttribute('d'))) s.d = m[1]; }
     }
     const fl = shadows(cs.filter);
     if (fl.length) s.fl = fl;

@@ -254,7 +254,7 @@ impl Renderer {
         let world = interp::mul(parent, c.sim.local_matrix(i));
         // drop-shadow filters (the tint halo of the rig, the glow of the bot's face, the outline of the 8-bit pet): only while visible
         if !self.in_off && s.nfl > 0 {
-            let mut live = [None; 2];
+            let mut live = [None; 4];
             let mut n = 0;
             for sh in &s.fl[..s.nfl as usize] {
                 if let Some(cc) = tinted(&sh.c, None, &c.sim.tint) {
@@ -293,7 +293,7 @@ impl Renderer {
             }
             if layer {
                 let lp = D2D1_LAYER_PARAMETERS1 {
-                    contentBounds: D2D_RECT_F { left: -3.0e38, top: -3.0e38, right: 3.0e38, bottom: 3.0e38 },
+                    contentBounds: D2D_RECT_F { left: -1.0e5, top: -1.0e5, right: 1.0e5, bottom: 1.0e5 },
                     geometricMask: ManuallyDrop::new(None),
                     maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
                     maskTransform: m3(interp::IDENT),
@@ -480,7 +480,7 @@ impl Renderer {
                 dc.SetTarget(&dst);
                 dc.Clear(Some(&col(0.0, 0.0, 0.0, 0.0)));
                 fx.SetInput(0, &src, true);
-                fx_f32(&fx, 0, (s.0.b * 0.5 * k).max(0.0))?;
+                fx_f32(&fx, 0, (s.0.b * k).max(0.0))?; // CSS drop-shadow: the blur value IS the standard deviation
                 fx_vec4(&fx, 1, [s.1.r, s.1.g, s.1.b, s.1.a])?;
                 dc.DrawImage(&fx.GetOutput()?, Some(&pt(s.0.x * k, s.0.y * k)), None, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_COMPOSITE_MODE_SOURCE_OVER);
                 dc.DrawImage(&src, None, None, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_COMPOSITE_MODE_SOURCE_OVER);
@@ -496,6 +496,15 @@ impl Renderer {
             dc.SetTransform(&base_m);
         }
         Ok(())
+    }
+}
+
+/// sRGB -> linear (the Shadow effect colour is in linear space)
+fn lin(c: f32) -> f32 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
     }
 }
 

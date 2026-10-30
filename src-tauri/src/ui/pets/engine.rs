@@ -222,10 +222,9 @@ impl PetEngine {
         }
         match load(id) {
             Some(p) => {
-                let mut sim = Sim::new(p, side == Side::Left, self.seed);
+                let mut sim = Sim::new(p, side == Side::Left, self.seed, self.state, self.tint.map(|c| [c.r, c.g, c.b]));
                 sim.set_idle(self.idle);
                 sim.set_reduced(self.reduced);
-                sim.set_state(self.state, self.tint.map(|c| [c.r, c.g, c.b]));
                 self.sim = Some(sim);
                 true
             }

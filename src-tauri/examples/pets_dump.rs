@@ -72,12 +72,12 @@ fn main() {
         let cpu = gfx.cpu_read(cw, ch).unwrap();
         let mut eng = PetEngine::new(&gfx).unwrap();
         for st in states {
+            let (name, poke) = if st == "poked" { ("calm", true) } else { (st, false) };
             eng.set_pet("none-yet", side, Size::M);
             eng.set_idle(false);
+            eng.set_state(name, None); // a pet created in a state starts there without a transition
             eng.set_pet(id, side, Size::M);
             eng.sim_mut().unwrap().hooks_on = hooks;
-            let (name, poke) = if st == "poked" { ("calm", true) } else { (st, false) };
-            eng.set_state(name, None);
             eng.tick(0.0);
             if poke {
                 assert!(eng.poke());

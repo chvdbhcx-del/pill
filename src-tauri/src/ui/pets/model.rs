@@ -87,7 +87,7 @@ pub struct Style {
     pub da: Dash,
     pub dof: f32,
     pub d: u32,
-    pub fl: [Shadow; 2],
+    pub fl: [Shadow; 4],
     pub nfl: u8,
 }
 
@@ -110,7 +110,7 @@ impl Default for Style {
             da: Dash { n: 0, v: [0.0; 4] },
             dof: 0.0,
             d: NO_PATH,
-            fl: [Shadow { c: Paint::OFF, x: 0.0, y: 0.0, b: 0.0 }; 2],
+            fl: [Shadow { c: Paint::OFF, x: 0.0, y: 0.0, b: 0.0 }; 4],
             nfl: 0,
         }
     }
@@ -444,7 +444,7 @@ impl Pet {
                 "fl" => {
                     let a = arr(v);
                     let mut n = 0;
-                    for sh in a.iter().take(2) {
+                    for sh in a.iter().take(4) {
                         p.s.fl[n] = Shadow { c: paint(&sh["c"]), x: f(&sh["x"]), y: f(&sh["y"]), b: f(&sh["b"]) };
                         n += 1;
                     }
@@ -615,6 +615,14 @@ impl Pet {
                 class: n["c"].as_str().unwrap_or("").to_string(),
                 bb,
             });
+        }
+        // the svg's own viewBox is the coordinate system of the art (claude8: 14 x 14 although the registry says 48 x 48)
+        if let Some(vb) = j["nodes"][2]["a"]["viewBox"].as_str() {
+            let v: Vec<f32> = vb.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+            if v.len() == 4 && v[2] > 0.0 && v[3] > 0.0 {
+                pet.w = v[2];
+                pet.h = v[3];
+            }
         }
         pet.children = vec![Vec::new(); pet.nodes.len()];
         for i in 0..pet.nodes.len() {
