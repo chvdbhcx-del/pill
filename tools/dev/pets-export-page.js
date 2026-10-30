@@ -144,7 +144,7 @@
     if (cs.opacity !== '1') s.o = r4(num(cs.opacity));
     const tf = decomp(cs.transform);
     if (tf) s.tf = tf;
-    if (cs.translate !== 'none') s.tl = cs.translate.split(' ').map((x) => r4(num(x)));
+    if (cs.translate !== 'none') { const v = cs.translate.split(' ').map((x) => r4(num(x))); s.tl = [v[0], v[1] || 0]; } // a single value means y = 0
     if (cs.rotate !== 'none') s.ro = r4(angle(cs.rotate));
     if (cs.scale !== 'none') { const v = cs.scale.split(' ').map(num); s.sc = [r4(v[0]), r4(v[v.length > 1 ? 1 : 0])]; }
     s.po = cs.transformOrigin.split(' ').map((x) => r4(num(x))); // px inside the reference box
@@ -248,6 +248,14 @@
       if (st.po[0] === 0 && st.po[1] === 0) delete st.po;
       delete st.tb;
     });
+    // HTML boxes (the rig): px at the 96 px sample size -> viewBox units, so a `translateY(7%)` means the same at any size
+    const vb = nodes[2].viewBox.baseVal, unit = vb.height / (rect[1].height || 96);
+    for (const i of [0, 1]) {
+      const st = styles[i];
+      if (st.dn) continue;
+      if (st.tf) { st.tf[0] = r4(st.tf[0] * unit); st.tf[1] = r4(st.tf[1] * unit); }
+      if (st.tl) st.tl = st.tl.map((v) => r4(v * unit));
+    }
     const tags = nodes.map((n) => n.tagName.toLowerCase());
     const attrs = nodes.map((n) => { const o = {}; for (const a of n.attributes) if (!['class', 'style', 'transform', 'aria-hidden', 'overflow'].includes(a.name)) o[a.name] = a.value; return o; });
     const parents = nodes.map((n) => (n === inst.el ? -1 : idx.get(n.parentElement)));

@@ -159,14 +159,13 @@ pub fn face_anchor(id: &str) -> (f32, f32) {
         }
         // add the plain translations of the ancestors (the lift of the Eyes pet is a `translate(0 -5.6)` group)
         let (mut tx, mut ty) = (0.0, 0.0);
-        let mut a = n.parent;
+        let mut a = i as i32; // the node's own transform is not part of its bbox either
         while a >= 0 {
             let s = &p.base[a as usize];
             tx += s.tf[0];
             ty += s.tf[1];
             a = p.nodes[a as usize].parent;
         }
-        let _ = i;
         x0 = x0.min(b[0] + tx);
         x1 = x1.max(b[0] + b[2] + tx);
         y0 = y0.min(b[1] + ty);
@@ -181,6 +180,12 @@ pub fn face_anchor(id: &str) -> (f32, f32) {
 /// `eye_line_y` of the shell contract: the fraction of the box height at which the eyes sit.
 pub fn eye_line_y(id: &str) -> f32 {
     face_anchor(id).1
+}
+
+/// The gaze of pets.js: direction * |d| / (|d| + 60) for a cursor `d` logical px away from the pet (any distance, saturating smoothly).
+pub fn look_from_vector(dx: f32, dy: f32) -> (f32, f32) {
+    let n = 1.0 / (dx.hypot(dy) + 60.0);
+    (dx * n, dy * n)
 }
 
 pub struct PetEngine {
@@ -324,6 +329,17 @@ impl PetEngine {
             Some(s) => self.rend.draw(dc, s, rect, scale),
             None => Ok(()),
         }
+    }
+
+    /// Settings preview: show pet `id` in `state` (switching only when something changed) and draw it into `rect`. Call `tick` to animate it.
+    pub fn preview(&mut self, dc: &ID2D1DeviceContext, id: &str, state: &str, side: Side, rect: Rect, scale: f32) -> Result<()> {
+        if self.pet_id() != Some(id) || self.side != side {
+            self.set_pet(id, side, self.size);
+        }
+        if self.state() != state {
+            self.set_state(state, None);
+        }
+        self.draw(dc, rect, scale)
     }
 
     pub fn sim(&self) -> Option<&Sim> {

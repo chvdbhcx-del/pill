@@ -250,6 +250,7 @@ pub struct Sim {
     pub hook: super::hooks::Hook,
     tmp: Ov,
     tmp2: Ov,
+    scratch: Vec<(usize, Style)>,
     pub(crate) tick_dirty: bool,
 }
 
@@ -294,6 +295,7 @@ impl Sim {
             hook,
             tmp: Ov::default(),
             tmp2: Ov::default(),
+            scratch: Vec::new(),
             tick_dirty: false,
             pet,
         };
@@ -463,6 +465,7 @@ impl Sim {
                 }
             }
             self.en_nodes.clear();
+            self.en_path.clear();
             if self.energy.is_some() && self.state == 1 && pet.energy.len() == 5 {
                 // energy: the music state plus `data-energy`; styles come from five samples, animations from sample 0 (+ var()-driven keyframes)
                 let mut base_en: Vec<Style> = base.clone();
@@ -525,7 +528,13 @@ impl Sim {
             }
             self.runs[i] = v;
         }
+        let was = std::mem::take(&mut self.animated);
         self.animated = (0..n as u32).filter(|i| !self.runs[*i as usize].is_empty()).collect();
+        for i in was {
+            if self.runs[i as usize].is_empty() {
+                self.ov[i as usize].clear(); // an animation that is gone leaves no stale value behind
+            }
+        }
         if old_target.len() != n || snap {
             self.cur = self.target.clone();
             self.clear_transitions();
@@ -549,7 +558,7 @@ impl Sim {
     fn retarget(&mut self, i: usize, old: &Style) {
         let new = self.target[i];
         let mut cur = self.cur[i];
-        let ntr = self.trs[i].clone();
+        let ntr = std::mem::take(&mut self.trs[i]); // put back below: no allocation per call
         // fields that never transition
         cur.dn = new.dn;
         cur.vh = new.vh;
@@ -591,6 +600,7 @@ impl Sim {
             }
         }
         self.cur[i] = cur;
+        self.trs[i] = ntr;
         if any && !self.tr_active.contains(&(i as u32)) {
             self.tr_active.push(i as u32);
         }
@@ -686,7 +696,6 @@ impl Sim {
         let x = e * 4.0;
         let i0 = (x.floor() as usize).min(3);
         let t = x - i0 as f32;
-        self.en_path.clear();
         for k in 0..self.en_nodes.len() {
             let (node, arr) = (self.en_nodes[k].0 as usize, self.en_nodes[k].1);
             let (a, b) = (arr[i0], arr[i0 + 1]);
@@ -701,10 +710,14 @@ impl Sim {
             s.fi.c = lerp4(a.fi.c, b.fi.c, t);
             s.st.c = lerp4(a.st.c, b.st.c, t);
             if a.d != b.d && a.d != NO_PATH && b.d != NO_PATH {
-                let mut out = Path::default();
-                if path::lerp_into(&self.pet.paths[a.d as usize], &self.pet.paths[b.d as usize], t, &mut out) {
-                    self.en_path.push((node as u32, out));
-                }
+                let at = match self.en_path.iter().position(|(n, _)| *n as usize == node) {
+                    Some(p) => p,
+                    None => {
+                        self.en_path.push((node as u32, Path::default()));
+                        self.en_path.len() - 1
+                    }
+                };
+                path::lerp_into(&self.pet.paths[a.d as usize], &self.pet.paths[b.d as usize], t, &mut self.en_path[at].1);
             }
             self.tbase[node] = s;
             self.target[node] = s;
@@ -712,15 +725,18 @@ impl Sim {
     }
 
     fn update_energy(&mut self) {
-        let old = self.target.clone();
+        let mut old = std::mem::take(&mut self.scratch);
+        old.clear();
+        old.extend(self.en_nodes.iter().map(|(n, _)| (*n as usize, self.target[*n as usize])));
         self.update_energy_styles();
         self.apply_look_to_target();
-        for k in 0..self.en_nodes.len() {
-            let n = self.en_nodes[k].0 as usize;
-            if old[n] != self.target[n] {
-                self.retarget(n, &old[n]);
+        for k in 0..old.len() {
+            let (n, o) = old[k];
+            if o != self.target[n] {
+                self.retarget(n, &o);
             }
         }
+        self.scratch = old;
     }
 
     // ------------------------------------------------------------ the clock
@@ -1025,6 +1041,11 @@ impl Sim {
     }
 
     /// Does anything in the pet move on its own (an infinite animation, a hook)? Used by static renders.
+    /// the idle behaviour running now (blink / twitch / hop), for tests and tools
+    pub fn current_act(&self) -> Option<Act> {
+        self.act.map(|a| a.0)
+    }
+
     pub fn is_static(&self) -> bool {
         self.animated.is_empty() && self.tr_active.is_empty() && !self.tint.busy
     }
@@ -1155,25 +1176,3 @@ fn merge_lerp(out: &mut Ov, a: &Ov, b: &Ov, t: f32, w: f32, h: f32) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sim(id: &str, state: usize) -> Sim {
-        let pet = Arc::new(Pet::parse(raw(id).unwrap()).unwrap());
-        let mut s = Sim::new(pet, false, 1, state, None);
-        s.set_idle(false);
-        s
-    }
-
-    #[test]
-    fn debug_dots() {
-        let mut s = sim("cat", 2);
-        for _ in 0..70 {
-            s.tick(10.0);
-        }
-        for i in [73usize, 74, 75] {
-            eprintln!("{i}: style o={} dn={} fi={:?} ov.o={:?} tf={:?} m={:?}", s.cur[i].o, s.cur[i].dn, s.cur[i].fi.c, s.ov[i].o, s.ov[i].tf, s.local_matrix(i));
-        }
-    }
-}

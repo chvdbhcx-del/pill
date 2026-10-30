@@ -13,3 +13,6 @@ pub mod path;
 pub mod rng;
 pub mod sim;
 pub mod render;
+
+#[cfg(test)]
+mod tests;

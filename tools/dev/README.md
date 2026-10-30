@@ -21,6 +21,8 @@ The port listens on `127.0.0.1` only. `--remote-allow-origins=*` is required, ot
 | `node tools/dev/cdp.mjs pill.html "Pill.state"` | evaluates an expression in the page whose URL contains `pill.html` and prints the JSON result (promises are awaited) |
 | `node tools/dev/prof.mjs pill.html --ms 10000` | JS CPU profile: busy share of one core and the top functions by self time. Leave the app idle (or in the state you want to measure) while it runs |
 | `node tools/dev/audit-transitions.mjs` | steps through expand, collapse, tab switches and an event card, sampling the island body every frame, and prints a table (`under`, `over`, `shift`, `settleMs`) |
+| `node tools/dev/export-pets.mjs [ids]` | regenerates `src-tauri/src/ui/pets/data/*.json` + `data.rs` (the native pet engine's data) from `src/pets*.js` in a private headless Chrome; no app needed |
+| `node tools/dev/pets-diff.mjs [--chars] [--t 700] [ids]` | renders every pet x state (and the capsule characters with `--chars`) through the native engine (`cargo build --release --example pets_dump`, WARP, no window) and in headless Chrome, prints the mean pixel difference per pet and state, writes side-by-side PNGs for the worst |
 | `pwsh tools/dev/jump-detect.ps1` | captures one pixel row at the top of the screen for 8 s and reports every frame where the capsule's centre moves sideways |
 
 ### audit-transitions.mjs

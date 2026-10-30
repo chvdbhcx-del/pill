@@ -30,7 +30,7 @@ const threshold = Number(opt('--threshold', '2.5'));
 const side = opt('--side', 'right');
 const BOX = 72, MARGIN = 16, SCALE = 2;
 const ids = args;
-const STATES = ['calm', 'music', 'thinking', 'done', 'attention', 'file', 'sleep', 'poked'];
+const STATES = ['calm', 'music', 'thinking', 'done', 'attention', 'file', 'sleep', 'poked', 'energy', 'look'];
 
 // ---- native side
 const nat = join(out, 'native'), webd = join(out, 'web'), dif = join(out, 'diff');
@@ -92,10 +92,10 @@ try {
         const def = P.registry['${id}'], bw = ${BOX} * def.ar, bh = ${BOX}, m = ${MARGIN};
         const cell = document.createElement('div'); cell.style.cssText = 'position:absolute;left:0;top:0;background:#000;width:' + (bw + 2 * m) + 'px;height:' + (bh + 2 * m) + 'px;overflow:hidden';
         stage.append(cell);
-        const inst = P.create('${id}', { state: '${st === 'poked' ? 'calm' : st}', side: '${side}', size: 'm', idle: false });
+        const inst = P.create('${id}', { state: '${st === 'poked' || st === 'look' ? 'calm' : st === 'energy' ? 'music' : st}', side: '${side}', size: 'm', idle: false });
         inst.el.style.setProperty('--pet-px', bh + 'px'); inst.el.style.position = 'absolute'; inst.el.style.left = m + 'px'; inst.el.style.top = m + 'px';
         cell.append(inst.el);
-        ${st === 'poked' ? 'inst.pet();' : ''}
+        ${st === 'poked' ? 'inst.pet();' : ''}${st === 'energy' ? 'inst.setEnergy(0.7);' : ''}${st === 'look' ? 'inst.look(0.8, -0.4);' : ''}
         void inst.el.offsetWidth;
         for (const a of inst.el.getAnimations({ subtree: true })) { a.pause(); a.currentTime = ${T}; }
         await new Promise((r) => setTimeout(r, 120));

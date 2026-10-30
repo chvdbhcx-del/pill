@@ -67,7 +67,7 @@ fn main() {
         return;
     }
     let list: Vec<String> = if ids.is_empty() { catalogue().iter().map(|p| p.id.to_string()).collect() } else { ids };
-    let states = ["calm", "music", "thinking", "done", "attention", "file", "sleep", "poked"];
+    let states = ["calm", "music", "thinking", "done", "attention", "file", "sleep", "poked", "energy", "look"];
     for id in &list {
         let (bw, bh) = {
             let ar = pets::engine::load(id).expect("pet").ar;
@@ -78,7 +78,12 @@ fn main() {
         let cpu = gfx.cpu_read(cw, ch).unwrap();
         let mut eng = PetEngine::new(&gfx).unwrap();
         for st in states {
-            let (name, poke) = if st == "poked" { ("calm", true) } else { (st, false) };
+            let (name, poke) = match st {
+                "poked" => ("calm", true),
+                "energy" => ("music", false),
+                "look" => ("calm", false),
+                _ => (st, false),
+            };
             eng.set_pet("none-yet", side, Size::M);
             eng.set_idle(false);
             eng.set_state(name, None); // a pet created in a state starts there without a transition
@@ -87,6 +92,12 @@ fn main() {
             eng.tick(0.0);
             if poke {
                 assert!(eng.poke());
+            }
+            if st == "energy" {
+                eng.set_energy(Some(0.7));
+            }
+            if st == "look" {
+                eng.set_look(0.8, -0.4);
             }
             let mut left = t;
             while left > 0.0 {
