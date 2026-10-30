@@ -85,6 +85,14 @@ pub fn route_effects(fx: Vec<Effect>, cx: &mut Cx) -> Vec<Effect> {
     rest
 }
 
+/// The model language (ui-core) for the host's language.
+pub fn lang_of(cx: &Cx) -> pill_ui_core::panel::b::Lang {
+    match cx.lang {
+        glasskit::lang::Lang::Ru => pill_ui_core::panel::b::Lang::Ru,
+        glasskit::lang::Lang::En => pill_ui_core::panel::b::Lang::En,
+    }
+}
+
 /// Converts `dt` of a `View::step` to what the models want: whole milliseconds, at least 1 so a 240 Hz frame is never rounded away
 /// (the remainder is carried in `carry`).
 pub fn ms_of(dt_ms: f64, carry: &mut f64) -> u32 {
