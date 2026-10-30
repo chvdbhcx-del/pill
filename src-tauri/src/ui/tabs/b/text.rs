@@ -851,7 +851,7 @@ mod tests {
         let i = TOOLS.iter().position(|t| *t == Tool::JPretty).unwrap();
         let mut s = screen("{nope", None, &mut cx);
         s.click(K::Tool(i), &mut cx);
-        s.settle(&mut cx);
+        s.step(16.0, &mut cx);
         assert_eq!(s.area.ti.text(), "{nope");
         assert_eq!(s.view.toast, Some(("Not valid JSON".to_string(), true)));
     }
