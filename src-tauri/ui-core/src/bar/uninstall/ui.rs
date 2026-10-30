@@ -695,6 +695,13 @@ impl UninstallUi {
             message: self.strip.message.clone(),
             count: self.strip.has_count.then(|| self.strip.count.shown().round().max(0.0) as u64),
             icon: self.strip.icon,
+            tone: if matches!(phase, Phase::Still | Phase::Error) {
+                StripTone::Amber
+            } else if kind == StripKind::Ready {
+                StripTone::Green
+            } else {
+                StripTone::Accent
+            },
             kind,
             phase,
             tooltip: self.t(s::STRIP_TIP).to_string(),

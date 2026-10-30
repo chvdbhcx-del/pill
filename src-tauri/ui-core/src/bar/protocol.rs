@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 /// One backend command to run: `invoke(cmd, args)`.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct BackendCall {
     pub cmd: &'static str,
     pub args: Value,
@@ -66,7 +66,7 @@ impl BackendCall {
 }
 
 /// A chat turn of the dialogue memory (`{ role, content }`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Turn {
     pub role: String,
     pub content: String,

@@ -166,6 +166,14 @@ pub enum StripIcon {
     Warn,
 }
 
+/// The colour role of the strip's icon: accent while busy, green when a step is ready, amber for «still installed» / errors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StripTone {
+    Accent,
+    Green,
+    Amber,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct StripView {
     pub name: String,
@@ -174,6 +182,7 @@ pub struct StripView {
     /// the gliding number after the message (scanning: found, checklist: leftovers)
     pub count: Option<u64>,
     pub icon: StripIcon,
+    pub tone: StripTone,
     pub kind: StripKind,
     pub phase: Phase,
     pub tooltip: String,
@@ -210,7 +219,7 @@ pub enum Out {
     Anim(crate::bar::anim::Anim),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReplyTag {
     /// `uninstall_info` answer for the confirm card
     Info,

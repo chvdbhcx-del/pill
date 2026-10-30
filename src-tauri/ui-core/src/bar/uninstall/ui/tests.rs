@@ -574,6 +574,7 @@ fn strip_texts_per_phase_and_language() {
     u.on_state(&st("error", json!({ "message": "x" })), t);
     let s2 = u.view().strip.unwrap();
     assert_eq!((s2.icon, s2.message.as_str(), s2.count), (StripIcon::Warn, ": ошибка", None));
+    assert_eq!((s1.tone, s2.tone), (StripTone::Accent, StripTone::Amber));
     u.set_lang(Lang::En);
     assert_eq!(u.view().strip.unwrap().message, ": failed");
 }
