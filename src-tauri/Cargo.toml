@@ -25,6 +25,7 @@ tauri-plugin-updater = "2" # updater.rs: signed updates from GitHub Releases, on
 zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] } # aisetup.rs: unpack the whisper.cpp release zip (already in the tree via the updater; deflate = flate2/zlib-rs, also already there)
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] } # mail.rs: IMAP over TLS (already in the tree via the updater; ring provider, no aws-lc)
 rustls-platform-verifier = "0.7" # mail.rs: verifies the server certificate with the Windows certificate store (already in the tree)
+glasskit = { git = "https://github.com/chvdbhcx-del/glass-widgets", rev = "3846f51" } # ui/pets: Gfx (D3D11/D2D/DWrite/WIC), motion, colour, geometry
 # @deps-end
 
 [target.'cfg(windows)'.dependencies]
@@ -77,6 +78,16 @@ windows = { version = "0.58", features = [
   "UI_Notifications_Management", # notif.rs: UserNotificationListener
   "ApplicationModel", # notif.rs: AppInfo / AppDisplayInfo (the app name of a notification)
   "ApplicationModel_DataTransfer", # clipboard.rs: Clipboard::ClearHistory (Win+V history)
+  "Foundation_Numerics", # ui/pets: Matrix3x2 for Direct2D transforms
+  "Win32_Graphics_Direct2D", # ui/pets: Direct2D 1.1 drawing (shared device from glasskit::gfx)
+  "Win32_Graphics_Direct2D_Common",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_DirectWrite",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Win32_Graphics_Imaging",
+  "Win32_System_Com_StructuredStorage",
   # @windows-features
 ] }
 

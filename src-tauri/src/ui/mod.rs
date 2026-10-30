@@ -4,3 +4,4 @@ pub mod bus;
 pub mod flags;
 pub mod lazy;
 pub mod windows;
+pub mod pets;
