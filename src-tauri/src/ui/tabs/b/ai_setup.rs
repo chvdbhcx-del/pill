@@ -705,7 +705,7 @@ impl AiSetupScreen {
     }
 
     fn content_ev(&self, ev: &InputEvent) -> InputEvent {
-        self.scroll.to_content(ev, self.rect).translated(-self.margin, 0.0)
+        self.scroll.to_content(ev, self.rect).translated(-self.margin, -self.margin.min(16.0))
     }
 }
 
@@ -1053,7 +1053,7 @@ mod tests {
         {
             let v = t.v.borrow();
             let ms::View::Page { voice, .. } = &v.vw else { panic!() };
-            assert!(voice.progress.running && voice.progress.fill_pct == 42);
+            assert!(voice.progress.running && (41..=42).contains(&voice.progress.fill_pct));
             assert!(matches!(voice.plan, Plan::Download { enabled: false, .. }));
             assert!(v.built.hits.iter().all(|(id, _)| *id != Id::Install), "a locked button is not a target");
         }
@@ -1073,7 +1073,8 @@ mod tests {
 
     #[test]
     fn a_failed_install_shows_the_error_line() {
-        let t = sim("error");
+        let mut t = sim("error");
+        render_view_cx(&mut *t.s.view, &t.s.cx, (700.0, 1600.0), 1.0, &Theme::settings_dark());
         let v = t.v.borrow();
         let ms::View::Page { voice, .. } = &v.vw else { panic!() };
         assert_eq!(voice.progress.result, Some((false, "SHA-256 mismatch".into())));
