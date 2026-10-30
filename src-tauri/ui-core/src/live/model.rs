@@ -276,7 +276,7 @@ pub enum TextStyle {
     Metric,
 }
 
-/// What a button / card action does. Backend commands are the `#[tauri::command]` names of the contract.
+/// What a button / card action does. Backend commands are the command names of docs/native-ui-contract.md.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     Noop,

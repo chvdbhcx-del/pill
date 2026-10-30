@@ -1,6 +1,6 @@
 // First-run AI setup wizard (Settings > "AI setup", page id `aisetup`). Owner: aisetup agent.
 // User request: "при установке предлагай скачать все для ии, whisper и локальную модельку, или подключать облачную".
-// Callers: src/ai-setup.js (commands below), main.rs (aisetup::init + generate_handler), settingswin.rs PAGES ("aisetup").
+// Callers: the AI setup tab and settings page (commands below), main.rs (aisetup::init), settingswin.rs PAGES ("aisetup").
 // Local whisper: whisper.cpp release zip (GitHub, pinned tag + SHA-256) + one ggml model (Hugging Face, pinned commit + SHA-256)
 //   -> %APPDATA%\pill\ai\whisper\{bin,models}; Pill runs whisper-server.exe hidden on 127.0.0.1, in a kill-on-close job object.
 // Local chat: detects Ollama / LM Studio / llama.cpp / FreeLLMAPI on loopback, downloads the official OllamaSetup.exe on a click,

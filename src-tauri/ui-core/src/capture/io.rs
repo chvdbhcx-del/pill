@@ -2,7 +2,7 @@
 //! command names and camelCase arguments the web page passes to `invoke`) through the [`CaptureIo`] trait, and tests use
 //! [`FakeIo`].
 //!
-//! Commands used (all registered in `generate_handler!` of src-tauri/src/main.rs, see docs/native-ui-contract.md):
+//! Commands used (see docs/native-ui-contract.md):
 //! `capture_session {label}`, `capture_frame {label}`, `capture_ready {label}`, `capture_cancel`, `capture_commit {label, vw, vh,
 //! action, rect | x, y}` (JSON, or a raw PNG body with the JSON in header `x-pill-args` when markup was drawn), `capture_start
 //! {mode}`, `capture_stop`, `capture_settings`, `capture_action {action, value}`, `shelf_add {paths}`. `capture_pin` is a
