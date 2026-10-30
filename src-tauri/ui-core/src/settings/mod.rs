@@ -25,9 +25,12 @@
 //! `voice.enabled` default to off), secrets never travel through `settings_set` (they go to DPAPI storage via their own
 //! command), and every animation has an instant variant for Reduce motion. Frame rates and refresh options are copied
 //! exactly (`fps`: auto/30/60/120/144/240, `edgeIdleFps`: 15/30/60); nothing here lowers them.
+pub mod aisetup;
 pub mod anim;
 pub mod calls;
+pub mod flows;
 pub mod hotkey;
+pub mod model;
 pub mod nav;
 mod pages;
 pub mod pickers;
@@ -38,6 +41,10 @@ pub mod tr;
 pub mod whatsnew;
 pub mod wizard;
 
+#[cfg(test)]
+mod tests;
+
 pub use calls::BackendCall;
+pub use model::{SetError, SettingsModel};
 pub use schema::{schema, Control, Page, Row};
 pub use tr::{Lang, Tr};
