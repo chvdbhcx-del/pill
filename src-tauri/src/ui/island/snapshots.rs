@@ -257,3 +257,17 @@ fn pets_and_characters() {
         }
     }
 }
+
+#[test]
+fn the_capsule_is_sized_from_the_measured_row_like_the_web() {
+    // web: the collapsed clock + weather capsule is 150 px wide (clock.rs columns + pill.js sizeLive / colTarget)
+    let mut s = Scn::new(base(json!({})), (720.0, 120.0), 1.0, false);
+    s.emit("weather:current", wx());
+    s.shot("measure", 600.0);
+    let v = s.sim.view.as_mut() as *mut dyn View as *mut IslandView;
+    // SAFETY: the view of this scenario is an IslandView (set in Scn::new) and the pointer does not outlive the borrow
+    let (m, body) = unsafe { ((*v).debug_measured(), (*v).core.shell.view().body) };
+    assert!((m.0 - 148.7).abs() < 1.5, "measured row width {m:?}");
+    assert_eq!(body.width, 150.0);
+    assert_eq!(body.left, 285.0);
+}

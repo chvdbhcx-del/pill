@@ -72,7 +72,7 @@ pub fn accent_color(a: Option<Accent>, th: &Theme) -> Color {
     }
 }
 
-const BADGE_STYLE: Style = Style::new(10.0, 700).track(0.5);
+const BADGE_STYLE: Style = Style::new(12.0, 600);
 
 /// (width, height) of one element; `Flex` is (0, 0).
 pub fn elem_size(e: &Elem, m: &dyn Meter, th: &Theme) -> (f32, f32) {
@@ -111,7 +111,7 @@ pub fn elem_size(e: &Elem, m: &dyn Meter, th: &Theme) -> (f32, f32) {
             }
             (w, h)
         }
-        Elem::Badge { text } => (m.w(text, BADGE_STYLE) + 12.0, 16.0),
+        Elem::Badge { text } => (m.w(text, BADGE_STYLE), 16.0),
         Elem::Button { label, icon, style, .. } => match style {
             ButtonStyle::Stop { width } => (*width, 24.0),
             ButtonStyle::IconRound => {
@@ -297,7 +297,6 @@ fn paint_elem(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &RowSpec, e: &Elem, r
             }
         }
         Elem::Badge { text } => {
-            cv.fill_rr(r, 5.0, th.raised2);
             cv.text(r, text, BADGE_STYLE.center(), th.dim);
         }
         Elem::Button { label, icon, style, .. } => {
@@ -311,9 +310,8 @@ fn paint_elem(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &RowSpec, e: &Elem, r
                     }
                 }
                 ButtonStyle::IconRound => {
-                    cv.fill_circle(r.center(), 11.0, th.raised2);
                     if let Some(i) = icon {
-                        gpu.icon(cv, i.as_str(), r.inset(4.0), th.text, 1.7);
+                        gpu.icon(cv, i.as_str(), r.inset(5.0), th.text, 1.7);
                     }
                 }
             }

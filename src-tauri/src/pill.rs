@@ -67,7 +67,33 @@ fn st() -> MutexGuard<'static, St> {
 }
 
 fn me() -> HWND {
+    if let Some(n) = native() {
+        return HWND(n.hwnd() as *mut c_void);
+    }
     HWND(st().hwnd as *mut c_void)
+}
+
+// ---- native island (flag `ui.native.pill`, see ui/island and docs/native-island.md) ----
+// With the flag on the WebView `pill` window does not exist: the Overlay window of `ui::island` is driven through the PillWin seam
+// (placement, show / hide, capture affinity) while the cursor loop, the click-through toggle and the focus hand-over belong to the host
+// (proximity engine) and the view. Flag off: none of this is reachable.
+static NATIVE: std::sync::OnceLock<Box<dyn crate::ui::host::pillwin::PillWin>> = std::sync::OnceLock::new();
+
+fn native() -> Option<&'static dyn crate::ui::host::pillwin::PillWin> {
+    NATIVE.get().map(|b| b.as_ref())
+}
+
+/// `ui::island::start` hands the Overlay over right after queueing it.
+pub fn attach_native(w: Box<dyn crate::ui::host::pillwin::PillWin>) {
+    let _ = NATIVE.set(w);
+}
+
+/// The Overlay exists now (its HWND is known): first placement and the capture affinity.
+pub fn native_ready(app: &AppHandle) {
+    on_main(app, |a| {
+        affinity();
+        place(a);
+    });
 }
 
 /// Run on the UI thread (window calls from helper threads).
@@ -87,6 +113,9 @@ struct Lay {
 
 /// Target monitor + frame size for the current settings.
 fn layout(app: &AppHandle, expanded: bool) -> Option<Lay> {
+    if native().is_some() {
+        return layout_native(expanded);
+    }
     let win = app.get_webview_window("pill")?;
     let mons = win.available_monitors().ok()?;
     let want = crate::settings::get_str("monitor", "primary");
@@ -109,6 +138,11 @@ fn layout(app: &AppHandle, expanded: bool) -> Option<Lay> {
             }
         }
     }
+    Some(frame_for(ml, mt, mw, mh, top, sf, expanded))
+}
+
+/// The window frame on a monitor (physical px): size from the settings, centred plus `offsetX`, `top` = where the island hangs.
+fn frame_for(ml: i32, mt: i32, mw: i32, mh: i32, top: i32, sf: f64, expanded: bool) -> Lay {
     let k = sf * crate::settings::get_f64("size", 100.0).clamp(80.0, 200.0) / 100.0;
     let (fw, fh) = if expanded { EXPANDED } else if CARD.load(Ordering::Relaxed) { CARD_FRAME } else { COLLAPSED };
     let w = ((fw * k).round() as i32).min(mw);
@@ -117,7 +151,22 @@ fn layout(app: &AppHandle, expanded: bool) -> Option<Lay> {
     let off = crate::settings::get_f64("offsetX", 0.0).clamp(-50.0, 50.0);
     let cx = ml as f64 + mw as f64 / 2.0 + off / 100.0 * mw as f64;
     let x = ((cx - w as f64 / 2.0).round() as i32).clamp(ml, (ml + mw - w).max(ml));
-    Some(Lay { x, y: top, w, h, mon: [ml, mt, ml + mw, mt + mh], scale: sf })
+    Lay { x, y: top, w, h, mon: [ml, mt, ml + mw, mt + mh], scale: sf }
+}
+
+/// `layout` for the native island: monitors come from the host (the same `monitor` setting, "1".. = list order, else the primary).
+fn layout_native(expanded: bool) -> Option<Lay> {
+    let mons = crate::ui::host::handle()?.monitors();
+    let want = crate::settings::get_str("monitor", "primary");
+    let m = want
+        .parse::<usize>()
+        .ok()
+        .and_then(|i| mons.get(i.saturating_sub(1)))
+        .or_else(|| mons.iter().find(|m| m.primary))
+        .or_else(|| mons.first())?;
+    let (ml, mt, mw, mh) = (m.rect.l, m.rect.t, m.rect.r - m.rect.l, m.rect.b - m.rect.t);
+    let top = if crate::settings::get_bool("underTaskbar", true) { m.work.t.max(mt) } else { mt };
+    Some(frame_for(ml, mt, mw, mh, top, m.scale as f64, expanded))
 }
 
 /// Put the window into its current frame (collapsed/expanded) on the target monitor. UI thread only.
@@ -131,8 +180,12 @@ pub fn place(app: &AppHandle) {
         s.layout = [l.x, l.y, l.w, l.h];
     }
     pass_through(app, exp);
-    unsafe {
-        let _ = SetWindowPos(me(), HWND_TOPMOST, l.x, l.y, l.w, l.h, SWP_NOACTIVATE);
+    if let Some(n) = native() {
+        n.set_bounds(l.x, l.y, l.w, l.h);
+    } else {
+        unsafe {
+            let _ = SetWindowPos(me(), HWND_TOPMOST, l.x, l.y, l.w, l.h, SWP_NOACTIVATE);
+        }
     }
     HZ_DIRTY.store(true, Ordering::Relaxed); // monitor may have changed: cursor loop re-detects + re-emits `pill:display`
 }
@@ -155,6 +208,9 @@ fn pass_through(_app: &AppHandle, expanded: bool) {
 /// Done on the window style directly: tauri's `set_ignore_cursor_events` returned Ok but left the style untouched here (measured), and
 /// the window layer may rewrite the style later, so the cursor loop calls this every pass and it only writes when the style differs.
 fn set_ignore(want: bool) {
+    if native().is_some() {
+        return; // the host's proximity engine decides click-through (and pass-through is the view's)
+    }
     use windows::Win32::Foundation::COLORREF;
     use windows::Win32::UI::WindowsAndMessaging::{SetLayeredWindowAttributes, LWA_ALPHA, WS_EX_LAYERED, WS_EX_TRANSPARENT};
     unsafe {
@@ -201,15 +257,22 @@ fn apply_vis(app: &AppHandle, reason: &str) {
     }
     st().shown = want;
     if want {
-        unsafe {
-            let _ = ShowWindow(me(), SW_SHOWNOACTIVATE);
+        match native() {
+            Some(n) => n.set_visible(true),
+            None => unsafe {
+                let _ = ShowWindow(me(), SW_SHOWNOACTIVATE);
+            },
         }
         place(app); // re-assert topmost + re-place after being hidden
         let _ = bus::emit(&app, Target::Label("pill"), "pill:show", json!({ "reason": reason }));
     } else {
         let _ = bus::emit(&app, Target::Label("pill"), "pill:hide", json!({ "reason": reason }));
-        unsafe {
-            let _ = ShowWindow(me(), SW_HIDE);
+        match native() {
+            // auto-hide keeps the Overlay "shown" (the body slid out of its frame): the host's top-edge dwell must keep running to bring it back
+            Some(n) => n.set_visible(st().hidden & (HIDE_USER | HIDE_GUARD) == 0),
+            None => unsafe {
+                let _ = ShowWindow(me(), SW_HIDE);
+            },
         }
     }
 }
@@ -269,6 +332,9 @@ pub fn on_settings(app: &AppHandle, patch: &Map<String, Value>) {
 }
 
 fn affinity() {
+    if me().0.is_null() {
+        return; // the native Overlay is not created yet (`native_ready` calls this again)
+    }
     let a = if crate::settings::get_bool("showInCapture", true) { WDA_NONE } else { WDA_EXCLUDEFROMCAPTURE };
     unsafe {
         let _ = SetWindowDisplayAffinity(me(), a);
@@ -315,6 +381,9 @@ pub fn pill_auto_hide(app: AppHandle, on: bool) {
 /// Text fields need keyboard focus: drop NOACTIVATE and take the foreground; restore on false.
 #[tauri::command]
 pub fn pill_activate(app: AppHandle, on: bool) {
+    if native().is_some() {
+        return; // the native view takes / gives back keyboard focus itself (`Cx::set_focus`)
+    }
     if st().active == on {
         return;
     }
@@ -352,6 +421,10 @@ pub fn pill_activate(app: AppHandle, on: bool) {
 /// Monitor names for the settings tab ("1".."n" map to this order).
 #[tauri::command]
 pub fn pill_monitors(app: AppHandle) -> Vec<String> {
+    if native().is_some() {
+        let ms = crate::ui::host::handle().map(|h| h.monitors()).unwrap_or_default();
+        return ms.iter().enumerate().map(|(i, m)| format!("{} {}x{}", i + 1, m.rect.r - m.rect.l, m.rect.b - m.rect.t)).collect();
+    }
     let Some(w) = app.get_webview_window("pill") else { return vec![] };
     let list = w.available_monitors().unwrap_or_default();
     list.iter()
@@ -773,21 +846,25 @@ fn hotkeys(app: &tauri::App) {
 
 pub fn init(app: &tauri::App) {
     let h = app.handle().clone();
-    let Some(w) = app.get_webview_window("pill") else {
-        eprintln!("pill: window 'pill' missing");
-        return;
-    };
-    let Ok(raw) = w.hwnd() else { return };
-    st().hwnd = raw.0 as isize;
-    unsafe {
-        let me = me();
-        let ex = GetWindowLongPtrW(me, GWL_EXSTYLE);
-        SetWindowLongPtrW(me, GWL_EXSTYLE, ex | (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize);
-        let _ = SetWindowPos(me, HWND::default(), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    if native().is_none() {
+        let Some(w) = app.get_webview_window("pill") else {
+            eprintln!("pill: window 'pill' missing");
+            return;
+        };
+        let Ok(raw) = w.hwnd() else { return };
+        st().hwnd = raw.0 as isize;
+        unsafe {
+            let me = me();
+            let ex = GetWindowLongPtrW(me, GWL_EXSTYLE);
+            SetWindowLongPtrW(me, GWL_EXSTYLE, ex | (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize);
+            let _ = SetWindowPos(me, HWND::default(), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
     }
     affinity();
     place(&h);
     tray(app);
     hotkeys(app);
-    std::thread::spawn(move || cursor_loop(h));
+    if native().is_none() {
+        std::thread::spawn(move || cursor_loop(h)); // the native Overlay gets the same events from the host's proximity engine
+    }
 }

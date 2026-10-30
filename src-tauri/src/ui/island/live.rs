@@ -14,9 +14,9 @@ use pill_ui_core::shell::types::LiveContent;
 use std::collections::HashMap;
 
 pub const TIME_STYLE: Style = Style::new(13.0, 600).mono().track(0.13);
-const DATE_STYLE: Style = Style::new(12.0, 600);
-const TEMP_STYLE: Style = Style::new(13.0, 600);
-const BATT_STYLE: Style = Style::new(12.0, 600);
+const DATE_STYLE: Style = Style::new(12.0, 600).mono();
+const TEMP_STYLE: Style = Style::new(13.0, 600).mono();
+const BATT_STYLE: Style = Style::new(12.0, 600).mono();
 const COL_GAP: f32 = 16.0;
 const SIDE_GAP: f32 = 12.0;
 

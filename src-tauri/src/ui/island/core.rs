@@ -168,7 +168,9 @@ impl Core {
             self.shell.register_tab(TabSpec { id: t.id.to_string(), title: title.to_string(), order: t.order, hidden: t.hidden, height: t.height.map(|h| h as f64) });
         }
         self.settings = settings.clone();
-        self.shell.handle_at(now_mono, Event::Start(settings));
+        self.shell.handle_at(now_mono, Event::Start(settings.clone()));
+        // the providers read their mode switches (`musicPill`, ...) from the settings event, as the pages did at load
+        self.dispatch_answer("settings:changed", &settings, now_mono);
         for q in self.hub.boot() {
             self.outs.push(Out::Query(q));
         }

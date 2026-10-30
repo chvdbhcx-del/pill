@@ -7,6 +7,16 @@ use tauri::{AppHandle, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 pub const PILL: &str = "pill";
 pub const BAR: &str = "bar";
 
+/// The island: the native Overlay when the flag `ui.native.pill` is on (and `--web-ui` is not given), else the WebView window below.
+/// `pill::init` follows either way and finds whichever exists.
+pub fn build_island(app: &AppHandle) -> tauri::Result<()> {
+    if crate::ui::island::enabled() {
+        crate::ui::island::start(app);
+        return Ok(());
+    }
+    build_pill(app).map(|_| ())
+}
+
 /// The island window: always alive, never takes focus (pill::init adds WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW once it exists).
 pub fn build_pill(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     WebviewWindowBuilder::new(app, PILL, WebviewUrl::App("pill.html".into()))

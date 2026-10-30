@@ -9,11 +9,12 @@ pub mod live;
 pub mod panel;
 pub mod rows;
 pub mod shapes;
+pub mod start;
 pub mod sys;
 pub mod view;
 mod wx_data;
 
-pub use view::IslandView;
+pub use start::{enabled, start};
 
 #[cfg(test)]
 mod snapshots;

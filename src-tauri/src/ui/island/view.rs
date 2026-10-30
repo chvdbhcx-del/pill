@@ -855,3 +855,10 @@ fn _cursor_shape(c: Cursor) -> CursorShape {
 
 #[allow(dead_code)]
 fn _unused(_: TabDir) {}
+
+#[cfg(test)]
+impl IslandView {
+    pub fn debug_measured(&self) -> (f64, f64) {
+        self.measured
+    }
+}
