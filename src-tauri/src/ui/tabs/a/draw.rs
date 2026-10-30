@@ -143,6 +143,14 @@ pub fn decode_file(path: &Path, max_side: u32) -> Option<Decoded> {
     }
 }
 
+/// Decode a `data:<mime>;base64,<payload>` URL (the form the backend hands covers and icons out in). Thread-safe.
+pub fn decode_data_url(url: &str, max_side: u32) -> Option<Decoded> {
+    use base64::Engine;
+    let (_, payload) = url.strip_prefix("data:")?.split_once(";base64,")?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(payload.trim()).ok()?;
+    decode_bytes(&bytes, max_side)
+}
+
 /// A small solid-colour BGRA test image (tests build covers without files).
 pub fn solid(w: u32, h: u32, rgba: [u8; 4]) -> Decoded {
     let a = rgba[3] as u32;
@@ -155,6 +163,8 @@ pub fn solid(w: u32, h: u32, rgba: [u8; 4]) -> Decoded {
 pub enum Source {
     Bytes(Vec<u8>),
     File(PathBuf),
+    /// `data:...;base64,...`, decoded on the worker.
+    DataUrl(String),
 }
 
 /// The answer to [`ImageCache::request`], posted as `Msg::Custom(Box<ImageReady>)` to the view. Feed it to [`ImageCache::ready`].
@@ -278,6 +288,7 @@ impl ImageCache {
             let img = match &src {
                 Source::Bytes(b) => decode_bytes(b, max),
                 Source::File(p) => decode_file(p, max),
+                Source::DataUrl(u) => decode_data_url(u, max),
             };
             w.post_custom(ImageReady { key, img });
         };
