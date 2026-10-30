@@ -327,12 +327,12 @@ fn typing_during_an_uninstall_steps_the_panel_aside_and_never_touches_the_job() 
     let before = d.names().len();
     d.fakes.api.reply("cmd_query", Ok(rows()));
     d.chr('f');
-    eprintln!("after f: focus={:?} panel={} takeover={} text={:?}", d.v.focus, d.v.vm.uninstall.panel.is_some(), d.v.vm.uninstall.takeover, d.v.input.text());
+    assert!(!d.v.vm.uninstall.takeover, "the very first keystroke already freed the box");
     d.chr('i');
     d.frames(60);
-    eprintln!("after i: focus={:?} panel={} takeover={} text={:?} strip={}", d.v.focus, d.v.vm.uninstall.panel.is_some(), d.v.vm.uninstall.takeover, d.v.input.text(), d.v.vm.uninstall.strip.is_some());
+    d.frames(60); // the box finishes its 260 ms collapse
     assert!(d.v.vm.uninstall.panel.is_none(), "the panel left at the first keystroke");
-    assert_eq!(d.v.input.text(), "fi", "both letters reached the box");
+    assert_eq!(d.v.input.text(), "u qbitfi", "both letters reached the box");
     assert_eq!(d.v.focus, Focus::Input);
     let after: Vec<String> = d.names()[before..].to_vec();
     for bad in ["uninstall_cancel", "uninstall_delete", "uninstall_start", "uninstall_admin"] {
@@ -344,7 +344,7 @@ fn typing_during_an_uninstall_steps_the_panel_aside_and_never_touches_the_job() 
     d.key(KeyCode::Char('U'), Modifiers::CTRL);
     d.frames(120);
     assert!(d.v.vm.uninstall.panel.is_some());
-    assert_eq!(d.v.input.text(), "fi");
+    assert_eq!(d.v.input.text(), "u qbitfi");
 }
 
 #[test]
@@ -524,6 +524,7 @@ fn snapshot_light_scale2_and_reduced() {
     let big = d.img(&dark());
     dump(&big, "scale2");
     assert_eq!((big.w, big.h), (1120, 700));
+    drop(d); // one bar test window at a time (see SERIAL)
     glasskit::ease::force_reduced(Some(true));
     let mut r = D::new(json!({ "language": "en", "theme": "dark", "reduceMotion": true }));
     r.cx.reduced_motion = true;
