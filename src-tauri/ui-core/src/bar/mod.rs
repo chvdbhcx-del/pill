@@ -1,1 +1,9 @@
-//! bar: owned by one agent; see ui-core/README.md.
+//! bar (wip)
+pub mod anim;
+pub mod keys;
+pub mod lang;
+pub mod protocol;
+pub mod query;
+pub mod results;
+pub mod strings;
+pub mod uninstall;
