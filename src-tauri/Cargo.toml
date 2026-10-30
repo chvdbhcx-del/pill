@@ -78,6 +78,20 @@ windows = { version = "0.58", features = [
   "UI_Notifications_Management", # notif.rs: UserNotificationListener
   "ApplicationModel", # notif.rs: AppInfo / AppDisplayInfo (the app name of a notification)
   "ApplicationModel_DataTransfer", # clipboard.rs: Clipboard::ClearHistory (Win+V history)
+  "Foundation_Numerics", # ui/host: Direct2D matrices (glasskit uses the same)
+  "Win32_Graphics_Direct2D", # ui/host (native window host): Direct2D / Direct3D11 / DXGI / DirectComposition / DirectWrite / WIC
+  "Win32_Graphics_Direct2D_Common",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_DirectComposition",
+  "Win32_Graphics_DirectWrite",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Win32_Graphics_Imaging",
+  "Win32_UI_HiDpi", # ui/host: per-monitor DPI v2
+  "Win32_UI_Controls", # ui/host: DwmExtendFrameIntoClientArea (MARGINS)
+  "Win32_UI_Input_Ime", # ui/host: IME candidate window position
+  "Win32_System_Com_StructuredStorage", # ui/host: drag-and-drop STGMEDIUM
   # @windows-features
 ] }
 
