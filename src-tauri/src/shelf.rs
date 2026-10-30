@@ -1,6 +1,6 @@
 // File shelf (drop files, keep, drag out). Owner: shelf agent. Part of the Pill replica (user request: "replica of the Island app via the replica skills").
 // Files stay where they are; the DB only keeps path + name. Native drag-out = OLE DoDragDrop with a shell CF_HDROP data object.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use base64::Engine;
 use serde::Serialize;
 use std::path::Path;
@@ -86,13 +86,12 @@ fn items() -> Vec<Item> {
         .collect()
 }
 
-fn changed(app: &AppHandle) -> Vec<Item> {
+fn changed(_app: &AppHandle) -> Vec<Item> {
     let v = items();
-    let _ = bus::emit(&app, Target::Label("pill"), "shelf:changed", serde_json::json!({ "count": v.len(), "items": &v }));
+    let _ = bus::emit("shelf:changed", serde_json::json!({ "count": v.len(), "items": &v }));
     v
 }
 
-#[tauri::command(async)]
 pub fn shelf_add(app: AppHandle, paths: Vec<String>) -> usize {
     if !crate::settings::get_bool("module.shelf", true) {
         return 0; // Settings > Modules: the shelf is off, drops are not stored
@@ -116,24 +115,20 @@ pub fn shelf_add(app: AppHandle, paths: Vec<String>) -> usize {
     added
 }
 
-#[tauri::command(async)]
 pub fn shelf_list() -> Vec<Item> {
     items()
 }
 
-#[tauri::command(async)]
 pub fn shelf_remove(app: AppHandle, id: i64) {
     crate::store::with(|c| c.execute("delete from shelf_items where id = ?1", [id]));
     changed(&app);
 }
 
-#[tauri::command(async)]
 pub fn shelf_clear(app: AppHandle) {
     crate::store::with(|c| c.execute("delete from shelf_items", []));
     changed(&app);
 }
 
-#[tauri::command(async)]
 pub fn shelf_open(id: i64) -> bool {
     let Some(p) = path_of(id).filter(|p| Path::new(p).exists()) else { return false };
     unsafe {
@@ -142,7 +137,6 @@ pub fn shelf_open(id: i64) -> bool {
     }
 }
 
-#[tauri::command(async)]
 pub fn shelf_reveal(id: i64) -> bool {
     use std::os::windows::process::CommandExt;
     let Some(p) = path_of(id).filter(|p| Path::new(p).exists()) else { return false };
@@ -154,7 +148,6 @@ pub fn shelf_reveal(id: i64) -> bool {
         .is_ok()
 }
 
-#[tauri::command(async)]
 pub fn shelf_copy_path(id: i64) -> bool {
     let Some(p) = path_of(id) else { return false };
     set_clipboard_text(&p)
@@ -216,7 +209,6 @@ impl IDropSource_Impl for Src_Impl {
 /// Starts a native drag of the shelf files (blocks until drop/cancel; call while the left button is down).
 /// Only COPY and LINK are offered, so the source files are never moved or deleted.
 /// Returns "copied" | "cancelled" ("moved" is never returned by design).
-#[tauri::command(async)]
 pub fn shelf_drag_out(app: AppHandle, ids: Vec<i64>) -> String {
     let paths: Vec<String> = ids.into_iter().filter_map(path_of).filter(|p| Path::new(p).exists()).collect();
     if paths.is_empty() {

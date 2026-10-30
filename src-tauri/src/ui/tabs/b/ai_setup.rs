@@ -930,7 +930,7 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    const FIXTURES: &str = include_str!("../../../../../tools/dev/fixtures/tabs-b/ai_setup.json");
+    const FIXTURES: &str = include_str!("../../../../tests/fixtures/tabs-b/ai_setup.json");
 
     /// Lets a test keep a handle on the view that the `Sim` owns.
     struct Shared(Rc<RefCell<AiSetupScreen>>);

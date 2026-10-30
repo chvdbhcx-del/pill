@@ -9,7 +9,7 @@
 // 15 s minimum between any two polls, exponential back-off up to 30 min after errors, catch_unwind around every tick.
 // net.rs says it is the only module that opens sockets; this is the one exception (WinHTTP cannot speak IMAP), it only talks to mail.host.
 // The parsing, RFC 2047 decoding, UID dedup and the scheduler are pure and unit-tested on canned data; the session runs on an in-memory stream.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -645,7 +645,7 @@ fn set_status(state: &'static str, message: String, unseen: Option<usize>) {
     *STATUS.lock().unwrap_or_else(|e| e.into_inner()) = Status { state, message, unseen, at };
 }
 
-fn tick(app: &AppHandle, sched: &mut Sched, st: &mut MailState) {
+fn tick(_app: &AppHandle, sched: &mut Sched, st: &mut MailState) {
     let on = crate::settings::get_bool("live.mail", false);
     let now = crate::liveplus::mono_ms();
     if !sched.due(now, on, signature()) {
@@ -673,7 +673,7 @@ fn tick(app: &AppHandle, sched: &mut Sched, st: &mut MailState) {
             set_status("ok", String::new(), Some(f.unseen));
             if f.fresh > 0 {
                 let (from, subject) = f.newest.unwrap_or_default();
-                let _ = bus::emit(&app, Target::Label("pill"), "live:mail", json!({ "from": from, "subject": subject, "more": f.fresh - 1 }));
+                let _ = bus::emit("live:mail", json!({ "from": from, "subject": subject, "more": f.fresh - 1 }));
             }
             sched.done(crate::liveplus::mono_ms(), true);
         }
@@ -710,7 +710,6 @@ pub fn net_feature() -> Value {
 // ================= commands =================
 
 /// For the settings page: {on, state: off | nosetup | ok | error, message, unseen, at (unix s), hasPassword}. The password never comes back.
-#[tauri::command]
 pub fn mail_status() -> Value {
     let on = crate::settings::get_bool("live.mail", false);
     let s = STATUS.lock().unwrap_or_else(|e| e.into_inner());
@@ -721,7 +720,6 @@ pub fn mail_status() -> Value {
 }
 
 /// Stores the mailbox password DPAPI-encrypted (empty string clears it). The text never comes back to the page.
-#[tauri::command]
 pub fn mail_set_password(app: AppHandle, password: String) -> bool {
     let value = if password.is_empty() { Some(String::new()) } else { crate::net::secrets::protect(&password).ok() };
     let ok = value.is_some();
@@ -735,7 +733,6 @@ pub fn mail_set_password(app: AppHandle, password: String) -> bool {
 
 /// "Проверить подключение": connects with the saved settings, logs in, opens the folder and counts unread messages. Reads nothing else, changes nothing.
 /// {ok, message}: the message is readable and never contains the login, the password or anything the server said.
-#[tauri::command(async)]
 pub fn mail_test() -> Value {
     static BUSY: AtomicBool = AtomicBool::new(false);
     if BUSY.swap(true, Ordering::SeqCst) {

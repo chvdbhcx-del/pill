@@ -15,7 +15,7 @@ pub mod tabfx;
 pub mod view;
 mod wx_data;
 
-pub use start::{enabled, start};
+pub use start::start;
 
 #[cfg(test)]
 mod snapshots;

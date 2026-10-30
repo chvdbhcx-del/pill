@@ -104,7 +104,6 @@ pub(crate) fn export_map() -> Cfg {
     out
 }
 
-#[tauri::command]
 pub fn settings_export() -> Value {
     let t = unsafe { GetLocalTime() };
     let name = format!("pill-settings-{:04}{:02}{:02}-{:02}{:02}{:02}.json", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
@@ -123,7 +122,6 @@ pub fn settings_export() -> Value {
     json!({ "ok": true, "path": path.to_string_lossy() })
 }
 
-#[tauri::command]
 pub fn settings_import(app: tauri::AppHandle, json_text: String) -> Value {
     if json_text.len() > MAX_IMPORT {
         return json!({ "ok": false, "applied": 0, "skipped": 0, "error": "file is larger than 1 MB" });

@@ -778,7 +778,7 @@ mod tests {
     use pill_ui_core::panel::b::text::{apply, stats, Tool};
     use serde_json::{json, Value};
 
-    const FIXTURE: &str = include_str!("../../../../../tools/dev/fixtures/tabs-b/text.json");
+    const FIXTURE: &str = include_str!("../../../../tests/fixtures/tabs-b/text.json");
 
     fn mv(p: Pt) -> InputEvent {
         InputEvent::MouseMove { pos: p, mods: Modifiers::NONE, buttons: Buttons::NONE }

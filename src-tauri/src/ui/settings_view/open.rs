@@ -1,4 +1,4 @@
-//! Creating the window: the host registration, geometry memory (`settingsWin.*`), the gate used by `settingswin.rs`, the backend facade and the
+//! Creating the window: the host registration, geometry memory (`settingsWin.*`), the opener used by `settingswin.rs` and the
 //! small workers (ticker, file picker).
 use super::{Local, SettingsView, LABEL};
 use crate::ui::host::{self, Geometry, HostHandle, NativeWindow, Placement, WinEvent};
@@ -7,11 +7,6 @@ use glasskit::theme::Theme;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-
-/// Is the native window the one to open (flag on, no `--web-ui`)?
-pub fn native_enabled() -> bool {
-    crate::ui::flags::native_settings()
-}
 
 static OPEN_ID: Mutex<Option<WindowId>> = Mutex::new(None);
 

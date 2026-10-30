@@ -3,7 +3,7 @@
 // One poller thread: 250 ms while the pill is visible, 1000 ms while hidden (the page calls watch_pause / watch_resume from
 // its pill:hide / pill:show handlers). Emits `kbd:layout` {lang:'RU', name:'Russian'} to window "pill" only when the layout of
 // the SAME foreground thread changed and stayed changed for 2 polls. Never on startup, never for a null layout.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle};
@@ -88,7 +88,7 @@ fn info(lid: u16) -> Value {
     json!({ "lang": if iso.is_empty() { format!("{lid:04X}") } else { display_code(&iso) }, "name": locale_str(lid, LOCALE_SENGLISHLANGUAGENAME) })
 }
 
-fn run(app: AppHandle) {
+fn run(_app: AppHandle) {
     let mut t = Tracker::default();
     loop {
         if !crate::settings::get_bool("live.keyboardLayout", true) {
@@ -99,7 +99,7 @@ fn run(app: AppHandle) {
         }
         if let Some((tid, lid)) = current() {
             if let Some(new) = t.step(tid, lid) {
-                let _ = bus::emit(&app, Target::Label("pill"), "kbd:layout", info(new));
+                let _ = bus::emit("kbd:layout", info(new));
             }
         } else {
             t.step(0, 0);
@@ -115,17 +115,14 @@ pub fn init(app: &tauri::App) {
 
 // ---------- commands ----------
 /// Current layout of the foreground window, for rendering on demand: {lang, name} or null.
-#[tauri::command]
 pub fn kbd_state() -> Option<Value> {
     current().map(|(_, lid)| info(lid))
 }
 
-#[tauri::command]
 pub fn watch_pause() {
     HIDDEN.store(true, Ordering::Relaxed);
 }
 
-#[tauri::command]
 pub fn watch_resume() {
     HIDDEN.store(false, Ordering::Relaxed);
 }

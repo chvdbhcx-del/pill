@@ -1,38 +1,23 @@
-// The pill window: placement at the top center, collapsed/expanded frames, cursor loop, focus handling,
-// visibility (guard / auto-hide / tray), tray icon and hotkeys. Owner: pill agent (lane L1).
+// The pill window: placement at the top center, collapsed/expanded frames, visibility (guard / auto-hide / tray), tray icon
+// and hotkeys. Owner: pill agent (lane L1). The window itself is the native Overlay of ui/island.
 //
-// Window model (architecture 2.1): one transparent always-on-top window, never resized while the page animates.
-// Expand: Rust enlarges the window -> emits `pill:expand` -> page animates. Collapse: page animates, then calls
-// `pill_set_state("collapsed")` and Rust shrinks the window. Rust owns the cursor (hover / top-edge) and emits
-// `pill:hover` / `pill:leave`.
-use crate::ui::bus::{self, Target};
+// Window model: one transparent always-on-top window, never resized while the view animates.
+// Expand: Rust enlarges the window -> emits `pill:expand` -> the view animates. Collapse: the view animates, then calls
+// `pill_set_state("collapsed")` and Rust shrinks the window. The cursor (hover / top-edge / click-through) belongs to the
+// host's proximity engine (ui/host/proximity.rs).
+use crate::ui::bus;
 use serde_json::{json, Map, Value};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager};
-use windows::Win32::Foundation::{HWND, POINT, RECT};
-use windows::core::PCWSTR;
-use windows::Win32::Graphics::Gdi::{
-    EnumDisplaySettingsW, GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, DEVMODEW, ENUM_CURRENT_SETTINGS,
-    MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
-};
-use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, RegisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN,
-    VK_LBUTTON,
-};
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId,
-    IsWindow, SetForegroundWindow, SetWindowDisplayAffinity, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    GWL_EXSTYLE, HWND_TOPMOST, MSG, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SW_HIDE, SW_SHOWNOACTIVATE, WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WM_HOTKEY, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-};
+use tauri::AppHandle;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN};
+use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, SetWindowDisplayAffinity, MSG, WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WM_HOTKEY};
 
-// Frame sizes in logical px at 100 % user size. The page mirrors them (pill.js CFG), keep both in sync.
+// Frame sizes in logical px at 100 % user size (ui-core mirrors them for the island layout).
 // Collapsed height: 7 top gap + 36 capsule + 14 liquid edge + gap + a dropped card (48) fits in 120.
 // every frame is as wide as EXPANDED: a width change moves the window's left edge while the page still lays the island out for the old width,
 // and the island jumped sideways for a frame at each resize (the collapsed rest of the frame is click-through, see set_ignore)
@@ -45,7 +30,6 @@ pub const HIDE_GUARD: u8 = 2; // fullscreen / per-app (guard.rs)
 pub const HIDE_AUTO: u8 = 4; // auto-hide slid the pill away
 
 struct St {
-    hwnd: isize,
     expanded: bool,    // OS window is in the expanded frame
     hidden: u8,        // HIDE_* bits
     shown: bool,       // the OS window is currently visible
@@ -53,13 +37,11 @@ struct St {
     mon: [i32; 4],     // target monitor rect, physical px
     scale: f64,        // target monitor scale factor (css px -> physical px)
     layout: [i32; 4],  // last placed x, y, w, h
-    prev_fg: isize,    // window that had focus before pill_activate(true)
-    active: bool,
 }
 
 static ST: Mutex<St> = Mutex::new(St {
-    hwnd: 0, expanded: false, hidden: 0, shown: true, rect: [0.0; 4], mon: [0; 4], scale: 1.0,
-    layout: [0; 4], prev_fg: 0, active: false,
+    expanded: false, hidden: 0, shown: true, rect: [0.0; 4], mon: [0; 4], scale: 1.0,
+    layout: [0; 4],
 });
 
 fn st() -> MutexGuard<'static, St> {
@@ -67,16 +49,10 @@ fn st() -> MutexGuard<'static, St> {
 }
 
 fn me() -> HWND {
-    if let Some(n) = native() {
-        return HWND(n.hwnd() as *mut c_void);
-    }
-    HWND(st().hwnd as *mut c_void)
+    native().map_or(HWND::default(), |n| HWND(n.hwnd() as *mut c_void))
 }
 
-// ---- native island (flag `ui.native.pill`, see ui/island and docs/native-island.md) ----
-// With the flag on the WebView `pill` window does not exist: the Overlay window of `ui::island` is driven through the PillWin seam
-// (placement, show / hide, capture affinity) while the cursor loop, the click-through toggle and the focus hand-over belong to the host
-// (proximity engine) and the view. Flag off: none of this is reachable.
+// ---- the island window: the Overlay of `ui::island`, driven through the PillWin seam (placement, show / hide, capture affinity) ----
 static NATIVE: std::sync::OnceLock<Box<dyn crate::ui::host::pillwin::PillWin>> = std::sync::OnceLock::new();
 
 fn native() -> Option<&'static dyn crate::ui::host::pillwin::PillWin> {
@@ -112,33 +88,8 @@ struct Lay {
 }
 
 /// Target monitor + frame size for the current settings.
-fn layout(app: &AppHandle, expanded: bool) -> Option<Lay> {
-    if native().is_some() {
-        return layout_native(expanded);
-    }
-    let win = app.get_webview_window("pill")?;
-    let mons = win.available_monitors().ok()?;
-    let want = crate::settings::get_str("monitor", "primary");
-    let mon = want
-        .parse::<usize>()
-        .ok()
-        .and_then(|i| mons.get(i.saturating_sub(1)).cloned())
-        .or_else(|| win.primary_monitor().ok().flatten())
-        .or_else(|| mons.first().cloned())?;
-    let (p, s, sf) = (mon.position(), mon.size(), mon.scale_factor());
-    let (ml, mt, mw, mh) = (p.x, p.y, s.width as i32, s.height as i32);
-    // Sit below a top taskbar / bar (setting `underTaskbar`, default on): use the work-area top of that monitor.
-    let mut top = mt;
-    if crate::settings::get_bool("underTaskbar", true) {
-        unsafe {
-            let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
-            let hm = MonitorFromPoint(POINT { x: ml + mw / 2, y: mt + 10 }, MONITOR_DEFAULTTONEAREST);
-            if GetMonitorInfoW(hm, &mut mi).as_bool() {
-                top = mi.rcWork.top.max(mt);
-            }
-        }
-    }
-    Some(frame_for(ml, mt, mw, mh, top, sf, expanded))
+fn layout(expanded: bool) -> Option<Lay> {
+    layout_native(expanded)
 }
 
 /// The window frame on a monitor (physical px): size from the settings, centred plus `offsetX`, `top` = where the island hangs.
@@ -154,7 +105,7 @@ fn frame_for(ml: i32, mt: i32, mw: i32, mh: i32, top: i32, sf: f64, expanded: bo
     Lay { x, y: top, w, h, mon: [ml, mt, ml + mw, mt + mh], scale: sf }
 }
 
-/// `layout` for the native island: monitors come from the host (the same `monitor` setting, "1".. = list order, else the primary).
+/// Monitors come from the host (the same `monitor` setting, "1".. = list order, else the primary).
 fn layout_native(expanded: bool) -> Option<Lay> {
     let mons = crate::ui::host::handle()?.monitors();
     let want = crate::settings::get_str("monitor", "primary");
@@ -170,60 +121,17 @@ fn layout_native(expanded: bool) -> Option<Lay> {
 }
 
 /// Put the window into its current frame (collapsed/expanded) on the target monitor. UI thread only.
-pub fn place(app: &AppHandle) {
+pub fn place(_app: &AppHandle) {
     let exp = st().expanded;
-    let Some(l) = layout(app, exp) else { return };
+    let Some(l) = layout(exp) else { return };
     {
         let mut s = st();
         s.mon = l.mon;
         s.scale = l.scale;
         s.layout = [l.x, l.y, l.w, l.h];
     }
-    pass_through(app, exp);
     if let Some(n) = native() {
         n.set_bounds(l.x, l.y, l.w, l.h);
-    } else {
-        unsafe {
-            let _ = SetWindowPos(me(), HWND_TOPMOST, l.x, l.y, l.w, l.h, SWP_NOACTIVATE);
-        }
-    }
-    HZ_DIRTY.store(true, Ordering::Relaxed); // monitor may have changed: cursor loop re-detects + re-emits `pill:display`
-}
-
-/// Setting `passThrough`: while the pill is folded the window lets mouse clicks fall through to what is beneath it (the cursor
-/// loop still reads the cursor, but ignores hover / top-edge while this is on); the expanded frame is always clickable.
-/// ponytail: an event card dropped from a folded pill is click-through too; split the window if its buttons must work in this mode.
-static PT: AtomicBool = AtomicBool::new(false);
-
-fn pass_through(_app: &AppHandle, expanded: bool) {
-    let want = crate::settings::get_bool("passThrough", false) && !expanded;
-    if PT.swap(want, Ordering::Relaxed) == want {
-        return;
-    }
-    set_ignore(want);
-}
-
-/// Makes the whole window let clicks fall through (pass-through mode, or the cursor is outside the pill's own rectangle: the
-/// transparent rest of the 560x120 frame must not block what is underneath, e.g. a browser's toolbar buttons).
-/// Done on the window style directly: tauri's `set_ignore_cursor_events` returned Ok but left the style untouched here (measured), and
-/// the window layer may rewrite the style later, so the cursor loop calls this every pass and it only writes when the style differs.
-fn set_ignore(want: bool) {
-    if native().is_some() {
-        return; // the host's proximity engine decides click-through (and pass-through is the view's)
-    }
-    use windows::Win32::Foundation::COLORREF;
-    use windows::Win32::UI::WindowsAndMessaging::{SetLayeredWindowAttributes, LWA_ALPHA, WS_EX_LAYERED, WS_EX_TRANSPARENT};
-    unsafe {
-        let me = me();
-        let ex = GetWindowLongPtrW(me, GWL_EXSTYLE);
-        let tr = (WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0) as isize;
-        let new = if want { ex | tr } else { ex & !(WS_EX_TRANSPARENT.0 as isize) };
-        if new != ex {
-            SetWindowLongPtrW(me, GWL_EXSTYLE, new);
-            if want {
-                let _ = SetLayeredWindowAttributes(me, COLORREF(0), 255, LWA_ALPHA); // a layered window is invisible without attributes
-            }
-        }
     }
 }
 
@@ -239,7 +147,7 @@ pub fn relayout(app: &AppHandle) {
             let s = st();
             (s.expanded, s.layout)
         };
-        if let Some(l) = layout(a, exp) {
+        if let Some(l) = layout(exp) {
             if [l.x, l.y, l.w, l.h] != last {
                 place(a);
             }
@@ -257,22 +165,16 @@ fn apply_vis(app: &AppHandle, reason: &str) {
     }
     st().shown = want;
     if want {
-        match native() {
-            Some(n) => n.set_visible(true),
-            None => unsafe {
-                let _ = ShowWindow(me(), SW_SHOWNOACTIVATE);
-            },
+        if let Some(n) = native() {
+            n.set_visible(true);
         }
         place(app); // re-assert topmost + re-place after being hidden
-        let _ = bus::emit(&app, Target::Label("pill"), "pill:show", json!({ "reason": reason }));
+        let _ = bus::emit("pill:show", json!({ "reason": reason }));
     } else {
-        let _ = bus::emit(&app, Target::Label("pill"), "pill:hide", json!({ "reason": reason }));
-        match native() {
-            // auto-hide keeps the Overlay "shown" (the body slid out of its frame): the host's top-edge dwell must keep running to bring it back
-            Some(n) => n.set_visible(st().hidden & (HIDE_USER | HIDE_GUARD) == 0),
-            None => unsafe {
-                let _ = ShowWindow(me(), SW_HIDE);
-            },
+        let _ = bus::emit("pill:hide", json!({ "reason": reason }));
+        // auto-hide keeps the Overlay "shown" (the body slid out of its frame): the host's top-edge dwell must keep running to bring it back
+        if let Some(n) = native() {
+            n.set_visible(st().hidden & (HIDE_USER | HIDE_GUARD) == 0);
         }
     }
 }
@@ -307,12 +209,12 @@ pub fn expand(app: &AppHandle, tab: Option<String>, via: &str) {
     set_hidden(app, HIDE_USER | HIDE_AUTO, false, "expand");
     st().expanded = true;
     place(app);
-    let _ = bus::emit(&app, Target::Label("pill"), "pill:expand", json!({ "tab": tab, "via": via }));
+    let _ = bus::emit("pill:expand", json!({ "tab": tab, "via": via }));
 }
 
 pub fn toggle(app: &AppHandle) {
     if st().expanded {
-        let _ = bus::emit(&app, Target::Label("pill"), "pill:collapse", ());
+        let _ = bus::emit("pill:collapse", ());
     } else {
         expand(app, None, "hotkey");
     }
@@ -351,12 +253,10 @@ pub fn body_bottom(mon_x: i32, mon_y: i32) -> Option<i32> {
 
 // ---- commands ----
 
-#[tauri::command]
 pub fn pill_rect(x: f64, y: f64, w: f64, h: f64) {
     st().rect = [x, y, w, h];
 }
 
-#[tauri::command]
 pub fn pill_set_state(app: AppHandle, state: String, tab: Option<String>, via: Option<String>) {
     if state == "expanded" {
         expand(&app, tab, via.as_deref().unwrap_or("page"));
@@ -367,405 +267,36 @@ pub fn pill_set_state(app: AppHandle, state: String, tab: Option<String>, via: O
     }
 }
 
-#[tauri::command]
 pub fn pill_toggle(app: AppHandle) {
     toggle(&app);
 }
 
 /// The page slid away (on=true: hide the window) or an event/click wants it back (on=false).
-#[tauri::command]
 pub fn pill_auto_hide(app: AppHandle, on: bool) {
     set_hidden(&app, HIDE_AUTO, on, if on { "auto" } else { "event" });
 }
 
-/// Text fields need keyboard focus: drop NOACTIVATE and take the foreground; restore on false.
-#[tauri::command]
-pub fn pill_activate(app: AppHandle, on: bool) {
-    if native().is_some() {
-        return; // the native view takes / gives back keyboard focus itself (`Cx::set_focus`)
-    }
-    if st().active == on {
-        return;
-    }
-    st().active = on;
-    unsafe {
-        let me = me();
-        let ex = GetWindowLongPtrW(me, GWL_EXSTYLE);
-        if on {
-            let fg = GetForegroundWindow();
-            if fg.0 != me.0 {
-                st().prev_fg = fg.0 as isize;
-            }
-            SetWindowLongPtrW(me, GWL_EXSTYLE, ex & !(WS_EX_NOACTIVATE.0 as isize));
-            // Borrow the foreground thread's input state so SetForegroundWindow is allowed.
-            let (mine, theirs) = (GetCurrentThreadId(), GetWindowThreadProcessId(fg, None));
-            let attached = theirs != 0 && theirs != mine && AttachThreadInput(mine, theirs, true).as_bool();
-            let _ = SetForegroundWindow(me);
-            if attached {
-                let _ = AttachThreadInput(mine, theirs, false);
-            }
-            if let Some(w) = app.get_webview_window("pill") {
-                let _ = w.set_focus();
-            }
-        } else {
-            SetWindowLongPtrW(me, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE.0 as isize);
-            let prev = std::mem::take(&mut st().prev_fg);
-            let prev = HWND(prev as *mut c_void);
-            if !prev.0.is_null() && IsWindow(prev).as_bool() {
-                let _ = SetForegroundWindow(prev);
-            }
-        }
-    }
-}
+/// Text fields need keyboard focus: the native view takes / gives it back itself (`Cx::set_focus`), so there is nothing to do here.
+pub fn pill_activate(_app: AppHandle, _on: bool) {}
 
 /// Monitor names for the settings tab ("1".."n" map to this order).
-#[tauri::command]
-pub fn pill_monitors(app: AppHandle) -> Vec<String> {
-    if native().is_some() {
-        let ms = crate::ui::host::handle().map(|h| h.monitors()).unwrap_or_default();
-        return ms.iter().enumerate().map(|(i, m)| format!("{} {}x{}", i + 1, m.rect.r - m.rect.l, m.rect.b - m.rect.t)).collect();
-    }
-    let Some(w) = app.get_webview_window("pill") else { return vec![] };
-    let list = w.available_monitors().unwrap_or_default();
-    list.iter()
-        .map(|m| format!("{} {}x{}", m.name().map(String::as_str).unwrap_or(""), m.size().width, m.size().height))
-        .collect()
+pub fn pill_monitors(_app: AppHandle) -> Vec<String> {
+    let ms = crate::ui::host::handle().map(|h| h.monitors()).unwrap_or_default();
+    ms.iter().enumerate().map(|(i, m)| format!("{} {}x{}", i + 1, m.rect.r - m.rect.l, m.rect.b - m.rect.t)).collect()
 }
-
-// ---- cursor loop ----
-
-const LIQUID: f64 = 14.0; // css px of liquid edge under the body: part of the hover rect
-const ZONE: f64 = 120.0; // logical px around the pill where `pill:cursor` is streamed
-
-#[derive(serde::Serialize, Clone)]
-struct Cur {
-    x: Option<f64>,
-    y: Option<f64>,
-}
-
-/// True when (px, py) lies within `m` of the rect l,t,r,b (a point inside the rect counts as near).
-fn near_rect(px: i32, py: i32, l: i32, t: i32, r: i32, b: i32, m: i32) -> bool {
-    px >= l - m && px < r + m && py >= t - m && py < b + m
-}
-
-static HZ_DIRTY: AtomicBool = AtomicBool::new(true); // force a `pill:display` emit (set by place())
-
-/// Loop period for a refresh rate: one frame, floored at 6 ms (never spin faster than ~166 Hz), 60 Hz if unknown.
-fn period(hz: u32) -> Duration {
-    Duration::from_micros((1_000_000 / if hz == 0 { 60 } else { hz } as u64).max(6_000))
-}
-
-/// Current mode refresh rate of the monitor hosting the pill window; 60 when unknown.
-/// ponytail: nominal mode rate (max rate on VRR panels), which is what rAF follows; DWM timing is per-system, not per-monitor.
-fn display_hz(hwnd: HWND) -> u32 {
-    unsafe {
-        let hm = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        let mut mi = MONITORINFOEXW::default();
-        mi.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
-        if !GetMonitorInfoW(hm, &mut mi as *mut MONITORINFOEXW as *mut MONITORINFO).as_bool() {
-            return 60;
-        }
-        let mut dm = DEVMODEW { dmSize: std::mem::size_of::<DEVMODEW>() as u16, ..Default::default() };
-        if EnumDisplaySettingsW(PCWSTR(mi.szDevice.as_ptr()), ENUM_CURRENT_SETTINGS, &mut dm).as_bool()
-            && dm.dmDisplayFrequency > 1 // 0 / 1 = "hardware default"
-        {
-            return dm.dmDisplayFrequency.clamp(24, 1000);
-        }
-    }
-    60
-}
-
-/// Global gaze feed (`pill:gaze`): set by the page (pets / eyes character active) through `pill_set_gaze`; default off.
-static GAZE: AtomicBool = AtomicBool::new(false);
 
 /// An event card hangs below the folded pill: while one is shown the folded frame is taller so a long notification fits.
 static CARD: AtomicBool = AtomicBool::new(false);
 const CARD_FRAME: (f64, f64) = (720.0, 200.0);
 
-#[tauri::command]
 pub fn pill_cards(app: AppHandle, on: bool) {
     if CARD.swap(on, Ordering::Relaxed) != on {
         on_main(&app, place);
     }
 }
 
-#[tauri::command]
-pub fn pill_set_gaze(on: bool) {
-    GAZE.store(on, Ordering::Relaxed);
-}
-
-/// Wait before the next poll while the gaze feed is on and the cursor is far from the pill:
-/// one frame but never faster than 60 Hz while it moves (never slower than ~30 Hz), a relaxed 50 ms poll when it rests.
-fn gaze_wait(hz: u32, moved: bool) -> Duration {
-    if moved { period(hz).max(Duration::from_millis(16)) } else { Duration::from_millis(50) }
-}
-
-/// Poll wait while the cursor rests in the zone with the pill folded: `still` = consecutive loop frames with the same cursor / window / pill state.
-fn rest_wait(still: u32, expanded: bool) -> Option<Duration> {
-    (still >= 3 && !expanded).then(|| Duration::from_millis(30))
-}
-
-/// Drag-to-shelf state. A file dragged in from another app reaches the pill only if the window is hit-testable where the cursor is
-/// (a click-through window is skipped by OLE), so while a left-button drag that STARTED elsewhere is inside the drop zone the
-/// cursor loop drops the click-through style (`engaged`); Tauri then delivers tauri://drag-enter and the page shows the drop target.
-#[derive(Default, Clone, Copy, PartialEq, Debug)]
-struct Drag {
-    armed: bool,   // the button is down and the cursor has been outside the zone since (the press did not start on the zone)
-    engaged: bool, // armed and inside the zone: window is hit-testable
-}
-
-/// One loop pass. `near` = cursor in the zone (with hysteresis once engaged), `eligible` = pill folded, visible, not pass-through.
-/// Nothing is polled for this: `held` is the same GetAsyncKeyState the loop already reads for the top-edge strip.
-fn drag_step(d: Drag, held: bool, near: bool, eligible: bool) -> Drag {
-    if !held || !eligible {
-        return Drag::default();
-    }
-    let armed = d.armed || !near;
-    Drag { armed, engaged: armed && near }
-}
-
-/// Drop zone in physical px: centred on the body, at least 140 logical px (at 100 % size) each way and 60 px wider than the body,
-/// from the window top down to 90 px; `win` = (left, top, width) of the folded frame (its width is 720 logical px), `body` = (left, right).
-/// Once engaged the zone grows by 16 px on every side so the border does not flicker.
-fn drag_near(px: i32, py: i32, win: (i32, i32, i32), body: (i32, i32), engaged: bool) -> bool {
-    let unit = win.2 as f64 / COLLAPSED.0;
-    let m = if engaged { 16.0 * unit } else { 0.0 };
-    let cx = (body.0 + body.1) as f64 / 2.0;
-    let half = (140.0 * unit).max((body.1 - body.0) as f64 / 2.0 + 60.0 * unit) + m;
-    let top = win.1 as f64;
-    (px as f64 - cx).abs() <= half && (py as f64) >= top - m && (py as f64) < top + 90.0 * unit + m
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{drag_near, drag_step, gaze_wait, near_rect, period, rest_wait, Drag};
-    use std::time::Duration;
-    #[test]
-    fn drag_state() {
-        let idle = Drag::default();
-        // press far away, drag into the zone: armed on the way, engaged inside
-        let d = drag_step(idle, true, false, true);
-        assert_eq!(d, Drag { armed: true, engaged: false });
-        let d = drag_step(d, true, true, true);
-        assert_eq!(d, Drag { armed: true, engaged: true });
-        // leaving the zone keeps it armed (coming back re-engages), release resets everything
-        let d = drag_step(d, true, false, true);
-        assert_eq!(d, Drag { armed: true, engaged: false });
-        assert!(drag_step(d, true, true, true).engaged);
-        assert_eq!(drag_step(d, false, true, true), idle);
-        // a press that starts inside the zone (an ordinary click / window drag on the title bar there) never engages
-        let p = drag_step(idle, true, true, true);
-        assert_eq!(p, idle);
-        assert_eq!(drag_step(p, true, true, true), idle);
-        // ...until the cursor has been outside once
-        assert!(drag_step(drag_step(p, true, false, true), true, true, true).engaged);
-        // expanded / hidden / pass-through: not eligible
-        assert_eq!(drag_step(Drag { armed: true, engaged: true }, true, true, false), idle);
-    }
-    #[test]
-    fn drag_zone() {
-        let win = (1000, 0, 720); // 100 % size: 1 logical px = 1 physical px
-        let body = (1000 + 290, 1000 + 430); // 140 px capsule, centre 1360
-        assert!(drag_near(1360, 10, win, body, false));
-        assert!(drag_near(1360 + 139, 89, win, body, false));
-        assert!(!drag_near(1360 + 141, 40, win, body, false)); // beyond 140 px
-        assert!(!drag_near(1360, 91, win, body, false)); // below 90 px
-        assert!(drag_near(1360 + 150, 100, win, body, true)); // hysteresis once engaged
-        assert!(drag_near(1360 + 250, 40, win, (1000 + 100, 1000 + 620), false)); // a wide body widens the zone (half 260 + 60)
-        let big = (2000, 0, 1440); // 200 % size: the zone scales with the frame
-        assert!(drag_near(2000 + 720 + 270, 170, big, (2000 + 580, 2000 + 860), false));
-        assert!(!drag_near(2000 + 720 + 290, 40, big, (2000 + 580, 2000 + 860), false));
-    }
-    #[test]
-    fn rest() {
-        assert_eq!(rest_wait(2, false), None); // still moving / just stopped: display-rate pacing
-        assert_eq!(rest_wait(3, false), Some(Duration::from_millis(30)));
-        assert_eq!(rest_wait(99, true), None); // expanded: always fast
-    }
-    #[test]
-    fn gaze() {
-        assert_eq!(gaze_wait(144, true), Duration::from_millis(16)); // floor: far cursor is polled at <= 60 Hz
-        assert_eq!(gaze_wait(30, true), period(30)); // slow panel: its own frame, still >= 30 Hz
-        assert_eq!(gaze_wait(240, false), Duration::from_millis(50)); // idle
-    }
-    #[test]
-    fn cadence() {
-        assert_eq!(period(60), Duration::from_micros(16_666));
-        assert_eq!(period(144), Duration::from_micros(6_944));
-        assert_eq!(period(240), Duration::from_millis(6)); // floor
-        assert_eq!(period(0), period(60)); // unknown -> 60
-    }
-    #[test]
-    fn zone() {
-        assert!(near_rect(50, 50, 0, 0, 100, 40, 120)); // below the rect, within the margin
-        assert!(near_rect(-119, 0, 0, 0, 100, 40, 120));
-        assert!(!near_rect(-121, 0, 0, 0, 100, 40, 120));
-        assert!(!near_rect(50, 161, 0, 0, 100, 40, 120));
-    }
-}
-
-fn emit(app: &AppHandle, name: &str) {
-    let _ = bus::emit(&app, Target::Label("pill"), name, ());
-}
-
-/// One thread owns the cursor: display-rate (deadline-paced) near the pill, 10 Hz far, nothing but a flag check
-/// while guard-hidden. Also re-checks the monitor refresh rate ~1/s and emits `pill:display` {hz} on change.
-fn cursor_loop(app: AppHandle) {
-    let (mut inside, mut left_at, mut edge_at): (bool, Option<Instant>, Option<Instant>) = (false, None, None);
-    let (mut zone_on, mut last) = (false, (i32::MIN, i32::MIN)); // `pill:cursor` stream state
-    let mut gaze_last = (i32::MIN, i32::MIN); // `pill:gaze` stream state (MIN = nothing sent since it was enabled / the window came back)
-    let nap = |ms| std::thread::sleep(Duration::from_millis(ms));
-    let (mut hz, mut hz_at, mut page_up) = (60u32, Instant::now(), false); // HZ_DIRTY starts true -> first pass detects
-    let mut next = Instant::now(); // frame deadline for the fast cadence
-    let (mut seen, mut still) = (None, 0u32); // rest backoff: last frame state + consecutive frames it did not change
-    let (mut drag, mut no_hover) = (Drag::default(), false); // drag-to-shelf; no_hover: a drag just ended on the pill, no hover-open until the cursor leaves it
-    loop {
-        let (hidden, rect, mon, sc, hwnd, expanded) = {
-            let s = st();
-            (s.hidden, s.rect, s.mon, s.scale, s.hwnd, s.expanded)
-        };
-        // Refresh-rate watch: ~1/s, plus on place() and once when the page first reports a rect (it is listening then).
-        let dirty = HZ_DIRTY.swap(false, Ordering::Relaxed);
-        let first = rect[2] > 0.0 && !page_up;
-        if hwnd != 0 && (dirty || first || hz_at.elapsed() >= Duration::from_secs(1)) {
-            hz_at = Instant::now();
-            let h = display_hz(HWND(hwnd as *mut c_void));
-            if h != hz || dirty || first {
-                hz = h;
-                let _ = bus::emit(&app, Target::Label("pill"), "pill:display", json!({ "hz": hz }));
-            }
-            page_up |= first;
-        }
-        if hidden & (HIDE_GUARD | HIDE_USER) != 0 || rect[2] <= 0.0 {
-            inside = false;
-            zone_on = false;
-            gaze_last = (i32::MIN, i32::MIN);
-            left_at = None;
-            edge_at = None;
-            drag = Drag::default();
-            nap(100);
-            continue;
-        }
-        let (mut p, mut wr) = (POINT::default(), RECT::default());
-        unsafe {
-            if GetCursorPos(&mut p).is_err() || GetWindowRect(HWND(hwnd as *mut c_void), &mut wr).is_err() {
-                nap(100);
-                continue;
-            }
-        }
-        let l = wr.left + (rect[0] * sc) as i32;
-        let r = l + (rect[2] * sc) as i32;
-        // Hit rect: from the window top (the body may hang a few px below it) to the bottom of the liquid strip.
-        let t = wr.top;
-        let b = wr.top + ((rect[1] + rect[3] + LIQUID) * sc) as i32;
-        let pad = 4;
-        let x_in = p.x >= l - pad && p.x < r + pad;
-        let in_rect = hidden == 0 && x_in && p.y >= t - pad && p.y < b + pad;
-        // Click-through everywhere but on the pill itself (unless pass-through already covers the whole window): the cursor loop is
-        // the hit test, a few px of slack so the edge pixels and the liquid strip stay grabbable.
-        let held = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0 };
-        let pt = PT.load(Ordering::Relaxed);
-        // Drag-to-shelf: a left-button drag that started elsewhere and is now over the drop zone makes the folded window hit-testable
-        // (see `Drag`), so OLE can hand it the files. Only the already-read `held` is used: no extra polling while the button is up.
-        let nd = drag_step(drag, held, drag_near(p.x, p.y, (wr.left, wr.top, wr.right - wr.left), (l, r), drag.engaged), !expanded && !pt && hidden == 0);
-        if drag.armed && !nd.armed && in_rect {
-            no_hover = true; // the drag ended on the pill (a drop): let the page show its confirmation instead of popping the island open
-        }
-        no_hover &= in_rect;
-        drag = nd;
-        if !pt {
-            set_ignore(!(in_rect || drag.engaged));
-        }
-        // Top-edge strip: cursor pinned on the monitor top inside the pill's x range for ~120 ms
-        // (ignored while a mouse button is held: dragging a window to the top must not pop the pill).
-        let on_edge = x_in && p.y <= mon[1] + 1 && !held;
-        edge_at = if on_edge { edge_at.or(Some(Instant::now())) } else { None };
-        let edge_ok = edge_at.is_some_and(|t| t.elapsed() >= Duration::from_millis(120));
-
-        if hidden & HIDE_AUTO != 0 {
-            if edge_ok {
-                edge_at = None;
-                set_hidden_bg(&app, HIDE_AUTO, false, "edge");
-            }
-            zone_on = false;
-            gaze_last = (i32::MIN, i32::MIN);
-            nap(100); // ponytail: 10 Hz is the reveal latency while auto-hidden
-            continue;
-        }
-
-        // pass-through (folded pill): no hover / top-edge opening, the pill opens by its hotkey only
-        if !PT.load(Ordering::Relaxed) && (in_rect || edge_ok) {
-            left_at = None;
-            if !inside && !drag.armed && !no_hover {
-                // (a button held since before the cursor got here is a drag: it must not open the island, see `Drag`)
-                inside = true;
-                emit(&app, "pill:hover");
-            }
-        } else if inside {
-            match left_at {
-                None => left_at = Some(Instant::now()),
-                Some(t) if t.elapsed() >= Duration::from_millis(250) => {
-                    inside = false;
-                    left_at = None;
-                    emit(&app, "pill:leave");
-                }
-                _ => {}
-            }
-        }
-        // `pill:cursor` for the liquid edge: only inside the window frame or within ZONE of the pill rect;
-        // one {null,null} when leaving, then silence. Nothing is sent while the position is unchanged.
-        let in_frame = p.x >= wr.left && p.x < wr.right && p.y >= wr.top && p.y < wr.bottom;
-        let zone = in_frame || near_rect(p.x, p.y, l, t, r, b, (ZONE * sc) as i32);
-        if zone {
-            if !zone_on || (p.x, p.y) != last {
-                zone_on = true;
-                last = (p.x, p.y);
-                let c = Cur { x: Some((p.x - wr.left) as f64 / sc), y: Some((p.y - wr.top) as f64 / sc) };
-                let _ = bus::emit(&app, Target::Label("pill"), "pill:cursor", c);
-            }
-        } else if zone_on {
-            zone_on = false;
-            let _ = bus::emit(&app, Target::Label("pill"), "pill:cursor", Cur { x: None, y: None });
-        }
-        // `pill:gaze` for the pets' / eyes' look: the cursor in PHYSICAL px relative to the window's top-left (negative / beyond the
-        // window is fine: any distance, any monitor). Only while the page asked for it and the cursor moved; once on enable.
-        let gaze_on = GAZE.load(Ordering::Relaxed);
-        let mut moved = false;
-        if gaze_on {
-            if (p.x, p.y) != gaze_last {
-                gaze_last = (p.x, p.y);
-                moved = true;
-                let _ = bus::emit(&app, Target::Label("pill"), "pill:gaze", json!({ "x": p.x - wr.left, "y": p.y - wr.top }));
-            }
-        } else {
-            gaze_last = (i32::MIN, i32::MIN);
-        }
-        let key = Some((p.x, p.y, inside, hidden, expanded, rect, wr.left, wr.top, wr.right, wr.bottom));
-        still = if key == seen { still.saturating_add(1) } else { 0 };
-        seen = key;
-        if let Some(w) = rest_wait(still, expanded).filter(|_| inside || zone) {
-            // Cursor resting folded: a relaxed poll, the first movement / state change resets `still` and the fast cadence resumes.
-            std::thread::sleep(w);
-            next = Instant::now();
-        } else if inside || zone {
-            // Deadline pacing: next frame = previous deadline + period, sleep only the remainder; if we are late
-            // (or just woke from the slow cadence) resync to now instead of bursting to catch up.
-            next += period(hz);
-            let now = Instant::now();
-            if next > now {
-                std::thread::sleep(next - now);
-            } else {
-                next = now;
-            }
-        } else if gaze_on {
-            std::thread::sleep(gaze_wait(hz, moved));
-            next = Instant::now();
-        } else {
-            nap(100);
-            next = Instant::now();
-        }
-    }
-}
+/// The pets' look-at-the-cursor feed comes from the host's proximity engine; nothing to switch here.
+pub fn pill_set_gaze(_on: bool) {}
 
 // ---- tray + hotkeys ----
 
@@ -846,25 +377,8 @@ fn hotkeys(app: &tauri::App) {
 
 pub fn init(app: &tauri::App) {
     let h = app.handle().clone();
-    if native().is_none() {
-        let Some(w) = app.get_webview_window("pill") else {
-            eprintln!("pill: window 'pill' missing");
-            return;
-        };
-        let Ok(raw) = w.hwnd() else { return };
-        st().hwnd = raw.0 as isize;
-        unsafe {
-            let me = me();
-            let ex = GetWindowLongPtrW(me, GWL_EXSTYLE);
-            SetWindowLongPtrW(me, GWL_EXSTYLE, ex | (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize);
-            let _ = SetWindowPos(me, HWND::default(), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-        }
-    }
     affinity();
     place(&h);
     tray(app);
     hotkeys(app);
-    if native().is_none() {
-        std::thread::spawn(move || cursor_loop(h)); // the native Overlay gets the same events from the host's proximity engine
-    }
 }

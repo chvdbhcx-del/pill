@@ -86,7 +86,6 @@ fn extract_es<R: Read + Seek>(src: R, out: &Path) -> Result<(), String> {
 }
 
 /// What the Settings card draws.
-#[tauri::command(async)]
 pub fn everything_status() -> Value {
     json!({
         "installed": crate::command::find_everything_gui().is_some(),
@@ -101,7 +100,6 @@ pub fn everything_status() -> Value {
 }
 
 /// Download the installer and es.exe (what is missing), verify, unpack es.exe. The installer is NOT started. Progress ids: everything-setup / everything-es.
-#[tauri::command]
 pub fn everything_download(app: AppHandle) -> Value {
     aisetup::spawn_job(app, "everything-setup", |app, abort| {
         std::fs::create_dir_all(dir()).map_err(|e| format!("cannot create {}: {e}", dir().display()))?;
@@ -126,7 +124,6 @@ pub fn everything_download(app: AppHandle) -> Value {
 }
 
 /// Second explicit click: start the downloaded installer through the shell (its own window and UAC prompt).
-#[tauri::command]
 pub fn everything_run_installer() -> Value {
     let p = setup_path();
     if !(file_ok(&p, &SETUP) && is_mz(&p)) {

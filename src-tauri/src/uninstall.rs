@@ -7,7 +7,7 @@
 // indexes into the server-side list of the last scan.
 // Commands: uninstall_info uninstall_start uninstall_scan uninstall_delete uninstall_admin uninstall_cancel uninstall_state uninstall_open_backups.
 // Event (window bar): uninstall:state {phase: running|still|scanning|review|deleting|elevating|done|error, name, message, items[], manual[], ...}.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::os::windows::process::CommandExt;
@@ -1756,9 +1756,9 @@ pub fn rows(query: &str) -> Vec<Row> {
     out
 }
 
-fn emit(app: &AppHandle, v: Value) {
+fn emit(_app: &AppHandle, v: Value) {
     flow(|f| f.last = v.clone());
-    let _ = bus::emit(&app, Target::Label("bar"), "uninstall:state", v);
+    let _ = bus::emit("uninstall:state", v);
 }
 
 pub(crate) fn items_json(cands: &[Cand]) -> Vec<Value> {
@@ -1780,7 +1780,6 @@ fn review_json(name: &str, cands: &[Cand], manual: &[String], cut: bool, extra: 
 }
 
 /// Details for the confirm card; also selects the app for the following commands. `name` must match the row (the list may have moved on).
-#[tauri::command]
 pub fn uninstall_info(id: usize, name: String) -> Value {
     flow(|f| {
         if f.busy {
@@ -1850,7 +1849,6 @@ fn begin() -> Option<Prog> {
     flow(|f| if f.busy { None } else { f.sel.clone().inspect(|_| f.busy = true) })
 }
 
-#[tauri::command]
 pub fn uninstall_start(app: AppHandle, silent: bool) -> Value {
     let Some(p) = begin() else { return json!({ "ok": false, "error": "nothing selected or busy" }) };
     spawn_guarded(app.clone(), p.name.clone(), move || {
@@ -1909,14 +1907,12 @@ fn settle_and_scan(app: &AppHandle, p: &Prog, waited: bool) {
 }
 
 /// "Check again": the user finished the uninstaller by hand (or it handed over to another process).
-#[tauri::command]
 pub fn uninstall_scan(app: AppHandle) -> Value {
     let Some(p) = begin() else { return json!({ "ok": false }) };
     spawn_guarded(app.clone(), p.name.clone(), move || settle_and_scan(&app, &p, false));
     json!({ "ok": true })
 }
 
-#[tauri::command]
 pub fn uninstall_delete(app: AppHandle, ids: Vec<usize>) -> Value {
     CANCEL.store(false, Ordering::Relaxed);
     let Some((p, picked)) = flow(|f| {
@@ -1940,7 +1936,7 @@ pub fn uninstall_delete(app: AppHandle, ids: Vec<usize>) -> Value {
         let (dir, base) = (backup_dir(&env), format!("{}-{stamp}", sanitize(&p.name)));
         let refs: Vec<&Cand> = picked.iter().collect();
         let r = delete_cands(&p, &refs, &env, &RealReg, &stamp, false, &|name, bytes| file_store(&dir, &base, name, bytes), &|shown, ok, err, n, total| {
-            let _ = bus::emit(&app, Target::Label("bar"), "uninstall:item", json!({ "shown": shown, "ok": ok, "error": err, "n": n, "total": total }));
+            let _ = bus::emit("uninstall:item", json!({ "shown": shown, "ok": ok, "error": err, "n": n, "total": total }));
         });
         finish_delete(&app, &p, &r, &dir);
     });
@@ -1970,7 +1966,6 @@ pub(crate) fn finish_delete(app: &AppHandle, p: &Prog, r: &Report, dir: &Path) {
 }
 
 /// Opens the folder with the .reg backups and logs in Explorer.
-#[tauri::command]
 pub fn uninstall_open_backups() {
     let dir = backup_dir(&Env::real());
     let _ = std::fs::create_dir_all(&dir);
@@ -1978,7 +1973,6 @@ pub fn uninstall_open_backups() {
 }
 
 /// Stops waiting for the uninstaller (it keeps running) and forgets the selection.
-#[tauri::command]
 pub fn uninstall_cancel() {
     CANCEL.store(true, Ordering::Relaxed);
     flow(|f| {
@@ -1990,15 +1984,7 @@ pub fn uninstall_cancel() {
     });
 }
 
-/// An uninstall job exists: the backend is working, or its last state (a running wait, the leftover checklist, a summary) waits to be
-/// seen or dismissed. The command bar window is not torn down while this is true (ui/lazy.rs): the panel's view state (ticks of the checklist,
-/// whether the panel is up) lives in the bar page and only the phase can be read back from the backend.
-pub(crate) fn job_active() -> bool {
-    flow(|f| f.busy || !f.last.is_null())
-}
-
 /// The last state event, for a bar that was hidden while the uninstaller ran.
-#[tauri::command]
 pub fn uninstall_state() -> Value {
     flow(|f| {
         let mut v = f.last.clone();
@@ -2010,11 +1996,10 @@ pub fn uninstall_state() -> Value {
 }
 
 /// The island card's button: show the bar (when it is closed) and bring the uninstall panel back where it was.
-#[tauri::command]
 pub fn uninstall_open_panel(app: AppHandle) {
     flow(|f| f.focus = !f.last.is_null());
     if crate::command::bar_visible(&app) {
-        let _ = bus::emit(&app, Target::Label("bar"), "uninstall:focus", json!({}));
+        let _ = bus::emit("uninstall:focus", json!({}));
         flow(|f| f.focus = false);
     } else {
         crate::command::show(&app);
@@ -2027,7 +2012,7 @@ fn notify_ready(app: &AppHandle, name: &str, kind: &str, count: usize) {
     if crate::command::bar_visible(app) {
         return;
     }
-    let _ = bus::emit(&app, Target::All, "uninstall:ready", json!({ "name": name, "kind": kind, "count": count }));
+    let _ = bus::emit("uninstall:ready", json!({ "name": name, "kind": kind, "count": count }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2084,7 +2069,6 @@ fn static_kind(k: &str) -> &'static str {
 
 /// "Scan as administrator" (`mode` scan: finds what only an elevated process can see) or "Remove system leftovers" (`mode` delete: the ticked
 /// administrator items). Runs in the background; the outcome arrives as `uninstall:state`.
-#[tauri::command]
 pub fn uninstall_admin(app: AppHandle, mode: String, ids: Vec<usize>) -> Value {
     let mode = if mode == "delete" { Mode::Delete } else { Mode::Scan };
     let Some((p, keys)) = flow(|f| {

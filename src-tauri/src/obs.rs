@@ -4,7 +4,7 @@
 // LOCALHOST ONLY (the address is hard-coded, only the port is configurable). Runs only while the switch live.obs is on: no switch, no thread, no socket.
 // Event to window "pill": `live:obs` {recording, streaming, recMs, streamMs, file?}; `file` (the saved recording) is only present on the stop event.
 // The OBS password is typed once into Settings, kept DPAPI-encrypted in settings key `obs.passwordEnc` (net::secrets) and never logged or sent to the page.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -185,7 +185,7 @@ fn sync(app: &AppHandle, force: bool) {
         }
         None => {
             set_status("off");
-            let _ = bus::emit(&app, Target::Label("pill"), "live:obs", json!({ "recording": false, "streaming": false, "recMs": 0, "streamMs": 0 }));
+            let _ = bus::emit("live:obs", json!({ "recording": false, "streaming": false, "recMs": 0, "streamMs": 0 }));
         }
     }
 }
@@ -252,7 +252,7 @@ fn connect(port: u16) -> Option<(TcpStream, Vec<u8>)> {
     Some((s, buf[end..].to_vec()))
 }
 
-fn emit(app: &AppHandle, st: &ObsState) {
+fn emit(_app: &AppHandle, st: &ObsState) {
     let mut p = json!({ "recording": st.recording, "streaming": st.streaming, "recMs": st.rec_ms, "streamMs": st.stream_ms });
     if let Some(f) = &st.file {
         p["file"] = json!(f);
@@ -264,7 +264,7 @@ fn emit(app: &AppHandle, st: &ObsState) {
             }
         }
     }
-    let _ = bus::emit(&app, Target::Label("pill"), "live:obs", p);
+    let _ = bus::emit("live:obs", p);
 }
 
 fn session(app: &AppHandle, gen: u64, port: u16) -> End {
@@ -337,7 +337,7 @@ fn session(app: &AppHandle, gen: u64, port: u16) -> End {
     };
     let _ = s.shutdown(std::net::Shutdown::Both);
     if shown {
-        let _ = bus::emit(&app, Target::Label("pill"), "live:obs", json!({ "recording": false, "streaming": false, "recMs": 0, "streamMs": 0 })); // OBS went away: clear the chip
+        let _ = bus::emit("live:obs", json!({ "recording": false, "streaming": false, "recMs": 0, "streamMs": 0 })); // OBS went away: clear the chip
     }
     end
 }
@@ -370,14 +370,12 @@ fn run(app: AppHandle, gen: u64, port: u16) {
 }
 
 // ---------------------------------------------------------------- commands
-#[tauri::command]
 pub fn obs_status() -> Value {
     let state = *STATUS.lock().unwrap_or_else(|e| e.into_inner());
     json!({ "state": state, "port": want_port().unwrap_or_else(|| crate::settings::get_f64("live.obs.port", 4455.0) as u16), "hasPassword": !crate::settings::get_str("obs.passwordEnc", "").trim().is_empty() })
 }
 
 /// Stores the OBS WebSocket password DPAPI-encrypted (empty string clears it) and reconnects. The text never comes back to the page.
-#[tauri::command]
 pub fn obs_set_password(app: AppHandle, password: String) -> bool {
     let value = if password.is_empty() { Some(String::new()) } else { crate::net::secrets::protect(&password).ok() };
     let Some(v) = value else { return false };
@@ -387,7 +385,6 @@ pub fn obs_set_password(app: AppHandle, password: String) -> bool {
 }
 
 /// "Show in folder" for a recording OBS reported (any other path is refused).
-#[tauri::command]
 pub fn obs_reveal(path: String) -> bool {
     use std::os::windows::process::CommandExt;
     let ok = RECENT.lock().map(|r| r.iter().any(|x| *x == path)).unwrap_or(false);

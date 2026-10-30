@@ -1,7 +1,7 @@
 // Clipboard history (local, capped, skips sensitive formats). Owner: clipboard agent.
 // Capture: message-only window + AddClipboardFormatListener, 150 ms debounce, privacy filters run BEFORE content is read.
 // Content is never logged. Items live in store.rs table clip_items; images are PNG files under store::dir()/clips/.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -303,7 +303,7 @@ unsafe fn read_clipboard(source: &Option<String>) -> Option<Content> {
     r
 }
 
-fn capture(app: &AppHandle) {
+fn capture(_app: &AppHandle) {
     if PAUSED.load(Ordering::Relaxed) || !crate::settings::get_bool("module.clipboard", true) || unsafe { GetClipboardSequenceNumber() } == IGNORE_SEQ.load(Ordering::Relaxed) {
         return;
     }
@@ -362,7 +362,7 @@ fn capture(app: &AppHandle) {
     };
     prune();
     if let Some(item) = crate::store::with(|c| item_by_id(c, id)) {
-        let _ = bus::emit(&app, Target::Label("pill"), "clip:added", item);
+        let _ = bus::emit("clip:added", item);
     }
 }
 
@@ -475,7 +475,6 @@ pub fn init(app: &tauri::App) {
 }
 
 // ---------- commands ----------
-#[tauri::command]
 pub async fn clip_list(query: Option<String>, kind: Option<String>, limit: Option<i64>, offset: Option<i64>) -> Vec<Value> {
     let q = query.filter(|q| !q.trim().is_empty()).map(|q| like_escape(q.trim()));
     crate::store::with(|c| {
@@ -485,7 +484,6 @@ pub async fn clip_list(query: Option<String>, kind: Option<String>, limit: Optio
     .unwrap_or_default()
 }
 
-#[tauri::command]
 pub async fn clip_image(id: i64) -> Option<String> {
     use base64::Engine;
     let path: String = crate::store::with(|c| c.query_row("select image_path from clip_items where id=?1 and image_path is not null", [id], |r| r.get(0)))?;
@@ -493,19 +491,16 @@ pub async fn clip_image(id: i64) -> Option<String> {
     Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
 
-#[tauri::command]
 pub async fn clip_pin(id: i64, pinned: bool) {
     crate::store::with(|c| c.execute("update clip_items set pinned=?1 where id=?2", params![pinned as i64, id]));
 }
 
-#[tauri::command]
 pub async fn clip_delete(id: i64) {
     if let Some(p) = crate::store::with(|c| purge(c, "id=?1", &[&id])) {
         remove_files(p);
     }
 }
 
-#[tauri::command]
 pub async fn clip_wipe() {
     // history rows (pinned too) + image files; secure_delete zeroes the freed pages, the checkpoint empties the WAL copy
     crate::store::with(|c| {
@@ -525,12 +520,10 @@ pub async fn clip_wipe() {
     let _ = windows::ApplicationModel::DataTransfer::Clipboard::ClearHistory(); // unavailable on some SKUs: ignore
 }
 
-#[tauri::command]
 pub async fn clip_pause(paused: bool) {
     PAUSED.store(paused, Ordering::Relaxed);
 }
 
-#[tauri::command]
 pub async fn clip_status() -> Value {
     let (n, b) = crate::store::with(|c| c.query_row("select count(*), coalesce(sum(case when kind='image' then size_bytes end),0) from clip_items", [], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))).unwrap_or((0, 0));
     json!({ "paused": PAUSED.load(Ordering::Relaxed), "count": n, "imageBytes": b })
@@ -620,7 +613,6 @@ unsafe fn send_ctrl_v() -> bool {
 /// Returns "pasted", "copied_only" (target elevated / Ctrl+V failed), "copied" (copy_only was asked for) or "gone" (row deleted meanwhile / unreadable).
 /// `copy_only` (Shift+click) never sends Ctrl+V; `plain` (the "T" button) puts file lists on the clipboard as plain text (paths, one per line).
 /// Both are Option so that an invoke without them keeps the old behaviour (the command bar passes None, None).
-#[tauri::command]
 pub async fn clip_paste(id: i64, copy_only: Option<bool>, plain: Option<bool>) -> &'static str {
     // One closure = one lock on the store: the row cannot be deleted between reading it and bumping used_at.
     let row = crate::store::with(|c| {
@@ -653,7 +645,6 @@ pub async fn clip_paste(id: i64, copy_only: Option<bool>, plain: Option<bool>) -
 
 /// Puts arbitrary text (an AI result) on the clipboard without recording it in the history, and pastes it unless `copy_only`.
 /// Same return values as clip_paste: "pasted" | "copied_only" | "copied" | "gone".
-#[tauri::command]
 pub async fn clip_paste_text(text: String, copy_only: Option<bool>) -> &'static str {
     let text: String = text.chars().take(MAX_TEXT).collect();
     if text.is_empty() {

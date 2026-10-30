@@ -1,17 +1,13 @@
-// Settings window: the separate, lazily created window "settings" (settings.html), size/position memory (settingsWin.*),
-// autostart (HKCU Run value "Pill", only on an explicit toggle), hotkey checks/storage and the few helpers the pages need.
-// Owner: settings-window agent. Window creation always runs on a worker thread (WebView2 creation on the event-loop thread deadlocks).
-use crate::ui::bus::{self, Target};
+// Settings window opener (the window itself is ui/settings_view), autostart (HKCU Run value "Pill", only on an explicit toggle),
+// hotkey checks/storage and the few helpers the pages need. Owner: settings-window agent.
 use serde_json::{json, Value};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::AppHandle;
 use windows::core::w;
 use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
 use windows::Win32::System::Registry::{RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ};
 use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT};
 
-const LABEL: &str = "settings";
 const PAGES: &[&str] = &["character", "general", "appearance", "behavior", "search", "hotkeys", "ai", "voice", "weather", "sound", "live", "clipboard", "modules", "updates", "aisetup", "welcome"];
 
 pub fn init(_app: &tauri::App) {
@@ -20,134 +16,8 @@ pub fn init(_app: &tauri::App) {
 
 /// Open the settings window on `page` (one of PAGES), or focus it when it already exists. Never blocks the caller.
 pub fn open(app: &AppHandle, page: Option<&str>) {
-    static CREATING: AtomicBool = AtomicBool::new(false);
     let page = page.map(str::to_ascii_lowercase).filter(|p| PAGES.contains(&p.as_str()));
-    // native UI (flag ui.native.settings, never with --web-ui): the host window replaces the WebView one; flag off = exactly the code below
-    if crate::ui::settings_view::native_enabled() {
-        crate::ui::settings_view::open_native(app, page.as_deref());
-        return;
-    }
-    if let Some(w) = app.get_webview_window(LABEL) {
-        let _ = w.unminimize();
-        let _ = w.show();
-        let _ = w.set_focus();
-        if let Some(p) = &page {
-            let _ = bus::emit(&app, Target::Label(LABEL), "settings:page", p);
-        }
-        return;
-    }
-    if CREATING.swap(true, Ordering::SeqCst) {
-        return; // a second click while the first window is still loading
-    }
-    let app = app.clone();
-    std::thread::spawn(move || {
-        if let Err(e) = create(&app, page.as_deref()) {
-            eprintln!("settings window: {e}");
-        }
-        CREATING.store(false, Ordering::SeqCst);
-    });
-}
-
-fn num(key: &str) -> Option<f64> {
-    let v = crate::settings::get_f64(key, f64::NAN);
-    v.is_finite().then_some(v)
-}
-
-fn create(app: &AppHandle, page: Option<&str>) -> Result<(), String> {
-    let w = num("settingsWin.w").unwrap_or(840.0).clamp(700.0, 4000.0);
-    let h = num("settingsWin.h").unwrap_or(760.0).clamp(520.0, 4000.0);
-    let url = match page {
-        Some(p) => format!("settings.html?page={p}"),
-        None => "settings.html".to_string(),
-    };
-    let win = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App(url.into()))
-        .title("Pill")
-        .inner_size(w, h)
-        .min_inner_size(700.0, 520.0)
-        .center()
-        .decorations(false)
-        .resizable(true)
-        .maximizable(true)
-        .minimizable(true)
-        .always_on_top(false)
-        .skip_taskbar(false)
-        .shadow(true)
-        .transparent(false)
-        .background_color(tauri::window::Color(17, 16, 19, 255))
-        .visible(false) // the page shows the window after its first paint (no white flash)
-        .focused(true)
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    if let (Some(x), Some(y)) = (num("settingsWin.x"), num("settingsWin.y")) {
-        let mons: Vec<(i32, i32, i32, i32)> = win
-            .available_monitors()
-            .unwrap_or_default()
-            .iter()
-            .map(|m| (m.position().x, m.position().y, m.size().width as i32, m.size().height as i32))
-            .collect();
-        let (pw, ph) = win.outer_size().map(|s| (s.width as i32, s.height as i32)).unwrap_or((840, 760));
-        if pos_visible(x as i32, y as i32, pw, ph, &mons) {
-            let _ = win.set_position(PhysicalPosition::new(x as i32, y as i32));
-        }
-    }
-    if crate::settings::get_bool("settingsWin.max", false) {
-        let _ = win.maximize();
-    }
-    let w2 = win.clone();
-    win.on_window_event(move |ev| match ev {
-        WindowEvent::Moved(_) | WindowEvent::Resized(_) => schedule_save(&w2),
-        WindowEvent::CloseRequested { .. } => save_now(&w2),
-        _ => {}
-    });
-    // Safety net: if the page never runs (script error), show the window anyway.
-    let w3 = win.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(2500));
-        if !w3.is_visible().unwrap_or(true) {
-            let _ = w3.show();
-        }
-    });
-    Ok(())
-}
-
-/// True when at least a 120 x 40 px piece of the title bar area lies on one of the monitors (x, y, w, h).
-pub fn pos_visible(x: i32, y: i32, w: i32, _h: i32, mons: &[(i32, i32, i32, i32)]) -> bool {
-    mons.iter().any(|&(mx, my, mw, mh)| {
-        let ix = (x + w).min(mx + mw) - x.max(mx);
-        let iy = (y + 40).min(my + mh) - y.max(my);
-        ix >= 120 && iy >= 40
-    })
-}
-
-fn schedule_save(w: &WebviewWindow) {
-    static PENDING: AtomicBool = AtomicBool::new(false);
-    if PENDING.swap(true, Ordering::SeqCst) {
-        return;
-    }
-    let w = w.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(700));
-        PENDING.store(false, Ordering::SeqCst);
-        save_now(&w);
-    });
-}
-
-fn save_now(w: &WebviewWindow) {
-    use crate::settings::set;
-    let max = w.is_maximized().unwrap_or(false);
-    set("settingsWin.max", json!(max));
-    if max || w.is_minimized().unwrap_or(false) {
-        return; // keep the last normal geometry
-    }
-    if let (Ok(p), Ok(s), Ok(sf)) = (w.outer_position(), w.inner_size(), w.scale_factor()) {
-        if p.x > -30000 && p.y > -30000 && s.width > 200 {
-            set("settingsWin.x", json!(p.x));
-            set("settingsWin.y", json!(p.y));
-            set("settingsWin.w", json!((s.width as f64 / sf).round()));
-            set("settingsWin.h", json!((s.height as f64 / sf).round()));
-        }
-    }
+    crate::ui::settings_view::open_native(app, page.as_deref());
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -155,29 +25,19 @@ fn save_now(w: &WebviewWindow) {
 // ---------------------------------------------------------------------------------------------------------------
 
 /// Open or focus the settings window, optionally on a page (character, general, hotkeys, ai, voice, weather, sound, live, clipboard, modules, updates, aisetup).
-#[tauri::command]
 pub fn settings_open(app: AppHandle, page: Option<String>) {
     open(&app, page.as_deref());
 }
 
-#[tauri::command]
-pub fn settings_close(app: AppHandle) {
-    if crate::ui::settings_view::native_enabled() {
-        crate::ui::settings_view::close_native();
-        return;
-    }
-    if let Some(w) = app.get_webview_window(LABEL) {
-        let _ = w.close();
-    }
+pub fn settings_close(_app: AppHandle) {
+    crate::ui::settings_view::close_native();
 }
 
-#[tauri::command]
 pub fn settings_quit(app: AppHandle) {
     app.exit(0);
 }
 
 /// Version and data folder for the Updates page.
-#[tauri::command]
 pub fn settings_info(app: AppHandle) -> Value {
     json!({ "version": app.package_info().version.to_string(), "dir": crate::store::dir().to_string_lossy() })
 }
@@ -191,13 +51,11 @@ pub fn run_value(exe: &str) -> String {
     format!("\"{}\"", exe.trim_matches('"'))
 }
 
-#[tauri::command]
 pub fn autostart_get() -> bool {
     unsafe { RegGetValueW(HKEY_CURRENT_USER, w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run"), w!("Pill"), RRF_RT_REG_SZ, None, None, None) == ERROR_SUCCESS }
 }
 
 /// Add (on) or remove (off) the Run value; returns the state read back from the registry.
-#[tauri::command]
 pub fn autostart_set(on: bool) -> Result<bool, String> {
     let key = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
     unsafe {
@@ -367,14 +225,12 @@ fn check(combo: &str, action: &str) -> Value {
 }
 
 /// {ok:true, combo} when the combo can be bound to `action`; {ok:false, reason: invalid|reserved|used|taken, by?}.
-#[tauri::command]
 pub fn hotkey_check(combo: String, action: Option<String>) -> Value {
     check(&combo, action.as_deref().unwrap_or(""))
 }
 
 /// Store `hotkey.<action>` (empty combo = not assigned) after the same check and re-register the hotkey at once (hotkeys.rs);
 /// on a refusal the previous binding keeps working and the answer is {ok:false, reason:"taken"}.
-#[tauri::command]
 pub fn hotkey_set(app: AppHandle, action: String, combo: String) -> Value {
     let known = ACTIONS.iter().any(|(a, _)| *a == action) || (action.starts_with("launcher.") && action.len() < 60 && action.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-'));
     if !known {
@@ -425,17 +281,6 @@ mod tests {
         assert_eq!(conflict("ctrl+alt+a", "toggle", &b).as_deref(), Some("chat"));
         assert_eq!(conflict("Ctrl+Alt+Q", "qr", &b).as_deref(), Some("quit"));
         assert_eq!(conflict("Ctrl+Alt+Z", "qr", &b), None);
-    }
-
-    #[test]
-    fn window_position_memory() {
-        let mons = [(0, 0, 1920, 1080), (1920, 0, 2560, 1440)];
-        assert!(pos_visible(100, 100, 840, 760, &mons));
-        assert!(pos_visible(2000, 50, 840, 760, &mons));
-        assert!(!pos_visible(5000, 50, 840, 760, &mons), "monitor unplugged");
-        assert!(!pos_visible(-900, 100, 840, 760, &mons), "only 0 px visible");
-        assert!(!pos_visible(100, 1070, 840, 760, &mons), "title bar below the screen");
-        assert!(pos_visible(-720, 100, 840, 760, &[(-1920, 0, 1920, 1080), (0, 0, 1920, 1080)]));
     }
 
     #[test]

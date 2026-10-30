@@ -128,7 +128,6 @@ fn fail(e: impl Into<String>) -> Value {
 
 /// {ok:true, text, clipped} or {ok:false, error}. error = "net_off" when the `net.ai` switch is off, "cancelled" after
 /// ai_transform_cancel / a newer request, "empty", "bad_action", otherwise a readable message.
-#[tauri::command(async)]
 pub fn ai_transform(text: String, action: String, instruction: Option<String>) -> Value {
     let Some(act) = parse_action(&action) else { return fail("bad_action") };
     let instruction: String = instruction.unwrap_or_default().trim().chars().take(500).collect();
@@ -239,7 +238,6 @@ fn build_ask_body(model: &str, question: &str, history: &[Turn]) -> Value {
 /// Command bar `? question`: one plain chat answer from the configured model. `history` (optional, older calls omit it) is the
 /// conversation so far as {role, content} pairs for a follow-up. {ok:true, text} or {ok:false, error}; error is
 /// "net_off" (net.ai switch off), "no_endpoint", "no_model", "empty", "cancelled" (ai_transform_cancel / a newer request) or a readable message.
-#[tauri::command(async)]
 pub fn cmd_ask(question: String, history: Option<Vec<Turn>>) -> Value {
     let (q, _) = clip_input(&question);
     if q.is_empty() {
@@ -265,14 +263,12 @@ pub fn cmd_ask(question: String, history: Option<Vec<Turn>>) -> Value {
 }
 
 /// Stops the running ai_transform (the Cancel button).
-#[tauri::command]
 pub fn ai_transform_cancel() -> bool {
     let cur = CUR.lock().unwrap_or_else(|e| e.into_inner()).take();
     cur.map(|(_, a)| a.abort()).is_some()
 }
 
 /// Full text of a clipboard history item (the list only carries a 300-char preview). None for images / file lists / gone rows.
-#[tauri::command]
 pub fn ai_clip_text(id: i64) -> Option<String> {
     crate::store::with(|c| c.query_row("select text from clip_items where id = ?1 and kind = 'text'", [id], |r| r.get::<_, Option<String>>(0))).flatten()
 }

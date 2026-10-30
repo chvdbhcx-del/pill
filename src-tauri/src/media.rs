@@ -1,7 +1,7 @@
 // Now playing, media controls, master volume, battery. Owner: media agent (lane L2).
 // GSMTC sessions with event subscriptions (no polling); one worker thread coalesces events and emits `media:changed`.
 // The page interpolates the timeline between events.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use base64::Engine;
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -149,12 +149,10 @@ pub fn wait_change(timeout: Duration) {
     let _ = WAKE.1.wait_timeout(g, timeout);
 }
 
-#[tauri::command]
 pub fn media_pause_updates() {
     set_active(false);
 }
 
-#[tauri::command]
 pub fn media_resume_updates() {
     set_active(true);
 }
@@ -411,7 +409,7 @@ fn resub(m: &Manager_, tx: &Sender<Msg>, subs: &mut Vec<Sub>) {
     }
 }
 
-fn worker(app: tauri::AppHandle, tx: Sender<Msg>, rx: Receiver<Msg>) {
+fn worker(_app: tauri::AppHandle, tx: Sender<Msg>, rx: Receiver<Msg>) {
     let Ok(m) = mgr() else { return };
     let (a, b) = (tx.clone(), tx.clone());
     let _ = m.SessionsChanged(&TypedEventHandler::new(move |_, _| {
@@ -443,7 +441,7 @@ fn worker(app: tauri::AppHandle, tx: Sender<Msg>, rx: Receiver<Msg>) {
             wake();
         }
         EMITTED_THUMB.store(st.thumb_id, Ordering::Relaxed);
-        let _ = bus::emit(&app, Target::Label("pill"), "media:changed", &st);
+        let _ = bus::emit("media:changed", &st);
         // New track: browsers publish the artwork after the title (until then Windows may hand out the
         // app icon), so re-read the thumbnail a couple of times.
         let key = format!("{}\u{1}{}\u{1}{}", st.session_id, st.title, st.artist);
@@ -473,7 +471,6 @@ pub fn init(app: &tauri::App) {
 // ---------- commands ----------
 
 // async: runs on the runtime pool, so the blocking WinRT .get() never stalls the UI thread.
-#[tauri::command]
 pub async fn media_state(known: Option<u64>) -> MediaState {
     let st = read_media(known).unwrap_or_default();
     // The page now holds this cover; later events can omit it.
@@ -483,7 +480,6 @@ pub async fn media_state(known: Option<u64>) -> MediaState {
     st
 }
 
-#[tauri::command]
 pub async fn media_sessions() -> Vec<SessionInfo> {
     let run = || -> windows::core::Result<Vec<SessionInfo>> {
         let m = mgr()?;
@@ -505,14 +501,12 @@ pub async fn media_sessions() -> Vec<SessionInfo> {
 }
 
 /// Pick a player by session id; None/empty goes back to the system's current session.
-#[tauri::command]
 pub async fn media_select(id: Option<String>) {
     *SELECTED.lock().unwrap_or_else(|e| e.into_inner()) = id.filter(|s| !s.is_empty());
     notify(Msg::Refresh);
 }
 
 /// action: "play_pause" | "next" | "prev"
-#[tauri::command]
 pub async fn media_control(action: String) {
     let _ = (|| -> windows::core::Result<()> {
         let s = pick(&mgr()?)?;
@@ -526,7 +520,6 @@ pub async fn media_control(action: String) {
     })();
 }
 
-#[tauri::command]
 pub async fn media_seek(ms: u64) {
     let _ = (|| -> windows::core::Result<()> {
         let s = pick(&mgr()?)?;
@@ -568,7 +561,6 @@ pub struct Volume {
     muted: bool,
 }
 
-#[tauri::command]
 pub async fn media_volume_get() -> Volume {
     endpoint()
         .and_then(|ep| unsafe {
@@ -577,7 +569,6 @@ pub async fn media_volume_get() -> Volume {
         .unwrap_or_default()
 }
 
-#[tauri::command]
 pub async fn media_volume_set(v: u32) {
     if let Ok(ep) = endpoint() {
         unsafe {
@@ -586,7 +577,6 @@ pub async fn media_volume_set(v: u32) {
     }
 }
 
-#[tauri::command]
 pub async fn media_mute(muted: bool) {
     if let Ok(ep) = endpoint() {
         unsafe {
@@ -700,20 +690,17 @@ fn open_sound_settings() {
     }
 }
 
-#[tauri::command]
 pub async fn media_devices() -> Vec<Device> {
     devices().unwrap_or_default()
 }
 
 /// Active microphones (capture endpoints) for Settings > Sound.
-#[tauri::command]
 pub async fn media_capture_devices() -> Vec<Device> {
     devices_of(eCapture).unwrap_or_default()
 }
 
 /// Returns "ok" (default device changed, or it already was), "settings" (the change was not done in-app, the Windows
 /// sound settings were opened instead; the page explains why) or "unknown" (id is not an active render endpoint).
-#[tauri::command]
 pub async fn media_set_default_device(id: String) -> &'static str {
     let Some(d) = devices().ok().and_then(|v| v.into_iter().find(|d| d.id == id)) else { return "unknown" };
     if d.default {
@@ -737,7 +724,6 @@ pub struct Battery {
     ac: bool,
 }
 
-#[tauri::command]
 pub fn battery_state() -> Battery {
     let mut s = SYSTEM_POWER_STATUS::default();
     if unsafe { GetSystemPowerStatus(&mut s) }.is_err() {

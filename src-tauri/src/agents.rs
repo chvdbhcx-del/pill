@@ -4,7 +4,7 @@
 // %APPDATA%\pill\agents\ ; this module only reads that directory. File content is untrusted: size-capped, parsed
 // defensively, titles are text only (control characters stripped, capped), never executed or passed to a shell.
 // Events to window "pill": `agents:changed` {sessions, working, waiting}, `agents:done` {session, tool, title, cwd} (once per transition).
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::os::windows::process::CommandExt;
@@ -336,7 +336,7 @@ impl Drop for Watcher {
     }
 }
 
-fn run(app: AppHandle) {
+fn run(_app: AppHandle) {
     let mut watcher: Option<Watcher> = None;
     let mut last = String::new();
     loop {
@@ -358,10 +358,10 @@ fn run(app: AppHandle) {
         let txt = snap.to_string();
         if txt != last {
             last = txt;
-            let _ = bus::emit(&app, Target::Label("pill"), "agents:changed", snap);
+            let _ = bus::emit("agents:changed", snap);
         }
         for s in out.done {
-            let _ = bus::emit(&app, Target::Label("pill"), "agents:done", json!({ "session": s.session, "tool": s.tool, "title": s.title, "cwd": s.cwd }));
+            let _ = bus::emit("agents:done", json!({ "session": s.session, "tool": s.tool, "title": s.title, "cwd": s.cwd }));
         }
         // 10 s tick with the watcher (stale expiry is time based), 2 s while a session waits (its transcript is not watched), 1.5 s when the watcher failed
         match &watcher {
@@ -469,13 +469,11 @@ fn snippets(helper: &str) -> Value {
 }
 
 // ---------- commands ----------
-#[tauri::command]
 pub fn agents_list() -> Value {
     lock().snapshot(crate::store::now_ms())
 }
 
 /// Removes the session from the pill and deletes its status file (only files this module listed itself).
-#[tauri::command]
 pub fn agents_dismiss(session: String) -> bool {
     let id = clean_id(&session);
     if id.is_empty() {
@@ -527,25 +525,21 @@ fn session_dir(session: &str) -> Option<PathBuf> {
     local_dir(&cwd)
 }
 
-#[tauri::command]
 pub fn agents_open_folder(session: String) -> bool {
     let Some(dir) = session_dir(&session) else { return false };
     std::process::Command::new("explorer.exe").arg(&dir).creation_flags(NO_WINDOW).spawn().is_ok() // dir = one argv element, no shell
 }
 
-#[tauri::command]
 pub fn agents_open_code(session: String) -> bool {
     let (Some(dir), Some(code)) = (session_dir(&session), find_code()) else { return false };
     std::process::Command::new(code).arg(&dir).creation_flags(NO_WINDOW).spawn().is_ok()
 }
 
 /// { code: bool }: whether the "VS Code" button on the finished card is offered.
-#[tauri::command]
 pub fn agents_tools() -> Value {
     json!({ "code": find_code().is_some() })
 }
 
-#[tauri::command]
 pub fn agents_hook_snippets() -> Value {
     write_helper();
     snippets(&fwd(&helper_path()))

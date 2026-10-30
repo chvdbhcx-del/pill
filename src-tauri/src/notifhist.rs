@@ -81,7 +81,6 @@ fn mark_read_in(c: &Connection, ids: Option<&[i64]>) -> rusqlite::Result<usize> 
 }
 
 /// Store one entry (None when history.keep is off or the title is empty). `read`: the centre was open when it arrived.
-#[tauri::command]
 pub fn notif_history_add(entry: NewEntry, read: Option<bool>) -> Option<Entry> {
     if !crate::settings::get_bool("history.keep", true) { return None; }
     let keep_mail = crate::settings::get_bool("history.mail", false);
@@ -89,21 +88,17 @@ pub fn notif_history_add(entry: NewEntry, read: Option<bool>) -> Option<Entry> {
 }
 
 /// Newest first.
-#[tauri::command]
 pub fn notif_history_list() -> Vec<Entry> {
     store::with(|c| list_at(c, store::now_ms())).unwrap_or_default()
 }
 
-#[tauri::command]
 pub fn notif_history_clear() { store::with(|c| c.execute("delete from notif_history", [])); }
 
 /// ids = None marks everything read.
-#[tauri::command]
 pub fn notif_history_mark_read(ids: Option<Vec<i64>>) -> usize {
     store::with(|c| mark_read_in(c, ids.as_deref())).unwrap_or(0)
 }
 
-#[tauri::command]
 pub fn notif_history_remove(id: i64) { store::with(|c| c.execute("delete from notif_history where id = ?1", [id])); }
 
 #[cfg(test)]

@@ -8,7 +8,6 @@ pub mod lang;
 pub mod model;
 pub mod protocol;
 pub mod query;
-pub mod ready;
 pub mod results;
 pub mod strings;
 pub mod uninstall;

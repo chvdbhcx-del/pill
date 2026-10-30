@@ -13,7 +13,7 @@
 //  * strict reload (a `hotkey.*` key changed): the first combo that cannot be registered rolls everything back to the previous
 //    bindings and returns Err(text), so the app never ends up without its hotkeys. The caller (settings.rs) then restores the old
 //    setting values. Lenient reload (startup, module switches, hotkeys_reload): failures are only logged, the rest stays bound.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use crate::settings;
 use crate::settingswin::{parse_combo, ACTIONS};
 use serde_json::{json, Map, Value};
@@ -69,11 +69,11 @@ fn run(app: &AppHandle, action: &str) {
         "toggle" => crate::pill::toggle(app),
         "command" => crate::command::cmd_toggle(app.clone()),
         "clipboard" => {
-            let _ = bus::emit(&app, Target::Label("pill"), "clip:open", ());
+            let _ = bus::emit("clip:open", ());
         }
         "chat" => {
             crate::pill::expand(app, Some("chat".into()), "hotkey");
-            let _ = bus::emit(&app, Target::Label("pill"), "chat:focus", ());
+            let _ = bus::emit("chat:focus", ());
         }
         "shotArea" => crate::capture::start(app, "area"),
         "shotFull" => crate::capture::start(app, "screen"),
@@ -314,7 +314,6 @@ pub fn reload(app: &AppHandle, strict: &[String]) -> Result<(), String> {
 }
 
 /// Re-read the hotkey settings and re-register what changed; also retries combos that were busy before.
-#[tauri::command]
 pub fn hotkeys_reload(app: AppHandle) -> Result<Value, String> {
     reload(&app, &[])?;
     let s = st();

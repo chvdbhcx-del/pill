@@ -199,15 +199,6 @@ fn ink(img: &Image) -> usize {
 // ---------------------------------------------------------------------------------------------------------------------------------------
 
 #[test]
-fn gate_truth_table() {
-    use super::native::native_active_from as g;
-    assert!(g(true, false));
-    assert!(!g(true, true), "--web-ui wins");
-    assert!(!g(false, false));
-    assert!(!g(false, true));
-}
-
-#[test]
 fn flow_takes_the_overflow_from_the_shrinkable_boxes() {
     assert_eq!(flow(100.0, &[(50.0, true), (50.0, true)], 326.0), vec![50.0, 50.0]);
     let s = flow(100.0, &[(200.0, true), (100.0, true)], 300.0);
@@ -221,7 +212,6 @@ fn flow_takes_the_overflow_from_the_shrinkable_boxes() {
 #[test]
 fn opening_asks_for_settings_and_a_query_and_reports_ready_after_subscribing() {
     let mut d = D::dark();
-    assert!(d.names().contains(&"cmd_ready".to_string()), "cmd_ready right after the subscriptions");
     d.show();
     let n = d.names();
     assert!(n.contains(&"settings_get".into()) && n.contains(&"cmd_query".into()), "{n:?}");
@@ -539,9 +529,6 @@ fn snapshot_light_scale2_and_reduced() {
 }
 
 #[test]
-fn flag_off_leaves_the_web_bar_alone() {
-    // default settings: ui.native.bar is false -> command.rs / lazy.rs / windows.rs take their old WebView paths
-    assert!(!bar_is_native() && !native_active());
+fn no_bar_window_exists_until_it_was_opened() {
     assert!(!bar_is_visible(), "no native window exists unless the bar was opened natively");
-    assert!(crate::ui::lazy::try_get_label_is_web_only());
 }

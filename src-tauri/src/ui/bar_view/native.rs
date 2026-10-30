@@ -1,8 +1,6 @@
 //! Window glue of the native bar: the popup spec, the lazily created window, and the entry points `command.rs` calls when the native bar is on
-//! (`bar_toggle`, `bar_hide`, `bar_is_visible`). Nothing here is used while the flag is off: `command.rs` asks `bar_is_native()` first and keeps
-//! its WebView code path untouched.
+//! (`bar_toggle`, `bar_hide`, `bar_is_visible`).
 use super::{BarView, BAR_LABEL};
-use crate::ui::flags;
 use crate::ui::host::{self, HostHandle, NativeWindow, WinEvent};
 use crate::ui::view::WindowId;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -10,21 +8,6 @@ use std::sync::Mutex;
 
 static BAR_ID: AtomicU64 = AtomicU64::new(0);
 static CREATE: Mutex<()> = Mutex::new(());
-
-/// The one rule of the gate: native only when the setting is on AND the WebView UI was not forced from the command line.
-pub fn native_active_from(setting: bool, forced: bool) -> bool {
-    setting && !forced
-}
-
-/// Is the command bar native in this run? (`ui.native.bar` and no `--web-ui`.)
-pub fn native_active() -> bool {
-    flags::native_bar()
-}
-
-/// Same as [`native_active`]; the name `command.rs` and `ui/lazy.rs` use.
-pub fn bar_is_native() -> bool {
-    native_active()
-}
 
 /// The window builder: `Popup` kind, 560 x 350, top centre of the monitor under the cursor, hidden, takes the foreground when shown, hides when
 /// it loses it (host `BlurGuard`, 400 ms grace), cleans the backend's in-memory rows whenever it goes away.

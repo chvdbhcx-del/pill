@@ -13,7 +13,7 @@
 // a QR link is opened only when the user clicks "Open" on the card, the page can only open files inside the capture folders.
 // Settings read through settings::get_*: capture.folder, capture.videoFolder, capture.fps, capture.encoder (auto|x264|nvenc),
 // capture.ffmpeg, capture.format (mp4|gif), capture.shotAction (both|copy|save), capture.revealAfterSave, hotkey.shotArea/shotFull/ocr/qr/pipette/record.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use crate::ui::capture_view::windows as cv_windows;
 use crate::{settings, store};
 use serde::Deserialize;
@@ -27,7 +27,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager, Webview, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::AppHandle;
 use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND};
 use windows::Win32::Graphics::Gdi::{
@@ -44,13 +44,8 @@ use windows::Win32::System::JobObjects::{
 };
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::System::SystemInformation::GetLocalTime;
-use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Shell::{SHGetKnownFolderPath, ShellExecuteW, FOLDERID_Pictures, FOLDERID_Videos, KF_FLAG_DEFAULT};
-use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
-    SetWindowDisplayAffinity, SetWindowPos, ShowWindow, HWND_TOPMOST, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNORMAL,
-    WDA_EXCLUDEFROMCAPTURE,
-};
+use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 const NO_WINDOW: u32 = 0x0800_0000; // CREATE_NO_WINDOW
 const CF_DIB: u32 = 8;
@@ -528,24 +523,6 @@ fn plain(p: &Path) -> String {
     s.strip_prefix(r"\\?\").unwrap_or(&s).to_string() // canonicalize adds the verbatim prefix; the clipboard and Explorer do not want it
 }
 
-unsafe fn foreground(hwnd: HWND) {
-    let fg = GetForegroundWindow();
-    let cur = GetCurrentThreadId();
-    let ft = if fg.0.is_null() { 0 } else { GetWindowThreadProcessId(fg, None) };
-    if ft != 0 && ft != cur {
-        let _ = AttachThreadInput(ft, cur, true);
-    }
-    let _ = SetForegroundWindow(hwnd);
-    let _ = BringWindowToTop(hwnd);
-    if ft != 0 && ft != cur {
-        let _ = AttachThreadInput(ft, cur, false);
-    }
-}
-
-fn win_hwnd(w: &WebviewWindow) -> Option<HWND> {
-    w.hwnd().ok().map(|h| HWND(h.0 as isize as *mut c_void))
-}
-
 fn now_ms() -> i64 {
     store::now_ms()
 }
@@ -640,8 +617,8 @@ fn rec_slot() -> MutexGuard<'static, Option<Rec>> {
     REC.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn emit(app: &AppHandle, ev: &str, payload: Value) {
-    let _ = bus::emit(&app, Target::Label("pill"), ev, payload);
+fn emit(_app: &AppHandle, ev: &str, payload: Value) {
+    let _ = bus::emit(ev, payload);
 }
 
 fn fail(app: &AppHandle, msg: impl Into<String>) {
@@ -676,49 +653,7 @@ fn cursor_mon(app: &AppHandle, mons: &[Mon]) -> usize {
 // Overlay windows
 // ---------------------------------------------------------------------------------------------------------------
 
-fn ensure_window(app: &AppHandle, label: &str) -> Option<WebviewWindow> {
-    if let Some(w) = app.get_webview_window(label) {
-        return Some(w);
-    }
-    let w = WebviewWindowBuilder::new(app, label, WebviewUrl::App("capture.html".into()))
-        .title("pill-capture")
-        .decorations(false)
-        .transparent(false)
-        .background_color(tauri::window::Color(0, 0, 0, 255)) // no white flash before the first paint
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .resizable(false)
-        .shadow(false)
-        .visible(false)
-        .focused(false)
-        .inner_size(400.0, 300.0)
-        .build()
-        .map_err(|e| eprintln!("capture: cannot create {label}: {e}"))
-        .ok()?;
-    if let Some(h) = win_hwnd(&w) {
-        unsafe {
-            // The overlay itself is never part of any capture or recording, whatever showInCapture says.
-            let _ = SetWindowDisplayAffinity(h, WDA_EXCLUDEFROMCAPTURE);
-        }
-    }
-    Some(w)
-}
-
-fn place(w: &WebviewWindow, m: &Mon, show: bool) {
-    if let Some(h) = win_hwnd(w) {
-        let flags = if show { SWP_NOACTIVATE | SWP_SHOWWINDOW } else { SWP_NOACTIVATE };
-        unsafe {
-            let _ = SetWindowPos(h, HWND_TOPMOST, m.x, m.y, m.w, m.h, flags);
-        }
-    }
-}
-
-/// The native overlay path is on: setting `ui.native.capture` and no `--web-ui` override (see ui/capture_view/windows.rs).
-fn native_on() -> bool {
-    cv_windows::enabled()
-}
-
-/// Native counterpart of the WebView branch of `open_overlays`: one host window per monitor; reused ones are re-armed with one
+/// One host window per monitor; reused ones are re-armed with one
 /// `capture:begin` (every native view listens to the bus, and each arms itself for its own label), new ones arm themselves at creation.
 fn open_native(app: &AppHandle, id: u64) {
     let list: Vec<Mon> = session().as_ref().filter(|s| s.id == id).map(|s| s.shots.iter().map(|x| x.mon.clone()).collect()).unwrap_or_default();
@@ -727,31 +662,14 @@ fn open_native(app: &AppHandle, id: u64) {
         reused |= cv_windows::open(app, &m.label, m.x, m.y, m.w, m.h, m.scale);
     }
     if reused {
-        let _ = bus::emit(app, Target::Label(list.first().map_or("capture-0", |m| m.label.as_str())), "capture:begin", json!({ "id": id }));
+        let _ = bus::emit("capture:begin", json!({ "id": id }));
     }
 }
 
-/// Windows (re)positioned hidden; each page reports `capture_ready` once its frame is painted, and only then is it shown.
-/// With the native overlay on (`ui.native.capture`, not `--web-ui`) the windows are host `Fullscreen` windows instead (ui/capture_view).
+/// The overlays are host `Fullscreen` windows (ui/capture_view); each view reports `capture_ready` once its frame is painted.
 fn open_overlays(app: &AppHandle, id: u64) {
-    if native_on() {
-        open_native(app, id);
-    } else {
-        let a = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            let list: Vec<Mon> = session().as_ref().filter(|s| s.id == id).map(|s| s.shots.iter().map(|x| x.mon.clone()).collect()).unwrap_or_default();
-            for m in &list {
-                let existed = a.get_webview_window(&m.label).is_some();
-                if let Some(w) = ensure_window(&a, &m.label) {
-                    place(&w, m, false);
-                    if existed {
-                        let _ = bus::emit(&a, Target::Label(m.label.as_str()), "capture:begin", json!({ "id": id }));
-                    }
-                }
-            }
-        });
-    }
-    // Watchdog: a page that never reports (script error, WebView2 missing) must not leave the session half open.
+    open_native(app, id);
+    // Watchdog: a view that never reports must not leave the session half open.
     let a = app.clone();
     std::thread::spawn(move || {
         let t0 = Instant::now();
@@ -772,8 +690,7 @@ fn open_overlays(app: &AppHandle, id: u64) {
             }
             // Safety: a topmost full-screen overlay that is no longer the foreground window (focus stolen, alt-tab, keyboard
             // never arrived) is useless and traps the screen: end it after 1.5 s. Failsafe: 600 s at most.
-            let fg = unsafe { GetForegroundWindow() };
-            let fg_ok = !shown || if native_on() { cv_windows::foreground_ok() } else { a.webview_windows().iter().any(|(l, w)| l.starts_with("capture-") && win_hwnd(w) == Some(fg)) };
+            let fg_ok = !shown || cv_windows::foreground_ok();
             if lost_too_long(&mut lost, fg_ok, Instant::now(), Duration::from_millis(1500)) || t0.elapsed() >= Duration::from_secs(600) {
                 end_session(&a);
                 return;
@@ -783,47 +700,25 @@ fn open_overlays(app: &AppHandle, id: u64) {
 }
 
 fn hide_overlays(app: &AppHandle) {
-    if native_on() {
-        // Native overlays hide themselves when they get `capture:end` (after their exit animations); the 700 ms backstop below hides
-        // whatever did not, unless a new session has started meanwhile.
-        if let Some(l) = cv_windows::labels().first() {
-            let _ = bus::emit(&app, Target::Label(l.as_str()), "capture:end", json!({}));
-        }
-        std::thread::spawn(|| {
-            std::thread::sleep(Duration::from_millis(700));
-            if session().is_none() {
-                cv_windows::hide_all();
-            }
-        });
-    } else {
-        for (label, w) in app.webview_windows() {
-            if label.starts_with("capture-") {
-                let _ = w.hide();
-                // The overlay is shown with SetWindowPos, so the toolkit's own "visible" flag is stale and hide() alone does nothing.
-                if let Some(h) = win_hwnd(&w) {
-                    unsafe {
-                        let _ = ShowWindow(h, SW_HIDE);
-                    }
-                }
-                let _ = bus::emit(&app, Target::Label(label.as_str()), "capture:end", json!({}));
-            }
-        }
+    // The overlays hide themselves when they get `capture:end` (after their exit animations); the 700 ms backstop below hides
+    // whatever did not, unless a new session has started meanwhile.
+    if !cv_windows::labels().is_empty() {
+        let _ = bus::emit("capture:end", json!({}));
     }
+    std::thread::spawn(|| {
+        std::thread::sleep(Duration::from_millis(700));
+        if session().is_none() {
+            cv_windows::hide_all();
+        }
+    });
     *LAST_END.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
     // Close the windows after a while without use: idle RAM stays low.
-    let a = app.clone();
+    let _a = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(IDLE_CLOSE + Duration::from_secs(1));
         let idle = LAST_END.lock().unwrap_or_else(|e| e.into_inner()).is_some_and(|t| t.elapsed() >= IDLE_CLOSE);
         if idle && session().is_none() {
-            if native_on() {
-                cv_windows::close_all();
-            }
-            for (label, w) in a.webview_windows() {
-                if label.starts_with("capture-") {
-                    let _ = w.destroy();
-                }
-            }
+            cv_windows::close_all();
         }
     });
 }
@@ -1236,22 +1131,18 @@ fn finalize(app: &AppHandle, mut r: Rec, graceful: bool) {
 // Commands
 // ---------------------------------------------------------------------------------------------------------------
 
-#[tauri::command]
 pub fn capture_start(app: AppHandle, mode: String) {
     start(&app, &mode);
 }
 
-#[tauri::command]
 pub fn capture_cancel(app: AppHandle) {
     end_session(&app);
 }
 
-#[tauri::command]
 pub fn capture_stop(app: AppHandle) {
     stop(&app);
 }
 
-#[tauri::command]
 pub fn capture_settings() -> Value {
     let started = rec_slot().as_ref().map(|r| r.started); // one lock, taken before the json! below
     json!({
@@ -1271,7 +1162,6 @@ pub fn capture_settings() -> Value {
 }
 
 /// Page (overlay) asks what to show. None when there is no session for this window.
-#[tauri::command]
 pub fn capture_session(label: String) -> Option<Value> {
     let g = session();
     let s = g.as_ref()?;
@@ -1279,64 +1169,18 @@ pub fn capture_session(label: String) -> Option<Value> {
     Some(json!({ "id": s.id, "mode": s.mode.name(), "w": sh.mon.w, "h": sh.mon.h, "x": sh.mon.x, "y": sh.mon.y, "scale": sh.mon.scale, "focus": s.focus == label }))
 }
 
-/// The frozen frame of one monitor: raw RGBA, w*h*4 bytes (an ArrayBuffer on the page).
-#[tauri::command]
-pub fn capture_frame(label: String) -> tauri::ipc::Response {
-    tauri::ipc::Response::new(capture_frame_arc(&label).map(|a| a.as_ref().clone()).unwrap_or_default())
-}
-
-/// The frozen frame of one monitor, shared (no copy): what `capture_frame` sends, for the native UI (ui/api.rs).
+/// The frozen frame of one monitor, shared (no copy), for the native UI (ui/api.rs).
 pub fn capture_frame_arc(label: &str) -> Option<std::sync::Arc<Vec<u8>>> {
     session().as_ref().and_then(|s| s.shots.iter().find(|x| x.mon.label == label).map(|x| x.rgba.clone()))
 }
 
-/// Keyboard focus for the overlay: the OS window AND the WebView2 control inside it (a window shown with SWP_NOACTIVATE is
-/// "foreground" without the web content ever getting key events, so Esc did nothing).
-fn focus_overlay(w: &WebviewWindow, focus: bool) {
-    if !focus {
-        return;
-    }
-    if let Some(h) = win_hwnd(w) {
-        unsafe { foreground(h) };
-    }
-    let _ = w.set_focus();
-    let _ = Webview::set_focus(w.as_ref());
-}
-
-/// The page painted its frame: show the window now (topmost, not activating), and focus the one under the cursor.
-#[tauri::command]
-pub fn capture_ready(app: AppHandle, label: String) {
-    let (mon, focus) = {
-        let mut g = session();
-        let Some(s) = g.as_mut() else { return };
-        let focus = s.focus == label;
-        let Some(sh) = s.shots.iter_mut().find(|x| x.mon.label == label) else { return };
+/// The view painted its frame: the session counts it as shown (the host window shows itself and takes the keyboard).
+pub fn capture_ready(_app: AppHandle, label: String) {
+    let mut g = session();
+    let Some(s) = g.as_mut() else { return };
+    if let Some(sh) = s.shots.iter_mut().find(|x| x.mon.label == label) {
         sh.ready = true;
-        (sh.mon.clone(), focus)
-    };
-    let a = app.clone();
-    let mon1 = mon.clone();
-    let _ = app.run_on_main_thread(move || {
-        let mon = mon1;
-        let Some(w) = a.get_webview_window(&mon.label) else { return };
-        place(&w, &mon, true);
-        focus_overlay(&w, focus);
-    });
-    // A second pass: moving a window between monitors of different DPI can make the first size request be reinterpreted.
-    let a = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(120));
-        let a2 = a.clone();
-        let _ = a.run_on_main_thread(move || {
-            if session().is_none() {
-                return; // closed within the 120 ms: never re-show a finished overlay
-            }
-            if let Some(w) = a2.get_webview_window(&mon.label) {
-                place(&w, &mon, true);
-                focus_overlay(&w, focus); // retry: the first SetForegroundWindow can lose to the app that owned the keyboard
-            }
-        });
-    });
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -1351,25 +1195,7 @@ pub(crate) struct CommitArgs {
     y: f64,
 }
 
-/// Selection / click from an overlay page. Plain JSON args, or (markup) a raw PNG body with the JSON in header `x-pill-args`.
-#[tauri::command]
-pub async fn capture_commit(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<(), String> {
-    let (args, png): (CommitArgs, Option<Vec<u8>>) = match request.body() {
-        tauri::ipc::InvokeBody::Raw(b) => {
-            let a = request
-                .headers()
-                .get("x-pill-args")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| serde_json::from_str(s).ok())
-                .ok_or("bad capture arguments")?;
-            (a, Some(b.clone()))
-        }
-        tauri::ipc::InvokeBody::Json(v) => (serde_json::from_value(v.clone()).map_err(|e| e.to_string())?, None),
-    };
-    capture_commit_impl(&app, args, png)
-}
-
-/// The body of `capture_commit` (also called by the native UI through ui/api.rs): `png` is the marked-up image of the Area mode, if any.
+/// `capture_commit` (called by the native UI through ui/api.rs): `png` is the marked-up image of the Area mode, if any.
 pub(crate) fn capture_commit_impl(app: &AppHandle, args: CommitArgs, png: Option<Vec<u8>>) -> Result<(), String> {
     let sess = end_session(app).ok_or("no capture in progress")?;
     let sh = sess.shots.iter().find(|x| x.mon.label == args.label).ok_or("unknown monitor")?;
@@ -1412,7 +1238,6 @@ pub(crate) fn capture_commit_impl(app: &AppHandle, args: CommitArgs, png: Option
 }
 
 /// Result-card buttons. Only files inside the capture folders are touched; a URL is opened only on this explicit call.
-#[tauri::command]
 pub fn capture_action(action: String, value: String) -> Result<(), String> {
     let file = || allowed_path(&value).ok_or_else(|| "that file is outside the capture folders or no longer exists".to_string());
     match action.as_str() {

@@ -4,7 +4,7 @@
 // CPU: GetSystemTimes deltas. RAM: GlobalMemoryStatusEx. GPU: ONE persistent `nvidia-smi --query-gpu=... --format=csv,noheader,nounits -lms 2000` child
 // (a reader thread keeps the newest line per GPU), alive only while ticks are wanted, in a kill-on-close Job Object (no NVIDIA = `gpus: []`, looked for again every 60 s).
 // PRIVACY: reads only load counters, nothing is stored or sent anywhere.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::ffi::c_void;
@@ -250,17 +250,16 @@ fn sample_cached() -> Value {
     sample()
 }
 
-#[tauri::command]
 pub async fn sysmon_get() -> Value {
     tauri::async_runtime::spawn_blocking(sample_cached).await.unwrap_or(Value::Null)
 }
 
 pub fn init(app: &tauri::App) {
-    let app: AppHandle = app.handle().clone();
+    let _app: AppHandle = app.handle().clone();
     // one thread for the whole run; while the switch is off or the pill is hidden it only wakes once a second and does nothing
     std::thread::spawn(move || loop {
         if crate::settings::get_bool("live.sysmon", true) && !crate::pill::is_hidden() {
-            let _ = bus::emit(&app, Target::Label("pill"), "sysmon:tick", sample());
+            let _ = bus::emit("sysmon:tick", sample());
             std::thread::sleep(Duration::from_millis(POLL_MS));
         } else {
             *CPU_PREV.lock().unwrap_or_else(|e| e.into_inner()) = None; // the next delta must not span the pause

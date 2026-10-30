@@ -1,6 +1,6 @@
 // Cloud updates from GitHub Releases (tauri-plugin-updater, minisign-signed latest.json). Owner: updates lane.
 // The network is touched only when the user asks (update_check / update_install) or `updateAuto` is on (default ON: one check ~20 s after launch, installing is always a click).
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use tauri::{AppHandle};
@@ -28,13 +28,11 @@ async fn check(app: &AppHandle) -> Value {
     }
 }
 
-#[tauri::command]
 pub async fn update_check(app: AppHandle) -> Value {
     check(&app).await
 }
 
 /// Downloads the update found by the last `update_check`, installs it and restarts the app.
-#[tauri::command]
 pub async fn update_install(app: AppHandle) -> Value {
     let Some(u) = FOUND.lock().unwrap_or_else(|e| e.into_inner()).clone() else { return json!({ "status": "error", "error": "no update checked" }) };
     match u.download_and_install(|_, _| {}, || {}).await {
@@ -50,7 +48,7 @@ pub fn init(app: &tauri::App) {
         if crate::settings::get_bool("updateAuto", true) {
             let r = tauri::async_runtime::block_on(check(&app));
             if r["status"] == "available" {
-                let _ = bus::emit(&app, Target::All, "update:available", r);
+                let _ = bus::emit("update:available", r);
             }
         }
     });

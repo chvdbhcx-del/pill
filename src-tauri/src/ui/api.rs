@@ -1,10 +1,10 @@
-// In-process command facade for the native UI (no WebView): `invoke('name', {camelCase})` as a plain function call. See docs/native-api.md.
-//   call(cmd, args, caller)            synchronous, for WORKER threads (it blocks on `async fn` commands); result = what `await invoke(..)` resolves with
+// In-process command facade for the native UI: a command by name (`"name"`, camelCase JSON arguments) as a plain function call. See docs/native-api.md.
+//   call(cmd, args, caller)            synchronous, for WORKER threads (it blocks on `async fn` commands); result = the command's JSON answer
 //   call_raw(cmd, args, caller, body)  the one command with a raw request body (`capture_commit` with a marked-up PNG; `args` is the `x-pill-args` JSON)
 //   call_async(cmd, args, caller, done) runs `call` on the worker pool and hands the result to `done` (on that worker thread)
 //   dispatch_calls(calls, caller, on_reply) the renderers' helper: a batch of (cmd, args) pairs, each answered with (index, result)
 //   capture_frame(label)               the frozen monitor frame (raw RGBA) without a JSON detour
-// Events come from `ui::bus::subscribe`. The `#[tauri::command]` functions are untouched: the facade calls the very same functions.
+// Events come from `ui::bus::subscribe`. The facade calls the plain command functions of the backend modules.
 // Never call any of this from the native UI thread or from inside the tokio runtime (it blocks); use `call_async` / `dispatch_calls` there.
 // Arguments are never logged (they can carry API keys and passwords).
 #![allow(dead_code)] // the native UI (later phases) is the caller; until then only the tests are
@@ -88,7 +88,6 @@ mod tests {
     use std::path::Path;
 
     const DISPATCH_SRC: &str = include_str!("api/dispatch.rs");
-    const MAIN_SRC: &str = include_str!("../main.rs");
     const CONTRACT: &str = include_str!("../../../docs/native-ui-contract.md");
 
     /// `"name" =>` arms of the command table.
@@ -121,18 +120,6 @@ mod tests {
             .collect()
     }
 
-    /// Names inside `generate_handler![ .. ]` of main.rs (`module::name`).
-    fn handler_commands() -> BTreeSet<String> {
-        let start = MAIN_SRC.find("generate_handler![").expect("generate_handler") + "generate_handler![".len();
-        let body = &MAIN_SRC[start..MAIN_SRC[start..].find(']').map(|e| start + e).unwrap()];
-        body.lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .flat_map(|l| l.split(',').map(str::trim).map(str::to_string).collect::<Vec<_>>())
-            .filter_map(|t| t.rsplit_once("::").map(|(_, n)| n.to_string()))
-            .filter(|n| !n.is_empty())
-            .collect()
-    }
-
     #[test]
     fn every_contract_command_has_a_dispatch_arm() {
         let (contract, arms) = (contract_commands(), arms());
@@ -142,18 +129,10 @@ mod tests {
     }
 
     #[test]
-    fn every_arm_is_registered_in_main() {
-        let (handler, arms) = (handler_commands(), arms());
-        assert!(handler.len() >= 170, "handler parse looks broken: {}", handler.len());
-        let stray: Vec<_> = arms.difference(&handler).collect();
-        assert!(stray.is_empty(), "dispatch arms that main.rs invoke_handler does not register: {stray:?}");
-        let unreachable: Vec<_> = handler.difference(&arms).collect();
-        assert!(unreachable.is_empty(), "registered commands without an arm: {unreachable:?}");
-    }
-
-    #[test]
-    fn contract_and_handler_agree() {
-        assert_eq!(contract_commands(), handler_commands(), "docs/native-ui-contract.md is stale: regenerate it");
+    fn every_arm_is_in_the_contract() {
+        let (contract, arms) = (contract_commands(), arms());
+        let stray: Vec<_> = arms.difference(&contract).collect();
+        assert!(stray.is_empty(), "dispatch arms that docs/native-ui-contract.md does not list: {stray:?}");
     }
 
     #[test]

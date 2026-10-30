@@ -1467,7 +1467,7 @@ mod tests {
     use glasskit::input::{Buttons, Modifiers};
     use std::sync::Arc;
 
-    const FIXTURE: &str = include_str!("../../../../../tools/dev/fixtures/tabs-b/chat.json");
+    const FIXTURE: &str = include_str!("../../../../tests/fixtures/tabs-b/chat.json");
     const SIZE: (f32, f32) = snap::BODY_TALL;
 
     /// A view plus the host pieces a test needs (the same `Cx` the real host builds, a queue to pump).

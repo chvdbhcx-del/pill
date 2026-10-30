@@ -886,8 +886,8 @@ mod tests {
 
     // ---- snapshots over the same scenarios the web harness renders (tools/dev/fixtures/tabs-b) ----
 
-    const DEFAULTS: &str = include_str!("../../../../../tools/dev/fixtures/tabs-b/_defaults.json");
-    const TIMER_FIX: &str = include_str!("../../../../../tools/dev/fixtures/tabs-b/timer.json");
+    const DEFAULTS: &str = include_str!("../../../../tests/fixtures/tabs-b/_defaults.json");
+    const TIMER_FIX: &str = include_str!("../../../../tests/fixtures/tabs-b/timer.json");
 
     /// The replies of the named scenarios (later names override earlier ones; `common` of the defaults applies first) and the fixture clock.
     fn scenario(names: &[&str]) -> (Vec<(String, Value)>, i64) {

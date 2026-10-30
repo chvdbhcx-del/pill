@@ -41,7 +41,7 @@ mod wizard;
 #[cfg(test)]
 mod tests;
 
-pub use open::{close_native, native_enabled, open_native};
+pub use open::{close_native, open_native};
 pub use pal::settings_light;
 
 use crate::ui::view::{Cx, Msg, Ticket, View};

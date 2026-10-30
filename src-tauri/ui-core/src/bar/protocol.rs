@@ -22,9 +22,6 @@ impl BackendCall {
         BackendCall { cmd, args: Value::Null }
     }
 
-    pub fn ready() -> BackendCall {
-        BackendCall::bare("cmd_ready")
-    }
     pub fn toggle() -> BackendCall {
         BackendCall::bare("cmd_toggle")
     }

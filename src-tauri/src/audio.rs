@@ -4,7 +4,7 @@
 // Only 32 level numbers (+ one rms value and a timestamp) leave Rust, as the `audio:bands` event (~60 Hz) to the local window "pill".
 // The capture runs only while the pill is visible AND the selected media session is playing AND setting
 // `audio.reactive` (default true) is on; otherwise the thread is parked and no audio client is open.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -241,7 +241,6 @@ static STATUS: Mutex<Option<(String, u32)>> = Mutex::new(None);
 /// A non-zero frame went out and no zero frame followed yet.
 static DIRTY: AtomicBool = AtomicBool::new(false);
 
-#[tauri::command]
 pub fn audio_status() -> Status {
     let s = STATUS.lock().unwrap_or_else(|e| e.into_inner()).clone();
     Status {
@@ -270,13 +269,13 @@ struct Frame {
 
 static T0: OnceLock<Instant> = OnceLock::new();
 
-fn emit(app: &tauri::AppHandle, b: &[f32; B], rms: f32) {
+fn emit(_app: &tauri::AppHandle, b: &[f32; B], rms: f32) {
     let zero = b.iter().all(|v| *v == 0.0);
     DIRTY.store(!zero, Ordering::Relaxed);
     let t = T0.get_or_init(Instant::now).elapsed().as_millis() as u64;
     let mut b = *b;
     b.iter_mut().for_each(|v| *v = (*v * 100.0).round() / 100.0);
-    let _ = bus::emit(&app, Target::Label("pill"), "audio:bands", &Frame { b, rms: (rms * 1000.0).round() / 1000.0, t });
+    let _ = bus::emit("audio:bands", &Frame { b, rms: (rms * 1000.0).round() / 1000.0, t });
 }
 
 fn device_id(dev: &IMMDevice) -> String {

@@ -55,7 +55,6 @@ fn is_desktop(hwnd: HWND) -> bool {
 }
 
 /// Page query before it slides the pill away (setting `autoHideKeepDesktop`).
-#[tauri::command]
 pub fn pill_desktop_fg() -> bool {
     let fg = unsafe { GetForegroundWindow() };
     !fg.0.is_null() && is_desktop(fg)
@@ -100,9 +99,8 @@ fn in_hide_list(fg: HWND) -> bool {
 pub fn init(app: &tauri::App) {
     let app = app.handle().clone();
     std::thread::spawn(move || {
-        let (mut hidden, mut clear, mut polls) = (false, 0u32, 0u32);
+        let (mut hidden, mut clear) = (false, 0u32);
         loop {
-            polls = polls.wrapping_add(1);
             let fg = unsafe { GetForegroundWindow() };
             // `hideInFullscreen` (default on): off = fullscreen windows / D3D fullscreen never hide the pill, only the hide list does
             let fs = crate::settings::get_bool("hideInFullscreen", true);
@@ -126,12 +124,6 @@ pub fn init(app: &tauri::App) {
             }
             if !hidden {
                 relayout(&app);
-                // every 10 s: undo anything that switched the island's DWM transparency off behind our back (see command::keep_transparent)
-                if polls % 20 == 0 {
-                    if let Some(w) = tauri::Manager::get_webview_window(&app, "pill") {
-                        crate::command::keep_transparent(&w);
-                    }
-                }
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
         }

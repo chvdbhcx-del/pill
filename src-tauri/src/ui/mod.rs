@@ -1,19 +1,16 @@
-// Native-UI migration scaffolding: windows built in code, lazy windows, in-process event bus, feature flags.
+// The native UI: host (windows, GPU, input), views (island, tabs, bar, settings, capture), the command facade and the in-process event bus.
 pub mod api;
-#[allow(dead_code)] // the native command bar (flag ui.native.bar); command.rs reaches it through the gates
+#[allow(dead_code)] // test-only accessors
 pub mod bar_view;
 pub mod bus;
 pub mod capture_view;
-pub mod flags;
-#[allow(dead_code)] // the native window host (Wave 2); the views that run on it arrive in later phases
+#[allow(dead_code)]
 pub mod host;
-pub mod lazy;
 pub mod native;
-#[allow(dead_code)] // the native views (later phases) implement it; nothing in the app does yet
+#[allow(dead_code)]
 pub mod view;
-pub mod windows;
 pub mod pets;
 pub mod tabs;
 pub mod settings_view;
-#[allow(dead_code)] // the native island (flag ui.native.pill); nothing builds it while the flag is off
+#[allow(dead_code)]
 pub mod island;

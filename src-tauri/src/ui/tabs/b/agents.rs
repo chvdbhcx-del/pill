@@ -395,7 +395,7 @@ mod tests {
     use crate::ui::tabs::b::kit::snap;
     use crate::ui::view::Services;
 
-    const FIXTURE: &str = include_str!("../../../../../tools/dev/fixtures/tabs-b/agents.json");
+    const FIXTURE: &str = include_str!("../../../../tests/fixtures/tabs-b/agents.json");
 
     fn fixture() -> Value {
         serde_json::from_str(FIXTURE).unwrap()

@@ -5,7 +5,7 @@
 // Windows normally gives this API only to apps with package identity: from an unpackaged exe the calls may fail -> status "unsupported", the worker ends.
 // Status for Settings: granted | denied | pending (not asked yet) | unsupported | off. Event to window "pill": `live:notification` {app, title, body, id}.
 // PRIVACY: titles and bodies are only forwarded to our own page (shown as text), never logged, stored or sent anywhere.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -123,7 +123,7 @@ fn nap(gen: u64, ms: u64) -> bool {
     crate::wake::nap(&GEN, gen, ms)
 }
 
-fn run(app: AppHandle, gen: u64) {
+fn run(_app: AppHandle, gen: u64) {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
     }
@@ -140,7 +140,7 @@ fn run(app: AppHandle, gen: u64) {
                 let Ok(l) = UserNotificationListener::Current() else { return };
                 if let Some(v) = poll(&l, &mut seen, &mut primed) {
                     for p in v {
-                        let _ = bus::emit(&app, Target::Label("pill"), "live:notification", p);
+                        let _ = bus::emit("live:notification", p);
                     }
                 }
                 if !nap(gen, POLL_MS) {
@@ -158,14 +158,12 @@ fn run(app: AppHandle, gen: u64) {
 }
 
 // ---------------------------------------------------------------- commands
-#[tauri::command(async)]
 pub fn notif_status() -> Value {
     let st = *STATUS.lock().unwrap_or_else(|e| e.into_inner());
     json!({ "status": st })
 }
 
 /// The Settings button: asks Windows (system prompt if it is still undecided), then restarts the worker so it picks the result up.
-#[tauri::command(async)]
 pub fn notif_request(app: AppHandle) -> Value {
     let st = access(true);
     if crate::settings::get_bool("live.notifications", true) {

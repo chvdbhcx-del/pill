@@ -1,8 +1,8 @@
-// The command table of the facade (ui/api.rs): one arm per `#[tauri::command]` registered in main.rs `generate_handler!`, in that order.
-// An arm reads the arguments with the names of the Rust parameters (`a.req("copy_only")` looks up the JS key `copyOnly`), calls the SAME function
-// the Tauri wrapper is (the commands are plain `pub fn`s; `AppHandle` is the one injected parameter and comes from the stored handle) and turns
-// the result into JSON, which is what the JS `await invoke(..)` gets. `async fn` commands are driven by `blk` (callers are worker threads).
-// Keep every arm on its own line as `"name" => ..`: ui/api.rs's coverage test reads this file and checks it against the contract and main.rs.
+// The command table of the facade (ui/api.rs): one arm per backend command, in the order of docs/native-ui-contract.md.
+// An arm reads the arguments with the names of the Rust parameters (`a.req("copy_only")` looks up the JS key `copyOnly`), calls the backend
+// function (commands are plain `pub fn`s; `AppHandle` is the one injected parameter and comes from the stored handle) and turns
+// the result into the JSON the caller gets. `async fn` commands are driven by `blk` (callers are worker threads).
+// Keep every arm on its own line as `"name" => ..`: ui/api.rs's coverage test reads this file and checks it against the contract.
 // No command takes the calling window (only `AppHandle`), so `caller` is not consulted by any arm today; see docs/native-api.md.
 use super::args::Args;
 use crate::*;
@@ -83,7 +83,6 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         "cmd_query" => ok(blk(command::cmd_query(a.req("text")?))),
         "cmd_run" => ok(command::cmd_run(app.clone(), a.req("id")?, a.req("mode")?)),
         "cmd_icon" => ok(blk(command::cmd_icon(a.req("id")?))),
-        "cmd_ready" => ok(command::cmd_ready(app.clone())),
         "settings_get" => ok(settings::settings_get()),
         "settings_set" => ok(settings::settings_set(app.clone(), a.req("patch")?)),
         "settings_export" => ok(settings_backup::settings_export()),

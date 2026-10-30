@@ -3,7 +3,7 @@
 // Storage: launcher_groups / launcher_links (migration V1). One implicit group (the lowest id) holds the Home row;
 // `sort` is the position. Targets are canonical paths, opened with ShellExecute (no shell string); icons come from
 // the shelf lane's IShellItemImageFactory pipeline (shelf::icon_for).
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde::Serialize;
 use std::path::Path;
 use tauri::{AppHandle};
@@ -92,19 +92,17 @@ fn links() -> Vec<Link> {
         .collect()
 }
 
-fn changed(app: &AppHandle) -> Vec<Link> {
+fn changed(_app: &AppHandle) -> Vec<Link> {
     let v = links();
-    let _ = bus::emit(&app, Target::Label("pill"), "launcher:changed", serde_json::json!({ "count": v.len(), "items": &v }));
+    let _ = bus::emit("launcher:changed", serde_json::json!({ "count": v.len(), "items": &v }));
     v
 }
 
-#[tauri::command(async)]
 pub fn launcher_list() -> Vec<Link> {
     links()
 }
 
 /// Adds existing files / folders / shortcuts (duplicates and non-existent paths are skipped). Returns how many were added.
-#[tauri::command(async)]
 pub fn launcher_add(app: AppHandle, paths: Vec<String>) -> usize {
     if !crate::settings::get_bool("module.launcher", true) {
         return 0; // Settings > Modules: the launcher is off
@@ -158,7 +156,6 @@ pub(crate) fn add_store(app: &AppHandle, target: &str, title: &str) -> usize {
     added
 }
 
-#[tauri::command(async)]
 pub fn launcher_remove(app: AppHandle, id: i64) {
     crate::store::with(|c| c.execute("delete from launcher_links where id = ?1", [id]));
     changed(&app);
@@ -166,7 +163,6 @@ pub fn launcher_remove(app: AppHandle, id: i64) {
 
 /// Starts the target through ShellExecute("open") with its canonical path as the file argument (never a shell string);
 /// the working directory is the target's folder, so programs find their own files.
-#[tauri::command(async)]
 pub fn launcher_open(id: i64) -> bool {
     let Some(t) = crate::store::with(|c| c.query_row("select target from launcher_links where id = ?1", [id], |r| r.get::<_, String>(0))) else { return false };
     let p = Path::new(&t);
@@ -183,7 +179,6 @@ pub fn launcher_open(id: i64) -> bool {
 }
 
 /// Moves one link to `new_index` (0-based) and renumbers `sort`.
-#[tauri::command(async)]
 pub fn launcher_move(app: AppHandle, id: i64, new_index: usize) {
     let ids = reorder(rows().into_iter().map(|r| r.0).collect(), id, new_index);
     crate::store::with(|c| {

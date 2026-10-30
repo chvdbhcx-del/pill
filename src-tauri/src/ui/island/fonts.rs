@@ -7,15 +7,15 @@ fn family() -> &'static str {
 }
 
 fn gdi() -> &'static [u8] {
-    include_bytes!("../../../../src/fonts/MedeoSans-Regular.ttf")
+    include_bytes!("../../../assets/fonts/MedeoSans-Regular.ttf")
 }
 
 pub static FONTS: FontSet = FontSet::new(
     &[
-        include_bytes!("../../../../src/fonts/MedeoSans-Regular.ttf"),
-        include_bytes!("../../../../src/fonts/MedeoSans-Medium.ttf"),
-        include_bytes!("../../../../src/fonts/MedeoSans-SemiBold.ttf"),
-        include_bytes!("../../../../src/fonts/MedeoSans-Bold.ttf"),
+        include_bytes!("../../../assets/fonts/MedeoSans-Regular.ttf"),
+        include_bytes!("../../../assets/fonts/MedeoSans-Medium.ttf"),
+        include_bytes!("../../../assets/fonts/MedeoSans-SemiBold.ttf"),
+        include_bytes!("../../../assets/fonts/MedeoSans-Bold.ttf"),
     ],
     family,
     gdi,

@@ -9,7 +9,7 @@
 // * Weather: MET Norway Locationforecast 2.0 compact + Nominatim city search; sunrise/sunset, feels-like and the
 //   daily/hourly digest are computed locally (pure functions, `cargo test net`).
 // * secrets: DPAPI (CryptProtectData, current user) for the AI key; the key is only ever sent to the configured endpoint.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde_json::{json, Value};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
@@ -87,7 +87,6 @@ pub fn allowed_hosts(f: Feature) -> Vec<String> {
 }
 
 /// Which network features are on and which hosts they may call, plus how many calls were made since start.
-#[tauri::command]
 pub fn net_features_status() -> Value {
     let mut active: Vec<String> = Vec::new();
     let mut feats: Vec<Value> = [Feature::Weather, Feature::Ai, Feature::Voice, Feature::Calendar]
@@ -976,7 +975,6 @@ fn forecast_body(lat: f64, lon: f64, force: bool) -> Result<(String, i64, Option
 
 /// Weather for the stored city. Always returns an object with `status`: off | nocity | ok | error.
 /// `tz` = the PC's UTC offset in minutes (JS: -new Date().getTimezoneOffset()).
-#[tauri::command(async)]
 pub fn weather_get(force: Option<bool>, tz: Option<i64>) -> Value {
     if !enabled(Feature::Weather) {
         return json!({ "status": "off" });
@@ -1007,7 +1005,6 @@ pub fn weather_get(force: Option<bool>, tz: Option<i64>) -> Value {
 }
 
 /// City search through Nominatim (1 request per second, only on an explicit search, never as-you-type).
-#[tauri::command(async)]
 pub fn weather_search_city(query: String, lang: Option<String>) -> Value {
     if !enabled(Feature::Weather) {
         return json!({ "status": "off" });
@@ -1061,7 +1058,6 @@ fn parse_nominatim(body: &str) -> Option<Vec<Value>> {
 }
 
 /// Remember the chosen city and its coordinates (settings.json keys weather.city / weather.lat / weather.lon).
-#[tauri::command]
 pub fn weather_set_city(name: String, lat: f64, lon: f64) -> bool {
     let name: String = name.chars().filter(|c| !c.is_control()).take(80).collect();
     if name.trim().is_empty() || !(lat.abs() <= 90.0 && lon.abs() <= 180.0) {
@@ -1146,8 +1142,8 @@ fn imperial() -> bool {
 }
 
 fn emit_current(v: Value) {
-    if let Some(a) = APP.get() {
-        let _ = bus::emit(&a, Target::Label("pill"), "weather:current", v);
+    if let Some(_a) = APP.get() {
+        let _ = bus::emit("weather:current", v);
     }
 }
 
@@ -1170,7 +1166,6 @@ fn publish(v: &Value, city: &str, fetched: i64, ok: bool) {
 }
 
 /// The cached current conditions for the capsule; null when off, no city, or nothing loaded yet. Never touches the network.
-#[tauri::command]
 pub fn weather_current() -> Value {
     if !enabled(Feature::Weather) {
         return Value::Null;

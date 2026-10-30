@@ -14,7 +14,7 @@
 // Commands: aisetup_status aisetup_whisper_install aisetup_whisper_set aisetup_whisper_remove aisetup_ollama_download
 //   aisetup_ollama_run_installer aisetup_ollama_pull aisetup_ai_use aisetup_cancel.
 // Event: aisetup:progress {id: whisper|ollama-setup|ollama-pull, item, done, total, phase: download|verify|unpack|start|pull|done|error|cancelled, message}.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use crate::net::{self, Abort, Feature, Opts};
 use crate::settings;
 use serde_json::{json, Map, Value};
@@ -271,8 +271,8 @@ fn job_lock() -> std::sync::MutexGuard<'static, Option<(String, Abort)>> {
     JOB.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn emit(app: &AppHandle, id: &str, item: &str, done: u64, total: u64, phase: &str, message: &str) {
-    let _ = bus::emit(&app, Target::All, "aisetup:progress", json!({ "id": id, "item": item, "done": done, "total": total, "phase": phase, "message": message }));
+fn emit(_app: &AppHandle, id: &str, item: &str, done: u64, total: u64, phase: &str, message: &str) {
+    let _ = bus::emit("aisetup:progress", json!({ "id": id, "item": item, "done": done, "total": total, "phase": phase, "message": message }));
 }
 
 /// Runs `f` on its own thread as the one active job; the outcome arrives as a progress event (done / error / cancelled).
@@ -304,7 +304,6 @@ pub(crate) fn spawn_job(app: AppHandle, id: &'static str, f: impl FnOnce(&AppHan
     json!({ "ok": true })
 }
 
-#[tauri::command]
 pub fn aisetup_cancel() -> Value {
     if let Some((_, a)) = job_lock().as_ref() {
         a.abort();
@@ -535,7 +534,6 @@ pub(crate) fn err(msg: &str) -> Value {
 }
 
 /// Download (what is missing of) engine + model, unpack, start the server, switch the voice settings. Progress: id "whisper".
-#[tauri::command]
 pub fn aisetup_whisper_install(app: AppHandle, model: String) -> Value {
     let Some(m) = WHISPER_MODELS.iter().find(|m| m.id == model) else { return err("unknown model") };
     spawn_job(app, "whisper", move |app, abort| {
@@ -557,7 +555,6 @@ pub fn aisetup_whisper_install(app: AppHandle, model: String) -> Value {
 }
 
 /// Switch the local speech server on (optionally with another installed model) or off.
-#[tauri::command(async)]
 pub fn aisetup_whisper_set(app: AppHandle, on: bool, model: Option<String>) -> Value {
     if !on {
         disable_whisper(&app);
@@ -580,7 +577,6 @@ pub fn aisetup_whisper_set(app: AppHandle, on: bool, model: Option<String>) -> V
 }
 
 /// Stop the server and delete engine + models (%APPDATA%\pill\ai\whisper).
-#[tauri::command(async)]
 pub fn aisetup_whisper_remove(app: AppHandle) -> Value {
     if job_lock().is_some() {
         return err("A download is running.");
@@ -628,7 +624,6 @@ fn ollama_exe_present() -> bool {
 }
 
 /// Everything the wizard page draws: catalog with sizes and sources, what is installed, what is running locally.
-#[tauri::command(async)]
 pub fn aisetup_status() -> Value {
     let handles: Vec<_> = SERVERS
         .iter()
@@ -670,7 +665,6 @@ pub fn aisetup_status() -> Value {
 }
 
 /// Download the official OllamaSetup.exe (ollama.com -> GitHub release CDN). It is NOT started here. Progress: id "ollama-setup".
-#[tauri::command]
 pub fn aisetup_ollama_download(app: AppHandle) -> Value {
     spawn_job(app, "ollama-setup", |app, abort| {
         let dest = ollama_setup_path();
@@ -686,7 +680,6 @@ pub fn aisetup_ollama_download(app: AppHandle) -> Value {
 }
 
 /// Second explicit click: start the downloaded installer through the shell (its own window, its own UAC prompt if it wants one).
-#[tauri::command]
 pub fn aisetup_ollama_run_installer() -> Value {
     run_installer(&ollama_setup_path())
 }
@@ -702,7 +695,6 @@ pub(crate) fn run_installer(p: &Path) -> Value {
 }
 
 /// Ask the local Ollama to download `model` (a name from the catalog). Streamed progress, id "ollama-pull".
-#[tauri::command]
 pub fn aisetup_ollama_pull(app: AppHandle, model: String) -> Value {
     let Some(&(name, size)) = OLLAMA_MODELS.iter().find(|(n, _)| *n == model) else { return err("unknown model") };
     spawn_job(app, "ollama-pull", move |app, abort| {
@@ -752,7 +744,6 @@ pub fn aisetup_ollama_pull(app: AppHandle, model: String) -> Value {
 }
 
 /// Point the chat at a detected local server: `server` is an id from SERVERS, `model` one of its models. Turns the AI feature on.
-#[tauri::command]
 pub fn aisetup_ai_use(app: AppHandle, server: String, model: String) -> Value {
     let Some(&(_, _, url, preset)) = SERVERS.iter().find(|s| s.0 == server) else { return err("unknown server") };
     let model = model.trim();

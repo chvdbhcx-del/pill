@@ -1,4 +1,4 @@
-// Argument extraction for the native-UI command facade (ui/api.rs): the same rules `tauri::command` applies to the JS `invoke(cmd, {camelCase})` object.
+// Argument extraction for the native-UI command facade (ui/api.rs): the camelCase JSON argument object of a command.
 //   - the JS key is the camelCase of the Rust parameter (`copy_only` <- `copyOnly`); the snake_case spelling is accepted too, for native callers
 //   - a missing or `null` key is `None` for an `Option<T>` parameter and an error for any other type
 //   - extra keys are ignored; `Value::Null` stands for "no arguments" (`invoke('cmd_toggle')`)

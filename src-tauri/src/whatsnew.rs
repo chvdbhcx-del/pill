@@ -30,7 +30,6 @@ fn should_show(stored: &str, running: &str, enabled: bool) -> bool {
 
 /// Called once by the pill page a few seconds after it loaded. Stores the running version and returns
 /// { version, notes } when an update happened since the last run, else null.
-#[tauri::command]
 pub fn whatsnew_check() -> Value {
     let running = env!("CARGO_PKG_VERSION");
     let stored = crate::settings::get_str("lastSeenVersion", "");

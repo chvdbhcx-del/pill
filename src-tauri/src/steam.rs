@@ -4,7 +4,7 @@
 // steamapps\\appmanifest_*.acf (StateFlags, BytesDownloaded, BytesToDownload). No network, no writes, nothing is sent anywhere.
 // Runs only while live.steam is on (no switch = no thread); polls every 3 s while Steam runs, every 10 s to notice Steam starting.
 // Event to window "pill": `live:steam` {state: downloading|paused|installing|idle|done, game, appid, percent, speed (B/s), etaSec}.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -452,7 +452,7 @@ fn sync(app: &AppHandle) {
         let app = app.clone();
         std::thread::spawn(move || run(app, g));
     } else {
-        let _ = bus::emit(&app, Target::Label("pill"), "live:steam", json!({ "state": "idle" }));
+        let _ = bus::emit("live:steam", json!({ "state": "idle" }));
     }
 }
 
@@ -473,7 +473,7 @@ fn nap(gen: u64, ms: u64) -> bool {
     crate::wake::nap(&GEN, gen, ms)
 }
 
-fn run(app: AppHandle, gen: u64) {
+fn run(_app: AppHandle, gen: u64) {
     let mut seen: HashMap<u64, Seen> = HashMap::new();
     let (mut last, mut shown, mut speed, mut prev_at) = (Value::Null, false, 0.0f64, Instant::now());
     let mut primary = 0u64;
@@ -490,7 +490,7 @@ fn run(app: AppHandle, gen: u64) {
             if shown {
                 shown = false;
                 last = Value::Null;
-                let _ = bus::emit(&app, Target::Label("pill"), "live:steam", json!({ "state": "idle" }));
+                let _ = bus::emit("live:steam", json!({ "state": "idle" }));
             }
             seen.clear();
             acf.clear();
@@ -545,7 +545,7 @@ fn run(app: AppHandle, gen: u64) {
         }
         seen = now.iter().map(|m| (m.appid, Seen { active: matches!(classify(m, live_of(m.appid)), St::Downloading | St::Installing), dl: m.downloaded, live: live_of(m.appid) })).collect();
         if let Some(done) = ev {
-            let _ = bus::emit(&app, Target::Label("pill"), "live:steam", done);
+            let _ = bus::emit("live:steam", done);
         }
         let p = match cur {
             Some((m, st)) => {
@@ -572,7 +572,7 @@ fn run(app: AppHandle, gen: u64) {
         if (p != last || sent.elapsed() > std::time::Duration::from_secs(10)) && (cur.is_some() || shown) {
             shown = cur.is_some();
             sent = Instant::now();
-            let _ = bus::emit(&app, Target::Label("pill"), "live:steam", p.clone());
+            let _ = bus::emit("live:steam", p.clone());
         }
         last = p;
         if !nap(gen, 3_000) {
@@ -582,7 +582,6 @@ fn run(app: AppHandle, gen: u64) {
 }
 
 // ---------------------------------------------------------------- command
-#[tauri::command]
 pub fn steam_status() -> Value {
     let dir = steam_dir();
     json!({ "installed": dir.is_some(), "running": dir.is_some() && steam_running() })

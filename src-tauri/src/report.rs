@@ -121,7 +121,6 @@ fn build_report() -> Result<PathBuf, String> {
 }
 
 /// -> { ok, path?, log?, error? }. Creates the folder in Downloads and opens it in Explorer.
-#[tauri::command]
 pub fn report_problem() -> Value {
     match build_report() {
         Ok(dir) => {

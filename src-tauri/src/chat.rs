@@ -2,7 +2,7 @@
 // streaming orchestration against the user's OpenAI-compatible endpoint. Owner: net/chat agent.
 // All sockets are in net.rs; this file never touches the network itself. History is local; the key is DPAPI-wrapped.
 // Events to the page: chat:delta {thread, run, text}, chat:done {thread, run, ok, stopped, error, id}.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use crate::net;
 use rusqlite::params;
 use serde_json::{json, Value};
@@ -23,8 +23,8 @@ pub fn init(app: &tauri::App) {
 }
 
 fn emit(name: &str, payload: Value) {
-    if let Some(a) = APP.get() {
-        let _ = bus::emit(&a, Target::Label("pill"), name, payload);
+    if let Some(_a) = APP.get() {
+        let _ = bus::emit(name, payload);
     }
 }
 
@@ -246,7 +246,6 @@ fn run_chat(thread: i64, run: u64, cfg: net::AiCfg, messages: Vec<Value>, abort:
 // ------------------------------------------------------------------------------------------------ commands
 
 /// Send a user message and start streaming the answer. thread = null/unknown creates a new chat.
-#[tauri::command(async)]
 pub fn chat_send(thread: Option<i64>, text: String, model: Option<String>) -> Value {
     let text: String = text.trim().chars().take(MAX_TEXT).collect();
     if text.is_empty() {
@@ -276,7 +275,6 @@ pub fn chat_send(thread: Option<i64>, text: String, model: Option<String>) -> Va
 }
 
 /// Re-ask the last user message: drops the assistant answer(s) after it and streams a new one.
-#[tauri::command(async)]
 pub fn chat_retry(thread: i64, model: Option<String>) -> Value {
     let cfg = match net::ai_cfg(model.as_deref(), true) {
         Ok(c) => c,
@@ -298,7 +296,6 @@ pub fn chat_retry(thread: i64, model: Option<String>) -> Value {
 }
 
 /// Stop the running answer of a thread (or of every thread). The partial text is kept; chat:done follows with stopped = true.
-#[tauri::command]
 pub fn chat_stop(thread: Option<i64>) -> bool {
     let list: Vec<net::Abort> = runs(|r| r.iter().filter(|(t, _)| thread.map_or(true, |x| x == **t)).map(|(_, (_, a))| a.clone()).collect());
     for a in &list {
@@ -307,7 +304,6 @@ pub fn chat_stop(thread: Option<i64>) -> bool {
     !list.is_empty()
 }
 
-#[tauri::command]
 pub fn chat_threads() -> Value {
     crate::store::with(|c| {
         let mut st = c.prepare(
@@ -323,7 +319,6 @@ pub fn chat_threads() -> Value {
     .unwrap_or_else(|| json!([]))
 }
 
-#[tauri::command]
 pub fn chat_messages(thread: i64) -> Value {
     crate::store::with(|c| {
         let mut st = c.prepare("select id, role, content, created_at from chat_messages where thread_id = ?1 order by id limit 5000")?;
@@ -334,7 +329,6 @@ pub fn chat_messages(thread: i64) -> Value {
     .unwrap_or_else(|| json!([]))
 }
 
-#[tauri::command]
 pub fn chat_new(title: Option<String>) -> Value {
     match new_thread(title.as_deref().unwrap_or("")) {
         Some(id) => json!({ "id": id }),
@@ -342,7 +336,6 @@ pub fn chat_new(title: Option<String>) -> Value {
     }
 }
 
-#[tauri::command]
 pub fn chat_delete(thread: i64) -> bool {
     chat_stop(Some(thread));
     crate::store::with(|c| {
@@ -353,7 +346,6 @@ pub fn chat_delete(thread: i64) -> bool {
 }
 
 /// Open a link from an answer in the default browser (never inside the webview). http(s) only.
-#[tauri::command]
 pub fn chat_open_link(url: String) -> bool {
     use windows::core::{HSTRING, PCWSTR};
     use windows::Win32::Foundation::HWND;
@@ -368,7 +360,6 @@ pub fn chat_open_link(url: String) -> bool {
 }
 
 /// One-token test call used by the AI settings block. {ok, ms, model} or {ok:false, error}.
-#[tauri::command(async)]
 pub fn ai_test() -> Value {
     let cfg = match net::ai_cfg(None, true) {
         Ok(c) => c,
@@ -384,7 +375,6 @@ pub fn ai_test() -> Value {
 }
 
 /// Model ids offered by the endpoint (OpenAI `data[].id` or Ollama `models[].name`), to fill the picker.
-#[tauri::command(async)]
 pub fn ai_models() -> Value {
     let cfg = match net::ai_cfg(None, false) {
         Ok(c) => c,
@@ -409,7 +399,6 @@ pub fn ai_models() -> Value {
 
 /// Looks for local OpenAI-compatible servers on their usual loopback ports (in parallel, short timeouts).
 /// [{id, name, url, up, models}] for Ollama, FreeLLMAPI, LM Studio, llama.cpp / llamafile.
-#[tauri::command(async)]
 pub fn ai_probe() -> Value {
     const CANDIDATES: [(&str, &str, &str); 4] = [
         ("ollama", "Ollama", "http://127.0.0.1:11434/v1"),
@@ -443,7 +432,6 @@ pub fn ai_probe() -> Value {
 }
 
 /// Store (encrypted with DPAPI) or remove (empty string) the API key. The key never travels back to the page.
-#[tauri::command]
 pub fn ai_set_key(key: String) -> Value {
     let k = key.trim();
     if k.is_empty() {
@@ -463,7 +451,6 @@ pub fn ai_set_key(key: String) -> Value {
 }
 
 /// Non-secret AI configuration for the settings block.
-#[tauri::command]
 pub fn ai_config() -> Value {
     let base = crate::settings::get_str("ai.baseUrl", "");
     let check = if base.trim().is_empty() { Ok(String::new()) } else { net::check_ai_base(&base) };

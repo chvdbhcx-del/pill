@@ -5,7 +5,7 @@
 //        (3) the commands remind_add / remind_list / remind_done / remind_delete / remind_snooze and timer_start / timer_cancel / timer_state.
 // Events to the page (window "pill"): remind:due {id,text,kind,late,repeat,due_at}, remind:changed, timer:tick {id,remaining_ms,total_s}, timer:done {id}.
 // Timer = a reminder row of kind 'timer' (`total_s` = length, `done` set when it ends).
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use crate::store;
 use serde::Serialize;
 use std::sync::{Condvar, Mutex, OnceLock};
@@ -375,7 +375,7 @@ fn advance(rule: &str, due: i64, now: i64) -> Option<i64> {
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static WAKE: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
 fn wake() { if let Ok(mut g) = WAKE.0.lock() { *g = true; WAKE.1.notify_all(); } }
-fn emit(name: &str, payload: serde_json::Value) { if let Some(app) = APP.get() { let _ = bus::emit(&app, Target::Label("pill"), name, payload); } }
+fn emit(name: &str, payload: serde_json::Value) { let _ = bus::emit(name, payload); }
 
 pub fn init(app: &tauri::App) {
     let _ = APP.set(app.handle().clone());
@@ -450,7 +450,6 @@ fn play_tone(tone: &str) {
 }
 
 /// "Проверить" in Settings > Sound: plays the given signal (or the chosen one) whatever the on/off switch says.
-#[tauri::command]
 pub fn sound_play(tone: Option<String>) {
     play_tone(&tone.unwrap_or_else(|| crate::settings::get_str("sound.reminderTone", "chime")));
 }
@@ -499,7 +498,6 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<Reminder> {
 fn changed() { wake(); emit("remind:changed", serde_json::Value::Null); }
 
 /// Parse natural language and store it. Err: "no_time" | "past" | "store".
-#[tauri::command]
 pub fn remind_add(text: String) -> Result<Reminder, String> {
     if text.chars().count() > 500 { return Err("no_time".into()); }
     let now = store::now_ms();
@@ -514,7 +512,6 @@ pub fn remind_add(text: String) -> Result<Reminder, String> {
 }
 
 /// Open reminders (not done), soonest first; `fired` ones are overdue and still waiting for Done / Snooze.
-#[tauri::command]
 pub fn remind_list() -> Vec<Reminder> {
     store::with(|c| {
         let mut st = c.prepare(&format!("select {COLS} from reminders where kind = 'reminder' and done = 0 order by due_at"))?;
@@ -524,14 +521,11 @@ pub fn remind_list() -> Vec<Reminder> {
 }
 
 /// Finish a reminder (a repeating one stops here: its rule ends).
-#[tauri::command]
 pub fn remind_done(id: i64) { store::with(|c| c.execute("update reminders set done = 1 where id = ?1", [id])); changed(); }
 
-#[tauri::command]
 pub fn remind_delete(id: i64) { store::with(|c| c.execute("delete from reminders where id = ?1", [id])); changed(); }
 
 /// Fire again in `minutes`. A repeating reminder keeps its rule; the snooze is a one-shot copy.
-#[tauri::command]
 pub fn remind_snooze(id: i64, minutes: i64) {
     let now = store::now_ms();
     let due = now + minutes.clamp(1, 7 * 24 * 60) * MIN;
@@ -559,11 +553,9 @@ fn timer_state_inner(now: i64) -> Option<TimerState> {
         })
     })
 }
-#[tauri::command]
 pub fn timer_state() -> TimerState { timer_state_inner(store::now_ms()).unwrap_or(TimerState { active: false, id: 0, due_at: 0, total_s: 0, remaining_ms: 0 }) }
 
 /// Start (or restart) the one timer. Seconds are clamped to 1 s .. 99 h.
-#[tauri::command]
 pub fn timer_start(seconds: i64) -> TimerState {
     let s = seconds.clamp(1, 99 * 3600);
     let now = store::now_ms();
@@ -575,7 +567,6 @@ pub fn timer_start(seconds: i64) -> TimerState {
     timer_state()
 }
 
-#[tauri::command]
 pub fn timer_cancel() -> TimerState {
     store::with(|c| c.execute("update reminders set done = 1 where kind = 'timer' and done = 0", []));
     changed();

@@ -338,8 +338,7 @@ impl Waker {
 // Backend access: Api, bus, clipboard, spawn
 // ---------------------------------------------------------------------------------------------------------------------------------------
 
-/// The backend as a view sees it: a command by name with JSON arguments, answered with JSON or an error text (the `Result` convention of
-/// `#[tauri::command]`). The real implementation is the `ui::api` facade (written separately, wired with `host::set_api`); tests use
+/// The backend as a view sees it: a command by name with JSON arguments, answered with JSON or an error text. The real implementation is the `ui::api` facade (written separately, wired with `host::set_api`); tests use
 /// [`RecordingApi`], a headless run without a backend uses [`NullApi`].
 pub trait Api: Send + Sync {
     fn call(&self, caller: &str, name: &str, args: Value) -> Result<Value, String>;

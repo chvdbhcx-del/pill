@@ -22,7 +22,7 @@ mod panel;
 mod tests;
 
 #[allow(unused_imports)] // register: wired by main.rs of the island agent; native_active: gates
-pub use native::{bar_hide, bar_is_native, bar_is_visible, bar_toggle, native_active, register};
+pub use native::{bar_hide, bar_is_visible, bar_toggle, register};
 
 use self::anim::AnimPlayer;
 use self::icons::{IconSet, ShellIcons};
@@ -350,11 +350,9 @@ impl BarView {
         let mut bar = Bar::new(os_locale(cx));
         bar.on_event(BarEvent::BodyWidth(L::WINDOW_W), 0.0);
         let vm = bar.view();
-        // the subscriptions first, THEN cmd_ready: the host shows the bar only once the view is listening (bar-ready.js did the same dance)
         for n in ["voice:state", "uninstall:state", "uninstall:item", "uninstall:focus", "ask:chunk"] {
             cx.subscribe(n);
         }
-        let _ = cx.call_async("cmd_ready", Value::Null);
         BarView {
             bar,
             vm,

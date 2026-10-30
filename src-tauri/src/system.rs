@@ -1,7 +1,7 @@
 // System controls for the Controls tab (S10 / F08): Ethernet, Wi-Fi, Bluetooth, dark theme, volume, mic mute, power. Owner: system agent (lane L5).
 // Reads need no elevation. Adapter admin state needs it: done by launching `netsh` with the "runas" verb, so Windows shows UAC (the app never elevates itself).
 // Power actions are two-step: the first call only arms a 3 s window in Rust, the second call inside it runs the action (see `decide`).
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::os::windows::process::CommandExt;
@@ -211,12 +211,11 @@ fn build_state() -> SysState {
 }
 
 fn emit_state() {
-    if let Some(app) = APP.get() {
-        let _ = bus::emit(&app, Target::Label("pill"), "sys:changed", build_state());
+    if let Some(_app) = APP.get() {
+        let _ = bus::emit("sys:changed", build_state());
     }
 }
 
-#[tauri::command]
 pub async fn sys_state() -> SysState {
     build_state()
 }
@@ -299,7 +298,6 @@ fn set_nic(if_type: u32, on: bool) -> Value {
     }
 }
 
-#[tauri::command]
 pub async fn sys_set(key: String, value: Value) -> Value {
     let b = value.as_bool();
     let r = match (key.as_str(), b) {
@@ -378,7 +376,6 @@ fn shutdown_exe(arg: &str) -> bool {
     std::process::Command::new("shutdown.exe").args(a).creation_flags(NO_WINDOW).spawn().is_ok()
 }
 
-#[tauri::command]
 pub fn sys_power(action: String, confirmed: bool) -> Value {
     if !["lock", "sleep", "restart", "shutdown", "signout"].contains(&action.as_str()) {
         return res("error", "unknown action");

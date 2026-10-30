@@ -8,7 +8,7 @@
 //                                                    1 s poll of the Downloads folder (known folder API) for browser temp files. Only while live.downloads
 //                                                    is on and the pill is visible. total is always null (browsers do not publish it).
 // One supervisor thread (500 ms base tick); when every switch is off it only reads three booleans per tick.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
@@ -113,9 +113,7 @@ fn is_inside(dir: &Path, p: &Path) -> bool {
 // ================= volume =================
 
 #[implement(IAudioEndpointVolumeCallback)]
-struct VolCb {
-    app: AppHandle,
-}
+struct VolCb {}
 
 impl IAudioEndpointVolumeCallback_Impl for VolCb_Impl {
     fn OnNotify(&self, p: *mut AUDIO_VOLUME_NOTIFICATION_DATA) -> windows::core::Result<()> {
@@ -131,7 +129,7 @@ impl IAudioEndpointVolumeCallback_Impl for VolCb_Impl {
             }
             *last = cur;
         }
-        let _ = bus::emit(&self.app, Target::Label("pill"), "live:volume", json!({ "level": cur.0, "muted": cur.1 }));
+        let _ = bus::emit("live:volume", json!({ "level": cur.0, "muted": cur.1 }));
         Ok(())
     }
 }
@@ -161,7 +159,7 @@ fn default_render_id() -> Option<String> {
     }
 }
 
-fn vol_register(app: &AppHandle) -> Option<VolReg> {
+fn vol_register(_app: &AppHandle) -> Option<VolReg> {
     unsafe {
         let en: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
         let dev = en.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
@@ -173,7 +171,7 @@ fn vol_register(app: &AppHandle) -> Option<VolReg> {
         if let (Ok(v), Ok(m)) = (ep.GetMasterVolumeLevelScalar(), ep.GetMute()) {
             *LAST_VOL.lock().unwrap_or_else(|e| e.into_inner()) = (scalar_to_pct(v), m.as_bool());
         }
-        let cb: IAudioEndpointVolumeCallback = VolCb { app: app.clone() }.into();
+        let cb: IAudioEndpointVolumeCallback = VolCb {}.into();
         ep.RegisterControlChangeNotify(&cb).ok()?;
         Some(VolReg { ep, cb, dev_id })
     }
@@ -292,12 +290,12 @@ fn poll_privacy(app: &AppHandle) {
     set_privacy(app, (!mic.is_empty(), !cam.is_empty(), apps));
 }
 
-fn set_privacy(app: &AppHandle, now: (bool, bool, Vec<String>)) {
+fn set_privacy(_app: &AppHandle, now: (bool, bool, Vec<String>)) {
     let mut last = LAST_PRIV.lock().unwrap_or_else(|e| e.into_inner());
     if last.as_ref() == Some(&now) || (last.is_none() && !now.0 && !now.1) {
         return;
     }
-    let _ = bus::emit(&app, Target::Label("pill"), "live:privacy", json!({ "mic": now.0, "cam": now.1, "apps": now.2 }));
+    let _ = bus::emit("live:privacy", json!({ "mic": now.0, "cam": now.1, "apps": now.2 }));
     *last = Some(now);
 }
 
@@ -339,7 +337,7 @@ impl Dl {
         *self = Dl::default();
     }
 
-    fn poll(&mut self, app: &AppHandle) {
+    fn poll(&mut self, _app: &AppHandle) {
         let dir = downloads_dir();
         let Ok(rd) = std::fs::read_dir(&dir) else { return };
         let mut names: HashSet<String> = HashSet::new();
@@ -371,7 +369,7 @@ impl Dl {
             }
             if t.shown && now.duration_since(t.last_change) < STALE {
                 let shown_name = t.final_name.clone().unwrap_or_default();
-                let _ = bus::emit(&app, Target::Label("pill"), "live:download", json!({
+                let _ = bus::emit("live:download", json!({
                     "state": "progress", "id": id, "name": shown_name, "bytes": t.size, "total": Value::Null,
                     "path": dir.join(name).to_string_lossy(),
                 }));
@@ -400,12 +398,12 @@ impl Dl {
                     let c = list.remove(i);
                     let p = dir.join(&c.name);
                     let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(t.size);
-                    let _ = bus::emit(&app, Target::Label("pill"), "live:download", json!({
+                    let _ = bus::emit("live:download", json!({
                         "state": "done", "id": id, "name": c.name, "bytes": bytes, "total": Value::Null, "path": p.to_string_lossy(),
                     }));
                 }
                 None => {
-                    let _ = bus::emit(&app, Target::Label("pill"), "live:download", json!({ "state": "gone", "id": id }));
+                    let _ = bus::emit("live:download", json!({ "state": "gone", "id": id }));
                 }
             }
         }
@@ -470,13 +468,11 @@ pub fn init(app: &tauri::App) {
 // ================= commands =================
 
 /// The page tells whether the pill is visible (pill:show / pill:hide): the mic/camera and Downloads polls pause while it is hidden.
-#[tauri::command]
 pub fn livesys_visible(on: bool) {
     HIDDEN.store(!on, Ordering::Relaxed);
 }
 
 /// Last known privacy state for a page that loaded after the event: {mic, cam, apps}.
-#[tauri::command]
 pub fn livesys_privacy() -> Value {
     let l = LAST_PRIV.lock().unwrap_or_else(|e| e.into_inner());
     match l.as_ref() {
@@ -486,7 +482,6 @@ pub fn livesys_privacy() -> Value {
 }
 
 /// Explorer with the finished download selected. Only a file inside the Downloads folder is accepted.
-#[tauri::command(async)]
 pub fn livesys_reveal(path: String) -> bool {
     use std::os::windows::process::CommandExt;
     let p = PathBuf::from(&path);

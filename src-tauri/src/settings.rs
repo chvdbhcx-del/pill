@@ -2,7 +2,7 @@
 // Owner: pill agent (lane L1). Other modules read their own keys through get_str/get_bool/get_f64.
 // Keys: size (80-200), theme (dark|light|auto), clock24, autoHide, monitor ("primary"|"1".."n"), reduceMotion,
 // showInCapture, hideInApps (list of exe names), hotkey.<action> (live: hotkeys.rs), module.<id>, live.<id>, capture.*.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde_json::{json, Map, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -171,12 +171,10 @@ pub(crate) fn merged() -> Cfg {
     m
 }
 
-#[tauri::command]
 pub fn settings_get() -> Cfg {
     merged()
 }
 
-#[tauri::command]
 pub fn settings_set(app: tauri::AppHandle, patch: Cfg) -> Cfg {
     let (all, res) = apply_patch(&app, patch);
     if let Err(e) = res {
@@ -223,7 +221,7 @@ pub fn apply_patch(app: &tauri::AppHandle, mut patch: Cfg) -> (Cfg, Result<(), S
     crate::pill::on_settings(app, &patch);
     crate::media::on_settings(&patch);
     let all = merged();
-    let _ = bus::emit(&app, Target::All, "settings:changed", &all);
+    let _ = bus::emit("settings:changed", &all);
     (all, res)
 }
 
@@ -272,7 +270,6 @@ fn stored_profiles() -> Cfg {
     }
 }
 
-#[tauri::command]
 pub fn profile_save(app: tauri::AppHandle, name: String) -> Value {
     let Some(name) = profile_name(&name) else { return json!({ "ok": false, "error": "name" }) };
     let mut all = stored_profiles();
@@ -283,7 +280,6 @@ pub fn profile_save(app: tauri::AppHandle, name: String) -> Value {
     json!({ "ok": true })
 }
 
-#[tauri::command]
 pub fn profile_apply(app: tauri::AppHandle, name: String) -> Value {
     let Some(p) = stored_profiles().get(&name).map(profile_patch) else { return json!({ "ok": false, "error": "missing" }) };
     let n = p.len();
@@ -291,7 +287,6 @@ pub fn profile_apply(app: tauri::AppHandle, name: String) -> Value {
     json!({ "ok": true, "applied": n })
 }
 
-#[tauri::command]
 pub fn profile_delete(app: tauri::AppHandle, name: String) -> Value {
     let mut all = stored_profiles();
     all.remove(&name);

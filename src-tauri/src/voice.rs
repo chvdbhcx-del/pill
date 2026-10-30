@@ -9,7 +9,7 @@
 // voice.paste (false), voice.autostop (false), voice.mode (toggle|hold), voice.key.<provider> (DPAPI blob, same mechanism as ai.apiKeyEnc), hotkey.voice.
 // Commands: voice_toggle voice_start voice_stop voice_cancel voice_state voice_test_mic voice_test_service voice_set_key voice_has_key.
 // Events: voice:state {state: idle|recording|transcribing|done|error, startedAt?, text?, code?, message?}, voice:level {rms, level, test?}.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use crate::net::{self, Abort, Feature, Opts};
 use crate::settings;
 use serde_json::{json, Value};
@@ -359,12 +359,12 @@ struct RecOpts {
     test: bool, // levels go to every window and carry test:true
 }
 
-fn emit_level(app: &AppHandle, rms: f32, test: bool) {
+fn emit_level(_app: &AppHandle, rms: f32, test: bool) {
     let p = json!({ "rms": (rms * 10000.0).round() / 10000.0, "level": (level_of(rms) * 100.0).round() / 100.0, "test": test });
     if test {
-        let _ = bus::emit(&app, Target::All, "voice:level", p);
+        let _ = bus::emit("voice:level", p);
     } else {
-        let _ = bus::emit(&app, Target::Label("pill"), "voice:level", p);
+        let _ = bus::emit("voice:level", p);
     }
 }
 
@@ -542,12 +542,12 @@ fn sess() -> std::sync::MutexGuard<'static, Sess> {
     SESS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn emit_state(app: &AppHandle, state: &str, extra: Value) {
+fn emit_state(_app: &AppHandle, state: &str, extra: Value) {
     let mut p = json!({ "state": state });
     if let (Some(o), Value::Object(x)) = (p.as_object_mut(), extra) {
         o.extend(x);
     }
-    let _ = bus::emit(&app, Target::All, "voice:state", p);
+    let _ = bus::emit("voice:state", p);
 }
 
 fn fail(app: &AppHandle, e: VErr) {
@@ -807,31 +807,26 @@ fn res(r: Result<(), VErr>, app: &AppHandle) -> Value {
     }
 }
 
-#[tauri::command]
 pub fn voice_start(app: AppHandle) -> Value {
     let r = start(&app);
     res(r, &app)
 }
 
-#[tauri::command]
 pub fn voice_toggle(app: AppHandle) -> Value {
     toggle(&app);
     voice_state()
 }
 
-#[tauri::command]
 pub fn voice_stop() -> Value {
     stop();
     voice_state()
 }
 
-#[tauri::command]
 pub fn voice_cancel() -> Value {
     cancel();
     voice_state()
 }
 
-#[tauri::command]
 pub fn voice_state() -> Value {
     let s = sess();
     let name = match s.st {
@@ -844,7 +839,6 @@ pub fn voice_state() -> Value {
 }
 
 /// Settings page: record 2 s from the default microphone and report the level. Nothing is uploaded or kept.
-#[tauri::command]
 pub async fn voice_test_mic(app: AppHandle) -> Value {
     {
         let mut s = sess();
@@ -871,7 +865,6 @@ pub async fn voice_test_mic(app: AppHandle) -> Value {
 }
 
 /// Settings page: upload one second of silence and report whether the service accepts the request (ms, status).
-#[tauri::command]
 pub async fn voice_test_service() -> Value {
     let r = tauri::async_runtime::spawn_blocking(|| {
         let cfg = load_cfg()?;
@@ -888,7 +881,6 @@ pub async fn voice_test_service() -> Value {
 }
 
 /// Stores the key of a provider encrypted with DPAPI (net::secrets, same as the AI key). Empty = remove.
-#[tauri::command]
 pub fn voice_set_key(provider: String, key: String) -> Value {
     let p: String = provider.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(24).collect();
     if p.is_empty() {
@@ -908,7 +900,6 @@ pub fn voice_set_key(provider: String, key: String) -> Value {
 }
 
 /// {has, source: "voice" | "ai" | "none"}: "ai" = the AI key of the same host is used.
-#[tauri::command]
 pub fn voice_has_key(provider: Option<String>) -> Value {
     let p = provider.unwrap_or_else(provider_cur);
     let own = !settings::get_str(&format!("voice.key.{p}"), "").trim().is_empty();

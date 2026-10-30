@@ -1,24 +1,13 @@
-//! The host windows of the native overlays and the seam `capture.rs` uses. Everything here is only reached when [`enabled`] is true; with the
-//! flag off `capture.rs` runs its WebView code exactly as before.
+//! The host windows of the native overlays and the seam `capture.rs` uses.
 //!
 //! One `Fullscreen` window per monitor, label `capture-N`, created hidden: the view arms itself (session + frame), then asks the host to
 //! show it, so the first picture is already the frozen frame. Windows are reused for the next capture (`capture:begin` re-arms them)
-//! and closed after the same 90 s idle as the WebView ones. Hiding is the view's job (it lets the copy flash finish); [`hide_all`] is the
+//! and closed after 90 s idle. Hiding is the view's job (it lets the copy flash finish); [`hide_all`] is the
 //! backstop.
 use super::CaptureView;
 use crate::ui::host::{self, IRect, MonitorSel, NativeWindow, WinEvent};
 use crate::ui::view::WindowId;
 use std::sync::{Mutex, MutexGuard};
-
-/// The pure gate: the native overlay needs the setting AND no `--web-ui` override.
-pub fn gate(setting: bool, forced: bool) -> bool {
-    setting && !forced
-}
-
-/// `ui.native.capture` on and the WebView UI not forced.
-pub fn enabled() -> bool {
-    gate(crate::ui::flags::native_capture(), crate::ui::flags::web_ui_forced())
-}
 
 struct Slot {
     label: String,
@@ -117,14 +106,6 @@ pub fn close_all() {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_gate_needs_the_flag_and_no_web_ui_override() {
-        assert!(gate(true, false));
-        assert!(!gate(true, true), "--web-ui wins over the setting");
-        assert!(!gate(false, false), "the default is the WebView overlay");
-        assert!(!gate(false, true));
-    }
 
     #[test]
     fn there_are_no_slots_before_anything_opened() {

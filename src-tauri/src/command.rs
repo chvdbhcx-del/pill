@@ -1,11 +1,9 @@
 // Command bar: configurable hotkey, Start Menu / Store app index, Everything (es.exe) file search,
 // calculator, unit conversion, web search, `>` shell, confirmed system commands. Owner: command agent.
-// Window `bar` is built hidden by ui/windows.rs and created on demand by ui/lazy.rs (destroyed after `ui.lazyBarSecs` hidden, 0 = never);
-// page = bar.html + bar.js + bar.css, bar-ready.js tells Rust (cmd_ready) when the page has registered its event listeners.
-// Events (to window "bar"): bar:shown, bar:hidden. Commands: cmd_toggle, cmd_query, cmd_run, cmd_ready.
+// The bar is a native window (ui/bar_view), created on first use; placement, blur-hide and the keyboard hand-over belong to the host.
+// Commands: cmd_toggle, cmd_query, cmd_run, cmd_icon.
 // Not done (later slice): timer / remind parsing, currency, runtime hotkey rebind (restart needed).
-use crate::ui::bus::{self, Target};
-use crate::ui::lazy;
+use crate::ui::bus;
 use crate::{settings, store};
 use serde::Serialize;
 use serde_json::json;
@@ -16,20 +14,16 @@ use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
-use std::sync::{Condvar, Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
+use tauri::AppHandle;
 
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Globalization::{MultiByteToWideChar, CP_OEMCP, MULTI_BYTE_TO_WIDE_CHAR_FLAGS};
 use windows::Win32::UI::Shell::ShellExecuteW;
-use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, SW_SHOWNORMAL};
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow, SW_SHOWNORMAL};
 
-const LABEL: &str = "bar";
-const WIN_W: f64 = 560.0;
-const WIN_H: f64 = 350.0;
 const LIMIT: usize = 6;
 const NO_WINDOW: u32 = 0x0800_0000;
 const APPS_PREFIX: &str = r"shell:AppsFolder\";
@@ -69,9 +63,6 @@ static APPS: Mutex<Vec<(String, String, String)>> = Mutex::new(Vec::new()); // (
 static APPS_STORE_AT: Mutex<Option<Instant>> = Mutex::new(None);
 static APPS_SCAN_AT: Mutex<Option<Instant>> = Mutex::new(None); // end of the last Start Menu walk
 static INDEXING: AtomicBool = AtomicBool::new(false);
-static LAST_BLUR_HIDE: Mutex<Option<Instant>> = Mutex::new(None);
-/// When the bar was last shown: grab_keyboard moves focus between the window and its WebView, which reports a transient Focused(false).
-static SHOWN_AT: Mutex<Option<Instant>> = Mutex::new(None);
 static PENDING: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 static PREV_FG: AtomicIsize = AtomicIsize::new(0); // window that had focus before the bar opened (paste target)
 static ICONS: Mutex<Option<Lru>> = Mutex::new(None); // path -> shell icon data URL, bounded; the page also keeps its own per-session map
@@ -126,152 +117,28 @@ impl Lru {
     }
 }
 
-// ---- init, hotkey, window ----
+// ---- init, window ----
 
-pub fn init(app: &tauri::App) {
+pub fn init(_app: &tauri::App) {
     index_apps_async();
-    // The bar is created on demand (ui/lazy.rs); with `ui.lazyBarSecs` = 0 it is never torn down, so it is built at start like before.
-    if lazy_bar_secs() == 0 {
-        crate::ui::lazy::get_or_create(app.handle(), LABEL);
-    }
-    // the command-bar hotkey is registered (and re-registered live) by hotkeys.rs
+    // the command-bar hotkey is registered (and re-registered live) by hotkeys.rs; the bar window is created on first use (ui/bar_view/native.rs)
 }
 
-/// Idle seconds before the hidden bar window is destroyed: settings key `ui.lazyBarSecs`, default 0 (never, as before the lazy bar existed;
-/// the web bar is opt-in lazy until it has been checked on screen, the native bar has no WebView to release), otherwise 5 .. 86400.
-pub(crate) fn lazy_bar_secs() -> u64 {
-    lazy_secs_from(settings::get_f64("ui.lazyBarSecs", 0.0))
-}
-
-fn lazy_secs_from(v: f64) -> u64 {
-    if !v.is_finite() {
-        120
-    } else if v < 1.0 {
-        0
-    } else {
-        v.clamp(5.0, 86_400.0) as u64
-    }
-}
-
-/// Window events of a freshly built bar (ui/lazy.rs calls this for every new window).
-pub(crate) fn attach_bar(app: &AppHandle, win: &WebviewWindow) {
-    let (w2, h) = (win.clone(), app.clone());
-    win.on_window_event(move |e| match e {
-        WindowEvent::Focused(false) if w2.is_visible().unwrap_or(false) => {
-            if lk(&SHOWN_AT).is_some_and(|t| t.elapsed() < Duration::from_millis(400)) {
-                return; // our own focus hand-over (grab_keyboard), not the user clicking away
-            }
-            *lk(&LAST_BLUR_HIDE) = Some(Instant::now());
-            hide(&h);
-        }
-        // Alt+F4 / close on the bar only hides it; the idle teardown (ui/lazy.rs) destroys the window, which does not ask
-        WindowEvent::CloseRequested { api, .. } => {
-            api.prevent_close();
-            hide(&h);
-        }
-        _ => {}
-    });
-}
-
-// The page of a new bar window reports (cmd_ready) once its scripts have run and every event listener is registered; showing earlier would
-// lose bar:shown. Forgotten when a window is (re)built.
-static READY: Mutex<bool> = Mutex::new(false);
-static READY_CV: Condvar = Condvar::new();
-static OPENING: AtomicBool = AtomicBool::new(false); // a slow open (window being built / loaded) is in flight: more presses are ignored
-const READY_WAIT: Duration = Duration::from_secs(4);
-
-pub(crate) fn bar_reset() {
-    *lk(&READY) = false;
-}
-
-fn is_ready() -> bool {
-    *lk(&READY)
-}
-
-/// Blocks until the page reported or `max` passed; true when it reported.
-fn wait_ready(max: Duration) -> bool {
-    let g = lk(&READY);
-    let (g, _) = READY_CV.wait_timeout_while(g, max, |r| !*r).unwrap_or_else(|e| e.into_inner());
-    *g
-}
-
-/// bar-ready.js: the page is loaded and listening. A report that comes after the open gave up waiting (bar already on screen) replays bar:shown,
-/// which that page missed.
-#[tauri::command]
-pub fn cmd_ready(app: AppHandle) {
-    *lk(&READY) = true;
-    READY_CV.notify_all();
-    if !native() && bar_visible(&app) {
-        let _ = bus::emit(&app, Target::Label(LABEL), "bar:shown", ());
-    }
-}
-
-/// tao makes a transparent window by switching DWM blur-behind on with an empty region, once, when the window is created (it even has a FIXME
-/// about redoing it). Whatever switches blur-behind off afterwards leaves the window an opaque black slab until it is recreated: a Windhawk mod
-/// such as Translucent Windows restoring every window it touched when it is unloaded, a DWM restart. So the windows re-assert it (it is idempotent).
-pub fn keep_transparent(win: &WebviewWindow) {
-    use windows::Win32::Graphics::Dwm::{DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND};
-    use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject};
-    let Ok(h) = win.hwnd() else { return };
-    unsafe {
-        let region = CreateRectRgn(0, 0, -1, -1);
-        let bb = DWM_BLURBEHIND { dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION, fEnable: true.into(), hRgnBlur: region, fTransitionOnMaximized: false.into() };
-        let _ = DwmEnableBlurBehindWindow(HWND(h.0 as isize as *mut std::ffi::c_void), &bb);
-        let _ = DeleteObject(windows::Win32::Graphics::Gdi::HGDIOBJ(region.0));
-    }
-}
-
-/// The backend side of the bar going away (either window kind): a running query stops, in-app rows leave memory.
+/// The backend side of the bar going away: a running query stops, in-app rows leave memory.
 pub(crate) fn bar_hidden_cleanup() {
     CUR_SEQ.fetch_add(1, Ordering::Relaxed); // a query still running for the closed bar stops early and registers nothing
     *lk(&STORE) = None; // in-app rows (clipboard text, notes) live in memory only while the bar is open
     crate::notes::search_cache_drop(); // so does the note text index
 }
 
-/// The native bar (flag `ui.native.bar`, not forced to the WebView UI) replaces the `bar` WebView window; everything below that touches the window asks first.
-fn native() -> bool {
-    crate::ui::bar_view::bar_is_native()
-}
-
-fn hide(app: &AppHandle) {
+fn hide(_app: &AppHandle) {
     bar_hidden_cleanup();
-    if native() {
-        crate::ui::bar_view::bar_hide(); // the window's own hidden-event runs the cleanup once more: it is idempotent
-        return;
-    }
-    if let Some(win) = app.get_webview_window(LABEL) {
-        let _ = win.hide();
-        let _ = bus::emit(&app, Target::Label(LABEL), "bar:hidden", ());
-        crate::ui::lazy::note_hidden(app, LABEL); // starts the idle count: the window is destroyed after ui.lazyBarSecs hidden
-    }
-}
-
-/// Centered horizontally, upper third of the monitor under the cursor (physical pixels, DPI aware).
-fn place(app: &AppHandle, win: &WebviewWindow) {
-    let mon = app
-        .cursor_position()
-        .ok()
-        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
-        .or_else(|| app.primary_monitor().ok().flatten());
-    let Some(mon) = mon else { return };
-    let (mp, ms) = (mon.position(), mon.size());
-    // Move first so the window adopts the target monitor's scale factor, then size it logically.
-    let _ = win.set_position(PhysicalPosition::new(mp.x + 8, mp.y + 8));
-    let _ = win.set_size(LogicalSize::new(WIN_W, WIN_H));
-    let w = win.outer_size().map(|s| s.width as i32).unwrap_or((WIN_W * mon.scale_factor()) as i32);
-    let x = mp.x + (ms.width as i32 - w) / 2;
-    // hangs just below the top edge, like the vendor's command bar - but never over the pill: under its body when it is showing
-    let top = mp.y + (7.0 * mon.scale_factor()) as i32;
-    let y = crate::pill::body_bottom(mp.x, mp.y).map_or(top, |b| top.max(b + (8.0 * mon.scale_factor()) as i32));
-    let _ = win.set_position(PhysicalPosition::new(x, y));
+    crate::ui::bar_view::bar_hide(); // the window's own hidden-event runs the cleanup once more: it is idempotent
 }
 
 /// Is the command bar on screen right now?
-pub(crate) fn bar_visible(app: &AppHandle) -> bool {
-    if native() {
-        return crate::ui::bar_view::bar_is_visible();
-    }
-    app.get_webview_window(LABEL).is_some_and(|w| w.is_visible().unwrap_or(false))
+pub(crate) fn bar_visible(_app: &AppHandle) -> bool {
+    crate::ui::bar_view::bar_is_visible()
 }
 
 /// Opens the bar when it is closed (the uninstall flow brings it back when the uninstaller is done).
@@ -282,107 +149,17 @@ pub(crate) fn show(app: &AppHandle) {
 }
 
 fn toggle(app: &AppHandle) {
-    if native() {
-        if !bar_visible(app) {
-            PREV_FG.store(unsafe { GetForegroundWindow() }.0 as isize, Ordering::Relaxed); // the paste target, taken before the bar takes the foreground
-            index_apps_async();
-        }
-        crate::ui::bar_view::bar_toggle(app); // the host owns placement, blur-hide and the re-open guard
-        return;
+    if !bar_visible(app) {
+        PREV_FG.store(unsafe { GetForegroundWindow() }.0 as isize, Ordering::Relaxed); // the paste target, taken before the bar takes the foreground
+        index_apps_async();
     }
-    if bar_visible(app) {
-        hide(app);
-        return;
-    }
-    // The click that blurred (and hid) the bar must not re-open it.
-    if lk(&LAST_BLUR_HIDE).is_some_and(|t| t.elapsed() < Duration::from_millis(300)) {
-        return;
-    }
-    PREV_FG.store(unsafe { GetForegroundWindow() }.0 as isize, Ordering::Relaxed); // taken now: the slow open below shows the bar later
-    lazy::note_shown(LABEL); // the idle teardown must not fire while the bar is being opened
-    match lazy::try_get(app, LABEL) {
-        Some(win) if is_ready() => show_now(app, &win),
-        _ => open_slow(app), // no window yet (idle teardown), or it is still loading / being built or torn down
-    }
+    crate::ui::bar_view::bar_toggle(app); // the host owns placement, blur-hide and the re-open guard
 }
 
-/// The bar window is not there or not ready: build it right now (hidden, so the page loads while nothing is shown), wait for its page to
-/// report, then show it exactly like the fast path. The work runs on a worker thread (window creation must not run on the event loop).
-fn open_slow(app: &AppHandle) {
-    if OPENING.swap(true, Ordering::SeqCst) {
-        return; // a second press while the window is still loading
-    }
-    let app = app.clone();
-    std::thread::spawn(move || {
-        let win = lazy::get_or_create(&app, LABEL);
-        if win.is_some() && !wait_ready(READY_WAIT) {
-            eprintln!("command bar: its page did not report within {} s, showing it anyway", READY_WAIT.as_secs());
-        }
-        let Some(win) = win else {
-            OPENING.store(false, Ordering::SeqCst);
-            return;
-        };
-        let a = app.clone();
-        let sent = app.run_on_main_thread(move || {
-            show_now(&a, &win);
-            OPENING.store(false, Ordering::SeqCst);
-        });
-        if sent.is_err() {
-            OPENING.store(false, Ordering::SeqCst);
-        }
-    });
-}
-
-/// Puts the (ready) bar on screen: place, show, bar:shown, take the keyboard.
-fn show_now(app: &AppHandle, win: &WebviewWindow) {
-    place(app, win);
-    index_apps_async();
-    keep_transparent(win);
-    *lk(&SHOWN_AT) = Some(Instant::now());
-    let _ = win.show();
-    let _ = bus::emit(&app, Target::Label(LABEL), "bar:shown", ()); // first: the pop animation must not wait for the focus hand-over below
-    grab_keyboard(app);
-    // the first SetForegroundWindow can lose to the app that still owns the keyboard (the hotkey's own keys are barely released)
-    let a = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(120));
-        let a2 = a.clone();
-        let _ = a.run_on_main_thread(move || {
-            if a2.get_webview_window(LABEL).is_some_and(|w| w.is_visible().unwrap_or(false)) {
-                grab_keyboard(&a2);
-            }
-        });
-    });
-}
-
-/// Keyboard for the bar: the OS foreground (borrowing the old foreground thread's input state, like pill_activate) AND the WebView2
-/// control inside the window. Without both, the layout hotkeys (Alt+Shift, Ctrl+Shift, Win+Space) keep acting on the app that was in front.
-fn grab_keyboard(app: &AppHandle) {
-    let Some(win) = app.get_webview_window(LABEL) else { return };
-    if let Ok(h) = win.hwnd() {
-        let me = HWND(h.0 as isize as *mut std::ffi::c_void);
-        unsafe {
-            let fg = GetForegroundWindow();
-            if fg.0 != me.0 {
-                let (mine, theirs) = (GetCurrentThreadId(), GetWindowThreadProcessId(fg, None));
-                let attached = theirs != 0 && theirs != mine && AttachThreadInput(mine, theirs, true).as_bool();
-                let _ = SetForegroundWindow(me);
-                if attached {
-                    let _ = AttachThreadInput(mine, theirs, false);
-                }
-            }
-        }
-    }
-    let _ = win.set_focus();
-    let _ = tauri::Webview::set_focus(win.as_ref());
-}
-
-#[tauri::command]
 pub fn cmd_toggle(app: AppHandle) {
     toggle(&app);
 }
 
-#[tauri::command]
 pub async fn cmd_query(text: String) -> Vec<Res> {
     let my = CUR_SEQ.fetch_add(1, Ordering::Relaxed) + 1; // supersedes every query still running
     tauri::async_runtime::spawn_blocking(move || {
@@ -395,7 +172,6 @@ pub async fn cmd_query(text: String) -> Vec<Res> {
 
 /// Shell icon (PNG data URL) of an app / file / folder row. Looked up by the id of a result of the current query, never by a path from
 /// the page; the page asks per row after rendering, so slow shell calls never delay the list itself.
-#[tauri::command]
 pub async fn cmd_icon(id: String) -> Option<String> {
     let path = {
         let g = lk(&STORE);
@@ -901,7 +677,6 @@ fn pin_item(app: &AppHandle, target: &str, title: &str, store_app: bool) -> Outc
     Outcome { status: "updated", message: if added > 0 { "pinned" } else { "pinnedAlready" }.into() }
 }
 
-#[tauri::command]
 pub fn cmd_run(app: AppHandle, id: String, mode: String) -> Outcome {
     let Some(r) = lk(&STORE).as_ref().and_then(|m| m.get(&id)).cloned() else {
         return err("Unknown result, type again");
@@ -1421,7 +1196,7 @@ fn open_pill(app: &AppHandle, tab: &str, extra: serde_json::Value) {
     if let (Some(m), Some(e)) = (p.as_object_mut(), extra.as_object()) {
         m.extend(e.clone());
     }
-    let _ = bus::emit(&app, Target::Label("pill"), "pill:open-tab", p);
+    let _ = bus::emit("pill:open-tab", p);
     crate::pill::expand(app, Some(tab.to_string()), "command");
 }
 
@@ -1448,16 +1223,6 @@ use calc::{calc_row, convert};
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn lazy_bar_secs_setting() {
-        assert_eq!(lazy_secs_from(120.0), 120); // default
-        assert_eq!(lazy_secs_from(0.0), 0); // never destroy
-        assert_eq!(lazy_secs_from(-3.0), 0);
-        assert_eq!(lazy_secs_from(1.0), 5); // churn guard
-        assert_eq!(lazy_secs_from(1e9), 86_400);
-        assert_eq!(lazy_secs_from(f64::NAN), 120);
-    }
 
     #[test]
     fn web_search_encoding() {

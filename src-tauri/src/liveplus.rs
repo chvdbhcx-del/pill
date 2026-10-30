@@ -9,7 +9,7 @@
 // One supervisor thread (2 s tick); a switch that is off costs one boolean read. Everything is local and read-only; the only network use is the
 // optional calendar subscription (net.rs, Feature::Calendar). Mail (IMAP) has its own thread in mail.rs.
 // The decision logic (DlWatch, UsbWatch, Bat, ics parsing and recurrence, due()) is pure and unit-tested.
-use crate::ui::bus::{self, Target};
+use crate::ui::bus;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -679,7 +679,7 @@ impl Cal {
         *self = Cal::default();
     }
 
-    fn poll(&mut self, app: &AppHandle) {
+    fn poll(&mut self, _app: &AppHandle) {
         fetch_if_due();
         let Some(p) = ics_path() else { return self.reset() };
         let mtime = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
@@ -690,7 +690,7 @@ impl Cal {
         }
         for (title, minutes) in due(&self.events, local_now(), &mut self.fired).into_iter().take(3) {
             let title: String = title.chars().take(80).collect();
-            let _ = bus::emit(&app, Target::Label("pill"), "live:calendar", json!({ "title": title, "minutes": minutes }));
+            let _ = bus::emit("live:calendar", json!({ "title": title, "minutes": minutes }));
         }
     }
 }
@@ -709,7 +709,7 @@ fn tick(app: &AppHandle, n: u64, dl: &mut DlWatch, usb: &mut UsbWatch, bat: &mut
             let ready = dl.step(now, &files);
             if let Some(first) = ready.first() {
                 let path = dir.join(first);
-                let _ = bus::emit(&app, Target::Label("pill"), "live:file-done", json!({ "name": first, "path": path.to_string_lossy(), "more": ready.len() - 1 }));
+                let _ = bus::emit("live:file-done", json!({ "name": first, "path": path.to_string_lossy(), "more": ready.len() - 1 }));
             }
         }
     } else {
@@ -717,7 +717,7 @@ fn tick(app: &AppHandle, n: u64, dl: &mut DlWatch, usb: &mut UsbWatch, bat: &mut
     }
     if on("live.usb", true) {
         for (c, added) in usb.step(now, removable_mask()) {
-            let _ = bus::emit(&app, Target::Label("pill"), "live:usb", json!({ "letter": c.to_string(), "added": added }));
+            let _ = bus::emit("live:usb", json!({ "letter": c.to_string(), "added": added }));
         }
     } else {
         *usb = UsbWatch::default();
@@ -731,7 +731,7 @@ fn tick(app: &AppHandle, n: u64, dl: &mut DlWatch, usb: &mut UsbWatch, bat: &mut
                 None => None,
             };
             if let Some((kind, percent)) = ev {
-                let _ = bus::emit(&app, Target::Label("pill"), "live:battery", json!({ "kind": kind, "percent": percent }));
+                let _ = bus::emit("live:battery", json!({ "kind": kind, "percent": percent }));
             }
         }
     } else {
@@ -765,7 +765,6 @@ pub fn init(app: &tauri::App) {
 // ================= commands =================
 
 /// For the settings page: {state: nopath | missing | big | ok, events, next: {title, inMin} | null}. Reads the file, changes nothing.
-#[tauri::command(async)]
 pub fn liveplus_ics_status() -> Value {
     let src = ics_setting();
     let url = matches!(src, IcsSrc::Url(_));
