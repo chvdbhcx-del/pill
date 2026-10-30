@@ -7,7 +7,7 @@
 //!
 //! Selection: drag inside one message (assistant answers through the markdown view, user bubbles through their text layout); Ctrl+C copies it,
 //! a click on a code block's Copy button copies the code. Selection across messages is not supported (one message at a time).
-use super::chat_pop::{HistPop, SetPop, K, HIST_W};
+use super::chat_pop::{HistPop, SetPop, K};
 use super::kit::{self, Bk, Calls, Clicks, Cues, Field, Icons};
 use crate::ui::view::{Cx, DropEvent, DropPayload, DropPhase, Msg, View};
 use glasskit::canvas::Canvas;
@@ -229,6 +229,13 @@ impl ChatScreen {
     }
 
     fn after_model(&mut self, cx: &mut Cx) {
+        self.drain(cx);
+        self.dirty = true;
+        cx.request_frame();
+    }
+
+    /// Effects and cues the model queued (also after a tick: the reveal asks for `ScrollToBottom`).
+    fn drain(&mut self, cx: &mut Cx) {
         for e in kit::route_effects(self.m.take_effects(), cx) {
             use pill_ui_core::panel::b::Effect as E;
             match e {
@@ -243,8 +250,6 @@ impl ChatScreen {
         self.cues.reduced = cx.reduced_motion;
         self.clicks.reduced = cx.reduced_motion;
         self.cues.play_all(self.m.take_anims());
-        self.dirty = true;
-        cx.request_frame();
     }
 
     fn refresh_view(&mut self, cx: &Cx) {
@@ -477,6 +482,7 @@ impl ChatScreen {
                 let cp = self.content_pos(*pos);
                 self.clear_selection();
                 let Some(i) = self.item_at(cp.1) else { return Response::consumed() };
+                let sv_w = self.sv_width();
                 let it = &mut self.items[i];
                 if let (Some(md), true) = (it.md.as_mut(), cp.0 >= COL_X) {
                     let local = (cp.0 - COL_X, cp.1 - it.y);
@@ -504,7 +510,7 @@ impl ChatScreen {
                     }
                 }
                 if let Some(b) = it.bubble.as_ref() {
-                    let bx = self.sv_width() - b.w;
+                    let bx = sv_w - b.w;
                     if cp.0 >= bx && cp.0 <= bx + b.w {
                         let idx = b.lay.index_at((cp.0 - bx - 16.0, cp.1 - it.y - 9.0));
                         if *clicks >= 3 {
@@ -640,12 +646,12 @@ fn read_picked(p: &std::path::Path) -> Option<PickedFile> {
 fn pick_files() -> Vec<PathBuf> {
     use windows::core::PWSTR;
     use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
-    use windows::Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, FOS_ALLOWMULTIPLESELECT, FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH};
+    use windows::Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, FOS_ALLOWMULTISELECT, FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH};
     let mut out = Vec::new();
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         if let Ok(dlg) = CoCreateInstance::<_, IFileOpenDialog>(&FileOpenDialog, None, CLSCTX_INPROC_SERVER) {
-            let _ = dlg.SetOptions(FOS_ALLOWMULTIPLESELECT | FOS_FORCEFILESYSTEM);
+            let _ = dlg.SetOptions(FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM);
             if dlg.Show(None).is_ok() {
                 if let Ok(items) = dlg.GetResults() {
                     for i in 0..items.GetCount().unwrap_or(0) {
@@ -916,6 +922,7 @@ impl View for ChatScreen {
         let ms = kit::ms_of(dt_ms, &mut self.carry);
         self.m.set_reduce_motion(cx.reduced_motion);
         self.m.tick(ms);
+        self.drain(cx);
         // the model's tick reveals streamed text and runs timers: look at the result next frame
         let streaming = self.m.is_streaming();
         if streaming || self.view.as_ref().is_some_and(|v| !v.ghosts.is_empty() || v.messages.iter().any(|m| m.copied)) {
@@ -986,6 +993,9 @@ impl View for ChatScreen {
     fn draw(&mut self, cv: &Canvas, th: &Theme, rect: Rect, cx: &Cx) {
         self.now_ms = cx.now_ms;
         self.scale = cx.scale;
+        // the model may have changed since the last step (a tick, an event): lay out what it shows now, so a scroll request
+        // from the same tick lands on the new content
+        self.refresh_view(cx);
         if self.view.is_none() {
             self.view = Some(self.m.view());
         }
@@ -1207,7 +1217,7 @@ impl ChatScreen {
             _ => "",
         };
         let about = (x0 + w / 2.0, y + it.h / 2.0);
-        let draw = |cv: &Canvas| match it.role {
+        let mut draw = |cv: &Canvas| match it.role {
             Role::User => {
                 let Some(b) = &it.bubble else { return };
                 let br = Rect::new(x0 + w - b.w, y, b.w, b.lay.height() + 18.0);
@@ -1444,7 +1454,495 @@ impl ChatScreen {
     }
 }
 
-#[allow(dead_code)]
-fn unused(_: Value) {
-    let _ = json!(null);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::tabs::b::kit::snap;
+    use crate::ui::view::{Fakes, MsgQueue, Services};
+    use glasskit::input::{Buttons, Modifiers};
+    use std::sync::Arc;
+
+    const FIXTURE: &str = include_str!("../../../../../tools/dev/fixtures/tabs-b/chat.json");
+    const SIZE: (f32, f32) = snap::BODY_TALL;
+
+    /// A view plus the host pieces a test needs (the same `Cx` the real host builds, a queue to pump).
+    struct Rig {
+        v: ChatScreen,
+        cx: Cx,
+        q: Arc<MsgQueue>,
+        fakes: Fakes,
+        events: Vec<(String, Value, u64)>,
+        th: Theme,
+    }
+
+    fn scenario(name: &str) -> Value {
+        let j: Value = serde_json::from_str(FIXTURE).expect("chat.json");
+        j["scenarios"][name].clone()
+    }
+
+    impl Rig {
+        fn new(name: &str) -> Rig {
+            let sc = scenario(name);
+            let (svc, fakes): (Services, Fakes) = Services::fake();
+            for (cmd, v) in sc["replies"].as_object().unwrap() {
+                fakes.api.reply(cmd, Ok(v.clone()));
+            }
+            let (mut cx, q) = Cx::headless_queue(svc);
+            cx.lang = glasskit::lang::Lang::Ru;
+            cx.reduced_motion = true;
+            let events = sc["events"].as_array().map(|a| a.iter().map(|e| (e["name"].as_str().unwrap().to_string(), e["payload"].clone(), e["after_ms"].as_u64().unwrap_or(100))).collect()).unwrap_or_default();
+            let mut r = Rig { v: ChatScreen::new(), cx, q, fakes, events, th: Theme::pill_dark() };
+            r.v.on_show(&mut r.cx);
+            r.settle();
+            r
+        }
+
+        fn pump(&mut self) {
+            for _ in 0..50 {
+                let msgs = self.q.drain();
+                if msgs.is_empty() {
+                    break;
+                }
+                for (_, m) in msgs {
+                    self.v.message(m, &mut self.cx);
+                }
+            }
+        }
+
+        /// One frame: messages, step, draw.
+        fn frame(&mut self, dt: f64) {
+            self.pump();
+            self.cx.now_ms += dt;
+            self.v.step(dt, &mut self.cx);
+            self.pump();
+            crate::ui::host::testing::render_view_cx(&mut self.v, &self.cx, SIZE, 1.0, &self.th);
+        }
+
+        fn settle(&mut self) {
+            for _ in 0..6 {
+                self.frame(16.0);
+            }
+        }
+
+        fn send_ev(&mut self, ev: InputEvent) -> Response {
+            let r = self.v.event(&ev, &mut self.cx);
+            self.frame(16.0);
+            r
+        }
+
+        fn click(&mut self, p: Pt) {
+            let mv = InputEvent::MouseMove { pos: p, mods: Modifiers::NONE, buttons: Buttons::NONE };
+            self.send_ev(mv);
+            self.send_ev(InputEvent::MouseDown { pos: p, button: MouseButton::Left, mods: Modifiers::NONE, clicks: 1 });
+            self.send_ev(InputEvent::MouseUp { pos: p, button: MouseButton::Left, mods: Modifiers::NONE });
+            self.settle();
+        }
+
+        fn click_key(&mut self, k: K) {
+            let r = self.v.clicks.rect_of(&k).unwrap_or_else(|| panic!("no click target {k:?}"));
+            self.click(r.center());
+        }
+
+        fn type_text(&mut self, s: &str) {
+            for c in s.chars() {
+                self.v.event(&InputEvent::Char(c), &mut self.cx);
+            }
+            self.settle();
+        }
+
+        fn key(&mut self, code: KeyCode) {
+            self.send_ev(InputEvent::Key { code, mods: Modifiers::NONE, down: true, repeat: false });
+            self.settle();
+        }
+
+        fn calls(&self, name: &str) -> Vec<Value> {
+            self.fakes.api.calls().into_iter().filter(|c| c.name == name).map(|c| c.args).collect()
+        }
+
+        /// Focus the composer by clicking it, type, press Enter.
+        fn send_message(&mut self, text: &str) {
+            let ta = self.v.geo.ta;
+            self.click(ta.center());
+            assert!(self.v.comp.is_focused(), "a click focuses the composer");
+            self.type_text(text);
+            self.key(KeyCode::Enter);
+            self.settle();
+        }
+
+        fn emit_scripted_events(&mut self) {
+            for (name, payload, _) in self.events.clone() {
+                self.fakes.bus.emit(&name, payload);
+                self.frame(16.0);
+            }
+        }
+
+        fn run_frames(&mut self, n: usize) {
+            for _ in 0..n {
+                self.frame(16.7);
+            }
+        }
+
+        fn shoot(&mut self, name: &str, dark: bool, scale: f32) {
+            self.th = snap::theme(dark);
+            self.frame(16.0);
+            snap::shoot(&mut self.v, &self.cx, name, SIZE, scale, dark);
+        }
+    }
+
+    fn md_of(r: &Rig, i: usize) -> &MarkdownView {
+        r.v.items[i].md.as_ref().expect("markdown view")
+    }
+
+    #[test]
+    fn mount_loads_the_config_then_the_last_thread() {
+        let r = Rig::new("chat-answer");
+        let names: Vec<String> = r.fakes.api.calls().into_iter().map(|c| c.name).collect();
+        assert_eq!(&names[..3], ["ai_config", "chat_threads", "chat_messages"], "{names:?}");
+        assert_eq!(r.calls("chat_messages")[0], json!({ "thread": 1 }));
+        assert_eq!(r.v.items.len(), 2);
+        assert!(r.v.items[1].actions, "the last answer carries the copy / answer-again buttons");
+        for ev in ["chat:delta", "chat:done", "settings:changed", "voice:state", "voice:done"] {
+            assert_eq!(r.fakes.bus.subscribers(ev), 1, "{ev}");
+        }
+    }
+
+    #[test]
+    fn enter_sends_the_text_and_shift_enter_does_not() {
+        let mut r = Rig::new("chat-streaming");
+        let ta = r.v.geo.ta;
+        r.click(ta.center());
+        r.type_text("Привет");
+        r.send_ev(InputEvent::Key { code: KeyCode::Enter, mods: Modifiers { shift: true, ..Modifiers::NONE }, down: true, repeat: false });
+        r.settle();
+        assert!(r.calls("chat_send").is_empty(), "Shift+Enter is a newline");
+        assert!(r.v.comp.ti.text().contains('\n'));
+        r.v.comp.ti.set_text("Привет");
+        r.key(KeyCode::Enter);
+        r.settle();
+        let sent = r.calls("chat_send");
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert_eq!(sent[0], json!({ "thread": null, "text": "Привет", "model": null }));
+        assert!(r.v.comp.ti.text().is_empty(), "the composer is cleared after a send");
+    }
+
+    #[test]
+    fn typing_dots_then_streamed_markdown_grows() {
+        let mut r = Rig::new("chat-streaming");
+        r.send_message("Объясни простыми словами, как работает VPN");
+        assert!(r.v.items.last().is_some_and(|i| i.typing), "typing dots before the first token");
+        assert!(r.v.m.is_streaming());
+        let mut sizes = vec![];
+        r.emit_scripted_events();
+        for _ in 0..40 {
+            r.run_frames(1);
+            sizes.push(r.v.items.last().map_or(0, |i| i.text.len()));
+        }
+        assert!(sizes.windows(2).all(|w| w[0] <= w[1]), "the revealed text only grows: {sizes:?}");
+        let last = r.v.items.last().unwrap();
+        assert!(!last.typing && last.streaming);
+        assert!(md_of(&r, r.v.items.len() - 1).leaf_count() >= 4, "heading, list items, paragraph and the code block are leaves");
+    }
+
+    #[test]
+    fn two_hundred_deltas_keep_the_markdown_incremental() {
+        let mut r = Rig::new("chat-streaming");
+        r.send_message("long");
+        let paragraph = |i: usize| format!("Абзац номер {i} с **жирным** словом и `кодом`, ссылка [сайт](https://example.com/{i}) и ещё немного текста, чтобы строка переносилась по ширине.\n\n");
+        let started = std::time::Instant::now();
+        let mut draws = 0u32;
+        for i in 0..200 {
+            let chunk = if i % 4 == 0 { paragraph(i / 4) } else { "и ещё слово ".to_string() };
+            r.fakes.bus.emit("chat:delta", json!({ "thread": 1, "run": 7, "text": chunk }));
+            r.frame(8.0);
+            draws += 1;
+        }
+        r.run_frames(300);
+        let ms = started.elapsed().as_secs_f64() * 1000.0;
+        let idx = r.v.items.len() - 1;
+        let md = md_of(&r, idx);
+        let leaves = md.leaf_count();
+        assert!(leaves >= 40, "fifty paragraphs: {leaves}");
+        // a full re-layout on every frame would build leaves x frames layouts (> 10 000); incremental rebuilds ~ one tail block per frame
+        assert!(md.rebuilds() < (leaves as u32) * 6 + draws * 4, "rebuilds {} for {} leaves / {} frames", md.rebuilds(), leaves, draws);
+        let per = ms / (draws as f64 + 300.0);
+        eprintln!("streaming: {} rebuilds, {} leaves, {:.2} ms per step+draw frame (headless WARP, 648x346)", md.rebuilds(), leaves, per);
+        assert!(per < 60.0, "a frame costs {per:.1} ms");
+        assert!(r.v.sv.state.at_end() || r.v.sv.state.max_offset() < 1.0, "the view follows the stream");
+    }
+
+    #[test]
+    fn the_view_follows_the_stream_until_the_user_scrolls_up() {
+        let mut r = Rig::new("chat-streaming");
+        r.send_message("go");
+        let para = "Строка ответа, достаточно длинная, чтобы занять место в списке сообщений.\n\n".repeat(30);
+        r.fakes.bus.emit("chat:delta", json!({ "thread": 1, "run": 7, "text": para }));
+        r.run_frames(120);
+        let st = &r.v.sv.state;
+        assert!(st.max_offset() > 100.0 && st.at_end(), "pinned to the bottom while streaming: max {} target {} off {} content {} vp {} streaming {} shown {} near {}", st.max_offset(), st.target(), st.offset(), st.content(), st.viewport(), r.v.m.is_streaming(), r.v.m.streamed().0.len(), r.v.m.view().near_bottom);
+        let vp = r.v.geo.viewport;
+        r.send_ev(InputEvent::Wheel { pos: vp.center(), delta: (0.0, -300.0), mods: Modifiers::NONE, precise: true });
+        r.settle();
+        let before = r.v.sv.offset();
+        r.fakes.bus.emit("chat:delta", json!({ "thread": 1, "run": 7, "text": para }));
+        r.run_frames(120);
+        assert!((r.v.sv.offset() - before).abs() < 1.0, "scrolled-up view stays where the user put it ({} vs {})", r.v.sv.offset(), before);
+        assert!(!r.v.sv.state.at_end());
+    }
+
+    #[test]
+    fn escape_stops_the_stream() {
+        let mut r = Rig::new("chat-streaming");
+        r.send_message("stop me");
+        assert!(r.v.m.is_streaming());
+        r.key(KeyCode::Escape);
+        assert_eq!(r.calls("chat_stop"), vec![json!({ "thread": 1 })]);
+    }
+
+    #[test]
+    fn the_send_button_turns_into_stop() {
+        let mut r = Rig::new("chat-streaming");
+        r.send_message("hi");
+        r.run_frames(5);
+        assert!(r.v.send_k.target() > 0.5, "stop shape while streaming");
+        r.click_key(K::Send);
+        assert_eq!(r.calls("chat_stop").len(), 1);
+    }
+
+    #[test]
+    fn retry_calls_chat_retry_and_a_fresh_typing_answer_appears() {
+        let mut r = Rig::new("chat-answer");
+        r.click_key(K::Retry);
+        assert_eq!(r.calls("chat_retry"), vec![json!({ "thread": 1, "model": null })]);
+        assert!(r.v.m.is_streaming());
+        assert!(r.v.items.last().is_some_and(|i| i.typing), "a fresh typing answer replaces the old one");
+    }
+
+    #[test]
+    fn history_popover_lists_threads_and_picks_one() {
+        let mut r = Rig::new("chat-history-popover");
+        r.click_key(K::Hist);
+        assert_eq!(r.calls("chat_threads").len(), 2, "mount + the popover");
+        assert!(r.v.hist.visible());
+        assert_eq!(r.v.view.as_ref().unwrap().history.rows.len(), 3);
+        r.click_key(K::HRow(2));
+        assert_eq!(r.calls("chat_messages").last().unwrap(), &json!({ "thread": 2 }));
+        r.run_frames(30);
+        assert!(!r.v.hist.visible(), "the popover folds away after a pick");
+    }
+
+    #[test]
+    fn a_press_outside_the_history_popover_closes_it() {
+        let mut r = Rig::new("chat-history-popover");
+        r.click_key(K::Hist);
+        assert!(r.v.view.as_ref().unwrap().history.open);
+        r.click((100.0, 150.0));
+        assert!(!r.v.view.as_ref().unwrap().history.open);
+    }
+
+    #[test]
+    fn settings_popover_opens_probes_and_tests_with_the_typed_values() {
+        let mut r = Rig::new("chat-settings-popover");
+        r.click_key(K::Gear);
+        assert!(r.v.set.is_open());
+        assert_eq!(r.calls("ai_probe").len(), 1);
+        assert_eq!(r.calls("net_features_status").len(), 1);
+        r.click_key(K::STest);
+        let sets = r.calls("settings_set");
+        assert_eq!(sets[0], json!({ "patch": { "ai.baseUrl": "http://127.0.0.1:11434/v1", "ai.model": "qwen3:8b" } }));
+        r.key(KeyCode::Escape);
+        assert!(!r.v.view.as_ref().unwrap().settings.open, "Esc closes the panel");
+    }
+
+    #[test]
+    fn the_api_key_travels_only_in_ai_set_key() {
+        let mut r = Rig::new("chat-settings-popover");
+        r.click_key(K::Gear);
+        let kc = r.v.key.rect.center();
+        r.click(kc);
+        r.type_text("sk-test-secret");
+        r.click_key(K::SSaveKey);
+        let all = r.fakes.api.calls();
+        let with_key: Vec<&str> = all.iter().filter(|c| c.args.to_string().contains("sk-test-secret")).map(|c| c.name.as_str()).collect();
+        assert_eq!(with_key, ["ai_set_key"]);
+        assert!(r.v.key.ti.text().is_empty(), "the field is cleared");
+    }
+
+    #[test]
+    fn offline_card_enables_ai() {
+        let mut r = Rig::new("chat-offline");
+        assert!(r.v.view.as_ref().unwrap().off.is_some());
+        r.click_key(K::Enable);
+        assert_eq!(r.calls("settings_set")[0], json!({ "patch": { "net.ai": true } }));
+    }
+
+    #[test]
+    fn empty_state_idea_sends_it() {
+        let mut r = Rig::new("chat-empty");
+        r.click_key(K::Idea(0));
+        let sent = r.calls("chat_send");
+        assert_eq!(sent[0]["text"], "Объясни простыми словами, как работает VPN");
+    }
+
+    /// Window position of the origin of item `i`'s markdown.
+    fn md_origin(r: &Rig, i: usize) -> Pt {
+        (r.v.geo.viewport.x + COL_X, r.v.geo.viewport.y - r.v.sv.offset() + r.v.items[i].y)
+    }
+
+    #[test]
+    fn code_block_copy_button_copies_the_code() {
+        let mut r = Rig::new("chat-answer");
+        let i = r.v.items.len() - 1;
+        let btn = md_of(&r, i).copy_button_rects()[0].1;
+        let o = md_origin(&r, i);
+        r.click((o.0 + btn.cx(), o.1 + btn.cy()));
+        let clip = r.cx.clipboard_text().expect("copied");
+        assert!(clip.starts_with("fn main() {") && clip.contains("derive_key"), "{clip}");
+        assert!(!clip.contains("```"), "the code, not the fence");
+    }
+
+    #[test]
+    fn a_safe_link_opens_through_the_backend_and_javascript_urls_are_inert() {
+        let mut r = Rig::new("chat-answer");
+        let i = r.v.items.len() - 1;
+        let o = md_origin(&r, i);
+        let md = md_of(&r, i);
+        let mut found = None;
+        'o: for leaf in 0..md.leaf_count() {
+            let lr = md.leaf_rect(leaf).unwrap();
+            let mut y = lr.y + 4.0;
+            while y < lr.bottom() {
+                let mut x = lr.x + 2.0;
+                while x < lr.right() {
+                    if let Hit::Link(u) = md.hit((x, y)) {
+                        found = Some(((x, y), u));
+                        break 'o;
+                    }
+                    x += 3.0;
+                }
+                y += 6.0;
+            }
+        }
+        let ((x, y), url) = found.expect("the answer has a link");
+        assert_eq!(url, "https://www.wireguard.com/");
+        r.click((o.0 + x, o.1 + y));
+        assert_eq!(r.calls("chat_open_link"), vec![json!({ "url": "https://www.wireguard.com/" })]);
+        let h = glasskit::testkit::Harness::new();
+        let th = Theme::pill_dark();
+        h.render(300, 80, 1.0, th.bg, |cv| {
+            let md = MarkdownView::new(cv, markdown::parse("[click me](javascript:alert(1)) and [ok](mailto:a@b.c)"), 280.0, &th, &MarkdownLabels { copy: "Copy", copied: "Copied" }).unwrap();
+            let lr = md.leaf_rect(0).unwrap();
+            let mut links: Vec<String> = vec![];
+            let mut x = lr.x;
+            while x < lr.right() {
+                if let Hit::Link(u) = md.hit((x, lr.y + 8.0)) {
+                    if !links.contains(&u) {
+                        links.push(u);
+                    }
+                }
+                x += 2.0;
+            }
+            assert_eq!(links, vec!["mailto:a@b.c".to_string()], "javascript: is never exposed");
+        });
+        assert!(!markdown::is_safe_url("javascript:alert(1)") && !markdown::is_safe_url("file:///c:/x"));
+    }
+
+    #[test]
+    fn dragging_selects_message_text_and_ctrl_c_copies_it() {
+        let mut r = Rig::new("chat-answer");
+        let i = r.v.items.len() - 1;
+        let o = md_origin(&r, i);
+        let last = md_of(&r, i).leaf_count() - 1;
+        let lr = md_of(&r, i).leaf_rect(last).unwrap();
+        let a = (o.0 + lr.x + 2.0, o.1 + lr.y + 6.0);
+        let b = (o.0 + lr.x + 120.0, o.1 + lr.y + 6.0);
+        r.send_ev(InputEvent::MouseMove { pos: a, mods: Modifiers::NONE, buttons: Buttons::NONE });
+        r.send_ev(InputEvent::MouseDown { pos: a, button: MouseButton::Left, mods: Modifiers::NONE, clicks: 1 });
+        r.send_ev(InputEvent::MouseMove { pos: b, mods: Modifiers::NONE, buttons: Buttons::NONE.with(MouseButton::Left) });
+        r.send_ev(InputEvent::MouseUp { pos: b, button: MouseButton::Left, mods: Modifiers::NONE });
+        assert!(!r.v.selection_text().is_empty(), "something is selected");
+        r.send_ev(InputEvent::Key { code: KeyCode::Char('C'), mods: Modifiers { ctrl: true, ..Modifiers::NONE }, down: true, repeat: false });
+        let clip = r.cx.clipboard_text().expect("copied");
+        assert!("Подробнее читайте в документации WireGuard.".contains(clip.trim()) && !clip.trim().is_empty(), "{clip}");
+    }
+
+    #[test]
+    fn the_last_answer_copy_button_copies_the_whole_answer() {
+        let mut r = Rig::new("chat-answer");
+        r.click_key(K::CopyMsg(1));
+        let clip = r.cx.clipboard_text().unwrap();
+        assert!(clip.contains("Как работает VPN") && clip.contains("```rust"), "the raw markdown of the answer");
+    }
+
+    #[test]
+    fn dropped_text_files_become_attachment_chips() {
+        let dir = std::env::temp_dir().join("pill-chat-drop-test");
+        let _ = std::fs::create_dir_all(&dir);
+        let f = dir.join("notes.txt");
+        std::fs::write(&f, "hello").unwrap();
+        let mut r = Rig::new("chat-empty");
+        let ev = DropEvent { phase: DropPhase::Drop, pos: (10.0, 10.0), payload: Some(DropPayload::Files(vec![f.clone()])) };
+        r.v.on_drop(&ev, &mut r.cx);
+        r.settle();
+        assert_eq!(r.v.view.as_ref().unwrap().files, vec!["notes.txt".to_string()]);
+        let _ = std::fs::remove_file(f);
+    }
+
+    #[test]
+    fn reduced_motion_plays_no_cues() {
+        let mut r = Rig::new("chat-streaming");
+        r.send_message("x");
+        assert!(r.v.cues.is_empty(), "no enter cue under reduced motion");
+    }
+
+    #[test]
+    fn animated_enter_plays_when_motion_is_on() {
+        let mut r = Rig::new("chat-streaming");
+        r.cx.reduced_motion = false;
+        r.v.on_show(&mut r.cx);
+        let ta = r.v.geo.ta;
+        r.click(ta.center());
+        r.type_text("x");
+        r.v.event(&InputEvent::Key { code: KeyCode::Enter, mods: Modifiers::NONE, down: true, repeat: false }, &mut r.cx);
+        r.frame(8.0);
+        r.frame(8.0);
+        r.frame(8.0);
+        assert!(r.v.cues.xf("msg:user").alpha < 1.0, "the bubble enters with a fade");
+    }
+
+    // ------------------------------------------------------------------------------------------------ snapshots
+
+    fn shoot_all(r: &mut Rig, name: &str) {
+        for dark in [true, false] {
+            for scale in [1.0, 2.0] {
+                r.shoot(name, dark, scale);
+            }
+        }
+    }
+
+    #[test]
+    fn snapshots() {
+        let mut r = Rig::new("chat-empty");
+        shoot_all(&mut r, "chat-empty");
+        let mut r = Rig::new("chat-offline");
+        shoot_all(&mut r, "chat-offline");
+        let mut r = Rig::new("chat-answer");
+        shoot_all(&mut r, "chat-answer");
+        let mut r = Rig::new("chat-history-popover");
+        r.click_key(K::Hist);
+        r.run_frames(10);
+        shoot_all(&mut r, "chat-history-popover");
+        let mut r = Rig::new("chat-settings-popover");
+        r.click_key(K::Gear);
+        r.run_frames(10);
+        shoot_all(&mut r, "chat-settings-popover");
+        let mut r = Rig::new("chat-typing-dots");
+        r.send_message("Объясни простыми словами, как работает VPN");
+        r.run_frames(3);
+        shoot_all(&mut r, "chat-typing-dots");
+        let mut r = Rig::new("chat-streaming");
+        r.send_message("Объясни простыми словами, как работает VPN");
+        r.emit_scripted_events();
+        r.run_frames(60);
+        shoot_all(&mut r, "chat-streaming");
+    }
 }
