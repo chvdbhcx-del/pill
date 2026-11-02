@@ -9,6 +9,7 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
+use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{
     eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator,
     AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
@@ -24,9 +25,21 @@ const SILENCE_AFTER: Duration = Duration::from_millis(1500);
 const FRAME_EVERY: Duration = Duration::from_millis(16); // ~60 Hz
 const POLL: Duration = Duration::from_millis(16); // capture drain granularity (the shared buffer holds 200 ms); sleeps never overshoot the frame deadline
 const BUFFERFLAGS_SILENT: u32 = 2;
-// Time constants matching the old per-33-ms-frame feel: attack 0.7, release 0.15 per 33 ms.
-const TAU_ATTACK_MS: f32 = 27.4; // -33 / ln(1 - 0.7)
-const TAU_RELEASE_MS: f32 = 203.0; // -33 / ln(1 - 0.15)
+// Sharp response (heavy, loud music): a peak leaps within about one frame and falls in ~110 ms, so successive kicks stay separate.
+const TAU_ATTACK_MS: f32 = 9.0;
+const TAU_RELEASE_MS: f32 = 110.0;
+/// Per band, the recent average level (dB) the current level is compared with: a loud, compressed track sits near full scale on every
+/// band, so only the deviation from its own average shows the beat.
+const TAU_AVERAGE_MS: f32 = 700.0;
+/// dB window for the floor of the deviation measure (-60 dB is the bottom of the level scale).
+const DB_FLOOR: f32 = -60.0;
+/// A band 10 dB above its recent average counts as fully "hit"; 10 dB below as fully "ducked".
+const DEVIATION_DB: f32 = 10.0;
+/// Rising faster than this (dB per frame) adds the onset boost (kick drums, snares).
+const ONSET_DB: f32 = 12.0;
+const ONSET_BOOST: f32 = 0.35;
+/// Expander exponent on the absolute level: lower values fall further, so dense spectra keep headroom for peaks.
+const EXPAND: f32 = 1.3;
 
 // ---------- pure DSP (unit-tested) ----------
 
@@ -94,6 +107,31 @@ fn db_level(mag: f32) -> f32 {
     ((20.0 * mag.max(1e-9).log10() + 60.0) / 60.0).clamp(0.0, 1.0)
 }
 
+/// One band's level (0..1) before smoothing: the absolute level on the -60..0 dB scale (expanded a little), widened by how far the band is
+/// above its own recent average (the beat; a compressed loud track would otherwise sit flat near full scale) and by an onset boost when
+/// it jumps within one frame (kick, snare). `avg_db` and `prev_db` are the band's running state. Silence stays exactly 0.
+fn band_target(mag: f32, avg_db: &mut f32, prev_db: &mut f32, dt_ms: f32, sens: f32) -> f32 {
+    let abs = db_level(mag);
+    let db = (20.0 * mag.max(1e-9).log10()).max(DB_FLOOR);
+    let hit = (0.5 + (db - *avg_db) / (2.0 * DEVIATION_DB) * sens).clamp(0.0, 1.0);
+    let onset = ((db - *prev_db) / ONSET_DB).clamp(0.0, 1.0);
+    *avg_db += (db - *avg_db) * (1.0 - (-dt_ms.max(0.0) / TAU_AVERAGE_MS).exp());
+    *prev_db = db;
+    (abs.powf(EXPAND) * (0.45 + 0.9 * hit) + onset * ONSET_BOOST * abs).clamp(0.0, 1.0)
+}
+
+/// Gain from the device's master volume: the loopback is captured BEFORE the volume control, so without this the bars ignore how loudly
+/// the music plays. A gentle curve (quiet stays visible), muted = flat. `aware` = setting `audio.volumeAware` (default on).
+fn volume_gain(scalar: f32, muted: bool, aware: bool) -> f32 {
+    if !aware {
+        return 1.0;
+    }
+    if muted {
+        return 0.0;
+    }
+    scalar.clamp(0.0, 1.0).powf(0.7)
+}
+
 /// Time-based fast attack, slow release: alpha = 1 - exp(-dt/tau), so the feel is independent of the frame rate.
 fn smooth(prev: f32, new: f32, dt_ms: f32) -> f32 {
     let tau = if new > prev { TAU_ATTACK_MS } else { TAU_RELEASE_MS };
@@ -117,6 +155,11 @@ struct Analyzer {
     im: Vec<f32>,
     mag: Vec<f32>,
     lv: [f32; B],
+    /// per band: recent average dB (slow), and the dB of the previous frame (for the onset boost)
+    avg_db: [f32; B],
+    prev_db: [f32; B],
+    /// how strongly deviations from the average show (setting `audio.sensitivity`, 0.5..2, default 1)
+    sens: f32,
 }
 
 impl Analyzer {
@@ -131,7 +174,14 @@ impl Analyzer {
             im: vec![0.0; N],
             mag: vec![0.0; N / 2],
             lv: [0.0; B],
+            avg_db: [DB_FLOOR; B],
+            prev_db: [DB_FLOOR; B],
+            sens: 1.0,
         }
+    }
+
+    fn set_sensitivity(&mut self, s: f32) {
+        self.sens = s.clamp(0.5, 2.0);
     }
 
     /// Every sample lands in the ring, none is skipped between frames.
@@ -146,6 +196,8 @@ impl Analyzer {
         self.ring.fill(0.0);
         self.head = 0;
         self.lv = [0.0; B];
+        self.avg_db = [DB_FLOOR; B];
+        self.prev_db = [DB_FLOOR; B];
     }
 
     /// Spectrum of the most recent N samples: band levels smoothed over `dt_ms`, and raw rms.
@@ -172,7 +224,8 @@ impl Analyzer {
             } else {
                 (lo.ceil() as usize..=hi as usize).map(|k| mag[k.min(N / 2 - 1)]).fold(0.0, f32::max)
             };
-            self.lv[b] = smooth(self.lv[b], db_level(m), dt_ms);
+            let target = band_target(m, &mut self.avg_db[b], &mut self.prev_db[b], dt_ms, self.sens);
+            self.lv[b] = smooth(self.lv[b], target, dt_ms);
         }
         (self.lv, rms)
     }
@@ -318,6 +371,12 @@ fn run_capture(app: &tauri::AppHandle) -> Result<(), String> {
         *STATUS.lock().unwrap_or_else(|x| x.into_inner()) = Some((id.clone(), fmt.rate));
 
         let mut an = Analyzer::new(fmt.rate as f32);
+        an.set_sensitivity(crate::settings::get_f64("audio.sensitivity", 1.0) as f32);
+        // the loopback is pre-volume: scale the bars by the device's master volume (polled, cheap), unless `audio.volumeAware` is off
+        let aware = crate::settings::get_bool("audio.volumeAware", true);
+        let vol_ep: Option<IAudioEndpointVolume> = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None).ok();
+        let mut gain = 1.0f32;
+        let mut next_vol = Instant::now();
         let mut mono: Vec<f32> = Vec::new();
         let mut last_data = Instant::now();
         let mut next_frame = Instant::now();
@@ -378,7 +437,17 @@ fn run_capture(app: &tauri::AppHandle) -> Result<(), String> {
                 // loopback delivers nothing in silence: slide in zeros for the time that passed
                 an.push(&stale_zeros[..(fmt.rate as f32 * dt_ms / 1000.0) as usize]);
             }
-            let (b, rms) = an.frame(dt_ms);
+            if now >= next_vol {
+                next_vol = now + Duration::from_millis(100);
+                gain = match &vol_ep {
+                    Some(ep) => match (ep.GetMasterVolumeLevelScalar(), ep.GetMute()) {
+                        (Ok(v), Ok(m)) => volume_gain(v, m.as_bool(), aware),
+                        _ => gain,
+                    },
+                    None => 1.0,
+                };
+            }
+            let (mut b, mut rms) = an.frame(dt_ms);
             if rms < NOISE_FLOOR {
                 let since = *silent_since.get_or_insert(now);
                 if sent_zero {
@@ -394,6 +463,8 @@ fn run_capture(app: &tauri::AppHandle) -> Result<(), String> {
                 silent_since = None;
                 sent_zero = false;
             }
+            b.iter_mut().for_each(|v| *v *= gain);
+            rms *= gain;
             emit(app, &b, rms);
         };
         let _ = client.Stop();
@@ -532,11 +603,73 @@ mod tests {
 
     #[test]
     fn smoothing_attack_fast_release_slow() {
-        // 33 ms reproduces the old per-frame constants
-        assert!((smooth(0.0, 1.0, 33.0) - 0.7).abs() < 2e-3);
-        assert!((smooth(1.0, 0.0, 33.0) - 0.85).abs() < 2e-3);
+        // sharp: a peak is almost fully there after 33 ms, and has fallen to about three quarters after the same time
+        assert!((smooth(0.0, 1.0, 33.0) - (1.0 - (-33.0f32 / TAU_ATTACK_MS).exp())).abs() < 1e-4);
+        assert!(smooth(0.0, 1.0, 33.0) > 0.95);
+        assert!((smooth(1.0, 0.0, 33.0) - (-33.0f32 / TAU_RELEASE_MS).exp()).abs() < 1e-4);
         assert_eq!(smooth(0.4, 0.4, 16.0), 0.4);
         assert_eq!(smooth(0.3, 1.0, 0.0), 0.3);
+    }
+
+    /// Runs a band at a constant magnitude for `ms` and returns its last target.
+    fn settle(mag: f32, ms: f32, avg: &mut f32, prev: &mut f32) -> f32 {
+        let mut t = 0.0;
+        for _ in 0..(ms / 16.0) as usize {
+            t = band_target(mag, avg, prev, 16.0, 1.0);
+        }
+        t
+    }
+
+    #[test]
+    fn silence_stays_zero() {
+        let (mut avg, mut prev) = (DB_FLOOR, DB_FLOOR);
+        assert_eq!(settle(0.0, 2000.0, &mut avg, &mut prev), 0.0);
+        assert_eq!(band_target(0.0, &mut avg, &mut prev, 16.0, 2.0), 0.0);
+    }
+
+    #[test]
+    fn beat_on_dense_loud_music_stands_out() {
+        // a compressed, loud track: the band sits near full scale (-6 dB) for seconds, then a kick brings 0 dB
+        let (mut avg, mut prev) = (DB_FLOOR, DB_FLOOR);
+        let steady = settle(0.5, 4000.0, &mut avg, &mut prev);
+        assert!(steady < 0.85, "steady dense level must not be pinned at the top: {steady}");
+        let kick = band_target(1.0, &mut avg, &mut prev, 16.0, 1.0);
+        assert!(kick > steady + 0.15, "the kick must clearly exceed the steady level: {kick} vs {steady}");
+        // and a duck below the average falls clearly under it
+        let (mut a2, mut p2) = (DB_FLOOR, DB_FLOOR);
+        let steady2 = settle(0.5, 4000.0, &mut a2, &mut p2);
+        let duck = band_target(0.15, &mut a2, &mut p2, 16.0, 1.0);
+        assert!(duck < steady2 - 0.15, "{duck} vs {steady2}");
+    }
+
+    #[test]
+    fn onset_boost_beats_a_sustained_level() {
+        let (mut avg, mut prev) = (DB_FLOOR, DB_FLOOR);
+        settle(0.03, 3000.0, &mut avg, &mut prev); // quiet, -30 dB
+        let onset = band_target(0.5, &mut avg, &mut prev, 16.0, 1.0); // jumps to -6 dB in one frame
+        let sustained = settle(0.5, 3000.0, &mut avg, &mut prev);
+        assert!(onset > sustained, "{onset} vs {sustained}");
+    }
+
+    #[test]
+    fn sensitivity_widens_the_beat() {
+        let run = |s: f32| {
+            let (mut avg, mut prev) = (DB_FLOOR, DB_FLOOR);
+            let steady = (0..250).map(|_| band_target(0.05, &mut avg, &mut prev, 16.0, s)).last().unwrap();
+            band_target(0.1, &mut avg, &mut prev, 16.0, s) - steady
+        };
+        assert!(run(2.0) > run(0.5));
+    }
+
+    #[test]
+    fn volume_scales_the_bars() {
+        assert_eq!(volume_gain(0.3, false, false), 1.0, "volume-aware off");
+        assert_eq!(volume_gain(0.8, true, true), 0.0, "muted = flat");
+        assert!((volume_gain(1.0, false, true) - 1.0).abs() < 1e-6);
+        assert!((volume_gain(0.5, false, true) - 0.5f32.powf(0.7)).abs() < 1e-6);
+        assert!(volume_gain(0.2, false, true) < volume_gain(0.6, false, true));
+        assert!(volume_gain(0.2, false, true) > 0.2, "quiet stays visible (gentle curve)");
+        assert_eq!(volume_gain(0.0, false, true), 0.0);
     }
 
     #[test]

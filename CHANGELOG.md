@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.7.2] - 2026-11-03
+
+### Changed
+- Music-reactive peaks (edge spikes, equalizer, pet) react sharper on dense, loud music: faster attack, bands are judged against their own recent average so a compressed track no longer sits flat at the top, and a one-frame jump (kick, snare) gets an extra boost.
+- The peaks follow the system volume (the loopback is captured before the volume control): quieter playback gives smaller peaks, mute flattens them. Settings `audio.volumeAware` (default on) and `audio.sensitivity` (0.5-2, default 1).
+
 ## [0.7.1] - 2026-10-31
 
 ### Fixed
