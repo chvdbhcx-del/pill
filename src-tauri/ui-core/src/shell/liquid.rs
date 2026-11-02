@@ -182,6 +182,10 @@ pub struct Liquid {
     sl: [f64; 32],
     ad: [f64; 32],
     gpk: f64,
+    /// overall loudness 0..1 (from `rms`, smoothed) and spectral density 0..1 (how many bands are active at once):
+    /// loudness scales spike height, density stiffens the attack spring so busy mixes look sharper.
+    loud: f64,
+    density: f64,
     bm_t: f64,
     h: Vec<f64>,
     v: Vec<f64>,
@@ -227,6 +231,8 @@ impl Liquid {
             sl: [-1.0; 32],
             ad: [0.05; 32],
             gpk: 0.5,
+            loud: 0.0,
+            density: 0.0,
             bm_t: 0.0,
             h: vec![0.0; N],
             v: vec![0.0; N],
@@ -429,10 +435,14 @@ impl Liquid {
             // ferrofluid never rests: every spike also swells and sinks on its own slow rhythm (0.75..1.15 of its band)
             let pers = 0.75 + 0.4 * (0.5 + 0.5 * (now * 0.0013 * (1.0 + (j % 5) as f64 * 0.37) + j as f64 * 2.399).sin());
             let b = 1.0f64.min(self.bv[j] * pers);
-            let tgt = (peak * 1.35 * b.powf(0.8)).min(peak);
+            // Quiet playback still shows motion (0.35 floor) but loud passages reach full height; a dense,
+            // many-bands-active mix stiffens the attack spring so its peaks look sharper/snappier, not just taller.
+            let loud_mul = 0.35 + 0.65 * self.loud;
+            let tgt = (peak * 1.35 * b.powf(0.8) * loud_mul).min(peak);
             let a = self.sa[j];
             let att = tgt > a;
-            let (w, z) = if att { (40.0, 0.55) } else { (12.0, 0.8) };
+            let dens_mul = 1.0 + 0.8 * self.density;
+            let (w, z) = if att { (40.0 * dens_mul, 0.55) } else { (12.0, 0.8) };
             self.sv[j] += (w * w * (tgt - a) - 2.0 * z * w * self.sv[j]) * dt;
             self.sa[j] = (peak * 1.2).min((a + self.sv[j] * dt).max(0.0));
             if self.sa[j] > 0.05 || self.sv[j].abs() > 0.3 {
@@ -534,6 +544,20 @@ impl Liquid {
         let quiet_rms = !(p.rms > 0.01);
         self.silent = sum < 0.05 && quiet_rms;
         self.last_audio = now_ms;
+
+        // Loudness: raw rms (full-scale sine = 1.0) compressed with sqrt so quiet listening levels still
+        // register, then smoothed fast-up/slow-down like the bands above -- actual playback volume now
+        // reaches the spikes instead of being normalized away by `gpk`.
+        let loud_tgt = ((p.rms.max(0.0) as f64) / 0.5).sqrt().min(1.0);
+        let loud_tau = if loud_tgt > self.loud { 60.0 } else { 400.0 };
+        self.loud += (loud_tgt - self.loud) * (1.0 - (-dt_ms / loud_tau).exp());
+
+        // Density: fraction of the 32 bands carrying real signal right now -- a wall-of-sound mix lights up
+        // broadly, a sparse acoustic passage lights only a few. Drives how snappy the attack spring is below.
+        let density_tgt = self.bt.iter().filter(|&&b| b > 0.15).count() as f64 / 32.0;
+        let dens_tau = if density_tgt > self.density { 120.0 } else { 600.0 };
+        self.density += (density_tgt - self.density) * (1.0 - (-dt_ms / dens_tau).exp());
+
         !self.silent
     }
 
