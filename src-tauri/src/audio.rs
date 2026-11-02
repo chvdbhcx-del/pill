@@ -121,7 +121,7 @@ fn band_target(mag: f32, avg_db: &mut f32, prev_db: &mut f32, dt_ms: f32, sens: 
 }
 
 /// Gain from the device's master volume: the loopback is captured BEFORE the volume control, so without this the bars ignore how loudly
-/// the music plays. A gentle curve (quiet stays visible), muted = flat. `aware` = setting `audio.volumeAware` (default on).
+/// the music plays. Steeper than linear so the change is plainly visible (50% volume = 0.4x bars), muted = flat. `aware` = setting `audio.volumeAware` (default on).
 fn volume_gain(scalar: f32, muted: bool, aware: bool) -> f32 {
     if !aware {
         return 1.0;
@@ -129,7 +129,7 @@ fn volume_gain(scalar: f32, muted: bool, aware: bool) -> f32 {
     if muted {
         return 0.0;
     }
-    scalar.clamp(0.0, 1.0).powf(0.7)
+    scalar.clamp(0.0, 1.0).powf(1.3)
 }
 
 /// Time-based fast attack, slow release: alpha = 1 - exp(-dt/tau), so the feel is independent of the frame rate.
@@ -666,9 +666,9 @@ mod tests {
         assert_eq!(volume_gain(0.3, false, false), 1.0, "volume-aware off");
         assert_eq!(volume_gain(0.8, true, true), 0.0, "muted = flat");
         assert!((volume_gain(1.0, false, true) - 1.0).abs() < 1e-6);
-        assert!((volume_gain(0.5, false, true) - 0.5f32.powf(0.7)).abs() < 1e-6);
+        assert!((volume_gain(0.5, false, true) - 0.5f32.powf(1.3)).abs() < 1e-6);
         assert!(volume_gain(0.2, false, true) < volume_gain(0.6, false, true));
-        assert!(volume_gain(0.2, false, true) > 0.2, "quiet stays visible (gentle curve)");
+        assert!(volume_gain(0.5, false, true) < 0.5, "halving the volume clearly shrinks the bars");
         assert_eq!(volume_gain(0.0, false, true), 0.0);
     }
 
