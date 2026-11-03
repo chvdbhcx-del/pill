@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.7.3] - 2026-11-03
+
+### Changed
+- The music peaks' dependence on the system volume now rises fast at low volume and eases toward full (20% volume is already about half height, 50% about three quarters; mute still flattens them).
+
 ## [0.7.2] - 2026-11-03
 
 ### Changed
