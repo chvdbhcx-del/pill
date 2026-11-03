@@ -366,7 +366,9 @@ pub fn paint_content(
             let Some(row) = ctx.rows.get(id) else { return };
             let m = CvMeter(cv);
             let lay: RowLayout = layout_row(row, &m, th);
-            let x0 = area.cx() - lay.w / 2.0;
+            // while the capsule is still narrower than the row (state change, pet column already reserved) the row must not spill out on the
+            // left (the leading icon / spinner would be clipped and the text pushed to the edge): pin it to the left, the right end is revealed
+            let x0 = (area.cx() - lay.w / 2.0).max(area.x);
             let (sc, dy, a2) = row_enter(row.anim.enter, age_ms, ctx.reduced);
             let cy = if row.tall { area.cy() } else { cy };
             out.row_id = Some(id.clone());

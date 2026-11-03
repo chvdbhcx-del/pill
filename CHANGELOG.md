@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.7.4] - 2026-11-03
+
+### Fixed
+- On a live-row change (e.g. the agent state) the row no longer spills out of the still-narrow capsule on the left: the leading spinner/icon was clipped and the text pushed to the edge until the capsule had grown.
+
 ## [0.7.3] - 2026-11-03
 
 ### Changed
