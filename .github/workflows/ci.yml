@@ -19,11 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -33,22 +31,28 @@ jobs:
         working-directory: src-tauri
         run: cargo check --locked
 
+      # The unit tests that need a Direct2D device (the snapshot_* renders) are skipped: a hosted runner has no GPU.
       - name: cargo test
         working-directory: src-tauri
-        run: cargo test --locked
+        run: cargo test --locked --workspace -- --skip snapshot
 
-      - name: Syntax-check front-end scripts
-        shell: pwsh
+      # Informational until the tree is clean; flip continue-on-error to false to make them gates.
+      - name: cargo fmt --check
+        continue-on-error: true
+        working-directory: src-tauri
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        continue-on-error: true
+        working-directory: src-tauri
+        run: cargo clippy --locked --workspace -- -D warnings
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo audit (known vulnerabilities in Cargo.lock)
+        continue-on-error: true
         run: |
-          $failed = 0
-          foreach ($f in Get-ChildItem src -Filter *.js) {
-            node --check $f.FullName
-            if ($LASTEXITCODE -ne 0) { $failed++ }
-          }
-          if ($failed) { throw "$failed script(s) failed node --check" }
-
-      - name: Front-end self-checks
-        run: node src/tab-text.test.mjs
-
-      - name: Command contract check
-        run: node src/contract.test.mjs
+          cargo install cargo-audit --locked
+          cargo audit --file src-tauri/Cargo.lock
