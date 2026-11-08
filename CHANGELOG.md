@@ -8,6 +8,12 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 - Typing in the Note editor, the reminder / custom-time fields and the chat composer works again: the island is a no-activate overlay and these tabs never asked for the keyboard (the island now takes it while a field has the caret, and stays open while you type).
 - The "Agent working" row no longer flips to a plain text row (no spinner, larger text) after you use the panel: the Agents tab wrote the same live row as the island's live layer; the live layer now owns it.
 
+### Added
+- A log file: everything the app prints to stderr and the panic messages go to `%LOCALAPPDATA%\Pill\logs\pill.log` (rotated at 1 MiB, one older generation kept). The release build has no console, so a failure used to leave no trace.
+
+### Changed
+- The Note tab's small prefs file is written beside the file and renamed over it (no truncated file after a crash).
+
 ## [0.7.4] - 2026-11-03
 
 ### Fixed

@@ -84,7 +84,11 @@ impl PrefsFile {
             let _ = std::fs::create_dir_all(d);
         }
         let obj: serde_json::Map<String, Value> = self.map.iter().map(|(k, v)| (k.clone(), Value::String(v.clone()))).collect();
-        let _ = std::fs::write(p, Value::Object(obj).to_string());
+        // write beside the file and rename over it: a crash mid-write must not leave a truncated prefs file
+        let tmp = p.with_extension("json.tmp");
+        if std::fs::write(&tmp, Value::Object(obj).to_string()).is_err() || std::fs::rename(&tmp, p).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
     }
 }
 

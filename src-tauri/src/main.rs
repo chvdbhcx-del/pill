@@ -42,8 +42,10 @@ mod report;
 mod openarg;
 mod uninstall;
 mod ui;
+mod applog;
 
 fn main() {
+    applog::init(); // stderr -> %LOCALAPPDATA%\Pill\logs\pill.log (the release build has no console)
     // `pill.exe --uninstall-admin <port>:<token>`: the elevated helper of the uninstaller (uninstall/admin.rs); nothing else starts in that process
     if let Some(code) = uninstall::admin_main() {
         std::process::exit(code);
