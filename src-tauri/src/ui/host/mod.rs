@@ -25,6 +25,7 @@ pub mod testing;
 
 mod dropt;
 mod present;
+mod uia;
 mod win32;
 
 #[cfg(test)]

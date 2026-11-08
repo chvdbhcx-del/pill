@@ -38,6 +38,12 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 /// A native surface. Only `draw` is required; every other method has a do-nothing default so a static view is ten lines.
 pub trait View {
+    /// What a screen reader should say about this window (UI Automation name), e.g. "Pill, 12:30". `None` = "Pill" alone. Called on the UI
+    /// thread whenever a reader asks, so it should be cheap and must not change the view.
+    fn accessible(&self) -> Option<String> {
+        None
+    }
+
     /// The size (logical px) the view wants for its window, `None` = "whatever the window has". The host asks before every frame; a changed
     /// answer resizes the window (Overlay and Popup keep their anchor: the top centre; Normal windows only use it for their first size;
     /// Fullscreen ignores it). Return a stable frame and animate inside it: resizing a swap chain per frame is slow.

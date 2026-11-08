@@ -680,6 +680,7 @@ impl Host {
     fn close(&mut self, id: WindowId) {
         let Some(mut win) = self.wins.remove(&id) else { return };
         self.by_hwnd.remove(&hv(win.hwnd));
+        super::uia::forget(win.hwnd);
         SHARED.with(|s| s.borrow_mut().remove(&hv(win.hwnd)));
         win.pres = None; // release the composition target before the window goes
         unsafe {
@@ -1430,6 +1431,16 @@ impl Host {
         }
         let id = *self.by_hwnd.get(&hv(hwnd))?;
         match msg {
+            super::uia::WM_GETOBJECT => {
+                // a screen reader / UI Automation client asks for the window: hand out the provider (named by the view)
+                let text = self.wins.get(&id).and_then(|w| w.view.accessible());
+                unsafe { super::uia::get_object(hwnd, wp, lp, text.map(|t| super::uia::announce(&t))) }
+            }
+            super::uia::WM_A11Y_REFRESH => {
+                let text = self.wins.get(&id).and_then(|w| w.view.accessible());
+                super::uia::store(hwnd, text.map(|t| super::uia::announce(&t)));
+                Some(LRESULT(1))
+            }
             WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP | WM_LBUTTONDBLCLK | WM_RBUTTONDOWN | WM_RBUTTONUP | WM_RBUTTONDBLCLK | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_MBUTTONDBLCLK
             | WM_XBUTTONDOWN | WM_XBUTTONUP | WM_XBUTTONDBLCLK | WM_MOUSEWHEEL | WM_MOUSEHWHEEL | WM_MOUSELEAVE | WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP | WM_CHAR
             | WM_SETFOCUS | WM_KILLFOCUS => {

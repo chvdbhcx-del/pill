@@ -499,7 +499,47 @@ fn cursor_of(h: &Hit) -> Cursor {
     }
 }
 
+/// What the island's live strip says, as plain text for a screen reader: the clock's time, a card's title and subtitle, or the visible
+/// text of a slot row (every `text` / `title` / `sub` / `label` string of its spec, in order, without repeats).
+fn spoken(content: &LiveContent) -> String {
+    fn walk(v: &Value, out: &mut Vec<String>, depth: u8) {
+        if depth > 5 {
+            return;
+        }
+        match v {
+            Value::Object(m) => {
+                for (k, x) in m {
+                    match (k.as_str(), x) {
+                        ("text" | "title" | "sub" | "label", Value::String(s)) if !s.trim().is_empty() => {
+                            if !out.iter().any(|o| o == s.trim()) {
+                                out.push(s.trim().to_string());
+                            }
+                        }
+                        _ => walk(x, out, depth + 1),
+                    }
+                }
+            }
+            Value::Array(a) => a.iter().for_each(|x| walk(x, out, depth + 1)),
+            _ => {}
+        }
+    }
+    match content {
+        LiveContent::None => String::new(),
+        LiveContent::Clock { time, .. } => time.clone().unwrap_or_default(),
+        LiveContent::Card(c) => [c.spec.title.as_str(), c.spec.sub.as_str(), if c.spec.title.is_empty() { c.spec.html.as_str() } else { "" }].iter().filter(|s| !s.trim().is_empty()).map(|s| s.trim()).collect::<Vec<_>>().join(", "),
+        LiveContent::Slot { spec, .. } => {
+            let mut out = Vec::new();
+            walk(spec, &mut out, 0);
+            out.join(", ")
+        }
+    }
+}
+
 impl View for IslandView {
+    fn accessible(&self) -> Option<String> {
+        Some(spoken(&self.core.shell.view().live.content))
+    }
+
     fn on_dpi(&mut self, _scale: f32, cx: &mut Cx) {
         self.sync_env(cx);
         self.exec(cx);
@@ -988,5 +1028,22 @@ impl IslandView {
     }
     pub fn debug_pet_rect(&self) -> Option<Rect> {
         self.pet_rect
+    }
+}
+
+#[cfg(test)]
+mod spoken_tests {
+    use super::*;
+
+    #[test]
+    fn the_strip_is_read_out_as_plain_text() {
+        assert_eq!(spoken(&LiveContent::None), "");
+        let slot = |spec: Value| LiveContent::Slot { id: "agents".into(), key: "k".into(), spec };
+        assert_eq!(spoken(&slot(json!({"elements": [{"type": "text", "text": "Agent working"}, {"type": "dot", "color": "green"}]}))), "Agent working");
+        // order is kept, repeats and blanks are dropped, nesting is walked
+        assert_eq!(spoken(&slot(json!({"a": {"title": "Now playing"}, "b": [{"label": "Song"}, {"label": "Song"}, {"text": "  "}]}))).split(", ").count(), 2);
+        assert_eq!(spoken(&slot(json!(null))), "");
+        let deep = (0..20).fold(json!({"text": "buried"}), |v, _| json!({ "x": v }));
+        assert_eq!(spoken(&slot(deep)), "", "very deep specs are not walked");
     }
 }
