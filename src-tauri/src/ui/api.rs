@@ -194,6 +194,7 @@ mod tests {
                 text.push_str(&std::fs::read_to_string(&p).unwrap());
             }
         }
+        text.push_str(include_str!("../uninstall/commands.rs")); // split out of uninstall.rs: the scan above only reads src/*.rs
         let events = contract_events();
         assert!(events.len() >= 45, "event parse looks broken: {}", events.len());
         let missing: Vec<_> = events.iter().filter(|e| !text.contains(&format!("\"{e}\""))).collect();
@@ -204,14 +205,13 @@ mod tests {
     fn no_event_bypasses_the_bus() {
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut bad = Vec::new();
-        for e in std::fs::read_dir(&src).unwrap().flatten() {
-            let p = e.path();
-            if p.extension().is_some_and(|x| x == "rs") {
-                for (n, l) in std::fs::read_to_string(&p).unwrap().lines().enumerate() {
-                    let code = l.split("//").next().unwrap_or("");
-                    if [".emit(", ".emit_to(", ".emit_str(", ".emit_str_to(", ".emit_filter("].iter().any(|k| code.contains(k)) {
-                        bad.push(format!("{}:{}", p.file_name().unwrap().to_string_lossy(), n + 1));
-                    }
+        let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&src).unwrap().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "rs")).collect();
+        files.push(src.join("uninstall").join("commands.rs")); // split out of uninstall.rs
+        for p in files {
+            for (n, l) in std::fs::read_to_string(&p).unwrap().lines().enumerate() {
+                let code = l.split("//").next().unwrap_or("");
+                if [".emit(", ".emit_to(", ".emit_str(", ".emit_str_to(", ".emit_filter("].iter().any(|k| code.contains(k)) {
+                    bad.push(format!("{}:{}", p.file_name().unwrap().to_string_lossy(), n + 1));
                 }
             }
         }

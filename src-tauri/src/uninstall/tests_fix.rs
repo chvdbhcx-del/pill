@@ -668,7 +668,7 @@ fn a_panicking_worker_body_is_caught_and_reported() {
     assert_eq!(catch_body(|| panic!("{}", String::from("formatted"))).as_deref(), Some("formatted"));
     assert_eq!(catch_body(|| std::panic::panic_any(5u8)).as_deref(), Some("unknown error"));
     // every thread of the flow goes through spawn_guarded
-    let src = include_str!("../uninstall.rs");
+    let src = [include_str!("../uninstall.rs"), include_str!("commands.rs")].join("\n");
     let n = src.lines().filter(|l| l.contains("std::thread::spawn(move ||") && !l.trim_start().starts_with("//")).count();
     assert_eq!(n, 2, "only the output reader of ps() and spawn_guarded itself spawn a bare thread");
 }
