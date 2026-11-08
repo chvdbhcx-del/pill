@@ -163,6 +163,7 @@ impl Core {
             TabFx::VoiceToggle => acts.push(Act::Call { cmd: "voice_toggle", args: Value::Null }),
             TabFx::GoPage(p) => acts.push(Act::Call { cmd: "settings_open", args: json!({ "page": p }) }),
             TabFx::OverlayClosed(_) => acts.push(Act::AiClosed),
+            TabFx::TextFocus(on) => self.shell_event(pill_ui_core::shell::types::Event::TextFocus(on), now),
         }
         self.pump_notices();
         acts

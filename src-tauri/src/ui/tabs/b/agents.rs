@@ -482,7 +482,8 @@ mod tests {
         }
         let out = fx_b::take();
         assert!(out.contains(&TabFx::Badge { tab: "agents", text: "1".into() }), "{out:?}");
-        assert!(out.iter().any(|f| matches!(f, TabFx::SetLive { key, row: Some(r) } if key == "agents" && r.key == "wait")), "{out:?}");
+        // the "agents" row belongs to the island's live layer (spinner + status): the tab must not overwrite it with a plain text row
+        assert!(!out.iter().any(|f| matches!(f, TabFx::SetLive { key, .. } | TabFx::React { key, .. } | TabFx::Unreact { key } if key == "agents")), "{out:?}");
         assert!(sim.run(600) > 0, "the rows stagger in, then the frames stop... or the dots keep breathing");
     }
 

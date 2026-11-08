@@ -8,6 +8,7 @@
 //! Selection: drag inside one message (assistant answers through the markdown view, user bubbles through their text layout); Ctrl+C copies it,
 //! a click on a code block's Copy button copies the code. Selection across messages is not supported (one message at a time).
 use super::chat_pop::{HistPop, SetPop, K};
+use crate::ui::tabs::fx::{emit, TabFx};
 use super::kit::{self, Bk, Calls, Clicks, Cues, Field, Icons};
 use crate::ui::view::{Cx, DropEvent, DropPayload, DropPhase, Msg, View};
 use glasskit::canvas::Canvas;
@@ -145,6 +146,8 @@ pub struct ChatScreen {
     geo: Geo,
     mounted: bool,
     carry: f64,
+    /// the island has been told that a field of this tab owns the keyboard
+    kb: bool,
     scroll_bottom: bool,
     scroll_jump: bool,
     usel: Option<USel>,
@@ -200,6 +203,7 @@ impl ChatScreen {
             geo: Geo::default(),
             mounted: false,
             carry: 0.0,
+            kb: false,
             scroll_bottom: false,
             scroll_jump: false,
             usel: None,
@@ -312,6 +316,15 @@ impl ChatScreen {
             1 => &mut self.url,
             2 => &mut self.mdl,
             _ => &mut self.key,
+        }
+    }
+
+    /// The island is a no-activate overlay: while a field has the caret it must take the keyboard (and stay open), and give it back after.
+    fn sync_keyboard(&mut self) {
+        let on = self.focused_field().is_some();
+        if on != self.kb {
+            self.kb = on;
+            emit(TabFx::TextFocus(on));
         }
     }
 
@@ -733,6 +746,7 @@ impl View for ChatScreen {
     fn on_hide(&mut self, cx: &mut Cx) {
         self.run(Action::ClickOutside, cx);
         self.focus_field(None);
+        self.sync_keyboard();
     }
 
     fn on_drop(&mut self, ev: &DropEvent, cx: &mut Cx) -> Response {
@@ -927,6 +941,7 @@ impl View for ChatScreen {
         self.m.set_reduce_motion(cx.reduced_motion);
         self.m.tick(ms);
         self.drain(cx);
+        self.sync_keyboard();
         // the model's tick reveals streamed text and runs timers: look at the result next frame
         let streaming = self.m.is_streaming();
         if streaming || self.view.as_ref().is_some_and(|v| !v.ghosts.is_empty() || v.messages.iter().any(|m| m.copied)) {

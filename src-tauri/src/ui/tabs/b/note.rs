@@ -10,6 +10,7 @@
 use super::editor::{EdOut, Editor};
 use super::kit::{lang_of, ms_of, route_effects, Calls, Clicks, Cues, Icons};
 use super::timer_card::{TimerCardView, CARD_W};
+use crate::ui::tabs::fx::{emit, TabFx};
 use crate::ui::view::{Cx, Msg, Ticket, View};
 use glasskit::canvas::Canvas;
 use glasskit::ease::{curves, Tween};
@@ -155,6 +156,8 @@ pub struct NoteScreen {
     mounted: bool,
     visible: bool,
     carry: f64,
+    /// the island has been told that a field of this tab owns the keyboard
+    kb: bool,
     settings_t: Option<Ticket>,
     toast_t: Tween<f32>,
     toast: (String, bool),
@@ -211,6 +214,7 @@ impl NoteScreen {
             mounted: false,
             visible: false,
             carry: 0.0,
+            kb: false,
             settings_t: None,
             toast_t: Tween::at_rest(0.0),
             toast: (String::new(), false),
@@ -285,6 +289,16 @@ impl NoteScreen {
         self.settings_t = Some(cx.call_async("settings_get", json!({})));
         let calls = self.m.mount();
         self.calls.run(cx, calls);
+    }
+
+    /// The island is a no-activate overlay: while the editor or a card field has the caret it must take the keyboard (and stay open), and give it
+    /// back when the caret is gone.
+    fn sync_keyboard(&mut self) {
+        let on = self.visible && (self.ed.is_focused() || self.card.is_focused());
+        if on != self.kb {
+            self.kb = on;
+            emit(TabFx::TextFocus(on));
+        }
     }
 
     /// Everything the model asked for outside the backend, plus what the editor and the card produced since the last step.
@@ -362,6 +376,7 @@ impl View for NoteScreen {
         let calls = self.m.on_hide();
         self.calls.run(cx, calls);
         self.pump(cx);
+        self.sync_keyboard();
     }
 
     fn message(&mut self, msg: Msg, cx: &mut Cx) -> Response {
@@ -449,6 +464,7 @@ impl View for NoteScreen {
         }
         self.view_age += dt_ms;
         self.pump(cx);
+        self.sync_keyboard();
         let dt = (dt_ms / 1000.0) as f32;
         let mut busy = self.clicks.step(dt);
         busy |= self.cues.step(dt_ms as f32);

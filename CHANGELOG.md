@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.7.5] - 2026-11-08
+
+### Fixed
+- Typing in the Note editor, the reminder / custom-time fields and the chat composer works again: the island is a no-activate overlay and these tabs never asked for the keyboard (the island now takes it while a field has the caret, and stays open while you type).
+- The "Agent working" row no longer flips to a plain text row (no spinner, larger text) after you use the panel: the Agents tab wrote the same live row as the island's live layer; the live layer now owns it.
+
 ## [0.7.4] - 2026-11-03
 
 ### Fixed

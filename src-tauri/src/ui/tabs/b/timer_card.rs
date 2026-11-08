@@ -406,6 +406,11 @@ impl TimerCardView {
         }
     }
 
+    /// Whether the reminder or the custom-time field has the caret.
+    pub fn is_focused(&self) -> bool {
+        self.rf.is_focused() || self.cf.is_focused()
+    }
+
     pub fn focus_reminder_input(&mut self) {
         self.want_focus_r = true;
     }

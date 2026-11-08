@@ -42,6 +42,9 @@ pub enum TabFx {
     GoPage(&'static str),
     /// An in-panel overlay of set B closed itself (`ai_actions`): the host tab (clipboard) takes its place back.
     OverlayClosed(&'static str),
+    /// A text field of a B tab took (`true`) or lost (`false`) the keyboard: the island is a no-activate overlay, so it must be told to take
+    /// the foreground (and to stay open while the user types).
+    TextFocus(bool),
     /// The island's pin state changed (pinned = stays open).
     SetPinned(bool),
     OpenCommandBar,

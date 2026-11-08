@@ -71,6 +71,11 @@ pub fn route_effects(fx: Vec<Effect>, cx: &mut Cx) -> Vec<Effect> {
         match e {
             Effect::CopyText(t) => cx.set_clipboard_text(&t),
             Effect::Card(c) => emit(TabFx::Card(c)),
+            // the island's live layer (`live::agents::AgentsLive`) owns the "agents" row and its reaction (spinner + status text); the Agents tab
+            // writing the same key replaced it with a plain text row (no spinner, other style) until the next snapshot
+            Effect::SetLive { key, .. } if key == "agents" => {}
+            Effect::React { key, .. } if key == "agents" => {}
+            Effect::Unreact(k) if k == "agents" => {}
             Effect::SetLive { key, row } => emit(TabFx::SetLive { key, row }),
             Effect::React { key, kind, ttl_ms } => emit(TabFx::React { key, kind, color: None, ttl_ms }),
             Effect::Unreact(k) => emit(TabFx::Unreact { key: k }),
