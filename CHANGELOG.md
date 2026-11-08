@@ -2,6 +2,14 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.7.6] - 2026-11-09
+
+### Added
+- Screen reader support: the island is a UI Automation pane named by what it shows ("Pill, 12:30", the agent state, the card title), so Narrator and other readers announce it.
+
+### Changed
+- Internal: the uninstaller's command layer moved to its own module; animation tests no longer depend on the system "reduce animations" setting.
+
 ## [0.7.5] - 2026-11-08
 
 ### Fixed
