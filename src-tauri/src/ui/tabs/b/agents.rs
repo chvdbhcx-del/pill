@@ -409,7 +409,7 @@ mod tests {
 
     #[test]
     fn stagger_delays_each_row_and_ends_settled() {
-        let _g = crate::ui::host::testing::motion_lock(); // another test may flip the process-wide reduced-motion override
+        let _g = crate::ui::host::testing::motion_on(); // another test may flip the process-wide reduced-motion override; animations on whatever the OS says
         let mut f = Flipper::default();
         f.set(&rows(&["a", "b", "c"]), Mode::Stagger, false);
         let a0 = f.pos("a").unwrap();
@@ -426,6 +426,7 @@ mod tests {
 
     #[test]
     fn flip_slides_moved_rows_drops_new_and_fades_gone() {
+        let _g = crate::ui::host::testing::motion_on();
         let mut f = Flipper::default();
         f.set(&rows(&["a", "b"]), Mode::Jump, false);
         f.set(&rows(&["b", "n", "a"]), Mode::Flip, false);

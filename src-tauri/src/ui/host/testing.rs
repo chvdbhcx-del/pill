@@ -64,6 +64,20 @@ thread_local! {
     static HARNESS: Lease = Lease::take();
 }
 
+/// `motion_lock` plus reduced motion forced OFF for the test (a CI runner may have the system "reduce animations" setting on, and a test
+/// that waits for a half-way animation frame would then see the end state at once). The system value is restored on drop.
+pub struct MotionOn(#[allow(dead_code)] MutexGuard<'static, ()>);
+pub fn motion_on() -> MotionOn {
+    let g = motion_lock();
+    glasskit::ease::force_reduced(Some(false));
+    MotionOn(g)
+}
+impl Drop for MotionOn {
+    fn drop(&mut self) {
+        glasskit::ease::force_reduced(None);
+    }
+}
+
 /// Serialises tests that flip the process-wide reduced-motion override (`glasskit::ease::force_reduced`).
 pub fn motion_lock() -> MutexGuard<'static, ()> {
     static L: Mutex<()> = Mutex::new(());
