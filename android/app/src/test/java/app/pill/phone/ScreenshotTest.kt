@@ -76,6 +76,11 @@ class ScreenshotTest {
     )
     private val connected = HomeUi(
         LinkUi.Connected, "DESKTOP-VADIM", "192.168.1.20:41717", 87, false, "wifi", "Home", perms, transfers, 12,
+        app.pill.phone.protocol.Msg.Status(
+            87, false, "wifi", "Home", false, 0L, charge = "none", tempC = 31.5, health = "good",
+            storage = app.pill.phone.protocol.Msg.Status.Space(52_000_000_000, 128_000_000_000), ram = app.pill.phone.protocol.Msg.Status.Space(3072, 8000),
+            net = app.pill.phone.protocol.Msg.Status.NetInfo("wifi", mbps = 866, bars = 3), ringer = "vibrate", screen = true,
+        ),
     )
 
     @Test fun onboarding1() = shoot("onboarding-1") { OnboardingScreen({}, 0) }

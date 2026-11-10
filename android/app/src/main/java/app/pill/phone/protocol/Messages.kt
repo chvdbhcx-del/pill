@@ -75,7 +75,41 @@ sealed interface Msg {
         val ssid: String?,
         val dnd: Boolean,
         val time: Long,
-    ) : Msg
+        // ---- protocol v1.1, all optional: absent on the wire when unknown (older PCs ignore them) ----
+        /** "none", "charging" or "full". */
+        val charge: String? = null,
+        /** "ac", "usb" or "wireless", only while plugged in. */
+        val plug: String? = null,
+        /** Battery temperature in deg C, one decimal. */
+        val tempC: Double? = null,
+        /** good, overheat, cold, dead, over_voltage, failure, unknown. */
+        val health: String? = null,
+        /** Minutes to a full battery, when the OS knows (API 28+). */
+        val fullInMin: Int? = null,
+        /** Internal storage in bytes. */
+        val storage: Space? = null,
+        /** Memory in MB. */
+        val ram: Space? = null,
+        val net: NetInfo? = null,
+        val airplane: Boolean? = null,
+        /** "sound", "vibrate" or "silent". */
+        val ringer: String? = null,
+        val screen: Boolean? = null,
+        /** The phone's time zone id and its current UTC offset in minutes. */
+        val tz: String? = null,
+        val utcMin: Int? = null,
+    ) : Msg {
+        @Serializable data class Space(val free: Long, val total: Long)
+
+        /** Details of the connection: Wi-Fi speed, or mobile carrier and generation; [bars] is the signal level 0..4. */
+        @Serializable data class NetInfo(
+            val type: String? = null,
+            val mbps: Int? = null,
+            val bars: Int? = null,
+            val carrier: String? = null,
+            val gen: String? = null,
+        )
+    }
 
     @Serializable @SerialName("reply.result")
     data class ReplyResult(val req: String, val ok: Boolean, val error: String? = null) : Msg

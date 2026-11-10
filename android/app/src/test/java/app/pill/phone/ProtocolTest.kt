@@ -54,6 +54,35 @@ class ProtocolTest {
         assertEquals("""{"t":"file.done","id":"i","ok":true}""", Codec.encode(Msg.FileDone("i", true)))
     }
 
+    private val rich = Msg.Status(
+        87, true, "wifi", "Home", true, 5L,
+        charge = "charging", plug = "usb", tempC = 31.5, health = "good", fullInMin = 42,
+        storage = Msg.Status.Space(52_000_000_000, 128_000_000_000), ram = Msg.Status.Space(3100, 8000),
+        net = Msg.Status.NetInfo("wifi", mbps = 866, bars = 3), airplane = false, ringer = "vibrate", screen = true,
+        tz = "Europe/Moscow", utcMin = 180,
+    )
+
+    @Test fun theRichStatusRoundTripsAndKeepsTheOldWireFormat() {
+        roundTrip(rich)
+        roundTrip(rich.copy(net = Msg.Status.NetInfo("mobile", carrier = "Beeline", gen = "5G", bars = 2), plug = null, fullInMin = null))
+        // a phone that knows nothing extra sends exactly what protocol v1 says: no new keys at all
+        assertEquals(
+            """{"t":"status","battery":87,"charging":false,"network":"wifi","ssid":"Home","dnd":false,"time":5}""",
+            Codec.encode(Msg.Status(87, false, "wifi", "Home", false, 5L)),
+        )
+        val o = obj(rich)
+        assertEquals("charging", o["charge"]!!.jsonPrimitive.content)
+        assertEquals("31.5", o["tempC"]!!.jsonPrimitive.content)
+        assertEquals("""{"free":52000000000,"total":128000000000}""", o["storage"].toString())
+        assertEquals("""{"type":"wifi","mbps":866,"bars":3}""", o["net"].toString())
+        assertFalse(obj(rich.copy(plug = null)).containsKey("plug"))
+        // ...and an old or a future status still decodes
+        val old = Codec.decode("""{"t":"status","battery":5,"charging":true,"network":"none","ssid":null,"dnd":false,"time":1}""") as Msg.Status
+        assertNull(old.charge); assertNull(old.storage); assertNull(old.net)
+        val future = Codec.decode("""{"t":"status","battery":5,"charging":true,"network":"none","ssid":null,"dnd":false,"time":1,"charge":"full","hologram":{"x":1}}""") as Msg.Status
+        assertEquals("full", future.charge)
+    }
+
     @Test fun decodesWhatThePcSends() {
         assertEquals(Msg.Hello("PC", 1, 99), Codec.decode("""{"t":"hello","pcName":"PC","serverVersion":1,"time":99}"""))
         assertEquals(Msg.NotifReply("7", "k", "ok"), Codec.decode("""{"t":"notif.reply","req":"7","key":"k","text":"ok"}"""))

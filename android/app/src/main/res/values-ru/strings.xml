@@ -201,4 +201,38 @@
     <string name="cam_forever_body">Доступ к камере заблокирован. Включите его в настройках приложения или введите код вручную.</string>
     <string name="btn_allow_camera">Разрешить камеру</string>
     <string name="btn_open_settings">Открыть настройки</string>
+
+    <!-- Этот телефон (что видит ПК) -->
+    <string name="dev_section">Этот телефон</string>
+    <string name="dev_charging">Заряжается</string>
+    <string name="dev_full">Заряжен</string>
+    <string name="dev_on_battery">От батареи</string>
+    <string name="dev_plug_ac">от сети</string>
+    <string name="dev_plug_usb">USB</string>
+    <string name="dev_plug_wireless">без провода</string>
+    <string name="dev_to_full">до полной: %1$s</string>
+    <string name="dev_dur_hm">%1$d ч %2$d мин</string>
+    <string name="dev_dur_m">%1$d мин</string>
+    <string name="dev_temp">%1$s °C</string>
+    <string name="dev_health">состояние: %1$s</string>
+    <string name="dev_health_good">хорошее</string>
+    <string name="dev_health_overheat">перегрев</string>
+    <string name="dev_health_cold">холодная</string>
+    <string name="dev_health_dead">изношена</string>
+    <string name="dev_health_over_voltage">перенапряжение</string>
+    <string name="dev_health_failure">сбой</string>
+    <string name="dev_storage">Хранилище</string>
+    <string name="dev_memory">Память</string>
+    <string name="dev_free">свободно %1$s</string>
+    <string name="dev_of">из %1$s</string>
+    <string name="dev_wifi_speed">%1$d Мбит/с</string>
+    <string name="dev_airplane">Режим полёта</string>
+    <string name="dev_dnd">Не беспокоить</string>
+    <string name="dev_ringer_vibrate">Вибрация</string>
+    <string name="dev_ringer_silent">Без звука</string>
+    <string name="dev_screen_on">Экран включён</string>
+    <string name="dev_screen_off">Экран выключен</string>
+    <string name="dev_model_line">Android %1$s</string>
+    <string name="dev_shared_title">Что видит ваш ПК</string>
+    <string name="dev_shared_body">Заряд, память, накопитель, сеть и уровень сигнала, режимы «без звука» и «Не беспокоить». Только пока есть связь и только по домашней сети. Для имени Wi-Fi нужно разрешение на геолокацию, для остального ничего не нужно.</string>
 </resources>

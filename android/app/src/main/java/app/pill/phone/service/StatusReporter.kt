@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import androidx.core.content.ContextCompat
@@ -22,12 +23,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
- * The protocol's `status` message: battery, charging, network, SSID (only with location permission) and Do Not Disturb.
- * Sent on connect and when something changes, at most once per 10 s. Also feeds the home screen chips.
+ * The protocol's `status` message: battery, charging, network, SSID (only with location permission) and Do Not Disturb, plus the optional
+ * v1.1 details of [DeviceFacts] (charging type, temperature, storage, memory, signal, airplane / ringer / screen, time zone).
+ * Sent on connect and when something changes, at most once per 10 s. Also feeds the home screen.
  */
 @SuppressLint("StaticFieldLeak") // holds only the application context
 object StatusReporter {
     private const val MIN_GAP_MS = 10_000L
+    private const val REFRESH_MS = 10 * 60_000L
 
     private val _current = MutableStateFlow<Msg.Status?>(null)
     val current: StateFlow<Msg.Status?> = _current
@@ -47,6 +50,11 @@ object StatusReporter {
         val f = IntentFilter().apply {
             addAction(Intent.ACTION_BATTERY_CHANGED)
             addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+            addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
         }
         ContextCompat.registerReceiver(app, r, f, ContextCompat.RECEIVER_NOT_EXPORTED)
         scope.launch {
@@ -63,6 +71,13 @@ object StatusReporter {
                     lastSent = s
                     lastAt = System.currentTimeMillis()
                 }
+            }
+        }
+        // storage and memory have no broadcast: a slow look every 10 minutes, sent only if it changed by a coarse step
+        scope.launch {
+            while (true) {
+                delay(REFRESH_MS)
+                poke()
             }
         }
         poke()
@@ -91,7 +106,7 @@ object StatusReporter {
         val net = Net.kind(ctx)
         val nm = ctx.getSystemService(NotificationManager::class.java)
         val dnd = nm.currentInterruptionFilter.let { it != NotificationManager.INTERRUPTION_FILTER_ALL && it != NotificationManager.INTERRUPTION_FILTER_UNKNOWN }
-        return Msg.Status(
+        val base = Msg.Status(
             battery = if (level >= 0 && scale > 0) level * 100 / scale else 0,
             charging = charging,
             network = net,
@@ -99,6 +114,7 @@ object StatusReporter {
             dnd = dnd,
             time = System.currentTimeMillis(),
         )
+        return DeviceFacts.fill(ctx, b, base, net)
     }
 
     @Suppress("DEPRECATION")

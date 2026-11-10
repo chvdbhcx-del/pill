@@ -92,6 +92,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             perms = perms,
             transfers = transfers.map { it.toUi() },
             mirroredApps = mirroredApps,
+            status = status,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeUi())
 
@@ -107,7 +108,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     )
 
     val settings: StateFlow<SettingsUi> = combine(Store.paired, Store.autoReceive, Store.includeOngoing, _perms) { p, auto, ongoing, perms ->
-        SettingsUi(p?.pcName?.ifBlank { null }, p?.address, auto, ongoing, perms, BuildConfig.VERSION_NAME)
+        SettingsUi(p?.pcName?.ifBlank { null }, p?.address, auto, ongoing, perms, BuildConfig.VERSION_NAME, android.os.Build.MODEL.orEmpty(), android.os.Build.VERSION.RELEASE.orEmpty())
     }.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUi())
 
     fun setAutoReceive(on: Boolean) = Store.setAutoReceive(on)

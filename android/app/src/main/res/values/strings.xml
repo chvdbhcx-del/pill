@@ -198,4 +198,38 @@
     <string name="cam_forever_body">Camera access is blocked. Turn it on in the app settings, or enter the code by hand.</string>
     <string name="btn_allow_camera">Allow camera</string>
     <string name="btn_open_settings">Open settings</string>
+
+    <!-- This phone (what the PC sees) -->
+    <string name="dev_section">This phone</string>
+    <string name="dev_charging">Charging</string>
+    <string name="dev_full">Fully charged</string>
+    <string name="dev_on_battery">On battery</string>
+    <string name="dev_plug_ac">mains</string>
+    <string name="dev_plug_usb">USB</string>
+    <string name="dev_plug_wireless">wireless</string>
+    <string name="dev_to_full">%1$s to full</string>
+    <string name="dev_dur_hm">%1$d h %2$d min</string>
+    <string name="dev_dur_m">%1$d min</string>
+    <string name="dev_temp">%1$s °C</string>
+    <string name="dev_health">health %1$s</string>
+    <string name="dev_health_good">good</string>
+    <string name="dev_health_overheat">overheated</string>
+    <string name="dev_health_cold">cold</string>
+    <string name="dev_health_dead">worn out</string>
+    <string name="dev_health_over_voltage">over voltage</string>
+    <string name="dev_health_failure">failure</string>
+    <string name="dev_storage">Storage</string>
+    <string name="dev_memory">Memory</string>
+    <string name="dev_free">%1$s free</string>
+    <string name="dev_of">of %1$s</string>
+    <string name="dev_wifi_speed">%1$d Mbps</string>
+    <string name="dev_airplane">Airplane mode</string>
+    <string name="dev_dnd">Do not disturb</string>
+    <string name="dev_ringer_vibrate">Vibrate</string>
+    <string name="dev_ringer_silent">Silent</string>
+    <string name="dev_screen_on">Screen on</string>
+    <string name="dev_screen_off">Screen off</string>
+    <string name="dev_model_line">Android %1$s</string>
+    <string name="dev_shared_title">What your PC sees</string>
+    <string name="dev_shared_body">Battery, storage, memory, network name and signal, silent and Do Not Disturb modes. Only while connected, only over your home network. The Wi-Fi name needs the location permission, nothing else does.</string>
 </resources>

@@ -109,6 +109,10 @@ fun HomeScreen(ui: HomeUi, actions: HomeActions) {
                     }
                 }
             }
+            if (ui.link == LinkUi.Connected && ui.status != null) {
+                item(key = "device-label") { SectionLabel(stringResource(R.string.dev_section), Modifier.staggerIn(2)) }
+                item(key = "device") { DeviceCard(ui.status, Modifier.staggerIn(3)) }
+            }
             if (ui.link != LinkUi.Unpaired) {
                 item(key = "quick") { QuickActions(ui, actions, Modifier.staggerIn(3)) }
             }
@@ -165,7 +169,8 @@ private fun Hero(ui: HomeUi, actions: HomeActions, modifier: Modifier) {
                     Text(body, style = MaterialTheme.typography.bodyLarge, color = c.textDim, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 6.dp))
                 }
             }
-            AnimatedVisibility(ui.link == LinkUi.Connected, enter = Motion.enterItem, exit = Motion.exitItem) {
+            // the battery and network chips are before an older app had a status; with the "This phone" card they live there
+            AnimatedVisibility(ui.link == LinkUi.Connected && ui.status == null, enter = Motion.enterItem, exit = Motion.exitItem) {
                 Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     ui.battery?.let { b ->
                         Chip("$b%", icon = if (ui.charging) Icons.Rounded.BatteryChargingFull else Icons.Rounded.BatteryStd)

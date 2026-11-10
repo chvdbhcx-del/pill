@@ -1,6 +1,7 @@
 package app.pill.phone.ui
 
 import androidx.compose.runtime.Immutable
+import app.pill.phone.protocol.Msg
 
 /** What the connection looks like to the user. */
 enum class LinkUi { Unpaired, Connecting, Connected, NoNetwork, NotFound, Revoked }
@@ -47,6 +48,8 @@ data class HomeUi(
     val perms: PermissionsUi = PermissionsUi(),
     val transfers: List<TransferUi> = emptyList(),
     val mirroredApps: Int? = null,
+    /** The newest status snapshot (battery details, storage, memory, network, modes), for the "This phone" card. */
+    val status: Msg.Status? = null,
 )
 
 @Immutable
@@ -60,6 +63,9 @@ data class SettingsUi(
     val includeOngoing: Boolean = false,
     val perms: PermissionsUi = PermissionsUi(),
     val versionName: String = "1.0.0",
+    /** "Pixel 8" and "15": what the PC is told about this phone. */
+    val model: String = "",
+    val androidVersion: String = "",
 )
 
 /** The pairing flow, one state at a time. */

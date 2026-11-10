@@ -25,7 +25,9 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.SaveAlt
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -88,6 +90,16 @@ fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: Boolean 
                         Spacer(Modifier.height(14.dp))
                         if (ui.pcName != null) PillButton(stringResource(R.string.btn_unpair), { onAskUnpair(true) }, Modifier.fillMaxWidth(), kind = ButtonKind.Danger, icon = Icons.Rounded.LinkOff)
                         else PillButton(stringResource(R.string.btn_scan_qr), actions.onPair, Modifier.fillMaxWidth(), icon = Icons.Rounded.QrCodeScanner)
+                    }
+                }
+                if (ui.model.isNotBlank()) {
+                    item(key = "phone-label") { SectionLabel(stringResource(R.string.dev_section)) }
+                    item(key = "phone") {
+                        GlassCard(Modifier.staggerIn(1)) {
+                            SettingRow(ui.model, subtitle = stringResource(R.string.dev_model_line, ui.androidVersion), icon = Icons.Rounded.Smartphone)
+                            Divider(Modifier.padding(vertical = 8.dp))
+                            SettingRow(stringResource(R.string.dev_shared_title), subtitle = stringResource(R.string.dev_shared_body), icon = Icons.Rounded.Visibility)
+                        }
                     }
                 }
                 item(key = "notif-label") { SectionLabel(stringResource(R.string.settings_notifications)) }
