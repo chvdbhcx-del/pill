@@ -612,3 +612,40 @@ fn raised_btn(cv: &Canvas, th: &Theme, _ic: &Icons, clicks: &Clicks<K>, k: K, r:
         });
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::host::testing::motion_on;
+
+    #[test]
+    fn a_closing_popover_flows_out_and_turns_around_when_reopened() {
+        let _m = motion_on();
+        let mut p = Presence::default();
+        assert!(!p.visible());
+        p.sync(true, false);
+        for _ in 0..60 {
+            p.step(16.0);
+        }
+        assert_eq!((p.exit_k(), p.k.at()), (1.0, 1.0));
+        p.sync(false, false);
+        assert!(p.visible(), "still drawn while it flows out");
+        p.step(48.0);
+        let mid = p.exit_k();
+        assert!(mid < 1.0 && mid > 0.0, "{mid}");
+        p.sync(true, false); // reopened half-way: it goes back up from where it is
+        p.step(16.0);
+        assert!((p.k.at() - mid).abs() < 0.2, "no jump, it turns around with its momentum");
+        p.sync(false, false);
+        let mut ms = 0.0;
+        while p.step(8.0) {
+            ms += 8.0;
+            assert!(ms < 800.0, "settles");
+        }
+        assert!(!p.visible());
+        let mut q = Presence::default();
+        q.sync(true, true);
+        q.sync(false, true);
+        assert!(!q.visible(), "reduced motion: gone at once");
+    }
+}

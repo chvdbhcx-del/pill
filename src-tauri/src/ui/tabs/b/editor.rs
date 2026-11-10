@@ -18,7 +18,7 @@
 //! painting (the typed character is on screen in the same frame). Results go to [`Editor::take_out`].
 use super::note_doc::*;
 use glasskit::canvas::Canvas;
-use glasskit::ease::{curves, Tween};
+use crate::ui::liquid::{Feel, Flow, Flow2};
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{Cursor, InputEvent, KeyCode, Modifiers, MouseButton, Response};
 use glasskit::richtext::{RichLayout, RichText, SpanStyle};
@@ -38,6 +38,9 @@ pub const PAD: f32 = 16.0;
 pub const LH: f32 = 20.0;
 const BASE: Style = Style::new(14.0, 500);
 const UNDO_CAP: usize = 200;
+/// How the drawn caret follows the real one: critically damped, arriving in the SNAP time (no wobble on a text cursor).
+const CARET_FEEL: Feel = Feel::FADE.within(Feel::SNAP.settle_ms);
+
 /// Seconds the caret keeps blinking after the last input; then it stays solid so an idle focused editor costs no frames.
 const BLINK_WINDOW: f32 = 12.0;
 const BLINK_HALF: f32 = 0.53;
@@ -102,9 +105,17 @@ pub struct Editor {
     reveal: bool,
     last_caret: [bool; 6],
     ime: Option<Rect>,
-    ph_t: Tween<f32>,
+    /// opacity of the placeholder
+    ph_t: Flow,
     ph_on: bool,
-    pop: Option<(usize, Tween<f32>)>,
+    /// the placeholder is allowed (the owner passed one at the last draw)
+    ph_ok: bool,
+    /// the checkbox that was just ticked pops (scale, from .72)
+    pop: Option<(usize, Flow)>,
+    /// where the caret is drawn: it glides to the real position (content coordinates), critically damped at the SNAP time
+    caret_fx: Flow2,
+    /// `caret_fx` has been placed since the document was set (the first place lands at once)
+    caret_seen: bool,
     dark: bool,
     pub reduced: bool,
 }
@@ -157,8 +168,11 @@ impl Editor {
             reveal: false,
             last_caret: [false; 6],
             ime: None,
-            ph_t: Tween::at_rest(1.0),
+            ph_t: Flow::new(1.0, Feel::FADE),
             ph_on: true,
+            ph_ok: true,
+            caret_fx: Flow2::px((0.0, 0.0), CARET_FEEL),
+            caret_seen: false,
             pop: None,
             dark: true,
             reduced: false,
@@ -182,6 +196,7 @@ impl Editor {
         self.geo_dirty = true;
         self.sv.state.scroll_to(0.0, false);
         self.last_caret = [false; 6];
+        self.caret_seen = false;
     }
 
     pub fn html(&self) -> String {
@@ -293,14 +308,20 @@ impl Editor {
     pub fn step(&mut self, dt_ms: f64) -> bool {
         let dt = (dt_ms / 1000.0) as f32;
         let mut busy = self.sv.step(dt);
-        busy |= self.ph_t.step(dt);
+        // the placeholder follows the document here (a step path), not in draw, so its fade gets its frames
+        self.sync_placeholder();
+        self.ph_t.step(dt_ms);
+        busy |= self.ph_t.moving();
         if let Some((_, t)) = &mut self.pop {
-            if !t.step(dt) {
+            t.step(dt_ms);
+            if !t.moving() {
                 self.pop = None;
             } else {
                 busy = true;
             }
         }
+        self.caret_fx.step(dt_ms);
+        busy |= self.caret_fx.moving();
         if self.focused {
             self.blink += dt;
             busy |= !self.reduced && self.blink < BLINK_WINDOW;
@@ -492,7 +513,9 @@ impl Editor {
             self.begin_edit(false);
             self.doc.lines[line].kind = Kind::Check(!t);
             if !self.reduced {
-                self.pop = Some((line, Tween::new(0.0, 1.0, 0.32, curves::SPRING_POP)));
+                let mut f = Flow::new(0.72, Feel::POP);
+                f.to(1.0);
+                self.pop = Some((line, f));
             }
             self.changed();
         }
@@ -1043,16 +1066,30 @@ impl Editor {
             self.last_caret = flags;
             self.out.push(EdOut::Caret(flags));
         }
-        let want_ph = placeholder.is_some() && self.doc.is_blank();
-        if want_ph != self.ph_on {
-            self.ph_on = want_ph;
+        self.ph_ok = placeholder.is_some();
+        self.sync_placeholder();
+        self.paint(cv, th, rect, placeholder);
+    }
+
+    fn sync_placeholder(&mut self) {
+        let want = self.ph_ok && self.doc.is_blank();
+        if want != self.ph_on {
+            self.ph_on = want;
+            self.ph_t.to(want as u8 as f32);
             if self.reduced {
-                self.ph_t.jump(want_ph as u8 as f32);
-            } else {
-                self.ph_t.retarget(want_ph as u8 as f32, 0.12, curves::EASE_OUT);
+                self.ph_t.jump(want as u8 as f32);
             }
         }
-        self.paint(cv, th, rect, placeholder);
+    }
+
+    /// Point the caret glide at the caret's real place (the first time after a document is set, and under reduced motion: at once).
+    fn sync_caret(&mut self) {
+        let (x, y, _) = self.caret_box(self.caret);
+        if !self.caret_seen || self.reduced {
+            self.caret_fx.jump((x, y));
+            self.caret_seen = true;
+        }
+        self.caret_fx.to((x, y));
     }
 
     fn paint(&mut self, cv: &Canvas, th: &Theme, rect: Rect, placeholder: Option<&str>) {
@@ -1060,6 +1097,7 @@ impl Editor {
         let off = self.sv.state.offset();
         let (sa, sb) = self.sel();
         let sel_col = th.accent.alpha(if th.dark { 0.38 } else { 0.30 });
+        self.sync_caret();
         let show_caret = self.focused && (self.reduced || self.blink >= BLINK_WINDOW || self.blink % (2.0 * BLINK_HALF) < BLINK_HALF);
         cv.with_clip_rr(rect, 16.0, |cv| {
             cv.with_offset(rect.x + PAD, rect.y + PAD - off, |cv| {
@@ -1094,7 +1132,7 @@ impl Editor {
                         }
                         Kind::Check(t) => {
                             let scale = match &self.pop {
-                                Some((pi, tw)) if *pi == i => 0.72 + 0.28 * tw.value(),
+                                Some((pi, tw)) if *pi == i => tw.at(),
                                 _ => 1.0,
                             };
                             let r = Rect::new(0.0, g.y + (LH - BOX) / 2.0 + 0.5, BOX, BOX);
@@ -1107,11 +1145,12 @@ impl Editor {
                     }
                 }
                 if show_caret {
-                    let (x, y, h) = self.caret_box(self.caret);
+                    let (_, _, h) = self.caret_box(self.caret);
+                    let (x, y) = self.caret_fx.at();
                     cv.fill_rect(Rect::new(x, y, 1.5, h), th.text);
                 }
             });
-            if let (Some(ph), k) = (placeholder, self.ph_t.value().clamp(0.0, 1.0)) {
+            if let (Some(ph), k) = (placeholder, self.ph_t.at01()) {
                 if k > 0.01 {
                     cv.text(Rect::new(rect.x + PAD, rect.y + PAD, rect.w - 2.0 * PAD, LH * 3.0), ph, BASE.wrap(), th.dim.fade(0.85 * k));
                 }
@@ -1396,5 +1435,51 @@ mod tests {
             ed.step(50.0);
         }
         assert!(!ed.step(16.0), "after the blink window the caret stays solid and the editor idles");
+    }
+
+    #[test]
+    fn the_drawn_caret_glides_to_the_real_one_without_jumping_and_the_editor_idles_after() {
+        let _m = crate::ui::host::testing::motion_on();
+        let c = cx();
+        let mut ed = focused("hello");
+        feed(&mut ed, &[key(KeyCode::End, Modifiers::NONE)], &c);
+        let (real_x, _, _) = ed.caret_box(ed.caret);
+        let (drawn0, _) = ed.caret_fx.at();
+        assert!(drawn0 < real_x - 5.0, "the drawn caret starts where it was: {drawn0} vs {real_x}");
+        let mut prev = drawn0;
+        let mut frames = 0;
+        loop {
+            let busy = ed.step(1000.0 / 120.0);
+            let (x, _) = ed.caret_fx.at();
+            assert!(x >= prev - 1e-3 && x <= real_x + 0.5, "monotone and bounded: {x}");
+            prev = x;
+            if !ed.caret_fx.moving() {
+                break;
+            }
+            assert!(busy);
+            frames += 1;
+            assert!(frames < 120, "settles");
+        }
+        assert_eq!(ed.caret_fx.at().0, real_x);
+        for _ in 0..400 {
+            ed.step(50.0);
+        }
+        assert!(!ed.step(16.0), "idle again");
+    }
+
+    #[test]
+    fn the_placeholder_fades_with_the_document() {
+        let _m = crate::ui::host::testing::motion_on();
+        let c = cx();
+        let mut ed = focused("");
+        assert_eq!(ed.ph_t.at(), 1.0, "a blank note starts with the hint");
+        feed(&mut ed, &typ("x"), &c);
+        assert_eq!(ed.ph_t.at(), 1.0, "no jump");
+        ed.step(16.0);
+        assert!(ed.ph_t.at() < 1.0 && ed.ph_t.at() > 0.0);
+        for _ in 0..60 {
+            ed.step(16.0);
+        }
+        assert_eq!(ed.ph_t.at(), 0.0);
     }
 }
