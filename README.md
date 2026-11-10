@@ -106,7 +106,7 @@ Also built in: a first-run **AI setup** wizard (installs a local Ollama or Whisp
 
 ## Pets and the edge
 
-The island can wear a **notch** (the default) or a floating **capsule**, and its edge can be a **liquid** line (default), a **tail**, **legs**, a soft **glow** or plain. Choose one of **28 small pets** that live inside the capsule and follow what the island does: they wake for music, think while an agent works, cheer when it finishes and fall asleep after five idle minutes.
+The island can wear a **notch** (the default) or a floating **capsule**, and its edge can be a **liquid** line (default), a **tail**, **legs**, a soft **glow** or plain. Choose one of **28 small pets** that live inside the capsule and follow what the island does: they wake for music, think while an agent works, cheer when it finishes and fall asleep after five idle minutes. Pets come in S, M, L and a big XL (the capsule grows to hold it); the tail and legs stand on the liquid edge (switch it off with *Liquid edge under the character*), and a pet can step aside while music plays (*Stay while music plays*).
 
 <div align="center">
 <img src="docs/images/settings-pets.png" alt="Settings, Character page: the pet picker" width="560">

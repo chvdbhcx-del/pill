@@ -15,11 +15,13 @@ pub struct PetCfg {
     pub id: String,
     pub side: Side,
     pub size: Size,
+    /// `pet.keepDuringMusic`: the pet stays (and dances) while music plays; off = it steps aside
+    pub keep_music: bool,
 }
 
 impl Default for PetCfg {
     fn default() -> Self {
-        PetCfg { id: String::new(), side: Side::Right, size: Size::M }
+        PetCfg { id: String::new(), side: Side::Right, size: Size::M, keep_music: true }
     }
 }
 
@@ -32,7 +34,8 @@ pub fn pet_cfg(settings: &Value) -> PetCfg {
     };
     let side = if settings.get("pet.side").and_then(|v| v.as_str()) == Some("left") { Side::Left } else { Side::Right };
     let size = Size::parse(settings.get("pet.size").and_then(|v| v.as_str()).unwrap_or("m"));
-    PetCfg { id, side, size }
+    let keep_music = settings.get("pet.keepDuringMusic").and_then(|v| v.as_bool()).unwrap_or(true);
+    PetCfg { id, side, size, keep_music }
 }
 
 /// `characters.js eyesSide()` as the shell's `CharSide`: the pet on the left sends the weather icon (and the eyes) to the right.
@@ -89,6 +92,7 @@ pub struct Companions {
     /// host clock of the last `tick`: the engines get the REAL time since then (the host hands a nominal frame after an idle gap)
     last_tick: Option<f64>,
     created: bool,
+    music_hide: super::pet_extras::MusicHide,
 }
 
 impl Companions {
@@ -206,7 +210,8 @@ impl Companions {
             None => 16.0,
         };
         self.last_tick = Some(now_ms);
-        let mut busy = false;
+        let hide = self.state == "music" && !self.cfg.keep_music && !self.cfg.id.is_empty();
+        let mut busy = self.music_hide.step(hide, dt_ms as f64);
         if let Some(p) = &mut self.pet {
             busy |= p.tick(dt_ms) == NeedsFrame::Yes;
         }
@@ -281,9 +286,18 @@ impl Companions {
         Some(Rect::new(x, body.bottom() - 1.5 * s - h, w, h))
     }
 
+    /// The pet has stepped aside for the music (`pet.keepDuringMusic` off): it is not drawn and cannot be poked.
+    pub fn pet_gone(&self) -> bool {
+        self.music_hide.gone()
+    }
+
     /// Draws the pet into `r` at opacity `alpha`.
     pub fn draw_pet(&mut self, cv: &Canvas, r: Rect, alpha: f32) {
         self.ensure(cv);
+        let alpha = alpha * self.music_hide.alpha();
+        if alpha <= 0.002 {
+            return;
+        }
         let (cx, cy) = (r.cx(), r.y + r.h * eye_line_y(&self.cfg.id));
         self.face = Some((cx, cy));
         if let Some(p) = &mut self.pet {
@@ -310,12 +324,12 @@ impl Companions {
     }
 
     /// Legs under the eyes and the eyes on the text line. `eyes` = (x, y) of the middle between the eyes in window px.
-    pub fn draw_legs_eyes(&mut self, cv: &Canvas, body: Rect, eyes: (f32, f32), s: f32) {
+    pub fn draw_legs_eyes(&mut self, cv: &Canvas, body: Rect, eyes: (f32, f32), s: f32, drop: f32) {
         self.ensure(cv);
         self.eyes_at = Some(eyes);
         let lx = eyes.0.clamp(body.x + 14.0 * s, (body.right() - 14.0 * s).max(body.x + 14.0 * s));
         if let Some(c) = &mut self.chars {
-            c.draw_legs(cv.dc, lx, body.bottom() - 0.2, s);
+            c.draw_legs(cv.dc, lx, body.bottom() - 0.2 + drop, s); // `drop`: the liquid edge sags under the legs, they stand on it
             c.draw_eyes(cv.dc, eyes.0, eyes.1, s);
         }
     }
@@ -450,5 +464,36 @@ mod tests {
         assert!(moved, "12 s of frames with the reaction re-applied each frame: the pet never moved");
         c.set_reaction("music", "#d8836a");
         assert_eq!(c.state, "music", "a real change still goes through");
+    }
+
+    #[test]
+    fn the_pet_stays_during_music_unless_told_to_step_aside() {
+        let _m = crate::ui::host::testing::motion_on();
+        let mut c = Companions::new();
+        assert!(pet_cfg(&json!({"pet": "cat"})).keep_music, "default: keep");
+        c.apply(&json!({"pet": "cat"}), EdgeStyle::Liquid);
+        c.set_reaction("music", "");
+        for k in 0..100 {
+            c.tick(k as f64 * 16.0);
+        }
+        assert!(!c.pet_gone());
+        c.apply(&json!({"pet": "cat", "pet.keepDuringMusic": false}), EdgeStyle::Liquid);
+        for k in 100..300 {
+            c.tick(k as f64 * 16.0);
+        }
+        assert!(c.pet_gone(), "stepped aside");
+        c.set_reaction("calm", "");
+        for k in 300..500 {
+            c.tick(k as f64 * 16.0);
+        }
+        assert!(!c.pet_gone(), "back when the music stops");
+    }
+
+    #[test]
+    fn the_big_pet_reserves_more_room_than_the_large_one() {
+        let l = pet_cfg(&json!({"pet": "cat", "pet.size": "l"}));
+        let xl = pet_cfg(&json!({"pet": "cat", "pet.size": "xl"}));
+        assert_eq!(xl.size, Size::Xl);
+        assert!(reserve_px(&xl) > reserve_px(&l));
     }
 }

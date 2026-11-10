@@ -27,6 +27,7 @@ pub(crate) fn defaults() -> Cfg {
     // second literal: one json! macro would hit the recursion limit
     let Value::Object(more) = json!({
         // Settings > Modules (module.<id>) and > Live events (live.<id>): everything on except OBS, which needs its own WebSocket server
+        "character.liquid": true, "pet.keepDuringMusic": true,
         "module.media": true, "module.shelf": true, "module.launcher": true, "module.fileSearch": true, "module.clipboard": true,
         "module.text": true, "module.chat": true, "module.note": true, "module.weather": true, "module.controls": true, "module.uninstall": true,
         "live.volume": true, "live.music": true, "live.micCam": true, "live.downloads": true, "live.recording": true, "live.notifications": true,

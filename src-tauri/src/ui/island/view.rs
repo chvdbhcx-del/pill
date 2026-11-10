@@ -271,6 +271,7 @@ impl IslandView {
         let cfg = self.comp.cfg.clone();
         if changed || self.last_style.is_none() {
             self.core.shell.reserve(reserve_px(&cfg));
+            self.core.shell.reserve_height(super::pet_extras::capsule_min_h(&cfg));
             self.core.shell_event(Event::Character { side: char_side(&cfg), legs: style == EdgeStyle::Legs }, cx.now_ms);
         }
         self.last_style = Some((cfg.id, style));
@@ -960,7 +961,7 @@ impl View for IslandView {
             if !self.comp.cfg.id.is_empty() {
                 if self.live_a > 0.0 {
                     if let Some(r) = self.comp.cap_box(body, s, super::companions::text_mid(body.y, body.h, s)) {
-                        self.pet_rect = Some(r);
+                        self.pet_rect = (!self.comp.pet_gone()).then_some(r);
                         self.comp.draw_pet(cv, r, self.live_a);
                     }
                 }
@@ -1022,7 +1023,10 @@ impl View for IslandView {
                     CharSide::Right => body.right() - 18.0 * s,
                     _ => body.x + 18.0 * s,
                 };
-                self.comp.draw_legs_eyes(cv, body, (cx_, cy), s);
+                // the legs stand on the liquid edge: they follow its sag under them
+                let lx = cx_.clamp(body.x + 14.0 * s, (body.right() - 14.0 * s).max(body.x + 14.0 * s));
+                let drop = super::pet_extras::edge_offset_at(&v.edge.points, ((lx - body.cx()) / s) as f64) as f32 * s;
+                self.comp.draw_legs_eyes(cv, body, (cx_, cy), s, drop);
             }
             _ => {}
         }

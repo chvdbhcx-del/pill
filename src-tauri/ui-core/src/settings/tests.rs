@@ -172,7 +172,7 @@ fn frame_rate_options_are_exactly_the_web_ones() {
     assert_eq!(opts("voice.mode"), ["toggle", "hold"]);
     assert_eq!(opts("voice.language"), ["auto", "ru", "en"]);
     assert_eq!(opts("pet.side"), ["left", "right"]);
-    assert_eq!(opts("pet.size"), ["s", "m", "l"]);
+    assert_eq!(opts("pet.size"), ["s", "m", "l", "xl"]);
     assert_eq!(opts("clock24"), ["false", "true"]);
 }
 
@@ -265,7 +265,7 @@ fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
     let expect = [
-        ("character", 5), ("general", 4), ("appearance", 18), ("behavior", 11), ("hotkeys", 17), ("modules", 14), ("live", 30), ("clipboard", 15), ("search", 2),
+        ("character", 7), ("general", 4), ("appearance", 18), ("behavior", 11), ("hotkeys", 17), ("modules", 14), ("live", 30), ("clipboard", 15), ("search", 2),
         ("sound", 7), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
     ];
     for (id, n) in expect {

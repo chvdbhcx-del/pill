@@ -20,7 +20,10 @@ pub fn character() -> Page {
                 tr("Остров", "Island"),
                 vec![Row::new("character", "character", tr("Остров", "Island"), Control::CharacterPicker, json!("liquid"))
                     .hint(tr("Стиль края применяется к острову сразу.", "The edge style applies to the island at once."))
-                    .kw(&["style", "edge", "стиль", "край", "liquid", "жидкий", "tail", "хвост", "legs", "ножки", "glow", "свечение", "plain", "без украшений"])],
+                    .kw(&["style", "edge", "стиль", "край", "liquid", "жидкий", "tail", "хвост", "legs", "ножки", "glow", "свечение", "plain", "без украшений"]),
+                    toggle("character.liquid", tr("Жидкий край под персонажем", "Liquid edge under the character"), tr("Для стилей «хвост» и «ножки»: они стоят на жидком крае острова, а не на ровной линии", "For the tail and legs styles: they stand on the island's liquid edge instead of a flat line"), true)
+                        .enabled(Cond::Any(vec![Cond::Eq("character", json!("tail")), Cond::Eq("character", json!("legs"))]))
+                        .kw(&["liquid", "жидкий", "edge", "край", "tail", "legs"])],
             ),
             group(
                 tr("Питомец", "Pet"),
@@ -33,8 +36,11 @@ pub fn character() -> Page {
                 vec![
                     seg("pet.side", tr("Сторона", "Side"), tr("С какого края острова стоит питомец", "Which end of the island the pet stands at"), so(&[("left", tr("Слева", "Left")), ("right", tr("Справа", "Right"))]), json!("right"))
                         .visible(Cond::Ne("pet", json!("none"))),
-                    seg("pet.size", tr("Размер", "Size"), tr("Питомец следует за реакциями острова; щелчок по нему его гладит", "The pet follows the island reactions; click it to pet it"), so(&[("s", same("S")), ("m", same("M")), ("l", same("L"))]), json!("m"))
+                    seg("pet.size", tr("Размер", "Size"), tr("Питомец следует за реакциями острова; щелчок по нему его гладит", "The pet follows the island reactions; click it to pet it"), so(&[("s", same("S")), ("m", same("M")), ("l", same("L")), ("xl", same("XL"))]), json!("m"))
                         .visible(Cond::Ne("pet", json!("none"))),
+                    toggle("pet.keepDuringMusic", tr("Оставаться во время музыки", "Stay while music plays"), tr("Выключите, чтобы питомец уходил, пока играет музыка", "Turn off and the pet steps aside while music plays"), true)
+                        .visible(Cond::Ne("pet", json!("none")))
+                        .kw(&["music", "музыка", "pet", "питомец"]),
                 ],
             ),
         ],

@@ -147,6 +147,8 @@ pub struct Shell<B: Backend, C: Clock> {
     pub(super) slots: ClockSlots,
     pub(super) measure: (f64, f64),
     pub(super) pet_res: f64,
+    /// css px the collapsed capsule must be at least tall (a big pet stands in it); 0 = the normal `COL_H`
+    pub(super) pet_res_h: f64,
     pub(super) content: LiveContent,
     pub(super) ghost: Option<(LiveContent, f64)>,
     pub(super) swap_epoch: u64,
@@ -216,6 +218,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             slots: ClockSlots::default(),
             measure: (0.0, 0.0),
             pet_res: 0.0,
+            pet_res_h: 0.0,
             content: LiveContent::None,
             ghost: None,
             swap_epoch: 0,
@@ -450,7 +453,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
     }
     /// `applyCharacter`: the Character page's edge style, live.
     pub(super) fn apply_character(&mut self) {
-        let v = self.s.character;
+        let v = self.s.edge_style();
         if v == self.liq.style {
             return;
         }
@@ -527,7 +530,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
     }
     pub(super) fn col_target(&self) -> Target {
         let s = self.scale();
-        let hgt = COL_H * s;
+        let hgt = COL_H.max(self.pet_res_h) * s;
         let ev = |x: f64| {
             let x = x.ceil();
             x + (x % 2.0)
@@ -930,6 +933,17 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             return;
         }
         self.pet_res = px;
+        if self.state == PillState::Collapsed && !self.hidden {
+            self.retarget(false, None, Mode::Resize);
+        }
+    }
+    /// `Pill.reserveHeight(px)`: the collapsed capsule is at least `px` css px tall (a big pet stands in it); 0 = the normal height.
+    pub fn reserve_height(&mut self, px: f64) {
+        let px = js_round(px.max(0.0));
+        if px == self.pet_res_h {
+            return;
+        }
+        self.pet_res_h = px;
         if self.state == PillState::Collapsed && !self.hidden {
             self.retarget(false, None, Mode::Resize);
         }

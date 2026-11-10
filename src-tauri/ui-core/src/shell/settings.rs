@@ -63,6 +63,16 @@ impl EdgeStyle {
     }
 }
 
+impl ShellSettings {
+    /// The style the liquid edge model runs: the tail / legs characters keep the liquid edge under them unless `character.liquid` is off.
+    pub fn edge_style(&self) -> EdgeStyle {
+        match self.character {
+            EdgeStyle::Tail | EdgeStyle::Legs if self.character_liquid => EdgeStyle::Liquid,
+            c => c,
+        }
+    }
+}
+
 /// quiet.* keys (see quiet.rs).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QuietSettings {
@@ -113,6 +123,8 @@ pub struct ShellSettings {
     pub pass_through: bool,
     pub pass_through_opacity: f64,
     pub character: EdgeStyle,
+    /// `character.liquid`: the liquid edge stays under the tail / legs characters.
+    pub character_liquid: bool,
     pub net_weather: bool,
     pub pet: String,
     pub monitor: String,
@@ -150,6 +162,7 @@ impl Default for ShellSettings {
             pass_through: false,
             pass_through_opacity: 0.0,
             character: EdgeStyle::Liquid,
+            character_liquid: true,
             net_weather: false,
             pet: String::new(),
             monitor: "primary".into(),
@@ -279,6 +292,7 @@ impl ShellSettings {
                 "passThrough" => self.pass_through = truthy(val),
                 "passThroughOpacity" => self.pass_through_opacity = num_or0(val),
                 "character" => self.character = EdgeStyle::parse(val.as_str().unwrap_or("")),
+                "character.liquid" => self.character_liquid = val.as_bool().unwrap_or(true),
                 "net.weather" => self.net_weather = truthy(val),
                 "pet" => self.pet = text(val),
                 "monitor" => self.monitor = text(val),

@@ -245,6 +245,11 @@ fn box_sizes_follow_pets_css() {
     assert_eq!(box_size("claude8", Size::M, Place::Cap, 0.8).1, 14.0);
     assert_eq!(box_size("claude8", Size::L, Place::Head, 1.0).1, 42.0);
     assert_eq!(box_size("cat", Size::M, Place::Head, 1.0).1, 28.0);
+    // the big size outgrows the 30 px capsule everywhere in the capsule but keeps the header gap
+    assert_eq!(Size::parse("xl"), Size::Xl);
+    assert_eq!(box_size("cat", Size::Xl, Place::Cap, 1.0), (42.0, 42.0));
+    assert_eq!(box_size("claude8", Size::Xl, Place::Cap, 1.0).1, 42.0);
+    assert_eq!(box_size("cat", Size::Xl, Place::Head, 1.0).1, box_size("cat", Size::L, Place::Head, 1.0).1);
 }
 
 #[test]

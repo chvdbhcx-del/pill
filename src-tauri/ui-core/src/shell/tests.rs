@@ -1134,6 +1134,36 @@ fn edge_style_setting_applies_live() {
     assert_ne!(h.sh.liquid().edge.rgb_tuple(), (0, 255, 0));
 }
 
+#[test]
+fn the_liquid_edge_stays_under_the_tail_and_legs_unless_switched_off() {
+    let mut h = H::new();
+    for c in ["tail", "legs"] {
+        h.ev(Event::SettingsChanged(json!({"character": c})));
+        assert!(!h.sh.view().edge.points.is_empty(), "{c}: liquid edge under the character by default");
+        h.ev(Event::SettingsChanged(json!({"character": c, "character.liquid": false})));
+        assert!(h.sh.view().edge.points.is_empty(), "{c}: edge off when the toggle is off");
+        h.ev(Event::SettingsChanged(json!({"character.liquid": true})));
+    }
+    // glow / none are not characters: the toggle does not bring the liquid back
+    h.ev(Event::SettingsChanged(json!({"character": "glow"})));
+    assert!(h.sh.view().edge.points.is_empty() && h.sh.view().edge.glow.is_some());
+}
+
+#[test]
+fn a_big_pet_makes_the_collapsed_capsule_taller_and_back() {
+    let mut h = H::new();
+    h.ev(Event::LiveMeasured { w: 140.0, h: 30.0 });
+    h.run(2000.0);
+    let h0 = h.sh.view().body.height;
+    h.sh.reserve_height(46.0);
+    h.run(2000.0);
+    let h1 = h.sh.view().body.height;
+    assert!(h1 > h0 + 10.0, "{h0} -> {h1}");
+    h.sh.reserve_height(0.0);
+    h.run(2000.0);
+    assert!((h.sh.view().body.height - h0).abs() < 0.5);
+}
+
 // ---------------- frame loop ----------------
 
 #[test]

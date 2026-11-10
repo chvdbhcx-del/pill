@@ -8,6 +8,7 @@ pub mod gpu;
 mod icons_data;
 pub mod live;
 pub mod panel;
+pub mod pet_extras;
 pub mod rows;
 pub mod shapes;
 pub mod start;

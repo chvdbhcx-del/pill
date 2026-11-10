@@ -21,6 +21,8 @@ pub enum Size {
     S,
     M,
     L,
+    /// the big character: the capsule grows to hold it (see `companions::capsule_min_h`)
+    Xl,
 }
 
 impl Size {
@@ -28,6 +30,7 @@ impl Size {
         match s {
             "s" => Size::S,
             "l" => Size::L,
+            "xl" => Size::Xl,
             _ => Size::M,
         }
     }
@@ -98,6 +101,7 @@ pub fn box_size(id: &str, size: Size, place: Place, scale: f32) -> (f32, f32) {
                     Size::S => (14.0, 14.0),
                     Size::M => (21.0, 7.0),
                     Size::L => (28.0, 14.0),
+                    Size::Xl => (42.0, 7.0),
                 }
             } else {
                 (
@@ -105,6 +109,7 @@ pub fn box_size(id: &str, size: Size, place: Place, scale: f32) -> (f32, f32) {
                         Size::S => 20.0,
                         Size::M => 27.0,
                         Size::L => 30.0,
+                        Size::Xl => 42.0,
                     },
                     0.0,
                 )
@@ -121,12 +126,14 @@ pub fn box_size(id: &str, size: Size, place: Place, scale: f32) -> (f32, f32) {
                     Size::S => 14.0,
                     Size::M => 28.0,
                     Size::L => 42.0,
+                    Size::Xl => 42.0, // the header gap does not grow: the big size is for the capsule
                 }
             } else {
                 match size {
                     Size::S => 22.0,
                     Size::M => 28.0,
                     Size::L => 32.0,
+                    Size::Xl => 32.0,
                 }
             };
             v * scale
@@ -137,6 +144,7 @@ pub fn box_size(id: &str, size: Size, place: Place, scale: f32) -> (f32, f32) {
                     Size::S => 28.0,
                     Size::M => 42.0,
                     Size::L => 56.0,
+                    Size::Xl => 70.0,
                 }
             } else {
                 (100.0 / ar).min(48.0)
