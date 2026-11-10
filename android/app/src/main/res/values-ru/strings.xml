@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="your_pc">ваш ПК</string>
+    <string name="back">Назад</string>
+    <string name="clear">Очистить</string>
+
+    <!-- Buttons -->
+    <string name="btn_skip">Пропустить</string>
+    <string name="btn_next">Далее</string>
+    <string name="btn_get_started">Начать</string>
+    <string name="btn_allow">Разрешить</string>
+    <string name="btn_cancel">Отмена</string>
+    <string name="btn_open">Открыть</string>
+    <string name="btn_receive">Принять</string>
+    <string name="btn_pair">Подключить</string>
+    <string name="btn_pair_again">Подключить снова</string>
+    <string name="btn_scan_qr">Сканировать QR-код</string>
+    <string name="btn_scan_again">Сканировать снова</string>
+    <string name="btn_scan_instead">Сканировать QR-код</string>
+    <string name="btn_enter_code">Ввести код</string>
+    <string name="btn_reconnect">Подключиться сейчас</string>
+    <string name="btn_try_again">Повторить</string>
+    <string name="btn_send_files">Отправить файлы</string>
+    <string name="btn_unpair">Отвязать</string>
+
+    <!-- Onboarding -->
+    <string name="ob1_title">Телефон на вашем ПК</string>
+    <string name="ob1_body">Уведомления с телефона появляются в Pill, отвечать можно с клавиатуры, а файлы летают в обе стороны. Всё остаётся в вашей домашней сети.</string>
+    <string name="ob2_title">Подключение за секунды</string>
+    <string name="ob2_body">В Pill откройте Настройки, затем Телефон, и включите связь с телефоном. Отсканируйте QR-код в этом приложении или введите код вручную.</string>
+    <string name="ob3_title">Несколько разрешений</string>
+    <string name="ob3_body">Они нужны, чтобы пересылать уведомления и не терять связь. Каждое включается одним нажатием на следующем экране.</string>
+
+    <!-- Connection states -->
+    <string name="state_connected">Подключено</string>
+    <string name="state_connecting">Подключаемся…</string>
+    <string name="state_connecting_body">Ищем %1$s</string>
+    <string name="state_nonetwork">Нет сети</string>
+    <string name="state_nonetwork_body">Включите Wi-Fi, чтобы связаться с ПК.</string>
+    <string name="state_notfound">ПК не найден в этой сети</string>
+    <string name="state_notfound_body">Убедитесь, что Pill запущен на ПК и оба устройства в одной сети Wi-Fi.</string>
+    <string name="state_revoked">Привязка удалена</string>
+    <string name="state_revoked_body">Этот телефон отвязали на ПК. Подключите его снова, чтобы продолжить.</string>
+    <string name="state_unpaired">Ещё не подключено</string>
+    <string name="state_unpaired_body">Подключитесь к Pill на ПК, чтобы видеть там уведомления с телефона и обмениваться файлами.</string>
+    <string name="net_wifi">Wi-Fi</string>
+    <string name="net_mobile">Мобильный интернет</string>
+    <string name="net_none">Нет сети</string>
+
+    <!-- Home -->
+    <string name="send_files_hint">Выберите файлы для ПК</string>
+    <string name="apps_card_title">Приложения</string>
+    <string name="apps_card_hint">Что пересылать</string>
+    <plurals name="apps_on">
+        <item quantity="one">%d приложение</item>
+        <item quantity="few">%d приложения</item>
+        <item quantity="many">%d приложений</item>
+        <item quantity="other">%d приложения</item>
+    </plurals>
+    <string name="files_title">Файлы</string>
+    <string name="files_empty_title">Файлов пока нет</string>
+    <string name="files_empty_body">Отправьте что-нибудь с телефона или поделитесь файлом с Pill Phone из любого приложения.</string>
+    <string name="tr_offered">С вашего ПК</string>
+    <string name="tr_waiting">Ждём ПК</string>
+    <string name="tr_sending">Отправка</string>
+    <string name="tr_receiving">Получение</string>
+    <string name="tr_sent">Отправлено</string>
+    <string name="tr_received">Получено</string>
+    <string name="tr_failed">Не удалось</string>
+    <string name="tr_err_not_connected">Нет связи с ПК</string>
+    <string name="tr_err_declined">ПК отклонил файл</string>
+    <string name="tr_err_no_answer">ПК не ответил</string>
+    <string name="tr_err_server">ПК отказал (%1$d)</string>
+    <string name="tr_err_io">Связь прервалась</string>
+    <string name="tr_err_save">Не удалось сохранить файл</string>
+
+    <!-- Permissions -->
+    <string name="perms_title">Завершите настройку</string>
+    <string name="perms_body">Несколько переключателей ещё выключены.</string>
+    <string name="perms_ready_title">Всё готово</string>
+    <string name="perms_ready_body">Pill Phone может работать.</string>
+    <plurals name="perms_left">
+        <item quantity="one">Остался %d шаг</item>
+        <item quantity="few">Осталось %d шага</item>
+        <item quantity="many">Осталось %d шагов</item>
+        <item quantity="other">Осталось %d шага</item>
+    </plurals>
+    <string name="perm_access_title">Доступ к уведомлениям</string>
+    <string name="perm_access_why">Позволяет читать уведомления и показывать их на ПК.</string>
+    <string name="perm_access_hint">Если переключатель недоступен, откройте «О приложении», нажмите три точки и выберите «Разрешить ограниченные настройки».</string>
+    <string name="perm_post_title">Показ уведомлений</string>
+    <string name="perm_post_why">Для статуса соединения и передачи файлов.</string>
+    <string name="perm_battery_title">Фоновая работа</string>
+    <string name="perm_battery_why">Держит связь при выключенном экране.</string>
+    <string name="perm_wifi_title">Имя сети Wi-Fi (по желанию)</string>
+    <string name="perm_wifi_why">ПК сможет показать, в какой сети телефон.</string>
+    <string name="perm_storage_title">Сохранение файлов</string>
+    <string name="perm_storage_why">В этой версии Android нужно для записи в Загрузки.</string>
+
+    <!-- Pairing -->
+    <string name="pair_title">Подключение к ПК</string>
+    <string name="pair_headline">Свяжите телефон с Pill</string>
+    <string name="pair_step1_title">Откройте Pill на ПК</string>
+    <string name="pair_step1_body">Перейдите в Настройки, затем Телефон, и включите связь с телефоном.</string>
+    <string name="pair_step2_title">Отсканируйте QR-код</string>
+    <string name="pair_step2_body">Наведите телефон на код, показанный на ПК.</string>
+    <string name="pair_step3_title">Одна сеть Wi-Fi</string>
+    <string name="pair_step3_body">Оба устройства должны быть в одной сети. Дальше неё ничего не уходит.</string>
+    <string name="pair_manual_title">Введите код</string>
+    <string name="pair_manual_body">Введите адрес и 8-буквенный код, показанные рядом с QR-кодом в Pill.</string>
+    <string name="field_address">Адрес ПК</string>
+    <string name="field_code">Код подключения</string>
+    <string name="pair_confirm_title">Подключиться к %1$s?</string>
+    <string name="pair_confirm_body">Этот телефон будет показывать уведомления на том ПК и обмениваться с ним файлами. Продолжайте, только если вы сами запустили это на своём компьютере.</string>
+    <string name="pair_working">Подключаемся…</string>
+    <string name="pair_success">Подключено к %1$s</string>
+    <string name="pair_success_body">Настраиваем соединение</string>
+    <string name="pair_err_code_title">Код не подошёл</string>
+    <string name="pair_err_code_body">Код действует один раз и пять минут. Покажите в Pill новый QR-код и попробуйте снова.</string>
+    <string name="pair_err_unreachable_title">Не удаётся связаться с ПК</string>
+    <string name="pair_err_unreachable_body">Проверьте, что Pill запущен и связь с телефоном включена, а оба устройства в одной сети Wi-Fi.</string>
+    <string name="pair_err_link_title">Это не код Pill</string>
+    <string name="pair_err_link_body">Откройте QR-код, показанный в Pill, или введите адрес и код вручную.</string>
+    <string name="pair_err_refused_title">ПК отказал в подключении</string>
+    <string name="pair_err_refused_body">Покажите в Pill новый код и подключитесь снова.</string>
+
+    <!-- Apps filter -->
+    <string name="apps_title">Приложения</string>
+    <string name="apps_explainer">Уведомления пересылаются, только пока телефон подключён к ПК. Ничего не копится на потом: когда связь вернётся, то, что ещё висит в шторке, придёт снова тихой сводкой.</string>
+    <string name="apps_search">Поиск приложений</string>
+    <string name="apps_count">Включено: %d</string>
+    <string name="apps_show_system">Системные</string>
+    <string name="apps_empty_title">Ничего не найдено</string>
+    <string name="apps_empty_body">Нет совпадений для «%1$s».</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_not_paired_body">Подключитесь, чтобы пользоваться уведомлениями и файлами.</string>
+    <string name="settings_notifications">Уведомления</string>
+    <string name="settings_apps_body">Какие приложения показывать на ПК</string>
+    <string name="settings_ongoing">Постоянные уведомления</string>
+    <string name="settings_ongoing_body">Плееры, таймеры и другие закреплённые.</string>
+    <string name="settings_auto_receive">Принимать файлы автоматически</string>
+    <string name="settings_auto_receive_body">Сохранять файлы с ПК без вопросов.</string>
+    <string name="settings_saved_to">Сохраняется в</string>
+    <string name="settings_permissions">Разрешения</string>
+    <string name="settings_about">О приложении</string>
+    <string name="settings_version">Версия %1$s</string>
+    <string name="settings_privacy">Только локальная сеть</string>
+    <string name="settings_privacy_body">Трафик идёт по вашему Wi-Fi и защищён ключом телефона. Ни облака, ни аккаунта.</string>
+    <string name="settings_proprietary">Проприетарное ПО. Все права защищены.</string>
+    <string name="unpair_title">Отвязать от %1$s?</string>
+    <string name="unpair_body">ПК забудет этот телефон, уведомления перестанут приходить, а для нового подключения понадобится новый код.</string>
+
+    <!-- Foreground service and notifications -->
+    <string name="ch_link">Соединение</string>
+    <string name="ch_link_desc">Показывает, что Pill Phone связан с вашим ПК.</string>
+    <string name="ch_files">Передача файлов</string>
+    <string name="ch_files_desc">Ход отправки и получения файлов с ПК.</string>
+    <string name="ch_incoming">Файлы с ПК</string>
+    <string name="ch_incoming_desc">Когда ПК хочет передать вам файл.</string>
+    <string name="notif_connected">Подключено к %1$s</string>
+    <string name="notif_connecting">Подключаемся к %1$s…</string>
+    <string name="notif_notfound">ПК не найден в этой сети</string>
+    <string name="notif_nonetwork">Ждём сеть</string>
+    <string name="notif_revoked">Отвязано на ПК</string>
+    <string name="act_scan_again">Сканировать снова</string>
+    <string name="act_pair_again">Подключить снова</string>
+    <string name="file_from_pc">Файл с ПК</string>
+    <string name="notif_receiving">Получаем %1$s</string>
+    <string name="notif_sending">Отправляем %1$s</string>
+    <string name="notif_sent">Отправлено на ПК</string>
+    <string name="notif_received">Сохранено в Загрузки/Pill</string>
+    <string name="notif_transfer_failed">Передача не удалась</string>
+
+    <!-- Send to PC (share target) -->
+    <string name="send_title">Отправить на ПК</string>
+    <plurals name="send_sending">
+        <item quantity="one">Отправляем %d файл</item>
+        <item quantity="few">Отправляем %d файла</item>
+        <item quantity="many">Отправляем %d файлов</item>
+        <item quantity="other">Отправляем %d файла</item>
+    </plurals>
+    <string name="send_text_name">Текст.txt</string>
+    <string name="send_not_connected_title">Нет связи с ПК</string>
+    <string name="send_not_connected_body">Откройте Pill Phone, чтобы переподключиться, и поделитесь ещё раз.</string>
+    <string name="send_nothing_title">Нечего отправлять</string>
+    <string name="send_nothing_body">Эти элементы не удалось прочитать.</string>
+    <string name="send_open_app">Открыть Pill Phone</string>
+    <string name="send_close">Закрыть</string>
+    <string name="close">Закрыть</string>
+    <string name="scan_title">Отсканируйте QR-код, показанный в Pill на ПК</string>
+    <string name="scan_hint">Держите телефон так, чтобы код поместился в рамку.</string>
+    <string name="scan_hint_wrong">Это не код подключения Pill. Откройте тот, что в Pill: Настройки, затем Телефон.</string>
+    <string name="scan_torch">Фонарик</string>
+    <string name="scan_found">Код найден</string>
+    <string name="cam_title">Доступ к камере</string>
+    <string name="cam_body">Камера нужна только чтобы прочитать QR-код подключения. Ничего не записывается и не сохраняется.</string>
+    <string name="cam_denied_title">Камера для Pill Phone выключена</string>
+    <string name="cam_denied_body">Разрешите её, чтобы сканировать код, или введите код вручную.</string>
+    <string name="cam_forever_body">Доступ к камере заблокирован. Включите его в настройках приложения или введите код вручную.</string>
+    <string name="btn_allow_camera">Разрешить камеру</string>
+    <string name="btn_open_settings">Открыть настройки</string>
+</resources>

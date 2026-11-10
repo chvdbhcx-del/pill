@@ -1,0 +1,23 @@
+# Build
+.gradle/
+.kotlin/
+build/
+*.apk
+*.aab
+local.properties
+.idea/
+*.iml
+captures/
+
+# Secrets and release output (never commit)
+keys/
+dist/
+keystore.properties
+*.jks
+*.keystore
+
+# Tooling noise
+.claude/
+.claude-flow/
+.swarm/
+.ruff_cache/

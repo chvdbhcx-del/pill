@@ -464,5 +464,5 @@ fn the_server_is_gone_after_stop_even_with_open_sockets() {
 #[test]
 fn the_default_apk_url_in_the_settings_is_the_protocol_constant() {
     assert_eq!(crate::settings::defaults()["phone.apkUrl"], super::DEFAULT_APK_URL);
-    assert_eq!(super::DEFAULT_APK_URL, "https://github.com/chvdbhcx-del/pill-phone/releases/latest/download/PillPhone.apk");
+    assert_eq!(super::DEFAULT_APK_URL, "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk");
 }

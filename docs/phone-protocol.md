@@ -12,7 +12,7 @@ Pill (PC) and the Pill Phone Android app talk over the local network. Both sides
 
 1. The Phone tab / Settings shows a QR code for `http://<pc-ip>:<port>/p?c=<code>` where `<code>` is a one-time 8-character code (A-Z2-9, valid 5 minutes, one use).
 2. A phone camera opens that URL in the browser. The PC serves a small self-contained page (`GET /p`) with:
-   * the PC name, a big **"Download the app"** button -> `https://github.com/chvdbhcx-del/pill-phone/releases/latest/download/PillPhone.apk` (the URL is a constant in Pill, settable by `phone.apkUrl`),
+   * the PC name, a big **"Download the app"** button -> `https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk` (the URL is a constant in Pill, settable by `phone.apkUrl`),
    * a big **"Open in Pill Phone"** button -> `intent://pair?h=<ip>&p=<port>&c=<code>&n=<pc-name>#Intent;scheme=pillphone;package=app.pill.phone;end` (fallback `pillphone://pair?...`),
    * the page is dark, mobile-first, same look as the app (see the app design notes).
 3. The app (already installed, opened by that link, or via its own in-app QR scanner) calls `POST /api/pair`:

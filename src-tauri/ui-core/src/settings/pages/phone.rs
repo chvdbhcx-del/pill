@@ -62,7 +62,7 @@ pub fn phone() -> Page {
                         tr("Куда ведёт кнопка «Скачать приложение» на странице QR-кода", "Where the \"Download the app\" button of the QR page leads"),
                         TextKind::Url,
                         tr("https://…/PillPhone.apk", "https://…/PillPhone.apk"),
-                        "https://github.com/chvdbhcx-del/pill-phone/releases/latest/download/PillPhone.apk",
+                        "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk",
                     )
                     .enabled(on)
                     .kw(&["apk", "download", "url", "ссылка", "скачать"]),

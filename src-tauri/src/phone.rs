@@ -22,7 +22,7 @@ mod tests;
 
 /// Bus event names (also the literals the contract test looks for).
 pub const EVENTS: [&str; 3] = ["phone:state", "phone:notif", "phone:files"];
-pub const DEFAULT_APK_URL: &str = "https://github.com/chvdbhcx-del/pill-phone/releases/latest/download/PillPhone.apk";
+pub const DEFAULT_APK_URL: &str = "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk";
 const DEFAULT_PORT: u16 = 41717;
 
 struct Running {

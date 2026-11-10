@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Pill Phone</string>
+    <string name="your_pc">your PC</string>
+    <string name="back">Back</string>
+    <string name="clear">Clear</string>
+
+    <!-- Buttons -->
+    <string name="btn_skip">Skip</string>
+    <string name="btn_next">Next</string>
+    <string name="btn_get_started">Get started</string>
+    <string name="btn_allow">Allow</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_open">Open</string>
+    <string name="btn_receive">Receive</string>
+    <string name="btn_pair">Pair</string>
+    <string name="btn_pair_again">Pair again</string>
+    <string name="btn_scan_qr">Scan QR code</string>
+    <string name="btn_scan_again">Scan again</string>
+    <string name="btn_scan_instead">Scan the QR code instead</string>
+    <string name="btn_enter_code">Enter the code</string>
+    <string name="btn_reconnect">Reconnect now</string>
+    <string name="btn_try_again">Try again</string>
+    <string name="btn_send_files">Send files</string>
+    <string name="btn_unpair">Unpair</string>
+
+    <!-- Onboarding -->
+    <string name="ob1_title">Your phone, on your PC</string>
+    <string name="ob1_body">See phone notifications in Pill, reply from the keyboard and move files both ways. Everything stays on your home network.</string>
+    <string name="ob2_title">Pair in seconds</string>
+    <string name="ob2_body">In Pill open Settings, then Phone, and turn on Phone link. Scan the QR code with this app, or type the code by hand.</string>
+    <string name="ob3_title">A few permissions</string>
+    <string name="ob3_body">Pill Phone needs them to mirror notifications and stay connected. You can allow each one with a single tap on the next screen.</string>
+
+    <!-- Connection states -->
+    <string name="state_connected">Connected</string>
+    <string name="state_connecting">Connecting…</string>
+    <string name="state_connecting_body">Looking for %1$s</string>
+    <string name="state_nonetwork">No network</string>
+    <string name="state_nonetwork_body">Turn on Wi-Fi to reach your PC.</string>
+    <string name="state_notfound">PC not found on this network</string>
+    <string name="state_notfound_body">Make sure Pill is running on your PC and both devices are on the same Wi-Fi.</string>
+    <string name="state_revoked">Pairing was removed</string>
+    <string name="state_revoked_body">This phone was unpaired on the PC. Pair it again to carry on.</string>
+    <string name="state_unpaired">Not paired yet</string>
+    <string name="state_unpaired_body">Pair with Pill on your PC to see phone notifications there and swap files.</string>
+    <string name="net_wifi">Wi-Fi</string>
+    <string name="net_mobile">Mobile data</string>
+    <string name="net_none">No network</string>
+
+    <!-- Home -->
+    <string name="send_files_hint">Pick files for the PC</string>
+    <string name="apps_card_title">Apps</string>
+    <string name="apps_card_hint">Choose what to mirror</string>
+    <plurals name="apps_on">
+        <item quantity="one">%d app mirrored</item>
+        <item quantity="other">%d apps mirrored</item>
+    </plurals>
+    <string name="files_title">Files</string>
+    <string name="files_empty_title">No files yet</string>
+    <string name="files_empty_body">Send something from this phone, or share a file to Pill Phone from any app.</string>
+    <string name="tr_offered">From your PC</string>
+    <string name="tr_waiting">Waiting for the PC</string>
+    <string name="tr_sending">Sending</string>
+    <string name="tr_receiving">Receiving</string>
+    <string name="tr_sent">Sent</string>
+    <string name="tr_received">Received</string>
+    <string name="tr_failed">Failed</string>
+    <string name="tr_err_not_connected">Not connected to the PC</string>
+    <string name="tr_err_declined">Declined by the PC</string>
+    <string name="tr_err_no_answer">The PC did not answer</string>
+    <string name="tr_err_server">The PC refused it (%1$d)</string>
+    <string name="tr_err_io">Connection lost</string>
+    <string name="tr_err_save">Can\'t save the file</string>
+
+    <!-- Permissions -->
+    <string name="perms_title">Finish setup</string>
+    <string name="perms_body">A few switches are still off.</string>
+    <string name="perms_ready_title">All set</string>
+    <string name="perms_ready_body">Pill Phone can do its job.</string>
+    <plurals name="perms_left">
+        <item quantity="one">%d step left</item>
+        <item quantity="other">%d steps left</item>
+    </plurals>
+    <string name="perm_access_title">Notification access</string>
+    <string name="perm_access_why">Lets the app read notifications to show them on your PC.</string>
+    <string name="perm_access_hint">If the switch is greyed out, open App info, tap the three dots and choose Allow restricted settings.</string>
+    <string name="perm_post_title">Show notifications</string>
+    <string name="perm_post_why">For the connection status and file transfers.</string>
+    <string name="perm_battery_title">Background activity</string>
+    <string name="perm_battery_why">Keeps the link alive with the screen off.</string>
+    <string name="perm_wifi_title">Wi-Fi name (optional)</string>
+    <string name="perm_wifi_why">Lets the PC show which network the phone is on.</string>
+    <string name="perm_storage_title">Save files</string>
+    <string name="perm_storage_why">Needed on this Android version to save to Downloads.</string>
+
+    <!-- Pairing -->
+    <string name="pair_title">Pair with your PC</string>
+    <string name="pair_headline">Link this phone to Pill</string>
+    <string name="pair_step1_title">Open Pill on your PC</string>
+    <string name="pair_step1_body">Go to Settings, then Phone, and turn on Phone link.</string>
+    <string name="pair_step2_title">Scan the QR code</string>
+    <string name="pair_step2_body">Point this phone at the code shown on the PC.</string>
+    <string name="pair_step3_title">Same Wi-Fi</string>
+    <string name="pair_step3_body">Both devices must be on the same network. Nothing leaves it.</string>
+    <string name="pair_manual_title">Enter the code</string>
+    <string name="pair_manual_body">Type the address and the 8-letter code shown next to the QR code in Pill.</string>
+    <string name="field_address">PC address</string>
+    <string name="field_address_hint" translatable="false">192.168.1.20:41717</string>
+    <string name="field_code">Pairing code</string>
+    <string name="field_code_hint" translatable="false">AB3D9XKQ</string>
+    <string name="pair_confirm_title">Pair with %1$s?</string>
+    <string name="pair_confirm_body">This phone will show its notifications on that PC and exchange files with it. Continue only if you started this on your own computer.</string>
+    <string name="pair_working">Pairing…</string>
+    <string name="pair_success">Paired with %1$s</string>
+    <string name="pair_success_body">Setting up the connection</string>
+    <string name="pair_err_code_title">That code did not work</string>
+    <string name="pair_err_code_body">Codes are valid once, for five minutes. Show a new QR code in Pill and try again.</string>
+    <string name="pair_err_unreachable_title">Can\'t reach the PC</string>
+    <string name="pair_err_unreachable_body">Check that Pill is running with Phone link on, and that both devices share the same Wi-Fi.</string>
+    <string name="pair_err_link_title">Not a Pill pairing code</string>
+    <string name="pair_err_link_body">Open the QR code shown in Pill, or enter the address and code by hand.</string>
+    <string name="pair_err_refused_title">The PC refused to pair</string>
+    <string name="pair_err_refused_body">Try showing a new code in Pill and pairing again.</string>
+
+    <!-- Apps filter -->
+    <string name="apps_title">Apps to mirror</string>
+    <string name="apps_explainer">Notifications are sent only while this phone is connected to your PC. Nothing is stored for later: when the PC reconnects, what is still in your notification shade is sent again as a quiet digest.</string>
+    <string name="apps_search">Search apps</string>
+    <string name="apps_count">%d on</string>
+    <string name="apps_show_system">System apps</string>
+    <string name="apps_empty_title">No apps found</string>
+    <string name="apps_empty_body">Nothing matches \"%1$s\".</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_not_paired_body">Pair to use notifications and files.</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_apps_body">Choose which apps appear on your PC</string>
+    <string name="settings_ongoing">Ongoing notifications</string>
+    <string name="settings_ongoing_body">Media players, timers and other persistent ones.</string>
+    <string name="settings_auto_receive">Receive files automatically</string>
+    <string name="settings_auto_receive_body">Save files from the PC without asking each time.</string>
+    <string name="settings_saved_to">Saved to</string>
+    <string name="settings_permissions">Permissions</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version %1$s</string>
+    <string name="settings_privacy">Local network only</string>
+    <string name="settings_privacy_body">Traffic stays on your Wi-Fi and is protected by a per-phone key. No cloud, no account.</string>
+    <string name="settings_proprietary">Proprietary software. All rights reserved.</string>
+    <string name="unpair_title">Unpair from %1$s?</string>
+    <string name="unpair_body">The PC forgets this phone, notifications stop, and you will need a new code to pair again.</string>
+
+    <!-- Foreground service and notifications -->
+    <string name="ch_link">Connection</string>
+    <string name="ch_link_desc">Shows that Pill Phone is linked to your PC.</string>
+    <string name="ch_files">File transfers</string>
+    <string name="ch_files_desc">Progress of files sent to and received from your PC.</string>
+    <string name="ch_incoming">Files from PC</string>
+    <string name="ch_incoming_desc">When your PC wants to send you a file.</string>
+    <string name="notif_connected">Connected to %1$s</string>
+    <string name="notif_connecting">Connecting to %1$s…</string>
+    <string name="notif_notfound">PC not found on this network</string>
+    <string name="notif_nonetwork">Waiting for a network</string>
+    <string name="notif_revoked">Unpaired from the PC</string>
+    <string name="act_scan_again">Scan again</string>
+    <string name="act_pair_again">Pair again</string>
+    <string name="file_from_pc">File from PC</string>
+    <string name="notif_receiving">Receiving %1$s</string>
+    <string name="notif_sending">Sending %1$s</string>
+    <string name="notif_sent">Sent to PC</string>
+    <string name="notif_received">Saved to Downloads/Pill</string>
+    <string name="notif_transfer_failed">Transfer failed</string>
+
+    <!-- Send to PC (share target) -->
+    <string name="send_title">Send to PC</string>
+    <plurals name="send_sending">
+        <item quantity="one">Sending %d file</item>
+        <item quantity="other">Sending %d files</item>
+    </plurals>
+    <string name="send_text_name">Shared text.txt</string>
+    <string name="send_not_connected_title">The PC is not connected</string>
+    <string name="send_not_connected_body">Open Pill Phone to reconnect, then share again.</string>
+    <string name="send_nothing_title">Nothing to send</string>
+    <string name="send_nothing_body">Those items could not be read.</string>
+    <string name="send_open_app">Open Pill Phone</string>
+    <string name="send_close">Close</string>
+    <string name="close">Close</string>
+    <string name="scan_title">Scan the QR code shown in Pill on your PC</string>
+    <string name="scan_hint">Hold the phone so the code fits inside the frame.</string>
+    <string name="scan_hint_wrong">That is not a Pill pairing code. Open the one in Pill under Settings, then Phone.</string>
+    <string name="scan_torch">Flashlight</string>
+    <string name="scan_found">Code found</string>
+    <string name="cam_title">Camera access</string>
+    <string name="cam_body">Pill Phone uses the camera only to read the pairing QR code. Nothing is recorded or saved.</string>
+    <string name="cam_denied_title">The camera is off for Pill Phone</string>
+    <string name="cam_denied_body">Allow it to scan the code, or enter the code by hand.</string>
+    <string name="cam_forever_body">Camera access is blocked. Turn it on in the app settings, or enter the code by hand.</string>
+    <string name="btn_allow_camera">Allow camera</string>
+    <string name="btn_open_settings">Open settings</string>
+</resources>
