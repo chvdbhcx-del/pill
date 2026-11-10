@@ -5,13 +5,14 @@
 //! (`.tn-card .tn-top .tn-ring .tn-start .tn-ctime .tn-presets .tn-rhead .tn-r .tn-rempty .tn-rmsg .tn-rin`).
 //!
 //! * Text input (the custom-time field and the reminder field) is deferred to the next draw, see `kit::Field`.
-//! * Animation: the ring arc eases over .26 s (linear, like `stroke-dashoffset` in the CSS), the arc fades in/out over .2 s, reminder rows
-//!   rise in (6 px + fade), collapse when done / deleted, slide to their new place on a reorder (FLIP) and fade when they vanish
-//!   without a cue ([`RowAnimator`]), the message line fades and rises. Reduced motion jumps every tween to its end state.
+//! * Animation (all liquid, see `ui::liquid`): the ring arc follows the model like a heavy pointer follower, the arc fades in/out, reminder
+//!   rows rise in (6 px + fade), collapse when done / deleted, slide to their new place on a reorder (FLIP, with their velocity kept) and
+//!   fade when they vanish without a cue ([`RowAnimator`]), the message line fades and makes room for itself, the Start / Stop label
+//!   cross-fades and the presets light up. Reduced motion lands every flow on its end state.
 //! * The caret blinks, so a focused field keeps `step` returning true (frames at the display rate, never throttled).
-use super::kit::{Clicks, Cues, Field, Icons};
+use super::kit::{Clicks, Cues, Field, Icons, Lit, Swap, GROW};
 use glasskit::canvas::Canvas;
-use glasskit::ease::{curves, dur, Ease, Tween};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::edit::EditEvent;
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{InputEvent, MouseButton, Response};
@@ -31,7 +32,6 @@ pub const ROW_H: f32 = 44.0;
 pub const ROW_GAP: f32 = 2.0;
 /// `.tn-start` label colour on the amber fill.
 const ON_AMBER: Color = Color::rgb8(0x1b, 0x12, 0x00);
-const LINEAR: Ease = Ease::bezier(0.0, 0.0, 1.0, 1.0);
 
 // ---------------------------------------------------------------------------------------------------------------------------------------
 // Pure helpers
@@ -99,16 +99,19 @@ pub struct Place {
 
 struct RowSt {
     id: i64,
-    /// FLIP offset: where the row was minus where it is now, easing to 0
-    off: Tween<f32>,
-    enter: Tween<f32>,
+    /// FLIP offset: where the row was minus where it is now, flowing to 0
+    off: Flow,
+    /// opacity of an entering row
+    enter: Flow,
+    /// extra downward offset of an entering row (6 px at the start)
+    rise: Flow,
     /// 1 = full height, 0 = collapsed
-    col: Tween<f32>,
+    col: Flow,
 }
 
 struct Ghost {
     y: f32,
-    fade: Tween<f32>,
+    fade: Flow,
 }
 
 /// Row layout with FLIP motion: rows that stay slide to their new place, a new row rises in, a collapsing row shrinks, a row that vanished
@@ -135,8 +138,9 @@ impl RowAnimator {
         self.reduced = on;
         if on {
             for r in &mut self.rows {
-                r.off.finish();
-                r.enter.finish();
+                r.off.jump(0.0);
+                r.enter.jump(1.0);
+                r.rise.jump(0.0);
             }
             self.ghosts.clear();
         }
@@ -153,7 +157,7 @@ impl RowAnimator {
             .iter()
             .map(|r| {
                 let at = y;
-                y += (ROW_H + ROW_GAP) * r.col.value().clamp(0.0, 1.0);
+                y += (ROW_H + ROW_GAP) * r.col.at01();
                 at
             })
             .collect()
@@ -165,20 +169,19 @@ impl RowAnimator {
             .iter()
             .zip(base)
             .map(|(r, b)| {
-                let col = r.col.value().clamp(0.0, 1.0);
-                let e = r.enter.value().clamp(0.0, 1.0);
-                Place { id: r.id, y: b + r.off.value(), h: ROW_H * col, alpha: col * e, rise: 6.0 * (1.0 - e) }
+                let col = r.col.at01();
+                Place { id: r.id, y: b + r.off.at(), h: ROW_H * col, alpha: col * r.enter.at01(), rise: r.rise.at() }
             })
             .collect()
     }
 
     /// (y, alpha) of the rows that are fading out.
     pub fn ghosts(&self) -> Vec<(f32, f32)> {
-        self.ghosts.iter().map(|g| (g.y, g.fade.value().clamp(0.0, 1.0))).collect()
+        self.ghosts.iter().map(|g| (g.y, g.fade.at01())).collect()
     }
 
     pub fn content_height(&self) -> f32 {
-        let total: f32 = self.rows.iter().map(|r| (ROW_H + ROW_GAP) * r.col.value().clamp(0.0, 1.0)).sum();
+        let total: f32 = self.rows.iter().map(|r| (ROW_H + ROW_GAP) * r.col.at01()).sum();
         (total - ROW_GAP).max(0.0)
     }
 
@@ -192,12 +195,16 @@ impl RowAnimator {
             let st = match old.iter().position(|r| r.id == *id) {
                 Some(i) => old.remove(i),
                 None => {
-                    let mut enter = Tween::at_rest(1.0);
+                    let mut enter = Flow::new(1.0, Feel::FADE);
+                    let mut rise = Flow::px(0.0, Feel::FLOW);
                     // when the whole list appears the list-level cue animates it, not every row
                     if animate && !was_empty {
-                        enter = Tween::new(0.0, 1.0, dur::MED, curves::EASE_OUT);
+                        enter.jump(0.0);
+                        enter.to(1.0);
+                        rise.jump(6.0);
+                        rise.to(0.0);
                     }
-                    RowSt { id: *id, off: Tween::at_rest(0.0), enter, col: Tween::at_rest(1.0) }
+                    RowSt { id: *id, off: Flow::px(0.0, Feel::FLOW), enter, rise, col: Flow::new(1.0, GROW) }
                 }
             };
             self.rows.push(st);
@@ -207,7 +214,9 @@ impl RowAnimator {
             for r in old {
                 if let Some((_, y, a)) = old_pos.iter().find(|(id, _, _)| *id == r.id) {
                     if *a > 0.3 {
-                        self.ghosts.push(Ghost { y: *y, fade: Tween::new(*a, 0.0, dur::EXIT, curves::EASE_IN) });
+                        let mut fade = Flow::new(*a, Feel::FADE);
+                        fade.to(0.0);
+                        self.ghosts.push(Ghost { y: *y, fade });
                     }
                 }
             }
@@ -217,8 +226,12 @@ impl RowAnimator {
             for (r, b) in self.rows.iter_mut().zip(base) {
                 if let Some((_, y, _)) = old_pos.iter().find(|(id, _, _)| *id == r.id) {
                     let delta = *y - b;
-                    if delta.abs() > 0.5 {
-                        r.off = Tween::new(delta, 0.0, dur::SETTLE, curves::SPRING_SETTLE);
+                    if delta.abs() > 0.5 || r.off.moving() {
+                        // the row starts where it was drawn; a slide already under way keeps its speed
+                        let v = r.off.velocity();
+                        r.off.jump(delta);
+                        r.off.nudge(v);
+                        r.off.to(0.0);
                     }
                 }
             }
@@ -233,36 +246,40 @@ impl RowAnimator {
             if reduced {
                 r.col.jump(0.0);
             } else {
-                r.col.retarget(0.0, dur::MED, curves::EASE_IN_OUT);
+                r.col.to(0.0);
             }
         }
     }
 
     pub fn step(&mut self, dt: f32) -> bool {
+        let ms = dt as f64 * 1000.0;
         let mut busy = false;
         for r in &mut self.rows {
-            busy |= r.off.step(dt);
-            busy |= r.enter.step(dt);
-            busy |= r.col.step(dt);
+            for f in [&mut r.off, &mut r.enter, &mut r.rise, &mut r.col] {
+                f.step(ms);
+                busy |= f.moving();
+            }
         }
         for g in &mut self.ghosts {
-            busy |= g.fade.step(dt);
+            g.fade.step(ms);
+            busy |= g.fade.moving();
         }
-        self.ghosts.retain(|g| !g.fade.finished());
+        self.ghosts.retain(|g| g.fade.moving());
         busy
     }
 }
 
-/// Eased state of the ring: the arc length (`left`, linear over .26 s) and the "running" amount (arc opacity, track colour; .2 s).
+/// Flowing state of the ring: the arc length (`left`, follows the model like a heavy pointer follower) and the "running" amount (arc opacity,
+/// track colour).
 pub struct RingAnim {
-    arc: Tween<f32>,
-    run: Tween<f32>,
+    arc: Flow,
+    run: Flow,
     reduced: bool,
 }
 
 impl RingAnim {
     pub fn new() -> RingAnim {
-        RingAnim { arc: Tween::at_rest(1.0), run: Tween::at_rest(0.0), reduced: false }
+        RingAnim { arc: Flow::new(1.0, Feel::DRAG), run: Flow::new(0.0, Feel::FADE), reduced: false }
     }
 
     /// Follow the model: `left` is the fraction still filled (only while running).
@@ -274,24 +291,25 @@ impl RingAnim {
             self.arc.jump(left);
             return;
         }
-        self.run.retarget(run_to, dur::MED, curves::EASE_OUT);
-        if running && self.run.value() < 0.01 {
+        if running && self.run.at() < 0.01 && self.run.target() < 0.5 {
             // the arc fades in at its current length, it does not sweep from the previous run
             self.arc.jump(left);
         } else {
-            self.arc.retarget(left, 0.26, LINEAR);
+            self.arc.to(left);
         }
+        self.run.to(run_to);
     }
 
     pub fn step(&mut self, dt: f32) -> bool {
-        let a = self.arc.step(dt);
-        let b = self.run.step(dt);
-        a | b
+        let ms = dt as f64 * 1000.0;
+        self.arc.step(ms);
+        self.run.step(ms);
+        self.arc.moving() || self.run.moving()
     }
 
     /// (arc fraction, running amount)
     pub fn value(&self) -> (f32, f32) {
-        (self.arc.value().clamp(0.0, 1.0), self.run.value().clamp(0.0, 1.0))
+        (self.arc.at01(), self.run.at01())
     }
 }
 
@@ -347,11 +365,19 @@ pub struct TimerCardView {
     want_focus_r: bool,
     // message line
     msg: Option<(String, bool)>,
-    msg_t: Tween<f32>,
+    /// opacity of the message line, and how much room it has taken from the list (0..1 of its height)
+    msg_t: Flow,
+    msg_k: Flow,
     msg_closing: bool,
     reduced: bool,
-    /// start button state swap (0 = Start, 1 = Stop), eased .2 s
-    stop_t: Tween<f32>,
+    /// start button state swap (0 = Start, 1 = Stop)
+    stop_t: Lit,
+    /// the Start / Stop label and icon cross-fade
+    start_face: Swap<(String, bool)>,
+    /// the preset buttons' selected look
+    preset_on: [Lit; 5],
+    /// the custom-time field is in (1) or the button is (0)
+    custom_k: Lit,
     /// last ring slot seen by `draw`
     empty_hint_len: usize,
 }
@@ -383,10 +409,14 @@ impl TimerCardView {
             last_sent: String::new(),
             want_focus_r: false,
             msg: None,
-            msg_t: Tween::at_rest(0.0),
+            msg_t: Flow::new(0.0, Feel::FADE),
+            msg_k: Flow::new(0.0, GROW),
             msg_closing: false,
             reduced: false,
-            stop_t: Tween::at_rest(0.0),
+            stop_t: Lit::new(Feel::FADE),
+            start_face: Swap::new(),
+            preset_on: std::array::from_fn(|_| Lit::new(Feel::FADE)),
+            custom_k: Lit::new(Feel::FADE),
             empty_hint_len: 0,
         }
     }
@@ -401,8 +431,8 @@ impl TimerCardView {
         self.rf.ti.reduced = Some(on);
         self.sv.state.reduced = Some(on);
         if on {
-            self.msg_t.finish();
-            self.stop_t.finish();
+            self.msg_t.jump(self.msg_t.target());
+            self.msg_k.jump(self.msg_k.target());
         }
     }
 
@@ -528,9 +558,16 @@ impl TimerCardView {
         busy |= self.rows.step(dt);
         busy |= self.ring.step(dt);
         busy |= self.sv.step(dt);
-        busy |= self.msg_t.step(dt);
-        busy |= self.stop_t.step(dt);
-        if self.msg_closing && self.msg_t.finished() {
+        self.msg_t.step(dt_ms);
+        self.msg_k.step(dt_ms);
+        busy |= self.msg_t.moving() || self.msg_k.moving();
+        busy |= self.stop_t.step(dt_ms);
+        busy |= self.start_face.step(dt_ms);
+        busy |= self.custom_k.step(dt_ms);
+        for p in &mut self.preset_on {
+            busy |= p.step(dt_ms);
+        }
+        if self.msg_closing && !self.msg_t.moving() && !self.msg_k.moving() {
             self.msg = None;
             self.msg_closing = false;
         }
@@ -579,16 +616,18 @@ impl TimerCardView {
             self.rows.sync(&ids);
         }
         self.ring.set(v.running, v.left as f32);
-        self.stop_t.retarget(v.running as u8 as f32, if self.reduced { 0.0 } else { dur::MED }, curves::EASE_OUT);
-        if self.reduced {
-            self.stop_t.finish();
+        self.stop_t.set(v.running);
+        self.start_face.set(&(v.start_label.clone(), v.running));
+        self.custom_k.set(v.custom_editing);
+        for (i, (_, on)) in v.presets.iter().enumerate().take(5) {
+            self.preset_on[i].set(*on);
         }
         self.sync_msg(v);
         self.empty_hint_len = v.empty_hint.len();
 
         // ---- layout ----
         let msg_h = match &self.msg {
-            Some((t, _)) if !t.is_empty() => cv.measure(t, Style::new(11.0, 400).wrap(), (rect.w - 2.0 * PAD - 4.0).max(10.0)).1.max(16.0).ceil(),
+            Some((t, _)) if !t.is_empty() => cv.measure(t, Style::new(11.0, 400).wrap(), (rect.w - 2.0 * PAD - 4.0).max(10.0)).1.max(16.0).ceil() * self.msg_k.at01(),
             _ => 0.0,
         };
         let l = layout(rect, msg_h);
@@ -621,10 +660,11 @@ impl TimerCardView {
                     self.msg = Some(m.clone());
                     self.msg_closing = false;
                     if fresh {
+                        self.msg_t.to(1.0);
+                        self.msg_k.to(1.0);
                         if self.reduced {
                             self.msg_t.jump(1.0);
-                        } else {
-                            self.msg_t = Tween::new(0.0, 1.0, dur::MED, curves::EASE_OUT);
+                            self.msg_k.jump(1.0);
                         }
                     }
                 }
@@ -632,10 +672,11 @@ impl TimerCardView {
             None => {
                 if self.msg.is_some() && !self.msg_closing {
                     self.msg_closing = true;
+                    self.msg_t.to(0.0);
+                    self.msg_k.to(0.0);
                     if self.reduced {
                         self.msg_t.jump(0.0);
-                    } else {
-                        self.msg_t = Tween::new(self.msg_t.value(), 0.0, 0.18, curves::EASE_IN);
+                        self.msg_k.jump(0.0);
                     }
                 }
             }
@@ -659,7 +700,7 @@ impl TimerCardView {
         self.clicks.add(K::Start, l.start);
         let hov = self.clicks.hover_amt(&K::Start);
         let pr = self.clicks.press_scale(&K::Start, 0.96) * self.cues.xf("timer-start").scale;
-        let stop = self.stop_t.value().clamp(0.0, 1.0);
+        let stop = self.stop_t.at();
         let idle_bg = th.amber.mix(brighten(th.amber, 1.08), hov);
         let run_bg = th.raised2.mix(th.raised, 0.0);
         let bg = idle_bg.mix(run_bg, stop);
@@ -667,45 +708,57 @@ impl TimerCardView {
         cv.with_scale_about(l.start.center(), pr, |cv| {
             cv.fill_rr(l.start, 12.0, bg);
             let st = Style::new(13.0, 600);
-            let tw = cv.text_width(&v.start_label, st);
-            let x0 = l.start.cx() - (12.0 + 8.0 + tw) / 2.0;
-            let icon = if v.running { "tn_stop" } else { "tn_play" };
-            self.own.draw_sw(cv, icon, Rect::new(x0, l.start.cy() - 6.0, 12.0, 12.0), fg, 1.7);
-            cv.text(Rect::new(x0 + 20.0, l.start.y, tw + 2.0, l.start.h), &v.start_label, st, fg);
+            let own = &self.own;
+            self.start_face.paint(|(label, running), a| {
+                cv.with_opacity(a, |cv| {
+                    let tw = cv.text_width(label, st);
+                    let x0 = l.start.cx() - (12.0 + 8.0 + tw) / 2.0;
+                    let icon = if *running { "tn_stop" } else { "tn_play" };
+                    own.draw_sw(cv, icon, Rect::new(x0, l.start.cy() - 6.0, 12.0, 12.0), fg, 1.7);
+                    cv.text(Rect::new(x0 + 20.0, l.start.y, tw + 2.0, l.start.h), label, st, fg);
+                });
+            });
         });
 
         // custom time: a button, or the field while editing
-        if v.custom_editing {
+        let ck = self.custom_k.at();
+        if v.custom_editing || ck > 0.0 {
             let mut t2 = *th;
             t2.field = th.raised;
             self.cf.ti.placeholder = v.custom_placeholder.clone();
-            self.cf.ti.draw(cv, l.ctime, &t2);
-        } else {
-            self.clicks.add(K::Custom, l.ctime);
+            cv.with_opacity(ck, |cv| self.cf.ti.draw(cv, l.ctime, &t2));
+        }
+        if !v.custom_editing || ck < 1.0 {
+            if !v.custom_editing {
+                self.clicks.add(K::Custom, l.ctime);
+            }
             let hov = self.clicks.hover_amt(&K::Custom);
             let pr = self.clicks.press_scale(&K::Custom, 0.96);
             let fg = th.text2.mix(th.text, hov);
-            cv.with_scale_about(l.ctime.center(), pr, |cv| {
-                cv.fill_rr(l.ctime, 12.0, th.raised2);
-                let st = Style::new(11.0, 600);
-                let tw = cv.text_width(&v.custom_label, st);
-                let x0 = l.ctime.cx() - (12.0 + 6.0 + tw) / 2.0;
-                self.own.draw(cv, "tn_pencil", Rect::new(x0, l.ctime.cy() - 6.0, 12.0, 12.0), fg);
-                cv.text(Rect::new(x0 + 18.0, l.ctime.y, tw + 2.0, l.ctime.h), &v.custom_label, st, fg);
+            cv.with_opacity(1.0 - ck, |cv| {
+                cv.with_scale_about(l.ctime.center(), pr, |cv| {
+                    cv.fill_rr(l.ctime, 12.0, th.raised2);
+                    let st = Style::new(11.0, 600);
+                    let tw = cv.text_width(&v.custom_label, st);
+                    let x0 = l.ctime.cx() - (12.0 + 6.0 + tw) / 2.0;
+                    self.own.draw(cv, "tn_pencil", Rect::new(x0, l.ctime.cy() - 6.0, 12.0, 12.0), fg);
+                    cv.text(Rect::new(x0 + 18.0, l.ctime.y, tw + 2.0, l.ctime.h), &v.custom_label, st, fg);
+                });
             });
         }
     }
 
     fn draw_presets(&mut self, cv: &Canvas, th: &Theme, v: &TimerView, l: &Layout) {
-        for (i, (m, on)) in v.presets.iter().enumerate().take(5) {
+        for (i, (m, _)) in v.presets.iter().enumerate().take(5) {
             let r = l.presets[i];
             let k = K::Preset(*m);
             self.clicks.add(k, r);
             let hov = self.clicks.hover_amt(&k);
             let pr = self.clicks.press_scale(&k, 0.96) * self.cues.xf(&format!("preset-{m}")).scale;
             cv.with_scale_about(r.center(), pr, |cv| {
-                cv.fill_rr(r, 12.0, if *on { th.raised2 } else { th.raised });
-                let fg = if *on { th.text } else { th.text2.mix(th.text, hov) };
+                let lit = self.preset_on[i].at();
+                cv.fill_rr(r, 12.0, th.raised.mix(th.raised2, lit));
+                let fg = th.text2.mix(th.text, hov.max(lit));
                 cv.text(r, &m.to_string(), Style::new(11.0, 600).center().mono(), fg);
             });
         }
@@ -809,14 +862,13 @@ impl TimerCardView {
 
     fn draw_msg(&mut self, cv: &Canvas, th: &Theme, l: &Layout) {
         let Some((text, bad)) = &self.msg else { return };
-        let e = self.msg_t.value().clamp(0.0, 1.0);
+        let e = self.msg_t.at01();
         if l.msg.h <= 0.0 {
             return;
         }
+        // the line grows out of the input's top edge (the list gives room to it), so it needs no offset of its own
         cv.with_opacity(e, |cv| {
-            cv.with_offset(0.0, 8.0 * (1.0 - e), |cv| {
-                cv.text(l.msg, text, Style::new(11.0, 400).wrap(), if *bad { th.red } else { th.text2 });
-            });
+            cv.text(l.msg, text, Style::new(11.0, 400).wrap(), if *bad { th.red } else { th.text2 });
         });
     }
 }
@@ -1004,30 +1056,61 @@ mod tests {
     }
 
     #[test]
-    fn ring_arc_is_linear_over_a_quarter_second_and_fades_in_without_a_sweep() {
+    fn ring_arc_flows_to_the_model_and_fades_in_without_a_sweep() {
         let _g = crate::ui::host::testing::motion_on(); // other tests flip the global reduced-motion override; animations on whatever the OS says
         let mut r = RingAnim::new();
         r.set(false, 1.0);
         assert_eq!(r.value(), (1.0, 0.0));
+        assert!(!r.step(0.016), "idle while nothing changes");
         r.set(true, 0.5);
         assert_eq!(r.value().0, 0.5, "starting: the arc is at the run's length at once, only its opacity fades");
         r.step(0.1);
         assert!(r.value().1 > 0.1 && r.value().1 < 1.0);
-        for _ in 0..30 {
+        for _ in 0..60 {
             r.step(1.0 / 60.0);
         }
+        // the model moves the arc: it glides there with inertia, never jumps, and never goes the wrong way
         r.set(true, 0.4);
-        r.step(0.13);
-        let (a, _) = r.value();
-        assert!(a < 0.5 && a > 0.4 && (a - 0.45).abs() < 0.02, "halfway after 130 ms: {a}");
-        for _ in 0..30 {
-            r.step(1.0 / 60.0);
+        let mut prev = r.value().0;
+        assert_eq!(prev, 0.5, "no jump on the new target");
+        let mut ms = 0.0f32;
+        while r.step(1.0 / 120.0) {
+            ms += 1000.0 / 120.0;
+            let a = r.value().0;
+            assert!(a <= prev + 1e-4 && a > 0.399, "moves towards 0.4, bounded: {a}");
+            prev = a;
+            assert!(ms < 1000.0, "settles");
         }
+        assert!(ms > 100.0 && ms < 600.0, "about the DRAG time, got {ms} ms");
         assert!((r.value().0 - 0.4).abs() < 1e-4);
         let mut q = RingAnim::new();
         q.reduced = true;
         q.set(true, 0.3);
         assert_eq!(q.value(), (0.3, 1.0));
+    }
+
+    #[test]
+    fn start_stop_label_crossfades() {
+        let _g = crate::ui::host::testing::motion_on();
+        let mut s: Swap<(String, bool)> = Swap::new();
+        s.set(&("Start".into(), false));
+        assert!(!s.step(16.0), "the first value is simply there");
+        s.set(&("Stop".into(), true));
+        let mut seen = Vec::new();
+        s.paint(|v, a| seen.push((v.0.clone(), a)));
+        assert_eq!(seen.len(), 2, "both faces are painted during the swap");
+        assert!(seen[0].1 > 0.99 && seen[1].1 < 0.01, "{seen:?}");
+        let mut t = 0.0;
+        while s.step(8.0) {
+            t += 8.0;
+            assert!(t < 600.0);
+        }
+        let mut n = 0;
+        s.paint(|_, a| {
+            n += 1;
+            assert_eq!(a, 1.0);
+        });
+        assert_eq!(n, 1);
     }
 
     // ---- the card as a View: input -> actions, and the snapshots ----
