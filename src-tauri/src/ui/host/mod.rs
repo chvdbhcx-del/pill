@@ -24,6 +24,7 @@ pub mod sched;
 pub mod testing;
 
 mod dropt;
+pub mod perf;
 mod present;
 mod uia;
 mod win32;

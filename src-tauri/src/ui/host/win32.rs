@@ -11,6 +11,7 @@
 use super::dropt;
 use super::focus::{BlurGuard, FocusWatch};
 use super::geom::{self, Edge, HitRegion, IRect};
+use super::perf;
 use super::present::{PresentStatus, Presenter};
 use super::proximity::{Probe, Proximity};
 use super::sched::FrameState;
@@ -1191,6 +1192,7 @@ impl Host {
             _ => return,
         }
         self.prepare_cx(id);
+        let mut lap = perf::Lap::start();
         // 1. step
         let keep = {
             let Some(win) = self.wins.get_mut(&id) else { return };
@@ -1201,6 +1203,7 @@ impl Host {
             });
             keep
         };
+        let t_step = lap.lap();
         self.apply_fx(id);
         // 2. the view's size wish
         let hint = match self.wins.get(&id) {
@@ -1214,6 +1217,7 @@ impl Host {
         // 3. draw + present
         let mut lost = false;
         let mut occluded = false;
+        let t_draw;
         {
             let (Some(gpu), Some(win)) = (self.gpu.as_ref(), self.wins.get_mut(&id)) else { return };
             let Some(pres) = win.pres.as_mut() else { return };
@@ -1226,6 +1230,7 @@ impl Host {
                     eprintln!("ui host: a panic in draw was caught");
                 }
             });
+            t_draw = lap.lap();
             match r {
                 Ok(()) => match pres.present(&gpu.gfx) {
                     PresentStatus::Ok => {}
@@ -1239,8 +1244,10 @@ impl Host {
                 }
             }
         }
+        let t_present = lap.lap();
         if let Some(win) = self.wins.get_mut(&id) {
             win.frame.end(keep);
+            perf::frame(&win.spec.label, t_step, t_draw, t_present);
             if occluded {
                 win.retry_at = now + 100.0; // minimized / covered: look again in 100 ms instead of spinning
             }
@@ -1843,6 +1850,7 @@ fn run_loop() {
                 eprintln!("ui host: sleeping on {} handle(s), timeout {} ms", set.len(), if timeout == INFINITE { -1 } else { timeout as i64 });
             }
             let r = MsgWaitForMultipleObjectsEx(Some(&set), timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+            perf::wake();
             if trace() {
                 eprintln!("ui host: woke with {:#x}", r.0);
             }

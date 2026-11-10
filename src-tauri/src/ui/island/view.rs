@@ -12,6 +12,7 @@ use super::tabfx::Act;
 use crate::ui::tabs::fx::TabFx;
 use crate::ui::view::{Cx, CursorShape, DropEvent, DropPayload, DropPhase, Msg, ProximityEvent, Ticket, View, Waker};
 use glasskit::canvas::{scale_about, translation, mul, Canvas};
+use glasskit::ease::Spring;
 use glasskit::geom::Rect;
 use glasskit::input::{Cursor, InputEvent, KeyCode, MouseButton, Response};
 use glasskit::theme::Theme;
@@ -150,7 +151,35 @@ pub struct IslandView {
     eq_target: [f32; 4],
     eq: [f32; 4],
     eq_seen: f64,
+    /// last time something moved for real (a transition, input): ambient frames run slower only after `CALM_AFTER_MS` of calm
+    busy_at: f64,
+    /// the frame cap currently asked of the host
+    cap: Option<u32>,
+    /// the display rate seen from the real frame intervals (the rate the host reports can be wrong): the shortest interval so far
+    fast_hz: f32,
+    /// springs behind `live_a` / `panel_a` (fade-out) / `flare_a` and the tab highlights (`tab_k`): critically damped, they keep their velocity
+    /// when the target flips half-way
+    live_sp: Spring,
+    panel_sp: Spring,
+    flare_sp: Spring,
+    tab_sp: HashMap<String, Spring>,
 }
+
+/// A critically damped spring that settles (95 %) in about `settle_ms`.
+fn spring_ms(x: f32, settle_ms: f64) -> Spring {
+    let w = 4.74 / (settle_ms as f32 / 1000.0);
+    Spring::new(x, w * w, 1.0).with_eps(0.002)
+}
+
+/// One step of `sp` towards `target` after `dt_ms`; the new value. Reduced motion lands on the target at once (the spring does that itself).
+fn chase(sp: &mut Spring, target: f32, dt_ms: f64) -> f32 {
+    sp.set_target(target);
+    sp.step((dt_ms / 1000.0) as f32);
+    sp.x
+}
+
+/// How long the full frame rate stays after the last real movement.
+const CALM_AFTER_MS: f64 = 600.0;
 
 impl IslandView {
     /// Built on the host thread. Reads the settings, subscribes to the island's events and starts the model.
@@ -203,6 +232,13 @@ impl IslandView {
             eq_target: [0.0; 4],
             eq: [0.0; 4],
             eq_seen: f64::NEG_INFINITY,
+            busy_at: cx.now_ms,
+            cap: None,
+            fast_hz: 0.0,
+            live_sp: spring_ms(1.0, mo::LIVE_FADE_MS),
+            panel_sp: spring_ms(0.0, mo::PANEL_OUT_MS),
+            flare_sp: spring_ms(1.0, 200.0),
+            tab_sp: HashMap::new(),
             now: cx.now_ms,
             started: false,
             device_id: 0,
@@ -635,6 +671,9 @@ impl View for IslandView {
 
     fn step(&mut self, dt_ms: f64, cx: &mut Cx) -> bool {
         let now = cx.now_ms;
+        if (2.0..9.5).contains(&dt_ms) {
+            self.fast_hz = self.fast_hz.max((1000.0 / dt_ms) as f32); // vsync frames of a fast display
+        }
         self.now = now;
         self.sync_env(cx);
         if let Some((w, h)) = self.pending_measure.take() {
@@ -644,16 +683,15 @@ impl View for IslandView {
         self.exec(cx);
         let v = self.core.shell.view();
         let reduced = v.reduced;
-        let lin = |cur: f32, target: f32, ms: f64| -> f32 {
-            if reduced {
-                return target;
-            }
-            let d = (dt_ms / ms) as f32;
-            if cur < target { (cur + d).min(target) } else { (cur - d).max(target) }
+        self.live_a = chase(&mut self.live_sp, if v.live.visible { 1.0 } else { 0.0 }, dt_ms);
+        self.panel_a = if v.panel.visible {
+            let a = mo::PANEL_IN.at(v.panel.shown_age_ms, reduced).opacity as f32;
+            self.panel_sp.jump(a); // when the panel leaves, the fade-out springs on from where the entry curve was
+            a
+        } else {
+            chase(&mut self.panel_sp, 0.0, dt_ms)
         };
-        self.live_a = lin(self.live_a, if v.live.visible { 1.0 } else { 0.0 }, mo::LIVE_FADE_MS);
-        self.panel_a = if v.panel.visible { mo::PANEL_IN.at(v.panel.shown_age_ms, reduced).opacity as f32 } else { lin(self.panel_a, 0.0, mo::PANEL_OUT_MS) };
-        self.flare_a = lin(self.flare_a, if v.body.flare_visible { 1.0 } else { 0.0 }, 200.0);
+        self.flare_a = chase(&mut self.flare_sp, if v.body.flare_visible { 1.0 } else { 0.0 }, dt_ms);
         // equaliser bars follow the music; with no audio frames for a while they ease down
         let goal = if now - self.eq_seen < EQ_FRESH_MS { self.eq_target } else { [0.0; 4] };
         for (cur, g) in self.eq.iter_mut().zip(goal) {
@@ -661,11 +699,11 @@ impl View for IslandView {
         }
         let mut tabs_moving = false;
         for t in &v.tabs {
-            let k = self.tab_k.entry(t.id.clone()).or_insert(if t.active { 1.0 } else { 0.0 });
             let target = if t.active { 1.0 } else { 0.0 };
-            let nk = if reduced { target } else if *k < target { (*k + (dt_ms / mo::DUR_MED_MS) as f32).min(target) } else { (*k - (dt_ms / mo::DUR_MED_MS) as f32).max(target) };
+            let sp = self.tab_sp.entry(t.id.clone()).or_insert_with(|| spring_ms(target, mo::DUR_MED_MS));
+            let nk = chase(sp, target, dt_ms);
             tabs_moving |= nk != target;
-            *k = nk;
+            self.tab_k.insert(t.id.clone(), nk);
         }
         // the tab view follows the shell's current tab while the panel is open
         if v.panel.visible {
@@ -691,6 +729,21 @@ impl View for IslandView {
         }
         let rows_busy = self.loops(&v);
         let pulse_busy = self.core.pulse.is_some_and(|(_, t0)| now - t0 < 800.0);
+        crate::ui::host::perf::why(&[
+            ("shell", v.wants_frames),
+            ("measure", self.pending_measure.is_some()),
+            ("pets", pets_busy),
+            ("host", host_busy),
+            ("tabs", tabs_moving),
+            ("rows", rows_busy),
+            ("pulse", pulse_busy),
+            ("glide", self.gpu.gliding()),
+            ("fades", self.live_a != (if v.live.visible { 1.0 } else { 0.0 }) || self.flare_a != (if v.body.flare_visible { 1.0 } else { 0.0 })),
+            ("swap", v.live.swap_age_ms < 400.0 && !reduced),
+            ("ghost", v.live.ghost.is_some() || !v.live.rolls.is_empty()),
+            ("card", matches!(v.live.content, LiveContent::Card(_))),
+        ]);
+        self.pace_ambient(&v, cx, now, tabs_moving || host_busy || pulse_busy);
         v.wants_frames || self.pending_measure.is_some() || pets_busy || host_busy || tabs_moving || rows_busy || pulse_busy || self.gpu.gliding() || self.live_a != (if v.live.visible { 1.0 } else { 0.0 }) || self.flare_a != (if v.body.flare_visible { 1.0 } else { 0.0 })
             || (self.panel_a != 0.0 && !v.panel.visible)
             || v.live.swap_age_ms < 400.0 && !reduced
@@ -702,6 +755,7 @@ impl View for IslandView {
 
     fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
         self.now = cx.now_ms;
+        self.wake_full_rate(cx);
         let mut resp = Response::NONE;
         match ev {
             InputEvent::MouseMove { pos, .. } => {
@@ -797,6 +851,9 @@ impl View for IslandView {
 
     fn on_proximity(&mut self, ev: &ProximityEvent, cx: &mut Cx) -> Response {
         let now = cx.now_ms;
+        if !matches!(ev, ProximityEvent::Gaze(_)) {
+            self.wake_full_rate(cx); // the pet's gaze is ambient; hover / leave / zone start real motion
+        }
         match ev {
             ProximityEvent::Hover => self.core.shell_event(Event::Hover, now),
             ProximityEvent::Leave => self.core.shell_event(Event::Leave, now),
@@ -816,6 +873,7 @@ impl View for IslandView {
     }
 
     fn on_drop(&mut self, ev: &DropEvent, cx: &mut Cx) -> Response {
+        self.wake_full_rate(cx);
         let now = cx.now_ms;
         let files = matches!(ev.payload, Some(DropPayload::Files(_)));
         let open = self.core.shell.view().panel.visible;
@@ -997,6 +1055,52 @@ impl View for IslandView {
 }
 
 impl IslandView {
+    /// Ambient frames (the pet breathing, the equaliser, the liquid edge) do not need the display's full rate: on a fast screen they run at
+    /// half of it. Any transition or input brings the full rate back at once and keeps it for `CALM_AFTER_MS` after the last movement.
+    fn pace_ambient(&mut self, v: &ShellView, cx: &mut Cx, now: f64, busy: bool) {
+        let springs = self.core.shell.spring_state().iter().any(|(x, vel, t)| vel.abs() > 0.02 || (x - t).abs() > 0.02);
+        let moving = busy
+            || springs
+            || v.panel.visible
+            || self.panel_a != 0.0
+            || self.pending_measure.is_some()
+            || self.gpu.gliding()
+            || self.live_a != (if v.live.visible { 1.0 } else { 0.0 })
+            || self.flare_a != (if v.body.flare_visible { 1.0 } else { 0.0 })
+            || v.live.swap_age_ms < 400.0
+            || v.live.ghost.is_some()
+            || !v.live.rolls.is_empty()
+            || matches!(v.live.content, LiveContent::Card(_));
+        if moving {
+            self.busy_at = now;
+        }
+        let hz = self.fast_hz.max(cx.refresh_hz);
+        let want = if now - self.busy_at > CALM_AFTER_MS && hz > 100.0 { Some((hz / 2.0) as u32) } else { None };
+        crate::ui::host::perf::why(&[
+            ("p.springs", springs),
+            ("p.moving", moving),
+            ("p.busy", busy),
+            ("p.panel", v.panel.visible || self.panel_a != 0.0),
+            ("p.gpu", self.gpu.gliding()),
+            ("p.fast_screen", hz > 100.0),
+            ("p.host_says_fast", cx.refresh_hz > 100.0),
+            ("p.cap_wanted", want.is_some()),
+        ]);
+        if want != self.cap {
+            self.cap = want;
+            cx.set_fps_cap(want);
+        }
+    }
+
+    /// Input: the full frame rate right now (a capped window would hold the first reaction back by up to one capped frame).
+    fn wake_full_rate(&mut self, cx: &mut Cx) {
+        self.busy_at = cx.now_ms;
+        if self.cap.is_some() {
+            self.cap = None;
+            cx.set_fps_cap(None);
+        }
+    }
+
     /// Looping row animations that need frames at the display rate (equaliser, spinner, pulsing dot, ring).
     fn loops(&self, v: &ShellView) -> bool {
         use pill_ui_core::live::model::Elem;
@@ -1087,6 +1191,26 @@ mod eq_tests {
         assert!(l[3] > 0.4 && l[0] == 0.0, "{l:?}");
         assert!(eq_levels(&[1.0; 32]).iter().all(|&x| x == 1.0), "clamped to 1");
         assert_eq!(eq_levels(&[0.5; 3]).len(), 4, "a short spectrum does not panic");
+    }
+
+    #[test]
+    fn a_fade_keeps_its_momentum_when_it_is_reversed_and_settles_in_about_its_time() {
+        let _m = crate::ui::host::testing::motion_on();
+        let mut sp = spring_ms(0.0, 200.0);
+        let mut x = 0.0;
+        for _ in 0..6 {
+            x = chase(&mut sp, 1.0, 16.0); // ~100 ms towards 1
+        }
+        assert!(x > 0.15 && x < 0.9 && sp.v > 0.0, "{x} {}", sp.v);
+        let after = chase(&mut sp, 0.0, 16.0); // flipped: it carries on a little, then turns (no kink)
+        assert!(after >= x - 1e-4, "inertia: {after} vs {x}");
+        let mut sp = spring_ms(0.0, 200.0);
+        let mut t = 0.0;
+        while chase(&mut sp, 1.0, 8.0) < 0.95 {
+            t += 8.0;
+            assert!(t < 400.0, "too slow");
+        }
+        assert!(t > 100.0, "settles near its time, not at once: {t} ms");
     }
 
     #[test]
