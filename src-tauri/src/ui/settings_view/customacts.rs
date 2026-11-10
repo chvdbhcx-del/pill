@@ -22,6 +22,7 @@ impl SettingsView {
                 }
                 self.sync_page();
             }
+            Act::PhoneRenew | Act::PhoneRevoke(_) | Act::PhoneMute(_) => self.phone_act(a, cx),
             Act::HomeChip(i) => self.home_chip(i, cx),
             Act::TabChip(id) => self.tab_chip(id, cx),
             Act::OpenLink(url) => {
@@ -152,6 +153,9 @@ impl SettingsView {
         let v = res.clone().unwrap_or(Value::Null);
         let ok = v.get("ok").and_then(Value::as_bool).unwrap_or(false);
         let tag = p.tag.clone();
+        if self.phone_reply(&p.call, res, cx) {
+            return;
+        }
         match &p.call {
             C::LauncherList => self.data.launcher = hotkey::launcher_shortcuts(&v),
             C::ClipStatus => self.data.clip_count = v.get("count").and_then(Value::as_i64).unwrap_or(0),

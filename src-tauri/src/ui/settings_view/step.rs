@@ -48,6 +48,7 @@ impl SettingsView {
         busy |= self.step_rows(dt);
         busy |= self.search.field.step(dt);
         busy |= self.step_custom(dt);
+        busy |= self.step_phone(dt, cx);
         busy |= self.step_pickers(dt);
         self.process_edits(cx);
         self.resolve_goto();

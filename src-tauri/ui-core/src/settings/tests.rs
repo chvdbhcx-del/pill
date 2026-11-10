@@ -48,7 +48,7 @@ fn ids_and_keys_are_unique() {
     for p in &schema().pages {
         assert!(pages.insert(p.id), "duplicate page {}", p.id);
     }
-    assert_eq!(schema().pages.len(), 15);
+    assert_eq!(schema().pages.len(), 16);
 }
 
 #[test]
@@ -200,7 +200,7 @@ fn custom_widgets_and_actions_are_a_closed_vocabulary() {
     // the renderer must implement exactly these; adding one means adding it here and to the renderer
     let known: BTreeSet<&str> = [
         "character.reactions", "general.backup", "hotkeys.launcher", "modules.home", "modules.profiles", "modules.tabs", "search.everything", "ai.providers", "aisetup.intro", "aisetup.whisper", "aisetup.chat",
-        "voice.providers", "weather.city", "updates.whatsnew",
+        "voice.providers", "weather.city", "updates.whatsnew", "phone.link", "phone.devices", "phone.apps",
     ]
     .into_iter()
     .collect();
@@ -268,7 +268,7 @@ fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
     let expect = [
-        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 21), ("live", 36), ("clipboard", 18), ("search", 4),
+        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 22), ("live", 37), ("phone", 8), ("clipboard", 18), ("search", 4),
         ("sound", 15), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
     ];
     for (id, n) in expect {
@@ -461,6 +461,8 @@ const NOT_EXPOSED: &[(&str, &str)] = &[
     ("home.tile.plain", "a chip of the Modules page's Home widget (modules.home), not a row"),
     ("home.tile.record", "a chip of the Modules page's Home widget (modules.home), not a row"),
     ("home.tile.command", "a chip of the Modules page's Home widget (modules.home), not a row"),
+    ("phone.port", "chosen by phone.rs (the first free port from 41717 up is remembered)"),
+    ("phone.mutedApps", "the app chips of the Phone page (phone.apps), a list of package names"),
     ("tabs.hidden", "the chips of the Modules page's tab widget (modules.tabs), a list of tab ids"),
 ];
 
@@ -587,4 +589,32 @@ fn every_control_family_has_feedback_or_is_documented_static() {
         assert!(fb.is_some() || static_ok, "{}: no animation kind for {:?}", r.id, r.control);
     }
     let _ = Action::RunWizard;
+}
+
+// ------------------------------------------------------------------------------------------------ the Phone page
+
+#[test]
+fn the_phone_page_has_the_link_widgets_and_gated_rows() {
+    let p = schema().page("phone").expect("phone page");
+    let ids: Vec<&str> = p.rows().map(|r| r.id).collect();
+    assert_eq!(ids, ["phone.enabled", "phone.link", "phone.devices", "phone.apps", "phone.downloadDir", "phone.maxFileMB", "phone.autoAccept", "phone.apkUrl"]);
+    let sw = schema().row("phone.enabled").unwrap();
+    assert_eq!(sw.default, json!(false), "the server never starts by itself");
+    let note = p.groups[0].footer;
+    assert!(note.get(Lang::En).contains("NOT encrypted") && note.get(Lang::Ru).contains("без шифрования"), "the plain no-TLS note");
+    for id in ["phone.downloadDir", "phone.maxFileMB", "phone.autoAccept", "phone.apkUrl"] {
+        assert_eq!(schema().row(id).unwrap().enabled_if, super::schema::Cond::On("phone.enabled"), "{id} waits for the switch");
+    }
+    assert_eq!(schema().row("phone.maxFileMB").unwrap().control, Control::Number { min: 1, max: 1_048_576 });
+}
+
+#[test]
+fn muted_apps_are_a_list_of_package_names() {
+    let mut m = SettingsModel::new("en");
+    m.begin(Map::new(), None);
+    let calls = m.try_set("phone.mutedApps", json!(["org.telegram.messenger"])).unwrap();
+    assert_eq!(calls[0].command(), "settings_set");
+    assert!(m.try_set("phone.mutedApps", json!("org.telegram.messenger")).is_err());
+    assert!(m.try_set("phone.mutedApps", json!([""])).is_err());
+    assert!(m.try_set("phone.mutedApps", json!([5])).is_err());
 }

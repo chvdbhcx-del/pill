@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn step_contents_come_from_the_schema() {
         assert!(matches!(content(1), Content::Language));
-        assert_eq!(module_row_ids().len(), 11);
+        assert_eq!(module_row_ids().len(), 12);
         assert!(module_row_ids().iter().all(|id| schema().row(id).is_some_and(|r| r.default == json!(true))));
         let hk = hotkey_rows();
         assert_eq!(hk.len(), 6);

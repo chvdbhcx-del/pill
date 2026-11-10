@@ -77,6 +77,11 @@ pub enum BackendCall {
     MailStatus,
     MailSetPassword { password: String },
     MailTest,
+    // Pill Phone link (docs/phone-protocol.md): status + paired phones, the one-time pairing code (QR), revoke, apps seen in notifications
+    PhoneStatus,
+    PhonePairCode { renew: bool },
+    PhoneRevoke { id: String },
+    PhoneApps,
     // effects of the window itself
     UiSetLanguage { lang: String },
     UiRerender,
@@ -163,6 +168,10 @@ impl BackendCall {
             MailStatus => "mail_status",
             MailSetPassword { .. } => "mail_set_password",
             MailTest => "mail_test",
+            PhoneStatus => "phone_status",
+            PhonePairCode { .. } => "phone_pair_code",
+            PhoneRevoke { .. } => "phone_revoke",
+            PhoneApps => "phone_apps",
             UiSetLanguage { .. } | UiRerender | UiShowPage { .. } | UiStartWizard | UiPickFile | UiSyncControls | UiRebuildSidebar | UiRedrawWizard | UiEndWizardChrome | UiSetReduceMotion { .. } | UiMinimize | UiToggleMaximize => "",
         }
     }
@@ -196,6 +205,8 @@ impl BackendCall {
             WeatherSetCity { name, lat, lon } => json!({ "name": name, "lat": lat, "lon": lon }),
             WeatherGet { force, tz_minutes } => json!({ "force": force, "tz": tz_minutes }),
             ObsSetPassword { password } | MailSetPassword { password } => json!({ "password": password }),
+            PhonePairCode { renew } => json!({ "renew": renew }),
+            PhoneRevoke { id } => json!({ "id": id }),
             UiSetLanguage { lang } => json!({ "lang": lang }),
             UiShowPage { page } => json!({ "page": page }),
             UiSetReduceMotion { on } => json!({ "on": on }),
@@ -254,6 +265,11 @@ mod tests {
         assert_eq!(BackendCall::WeatherGet { force: true, tz_minutes: 180 }.args(), json!({"force": true, "tz": 180}));
         assert_eq!(BackendCall::AisetupWhisperSet { on: false, model: None }.args(), json!({"on": false, "model": null}));
         assert_eq!(BackendCall::SettingsExport.args(), Value::Null);
+        let c = BackendCall::PhonePairCode { renew: true };
+        assert_eq!((c.command(), c.args()), ("phone_pair_code", json!({"renew": true})));
+        let c = BackendCall::PhoneRevoke { id: "d1".into() };
+        assert_eq!((c.command(), c.args()), ("phone_revoke", json!({"id": "d1"})));
+        assert_eq!((BackendCall::PhoneStatus.command(), BackendCall::PhoneApps.command()), ("phone_status", "phone_apps"));
         assert_eq!(BackendCall::OpenLink { url: "https://x".into() }.command(), "chat_open_link");
     }
 

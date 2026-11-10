@@ -52,6 +52,8 @@ pub struct Data {
     pub tick: u64,
     /// the schematic of the Home tab in the Modules page (it relays itself as parts are switched)
     pub home: crate::ui::tabs::a::home::slots::Slots,
+    /// the Phone page (QR, paired phones, apps)
+    pub phone: super::cw_phone::PhoneData,
 }
 
 impl Default for Data {
@@ -80,6 +82,7 @@ impl Default for Data {
             whatsnew_open: false,
             tick: 0,
             home: crate::ui::tabs::a::home::slots::Slots::new(),
+            phone: Default::default(),
         }
     }
 }
@@ -135,6 +138,9 @@ impl SettingsView {
             "modules.home" => self.w_home(d, r, full, paint),
             "modules.tabs" => self.w_tabs(d, r, full, paint),
             "search.everything" => self.w_everything(d, r, full, paint),
+            "phone.link" => self.w_phone_link(d, r, full, paint),
+            "phone.devices" => self.w_phone_devices(d, r, full, paint),
+            "phone.apps" => self.w_phone_apps(d, r, full, paint),
             "aisetup.whisper" => self.w_whisper(d, r, full, paint),
             "aisetup.chat" => self.w_chat(d, r, full, paint),
             "weather.city" => {

@@ -130,6 +130,9 @@ impl SettingsView {
             }
             self.run(cx, calls);
         }
+        if self.model.current == "phone" && !self.wiz.active() {
+            self.phone_tick(cx);
+        }
         cx.request_frame();
     }
 }

@@ -3,7 +3,7 @@ use crate::settings::schema::*;
 use crate::settings::tr::{same, tr, Tr};
 use serde_json::{json, Value};
 
-const MODS: [(&str, Tr, Tr); 11] = [
+const MODS: [(&str, Tr, Tr); 12] = [
     ("media", tr("Медиаплеер", "Media player"), tr("Обложка, управление и эквалайзер", "Cover, controls and equaliser")),
     ("shelf", tr("Полка файлов", "File shelf"), tr("Перетащи файлы на остров, они полежат, пока не понадобятся", "Drop files on the pill, they wait until you need them")),
     ("launcher", tr("Лаунчер", "Launcher"), tr("Ярлыки программ на вкладке «Главная»", "Program shortcuts on the Home tab")),
@@ -14,6 +14,7 @@ const MODS: [(&str, Tr, Tr); 11] = [
     ("note", tr("Заметки и таймер", "Notes and timer"), tr("Вкладка «Заметка», напоминания", "The Note tab, reminders")),
     ("weather", tr("Погода", "Weather"), tr("Вкладка «Погода»", "The Weather tab")),
     ("controls", tr("Управление системой", "System controls"), tr("Вкладка «Управление»: сеть, Bluetooth, тема, питание", "The Controls tab: network, Bluetooth, theme, power")),
+    ("phone", tr("Телефон", "Phone"), tr("Вкладка «Телефон»: уведомления и файлы с вашего телефона", "The Phone tab: notifications and files from your phone")),
     ("notifs", tr("Центр уведомлений", "Notification centre"), tr("Вкладка «Уведомления»: история карточек острова", "The Notifications tab: history of the island cards")),
 ];
 
@@ -171,7 +172,7 @@ pub fn modules() -> Page {
     p
 }
 
-const LIVE: [(&str, Tr, Tr, bool); 17] = [
+const LIVE: [(&str, Tr, Tr, bool); 18] = [
     ("live.volume", tr("Громкость", "Volume"), tr("Полоска при изменении громкости, колесо мыши над островом", "A bar when the volume changes, the mouse wheel over the pill"), true),
     ("live.music", tr("Музыка", "Music"), tr("Название трека и эквалайзер в пилюле, пока играет музыка", "The track title and an equaliser in the pill while music plays"), true),
     ("live.micCam", tr("Микрофон и камера", "Microphone and camera"), tr("Точки в острове, пока приложение слушает или снимает", "Dots in the pill while an app listens or films"), true),
@@ -188,6 +189,7 @@ const LIVE: [(&str, Tr, Tr, bool); 17] = [
     ("live.dlDone", tr("Готовый файл в «Загрузках»", "Finished file in Downloads"), tr("Карточка «Загружено: имя файла», когда файл докачался в папку «Загрузки»; клик по карточке открывает папку с выделенным файлом", "A “Downloaded: file name” card when a file finishes in your Downloads folder; a click on the card opens the folder with the file selected"), true),
     ("live.shelf", tr("Полка файлов", "File shelf"), tr("Значок с числом файлов на свёрнутом острове, пока полка не пуста, и счётчик на 5 секунд, когда файлы добавили или убрали", "A file-count badge on the folded pill while the shelf is not empty, and a 5-second counter when files are added or removed"), true),
     ("live.usb", tr("Флешки и съёмные диски", "USB and removable drives"), tr("Карточка, когда съёмный диск подключили или отключили", "A card when a removable drive is connected or removed"), true),
+    ("live.phone", tr("Уведомления и файлы с телефона", "Phone notifications and files"), tr("Карточка на свёрнутом острове для каждого сообщения с телефона (можно ответить), для полученного и отправленного файла", "Shows a card on the folded island for each phone message (you can reply), and for a file received or sent"), true),
     ("live.battery", tr("Батарея", "Battery"), tr("Предупреждение при заряде 20 % и 10 % на ноутбуке, а также «Заряжается» и «Заряжено»; на компьютере без батареи ничего не делает", "A warning at 20 % and 10 % on a laptop, plus “Charging” and “Fully charged”; does nothing on a PC without a battery"), true),
 ];
 

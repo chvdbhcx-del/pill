@@ -25,7 +25,7 @@ use crate::settings::wizard::Wizard;
 use serde_json::{json, Map, Value};
 
 /// Keys the UI may write although no row owns them.
-pub const EXTRA_WRITABLE: [&str; 2] = ["ai.preset", "firstRunDone"];
+pub const EXTRA_WRITABLE: [&str; 3] = ["ai.preset", "firstRunDone", "phone.mutedApps"];
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SetError {
@@ -266,6 +266,14 @@ impl SettingsModel {
                 }
             }
             return Ok(one(key, json!(out)));
+        }
+        if key == "phone.mutedApps" {
+            // package names from the Phone page's app chips
+            let list = value.as_array().ok_or(SetError::WrongType("array"))?;
+            if list.len() > 500 || list.iter().any(|v| v.as_str().map_or(true, |s| s.is_empty() || s.len() > 120)) {
+                return Err(SetError::WrongType("list of package names"));
+            }
+            return Ok(one(key, value.clone()));
         }
         let Some(row) = sc.row_for_key(key) else {
             return if EXTRA_WRITABLE.contains(&key) { Ok(one(key, value.clone())) } else { Err(SetError::UnknownKey(key.to_string())) };

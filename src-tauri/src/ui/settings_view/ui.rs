@@ -70,6 +70,10 @@ pub enum Act {
     Disclosure,
     // hotkeys
     Recorder(String),
+    // phone page: a new pairing code, Revoke (second click confirms), mute / unmute an app (package name)
+    PhoneRenew,
+    PhoneRevoke(String),
+    PhoneMute(String),
 }
 
 #[derive(Clone, Debug)]
