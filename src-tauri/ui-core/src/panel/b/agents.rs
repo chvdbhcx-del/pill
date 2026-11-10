@@ -27,6 +27,7 @@ fn tool_name(t: &str) -> &str {
     match t {
         "claude-code" => "Claude Code",
         "codex" => "Codex",
+        "opencode" => "OpenCode",
         _ => "",
     }
 }

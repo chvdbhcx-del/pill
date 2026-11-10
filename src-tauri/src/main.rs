@@ -24,6 +24,7 @@ mod player_audio;
 mod proc_loopback;
 mod extplayer;
 mod agents;
+mod agent_bridge;
 mod launcher;
 mod settingswin;
 mod capture;
@@ -91,6 +92,7 @@ fn main() {
             vdesk::init(app);
             livesys::init(app);
             agents::init(app);
+            agent_bridge::init();
             launcher::init(app);
             settingswin::init(app);
             capture::init(app);

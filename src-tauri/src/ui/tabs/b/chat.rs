@@ -1166,7 +1166,7 @@ impl ChatScreen {
             match m.role {
                 Role::Assistant => {
                     if !m.typing {
-                        let blocks = markdown::parse(&m.text);
+                        let blocks = crate::ui::mdx::parse(&m.text);
                         match it.md.as_mut() {
                             None => it.md = MarkdownView::new(cv, blocks, md_w, th, &labels).ok(),
                             Some(md) => {
@@ -1208,7 +1208,7 @@ impl ChatScreen {
             self.ghost_taken = false;
         } else if !self.ghost_taken && self.ghost.is_none() {
             let g = &v.ghosts[0];
-            if let Ok(md) = MarkdownView::new(cv, markdown::parse(&g.text), md_w, th, &labels) {
+            if let Ok(md) = MarkdownView::new(cv, crate::ui::mdx::parse(&g.text), md_w, th, &labels) {
                 let (mut fade, mut rise) = (Flow::new(1.0, Feel::FADE), Flow::px(0.0, Feel::FLOW));
                 fade.to(0.0);
                 rise.to(-6.0);

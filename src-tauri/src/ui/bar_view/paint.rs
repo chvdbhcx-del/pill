@@ -4,7 +4,6 @@ use super::anim::Look;
 use super::*;
 use glasskit::canvas::{mul, scale_about, translation};
 use glasskit::color::Color;
-use glasskit::markdown;
 use glasskit::richtext::MarkdownLabels;
 use glasskit::svgpath::{build_geometry, Affine, Path, Seg};
 use glasskit::text::Style;
@@ -149,7 +148,7 @@ impl BarView {
                     self.md.view = None;
                     self.md.src.clear();
                 } else if stale || self.md.src != a.text {
-                    let blocks = markdown::parse(&a.text);
+                    let blocks = crate::ui::mdx::parse(&a.text);
                     let l = MarkdownLabels { copy: &labels.0, copied: &labels.1 };
                     let ok = match (stale, self.md.view.as_mut()) {
                         (false, Some(v)) => v.update(cv, blocks, &md_th).is_ok(),

@@ -99,7 +99,7 @@ pub const SHELL_EVENTS: &[&str] =
 pub const ISLAND_EVENTS: &[&str] = &[
     "settings:changed", "pill:show", "pill:hide", "pill:expand", "pill:collapse", "pill:open-tab", "audio:bands", "weather:current", "kbd:layout", "clip:added",
     "live:volume", "live:privacy", "live:download", "update:available", "live:obs", "live:steam", "live:notification", "uninstall:ready", "live:file-done",
-    "live:usb", "live:battery", "live:calendar", "live:mail", "agents:changed", "agents:done", "rec:state", "capture:done", "voice:state", "voice:level",
+    "live:usb", "live:battery", "live:calendar", "live:mail", "agents:changed", "agents:done", "agents:ask", "agents:ask-gone", "rec:state", "capture:done", "voice:state", "voice:level",
     "sysmon:tick", "media:changed", "timer:tick", "remind:due", "shelf:changed", "timer:done", "remind:changed", "kbd:now", "vdesk:now",
 ];
 
@@ -534,6 +534,21 @@ mod tests {
             let outs = c.take_outs();
             assert!(outs.iter().any(|o| matches!(o, Out::Run(_))) || matches!(c.cards["cap"].actions[0].action, Action::Noop), "{outs:?}");
         }
+    }
+
+    #[test]
+    fn an_agent_question_is_a_card_whose_button_answers_by_id_and_is_ignored_while_the_switch_is_off() {
+        let mut c = core();
+        let ask = json!({"id": "5", "kind": "permission", "toolName": "Bash", "summary": "ls", "project": "app"});
+        c.bus_event("agents:ask", &ask, 5.0);
+        assert!(c.shell.cards().current_id().is_none(), "the switch is off: no card");
+        c.bus_event("settings:changed", &json!({"agents.answerFromIsland": true}), 6.0);
+        c.bus_event("agents:ask", &ask, 7.0);
+        assert_eq!(c.shell.cards().current_id(), Some("agent-ask:5"));
+        c.shell_event(Event::CardAction(1), 8.0); // "Allow"
+        let run = c.take_outs().into_iter().find_map(|o| if let Out::Run(a) = o { Some(a) } else { None });
+        assert_eq!(run, Some(Action::invoke("agents_answer", json!({"id": "5", "choice": "allow"}))));
+        assert!(c.shell.cards().is_out(), "the card leaves after the press");
     }
 
     #[test]

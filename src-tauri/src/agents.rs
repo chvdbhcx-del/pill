@@ -68,7 +68,7 @@ fn transcript_mtime(path: &str) -> Option<i64> {
 }
 
 /// Text only: control characters become spaces, runs of whitespace collapse, capped at `max` chars.
-fn clean_text(s: &str, max: usize) -> String {
+pub(crate) fn clean_text(s: &str, max: usize) -> String {
     // control chars -> space; zero-width and bidi-override marks (can disguise text) are dropped
     let flat: String = s
         .chars()
@@ -83,7 +83,7 @@ fn clean_text(s: &str, max: usize) -> String {
 }
 
 /// Session ids end up in file names and in dismiss(): keep [A-Za-z0-9._-] only.
-fn clean_id(s: &str) -> String {
+pub(crate) fn clean_id(s: &str) -> String {
     let id: String = s.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')).take(ID_MAX).collect();
     id.trim_matches('.').to_string()
 }
@@ -107,7 +107,7 @@ fn parse_status(bytes: &[u8], mtime: i64, now: i64) -> Option<Session> {
         return None;
     }
     let tool = match st("tool") {
-        t @ ("claude-code" | "codex") => t.to_string(),
+        t @ ("claude-code" | "codex" | "opencode") => t.to_string(),
         _ => "other".to_string(),
     };
     let ts = o.get("ts").and_then(Value::as_i64).filter(|t| *t > 0 && *t <= now + 300_000).unwrap_or(mtime);
@@ -115,7 +115,7 @@ fn parse_status(bytes: &[u8], mtime: i64, now: i64) -> Option<Session> {
 }
 
 /// Last folder name of a working directory (either separator, trailing ones ignored): the project a session belongs to.
-fn project_name(cwd: &str) -> &str {
+pub(crate) fn project_name(cwd: &str) -> &str {
     cwd.rsplit(['/', '\\']).find(|p| !p.is_empty()).unwrap_or("")
 }
 
@@ -421,6 +421,56 @@ try {
 exit 0
 "#;
 
+/// opencode plugin the user saves (JS, ASCII). Same status file as the helper above, written directly: no process is started.
+const OPENCODE_PLUGIN: &str = r#"// Pill: shows opencode in the island (working / needs your input / finished). Writes one small JSON file per session into
+// %APPDATA%\pill\agents and nothing else; it sends nothing anywhere.
+import fs from "node:fs"
+import path from "node:path"
+
+export const PillStatus = async ({ directory }) => {
+  const dir = path.join(process.env.APPDATA || "", "pill", "agents")
+  const titles = {}
+  const write = (sid, state) => {
+    try {
+      if (!sid || !process.env.APPDATA) return
+      const id = String(sid).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 64)
+      const file = path.join(dir, "opencode-" + id + ".json")
+      fs.mkdirSync(dir, { recursive: true })
+      const o = { tool: "opencode", session: id, state, title: titles[sid] || "", cwd: directory || "", transcript: "", ts: Date.now() }
+      fs.writeFileSync(file + ".tmp", JSON.stringify(o))
+      fs.renameSync(file + ".tmp", file)
+    } catch (e) {}
+  }
+  return {
+    event: async ({ event }) => {
+      const p = event.properties || {}
+      const sid = p.sessionID || (p.info && p.info.sessionID)
+      switch (event.type) {
+        case "session.updated":
+          if (p.info && p.info.id && p.info.title) titles[p.info.id] = String(p.info.title).slice(0, 80)
+          break
+        case "session.status":
+          write(sid, p.status && p.status.type === "idle" ? "done" : "working")
+          break
+        case "session.idle":
+          write(sid, "done")
+          break
+        case "permission.asked":
+        case "permission.updated":
+        case "question.asked":
+          write(sid, "waiting")
+          break
+        case "permission.replied":
+        case "question.replied":
+        case "question.rejected":
+          write(sid, "working")
+          break
+      }
+    },
+  }
+}
+"#;
+
 fn helper_path() -> PathBuf {
     hooks_dir().join(HELPER_NAME)
 }
@@ -458,12 +508,15 @@ fn snippets(helper: &str) -> Value {
         "claude_code_optional": serde_json::to_string_pretty(&json!({ "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": hook_cmd(helper, "claude-code", "working") }] }] })).unwrap_or_default(),
         "codex": codex,
         "codex_where": "Add the line to ~/.codex/config.toml, above any [table] header. Codex appends one JSON argument; only the end of a turn is reported (no working/waiting states).",
+        "opencode": OPENCODE_PLUGIN,
+        "opencode_where": "Save as pill-status.js in ~/.config/opencode/plugin/ (all projects) or <project>/.opencode/plugin/ and restart opencode. The plugin writes the same small status file as the Claude Code hook and sends nothing anywhere.",
         "uncertain": [
             "Claude Code passes session_id, transcript_path, cwd and hook_event_name as JSON on stdin; an env var CLAUDE_SESSION_ID is NOT documented (the helper reads stdin first).",
             "Which shell Claude Code uses for hook commands on Windows differs by version; the command has no $ or backslashes, so it should survive cmd, bash and PowerShell.",
             "Notification also fires as an idle reminder about a minute after the turn ended; the helper keeps such a session 'done'.",
             "Codex notify payload (type agent-turn-complete, thread-id, cwd, input-messages, last-assistant-message) is from memory; argument quoting through powershell -File may differ, the helper then falls back to session 'default' and an empty title.",
-            "After you approve a permission prompt Claude Code has no 'resumed' hook: the optional PostToolUse hook flips the state back to working (adds ~0.2 s of PowerShell start per tool call)."
+            "After you approve a permission prompt Claude Code has no 'resumed' hook: the optional PostToolUse hook flips the state back to working (adds ~0.2 s of PowerShell start per tool call).",
+            "opencode event names (session.status / session.idle / permission.asked|updated|replied / question.asked) are from memory of its plugin docs and may differ between versions; an unknown event is simply ignored."
         ]
     })
 }
@@ -542,7 +595,11 @@ pub fn agents_tools() -> Value {
 
 pub fn agents_hook_snippets() -> Value {
     write_helper();
-    snippets(&fwd(&helper_path()))
+    let mut v = snippets(&fwd(&helper_path()));
+    if let (Some(o), Value::Object(extra)) = (v.as_object_mut(), crate::agent_bridge::snippet_fields()) {
+        o.extend(extra); // the "answer from the island" hook (agent_bridge.rs)
+    }
+    v
 }
 
 #[cfg(test)]
@@ -714,6 +771,20 @@ mod tests {
         assert!(!cmd.contains('$'));
         assert!(s["codex"].as_str().unwrap().starts_with("notify = [\"powershell\""));
         assert!(HELPER.is_ascii());
+    }
+
+    #[test]
+    fn opencode_is_a_tool_with_its_own_plugin_text() {
+        let ok = parse(r#"{"tool":"opencode","session":"ses_1","state":"waiting","title":"Fix","cwd":"C:\\p","ts":1799999999000}"#).unwrap();
+        assert_eq!((ok.tool.as_str(), ok.state), ("opencode", State::Waiting));
+        assert_eq!(key(&ok), "opencode/ses_1");
+        let s = snippets("C:/h/agent-hook.ps1");
+        let js = s["opencode"].as_str().unwrap();
+        assert!(OPENCODE_PLUGIN.is_ascii() && js.contains("tool: \"opencode\"") && js.contains("permission.asked") && js.contains("session.idle"));
+        assert!(js.contains(r"%APPDATA%\pill\agents") && !js.contains("fetch(") && !js.contains("http"), "local files only, no network");
+        // the status file name the plugin writes is `opencode-<id>.json`: the same name scheme the scanner lists
+        assert!(js.contains("\"opencode-\" + id + \".json\""));
+        assert!(s["opencode_where"].as_str().unwrap().contains(".config/opencode/plugin"));
     }
 
     fn scratch(name: &str) -> PathBuf {

@@ -86,7 +86,7 @@ const LIVE: [(&str, Tr, Tr, bool); 17] = [
     ("live.keyboardLayout", tr("Раскладка клавиатуры", "Keyboard layout"), tr("Короткая подсказка при смене языка ввода и Caps Lock", "A short hint when the input language or Caps Lock changes"), true),
     ("live.copy", tr("Реакция на копирование", "Reaction to copying"), tr("Остров слегка вздрагивает, когда в буфер попал новый текст", "The pill twitches slightly when new text reaches the clipboard"), true),
     ("live.obs", tr("OBS: запись и трансляция", "OBS: recording and streaming"), tr("Пока OBS пишет или транслирует, в пилюле горит REC или LIVE, готовая запись приходит карточкой. В OBS включите сервер WebSocket (Сервис → Настройки сервера WebSocket)", "While OBS records or streams, the pill shows REC or LIVE and the finished recording arrives as a card. In OBS, enable the WebSocket server (Tools → WebSocket Server Settings)"), false),
-    ("live.agents", tr("ИИ-агенты в терминале", "AI agents in the terminal"), tr("Claude Code и Codex: в пилюле видно, что агент работает, ждёт ответа или закончил, а когда он ждёт или закончил — приходит карточка", "Claude Code and Codex: the pill shows that an agent works, waits for an answer or has finished, and a card arrives when it waits or finishes"), true),
+    ("live.agents", tr("ИИ-агенты в терминале", "AI agents in the terminal"), tr("Claude Code, Codex и opencode: в пилюле видно, что агент работает, ждёт ответа или закончил, а когда он ждёт или закончил — приходит карточка", "Claude Code, Codex and opencode: the pill shows that an agent works, waits for an answer or has finished, and a card arrives when it waits or finishes"), true),
     ("live.steam", tr("Загрузки Steam", "Steam downloads"), tr("Игры и обновления, которые качает Steam: сколько осталось и скорость, а в конце карточка", "Games and updates Steam downloads: time left and speed, and a card at the end"), true),
     ("live.sysmon", tr("Монитор системы", "System monitor"), tr("Загрузка процессора, памяти и видеокарт NVIDIA (с температурой) на вкладке «Управление». Предупреждение, если видеокарта от 85 °C или процессор от 95 % дольше 10 с", "CPU, memory and NVIDIA GPU load (with temperature) on the Controls tab. A warning when a GPU is at 85 °C or more, or the CPU is at 95 % for over 10 s"), true),
     ("live.dlDone", tr("Готовый файл в «Загрузках»", "Finished file in Downloads"), tr("Карточка «Загружено: имя файла», когда файл докачался в папку «Загрузки»; клик по карточке открывает папку с выделенным файлом", "A “Downloaded: file name” card when a file finishes in your Downloads folder; a click on the card opens the folder with the file selected"), true),
@@ -128,7 +128,20 @@ pub fn live() -> Page {
             rows.push(button("live.notifications.allow", tr("Доступ к уведомлениям Windows", "Windows notification access"), tr("Pill не убирает исходное уведомление: Windows может показать и своё всплывающее окно, если не включён режим фокусировки. Доступ разрешается один раз: Параметры → Конфиденциальность → Уведомления.", "Pill does not remove the original notification: Windows may still show its own popup unless Focus Assist is on. Access is granted once: Settings → Privacy → Notifications."), tr("Разрешить доступ", "Allow access"), Action::NotifAllow, ButtonStyle::Small).enabled(Cond::On("live.notifications")));
         }
         if *key == "live.agents" {
-            rows.push(button("live.agents.snippets", tr("Фрагменты для настроек агентов", "Agent settings snippets"), tr("Pill сам не меняет настройки агентов. «Показать» выведет фрагменты: хуки для ~/.claude/settings.json (Claude Code) и notify для ~/.codex/config.toml (Codex). Для новых сессий.", "Pill never edits agent settings itself. “Show” prints the snippets: hooks for ~/.claude/settings.json (Claude Code) and notify for ~/.codex/config.toml (Codex). For new sessions."), tr("Показать", "Show"), Action::AgentsSnippets, ButtonStyle::Small));
+            rows.push(button("live.agents.snippets", tr("Фрагменты для настроек агентов", "Agent settings snippets"), tr("Pill сам не меняет настройки агентов. «Показать» выведет фрагменты: хуки для ~/.claude/settings.json (Claude Code), notify для ~/.codex/config.toml (Codex) и плагин для ~/.config/opencode/plugin/ (opencode). Для новых сессий.", "Pill never edits agent settings itself. “Show” prints the snippets: hooks for ~/.claude/settings.json (Claude Code), notify for ~/.codex/config.toml (Codex) and a plugin for ~/.config/opencode/plugin/ (opencode). For new sessions."), tr("Показать", "Show"), Action::AgentsSnippets, ButtonStyle::Small));
+            rows.push(
+                toggle(
+                    "agents.answerFromIsland",
+                    tr("Отвечать агентам из острова", "Answer agents from the island"),
+                    tr(
+                        "Запрос разрешения (команда, правка файла) и вопрос с вариантами от Claude Code приходят карточкой в остров: «Разрешить» / «Отклонить» или выбор ответа. Нужно один раз вставить хук из «Фрагментов» выше. Pill слушает только 127.0.0.1 (случайный порт и токен), без ответа 120 с Claude Code спросит в терминале как обычно.",
+                        "A permission request (a command, a file edit) and a question with options from Claude Code arrive as a card on the island: Allow / Deny, or pick an answer. Paste the hook from the snippets above once. Pill listens on 127.0.0.1 only (random port and token); with no answer in 120 s Claude Code asks in the terminal as usual.",
+                    ),
+                    false,
+                )
+                .enabled(Cond::On("live.agents"))
+                .kw(&["claude", "permission", "allow", "deny", "hook", "разрешение", "агент", "ответ"]),
+            );
         }
     }
     // chips beside the time and how long cards stay (they read nothing off the PC beyond the layout of the window in front and the desktop number)
