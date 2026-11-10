@@ -25,6 +25,7 @@ mod css;
 mod layout;
 mod paint;
 mod target;
+mod player;
 #[cfg(test)]
 mod tests;
 
@@ -34,6 +35,7 @@ use crate::ui::view::{Cx, DropEvent, DropPayload, DropPhase, Msg, View};
 use glasskit::canvas::Canvas;
 use glasskit::color::Color;
 use super::touch::Touch;
+use player::PlayerFx;
 use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{Cursor, InputEvent, KeyCode, MouseButton, Response};
@@ -72,6 +74,7 @@ pub(crate) fn is_cover_ready(b: &(dyn std::any::Any + Send)) -> bool {
 struct CoverReady {
     key: String,
     colors: Option<CoverColors>,
+    tiny: Option<super::draw::Decoded>,
 }
 
 /// Everything the pointer can be over.
@@ -147,6 +150,8 @@ pub struct HomeView {
     vol_kick: u8,
     /// the "computer / player" switch of the volume strip (target.rs)
     target: target::Target,
+    /// the player card: style geometry, reflections, fill tint, lyrics column (player.rs)
+    pl: PlayerFx,
 }
 
 impl HomeView {
@@ -193,6 +198,7 @@ impl HomeView {
             vol_prev: 0.0,
             vol_kick: 0,
             target: target::Target::new(),
+            pl: PlayerFx::new(),
         }
     }
 
@@ -220,6 +226,7 @@ impl HomeView {
             let w = cx.waker();
             let k2 = key.clone();
             let job = move || {
+                let mut tiny = None;
                 let colors = decode_data_url(&url, 64).and_then(|d| {
                     let rgba: Vec<u8> = d
                         .bgra
@@ -230,9 +237,11 @@ impl HomeView {
                             [un(p[2]), un(p[1]), un(p[0]), p[3]]
                         })
                         .collect();
-                    pick_colors(&downsample(&rgba, d.w as usize, d.h as usize))
+                    let sample = downsample(&rgba, d.w as usize, d.h as usize);
+                    tiny = Some(player::tiny_cover(&sample)); // the mirror reflections: 24 x 24, smoothed up they are the blurred cover
+                    pick_colors(&sample)
                 });
-                w.post_custom(CoverReady { key, colors });
+                w.post_custom(CoverReady { key, colors, tiny });
             };
             if !glasskit::jobs::pool::global().submit(Box::new(job)) {
                 self.model.set_cover_colors(&k2, None);
@@ -279,6 +288,16 @@ impl HomeView {
         let m = self.model.media()?;
         let url = self.v.player.cover_url.as_ref()?;
         Some(format!("cover:{}:{}", m.thumb_id, url.len()))
+    }
+
+    /// The picture the mirror reflections are made of: the tiny pre-blurred cover, or the cover itself until that is ready.
+    fn blur_key(&self) -> Option<String> {
+        let k = self.cover_key()?.replacen("cover:", "blur:", 1);
+        if self.base.images.contains(&k) {
+            Some(k)
+        } else {
+            self.art_key.clone()
+        }
     }
 
     fn sync_images(&mut self, cx: &mut Cx) {
@@ -453,19 +472,19 @@ impl HomeView {
             return None;
         }
         if !self.v.player.none {
-            if hit_rounded(layout::MAIN, 18.0, p) {
+            if hit_rounded(self.pl.geo.main, 18.0, p) {
                 return Some(Hit::Main);
             }
-            if hit_rounded(layout::PREV, 14.0, p) {
+            if hit_rounded(self.pl.geo.prev, 14.0, p) {
                 return Some(Hit::Prev);
             }
-            if hit_rounded(layout::NEXT, 14.0, p) {
+            if hit_rounded(self.pl.geo.next, 14.0, p) {
                 return Some(Hit::Next);
             }
-            if self.v.player.source_multi && layout::SRC.contains(x, y) {
+            if self.v.player.source_multi && self.pl.geo.src.contains(x, y) {
                 return Some(Hit::Src);
             }
-            if self.v.player.seek.enabled && layout::SEEK.contains(x, y) {
+            if self.v.player.seek.enabled && self.pl.geo.seek.contains(x, y) {
                 return Some(Hit::Seek);
             }
         }
@@ -539,7 +558,7 @@ impl HomeView {
     }
 
     fn seek_value(&self, x: f32) -> f64 {
-        let r = layout::SEEK;
+        let r = self.pl.geo.seek;
         hm::vol_at(x, r.x, r.w, r.w) as f64 / 100.0 * self.v.player.seek.max_ms as f64
     }
 
@@ -788,7 +807,7 @@ impl View for HomeView {
     }
 
     fn on_show(&mut self, cx: &mut Cx) {
-        self.base.show(cx, &["media:changed", "live:volume", "settings:changed", "pill:show", "pill:hide", "launcher:changed"], TICK_MS);
+        self.base.show(cx, &["media:changed", "live:volume", "settings:changed", "pill:show", "pill:hide", "launcher:changed", "lyrics:changed"], TICK_MS);
         self.clock = Some(cx.now_ms);
         self.seek_init = false;
         self.vol_seen = false;
@@ -846,7 +865,12 @@ impl View for HomeView {
                 }
             }
             Incoming::Other(Msg::Custom(b)) => match b.downcast::<CoverReady>() {
-                Ok(c) => self.model.set_cover_colors(&c.key, c.colors),
+                Ok(c) => {
+                    if let Some(t) = c.tiny {
+                        self.base.images.insert(&format!("blur:{}", c.key), t);
+                    }
+                    self.model.set_cover_colors(&c.key, c.colors)
+                }
                 Err(_) => return Response::NONE,
             },
             Incoming::Other(_) => return Response::NONE,
@@ -927,6 +951,7 @@ impl View for HomeView {
         self.vol_kick = self.vol_kick.saturating_sub(1);
         busy |= self.v.launcher.tiles.iter().any(|t| t.gone);
         busy |= self.step_flows(dt_ms);
+        busy |= self.pl.step(&self.v.player, dt_ms);
         self.sync_menu();
         self.compute_apps();
         busy

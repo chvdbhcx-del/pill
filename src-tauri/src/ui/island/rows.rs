@@ -101,6 +101,7 @@ pub fn elem_size(e: &Elem, m: &dyn Meter, th: &Theme) -> (f32, f32) {
         Elem::Bar { width, height, .. } => (*width, *height),
         Elem::Levels { bars, .. } => (bars.len() as f32 * 4.0 + bars.len().saturating_sub(1) as f32 * 3.0, 22.0),
         Elem::Spacer(w) => (*w, 0.0),
+        Elem::Lyric { max_w, .. } => (*max_w, 18.0),
         Elem::Flex => (0.0, 0.0),
         Elem::Sep => (1.0, 14.0),
         Elem::Group(g) => {
@@ -311,6 +312,10 @@ fn paint_elem(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &RowSpec, e: &Elem, r
                 paint_elem(cv, th, gpu, row, c, Rect::new(x, r.cy() - h / 2.0, w, h), an, idx, hits);
                 x += w + 4.0;
             }
+        }
+        Elem::Lyric { text, prev, seq, .. } => {
+            let (st, c) = text_style(TextStyle::Name, th);
+            super::lyric::paint(cv, gpu, &format!("{}#{}:ly", row.id, idx), (prev, text, *seq), r, (st, c), an.t, an.reduced);
         }
         Elem::Badge { text } => {
             cv.text(r, text, BADGE_STYLE.center(), th.dim);

@@ -41,10 +41,11 @@ pub enum Feature {
     Voice, // voice.rs: dictation upload, gated by `voice.enabled`, host = exactly the one in `voice.endpoint`
     Setup, // aisetup.rs: user-clicked downloads (fixed host patterns) and loopback calls to Ollama; never goes through request()/enabled()
     Calendar, // liveplus.rs: .ics subscription (https:// or webcal:// in live.calendar.path), gated by `live.calendar`, host = exactly the one in that URL
+    Lyrics, // lyrics.rs: LRCLIB lookup of the playing track, gated by `music.lyrics` (off by default), host = lrclib.net only
 }
 
 const WEATHER_HOSTS: &[&str] = &["api.met.no", "nominatim.openstreetmap.org"];
-static CALLS: [AtomicU64; 5] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+static CALLS: [AtomicU64; 6] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
 
 impl Feature {
     fn idx(self) -> usize {
@@ -57,6 +58,7 @@ impl Feature {
             Feature::Voice => "voice.enabled",
             Feature::Setup => "aisetup.never", // no such key: request() refuses Setup, aisetup.rs calls request_checked() on a click
             Feature::Calendar => "live.calendar",
+            Feature::Lyrics => "music.lyrics",
         }
     }
     fn name(self) -> &'static str {
@@ -66,6 +68,7 @@ impl Feature {
             Feature::Voice => "voice",
             Feature::Setup => "setup",
             Feature::Calendar => "calendar",
+            Feature::Lyrics => "lyrics",
         }
     }
 }
@@ -83,13 +86,14 @@ pub fn allowed_hosts(f: Feature) -> Vec<String> {
         Feature::Voice => parse_url(&crate::voice::endpoint()).map(|u| vec![u.host]).unwrap_or_default(),
         Feature::Setup => Vec::new(), // aisetup.rs passes its own list per call
         Feature::Calendar => crate::liveplus::ics_url_host().into_iter().collect(),
+        Feature::Lyrics => vec!["lrclib.net".to_string()],
     }
 }
 
 /// Which network features are on and which hosts they may call, plus how many calls were made since start.
 pub fn net_features_status() -> Value {
     let mut active: Vec<String> = Vec::new();
-    let mut feats: Vec<Value> = [Feature::Weather, Feature::Ai, Feature::Voice, Feature::Calendar]
+    let mut feats: Vec<Value> = [Feature::Weather, Feature::Ai, Feature::Voice, Feature::Calendar, Feature::Lyrics]
         .iter()
         .map(|&f| {
             let on = enabled(f);
@@ -119,9 +123,9 @@ fn user_agent() -> String {
     let c: String = crate::settings::get_str("net.contact", "").chars().filter(|c| c.is_ascii_graphic() || *c == ' ').take(80).collect();
     let c = c.trim();
     if c.is_empty() {
-        "Pill/0.1 (personal desktop widget; no telemetry)".into()
+        format!("Pill/{} (personal desktop widget; no telemetry)", env!("CARGO_PKG_VERSION"))
     } else {
-        format!("Pill/0.1 (personal desktop widget; contact: {c})")
+        format!("Pill/{} (personal desktop widget; contact: {c})", env!("CARGO_PKG_VERSION"))
     }
 }
 
@@ -219,7 +223,7 @@ fn resolve_location(base: &Url, loc: &str) -> Result<String, String> {
     }
 }
 
-fn urlenc(s: &str) -> String {
+pub fn urlenc(s: &str) -> String {
     let mut o = String::new();
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {

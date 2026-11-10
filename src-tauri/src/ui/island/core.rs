@@ -100,7 +100,7 @@ pub const ISLAND_EVENTS: &[&str] = &[
     "settings:changed", "pill:show", "pill:hide", "pill:expand", "pill:collapse", "pill:open-tab", "audio:bands", "weather:current", "kbd:layout", "clip:added",
     "live:volume", "live:privacy", "live:download", "update:available", "live:obs", "live:steam", "live:notification", "uninstall:ready", "live:file-done",
     "live:usb", "live:battery", "live:calendar", "live:mail", "agents:changed", "agents:done", "agents:ask", "agents:ask-gone", "rec:state", "capture:done", "voice:state", "voice:level",
-    "sysmon:tick", "media:changed", "timer:tick", "remind:due", "shelf:changed", "timer:done", "remind:changed", "kbd:now", "vdesk:now",
+    "sysmon:tick", "media:changed", "lyrics:changed", "timer:tick", "remind:due", "shelf:changed", "timer:done", "remind:changed", "kbd:now", "vdesk:now",
 ];
 
 pub struct Core {

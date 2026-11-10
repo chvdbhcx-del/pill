@@ -20,6 +20,7 @@ pub mod clipboard;
 pub mod controls;
 pub mod cover;
 pub mod home;
+pub mod home_player;
 pub mod launcher;
 pub mod notifs;
 pub mod shelf;

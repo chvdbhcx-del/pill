@@ -66,6 +66,9 @@ pub(crate) fn defaults() -> Cfg {
     // timer alert sound (alert.rs) and the download ring / ignored extensions (dlguard.rs, ui-core live system)
     let Value::Object(alerts) = json!({ "live.downloadRing": false, "live.dlIgnoreExt": "", "timer.sound": "default", "timer.soundFile": "" }) else { unreachable!() };
     m.extend(alerts);
+    // song lyrics (lyrics.rs, opt-in: sends the playing track's title/artist/album/duration to lrclib.net) and the Home player (tab-home): style mirror | fill | compact, lyrics column
+    let Value::Object(lyr) = json!({ "music.lyrics": false, "home.player": "mirror", "home.lyrics": true }) else { unreachable!() };
+    m.extend(lyr);
     m
 }
 
@@ -241,6 +244,7 @@ pub fn apply_patch(app: &tauri::AppHandle, mut patch: Cfg) -> (Cfg, Result<(), S
     crate::media::on_settings(&patch);
     crate::vdesk::on_settings(&patch);
     crate::agent_bridge::on_settings(&patch);
+    crate::lyrics::on_settings(&patch);
     let all = merged();
     let _ = bus::emit("settings:changed", &all);
     (all, res)

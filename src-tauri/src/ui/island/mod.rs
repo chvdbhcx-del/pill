@@ -9,6 +9,7 @@ pub mod fx;
 pub mod gpu;
 mod icons_data;
 pub mod live;
+mod lyric;
 pub mod panel;
 pub mod pet_extras;
 pub mod rows;

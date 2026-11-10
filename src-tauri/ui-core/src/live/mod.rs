@@ -89,6 +89,7 @@ pub mod env;
 pub mod events;
 pub mod ext;
 pub mod hub;
+pub mod lyrics;
 pub mod media;
 pub mod model;
 pub mod plus;

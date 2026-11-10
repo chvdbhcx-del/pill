@@ -1,5 +1,5 @@
 //! Drawing of the Home tab. Pure reads of `HomeView` state computed in `step` / `refresh`; nothing here mutates or allocates beyond strings of text.
-use super::{css, layout as L, Hit, HomeView};
+use super::{css, layout as L, player, Hit, HomeView};
 use crate::ui::tabs::a::{draw, icons};
 use glasskit::canvas::Canvas;
 use glasskit::color::Color;
@@ -84,6 +84,7 @@ impl HomeView {
         let card = o(L::PLAYER);
         let p = &self.v.player;
         let rad = th.m.radius;
+        let g = &self.pl.geo;
         // background: the cover gradient, else a tinted corner glow of the accent
         if let (Some((a, b)), false) = (self.cov_tint(), p.none) {
             draw::linear_deg(cv, card, rad, 100.0, &[(0.0, css::mix(a, 30.0, th.card)), (0.28, css::mix(b, 14.0, th.card)), (0.52, th.card), (1.0, th.card)]);
@@ -93,6 +94,16 @@ impl HomeView {
             cv.fill_rr(card, rad, th.card);
             draw::radial(cv, card, rad, (card.x, card.y), card.w * 1.3, card.h * 1.5, &[(0.0, mixed), (0.72, th.card), (1.0, th.card)]);
         }
+        // the fill style: the whole card in the cover's colours; the text turns light or dark with it
+        let fill_k = if p.none { 0.0 } else { self.pl.fill.at01() };
+        let (fa, fb) = self.cov_tint().unwrap_or((self.acc(), self.acc().mix(Color::rgb8(0, 0, 0), 0.35)));
+        let (ca, cb) = (css::mix(fa, 84.0, th.card), css::mix(fb, 70.0, th.card));
+        let ink = player::ink_for(ca.mix(cb, 0.5));
+        if fill_k > 0.004 {
+            cv.with_opacity(fill_k, |cv| draw::linear_deg(cv, card, rad, 118.0, &[(0.0, ca), (1.0, cb)]));
+        }
+        let th_fill = self.pl.themed(th, ink);
+        let th = &th_fill;
         cv.with_clip_rr(card, rad, |cv| {
             if p.none {
                 let c = card.center();
@@ -100,25 +111,34 @@ impl HomeView {
                 cv.text(Rect::new(card.x, c.1 + 8.0, card.w, 18.0), &p.empty_text, Style::new(13.0, 400).center().ellipsis(), th.dim);
                 return;
             }
-            self.paint_art(cv, th, o(L::ART));
+            // the mirror: blurred reflections of the cover behind both sides of it
+            let blur = self.blur_key();
+            self.pl.paint_reflections(cv, &self.base.images, blur.as_deref(), ox, oy);
+            self.paint_art(cv, th, o(g.art));
             // source label (a button when several players run)
             let src_c = th.dim.mix(th.text, if p.source_multi { self.hov(Hit::Src) } else { 0.0 });
-            cv.text(o(L::SRC), &p.source.to_uppercase(), Style::new(10.0, 600).track(0.6).ellipsis(), src_c);
+            cv.text(o(g.src), &p.source.to_uppercase(), Style::new(10.0, 600).track(0.6).ellipsis(), src_c);
             let swap = |key: &str, r: Rect, s: &str, st: Style, c: Color| {
                 let sm = self.base.player.sample(key);
                 cv.with_opacity(sm.alpha, |cv| cv.with_offset(sm.dx, sm.dy, |cv| cv.text(r, s, st, c)));
             };
-            swap("title", o(L::TITLE), &p.title, Style::new(16.0, 600).ellipsis(), th.text);
-            swap("artist", o(L::ARTIST), &p.artist_line, Style::new(13.0, 400).ellipsis(), th.text2);
+            let (t_st, a_st) = (Style::new(16.0, 600).ellipsis(), Style::new(13.0, 400).ellipsis());
+            let (t_st, a_st) = if g.centered { (t_st.center(), a_st.center()) } else { (t_st, a_st) };
+            swap("title", o(g.title), &p.title, t_st, th.text);
+            swap("artist", o(g.artist), &p.artist_line, a_st, th.text2);
             // seek
-            let seek = o(L::SEEK);
-            let track_c = if th.dark { Color::rgb8(0x35, 0x35, 0x35) } else { Color::rgb8(0xc9, 0xc9, 0xc9) };
-            track(cv, seek, self.seek_f.at(), self.acc(), track_c);
+            let seek = o(g.seek);
+            let track_c = if th.dark { Color::rgb8(0x35, 0x35, 0x35) } else { Color::rgb8(0xc9, 0xc9, 0xc9) }.mix(ink.fade(0.28), fill_k);
+            track(cv, seek, self.seek_f.at(), self.acc().mix(ink, fill_k), track_c);
             let small = Style::new(11.0, 400).mono();
-            cv.text(o(L::T0), &p.seek.elapsed, small, th.dim);
-            cv.text(o(L::T1), &p.seek.remaining, small.right(), th.dim);
+            cv.text(o(g.t0), &p.seek.elapsed, small, th.dim);
+            cv.text(o(g.t1), &p.seek.remaining, small.right(), th.dim);
+            // the lyrics column on the right of the card
+            if let Some(l) = &p.lyrics {
+                self.pl.paint_lyrics(cv, th, l, ox, oy);
+            }
             // transport
-            for (h, r, glyph, size) in [(Hit::Prev, L::PREV, "prev", 18.0), (Hit::Next, L::NEXT, "next", 18.0)] {
+            for (h, r, glyph, size) in [(Hit::Prev, g.prev, "prev", 18.0), (Hit::Next, g.next, "next", 18.0)] {
                 let r = o(r);
                 let k = self.hov(h);
                 cv.with_scale_about(r.center(), self.press(h, 0.94), |cv| {
@@ -126,8 +146,10 @@ impl HomeView {
                     icons::draw(cv, glyph, r.centered(size, size), th.text2.mix(th.text, k), 1.7);
                 });
             }
-            let m = o(L::MAIN);
+            let m = o(g.main);
             let (bg, fg) = if th.dark { (Color::rgb8(255, 255, 255), Color::rgb8(0, 0, 0)) } else { (Color::rgb8(0x15, 0x15, 0x15), Color::rgb8(255, 255, 255)) };
+            // on the cover (mirror) the button is a smoked disc; on a fill tint it takes the text colours
+            let (bg, fg) = (bg.mix(ink, fill_k).mix(Color::rgba(0.0, 0.0, 0.0, 0.52), self.pl.mir.at01()), fg.mix(player::ink_inverse(ink), fill_k).mix(Color::rgb8(255, 255, 255), self.pl.mir.at01()));
             let s = self.press(Hit::Main, 0.94) * (1.0 + 0.06 * self.hov(Hit::Main));
             cv.with_scale_about(m.center(), s, |cv| {
                 cv.fill_circle(m.center(), 18.0, bg);

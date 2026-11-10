@@ -47,6 +47,8 @@ Chips and cards available today:
 | Event | What you see |
 | --- | --- |
 | Music | Track title (or a mini player with cover and buttons); the edge spikes to the real spectrum of the player itself (its own sound, so it also works behind Sonar / Voicemeeter; AIMP and Winamp are shown too) |
+| Music | Track title, a mini player with cover and buttons, or the line being sung (synced lyrics from the open database lrclib.net, off by default); the edge spikes to the real spectrum of what is playing |
+| Music | Track title (or a mini player with cover and buttons); the edge spikes to the real spectrum of what is playing |
 | Timer and reminders | A running-timer chip; a card when a reminder or timer goes off |
 | AI coding agents | "Agent working" / "Needs your input" chips and an "Agent finished" card; hooks for **Claude Code** and **Codex**, a plugin for **opencode** (the app never edits your config, *Settings* shows the snippet to paste). Optional *Answer agents from the island* (off by default): a Claude Code permission request or a question with options arrives as a card (Allow / Deny / pick an answer) through a local 127.0.0.1 bridge with a per-session token; with no answer in 120 s Claude Code asks in the terminal as usual |
 | Downloads | Progress chip for browser downloads and a card with *Show in folder* when a file lands in Downloads |
@@ -90,6 +92,7 @@ Hover the island (or press `Ctrl+Alt+I`) and it expands into a panel. Every tab 
 | Tab | What it does |
 | --- | --- |
 | **Home** | Player for whatever is playing (cover, seek, volume for the computer or just for the player, output device), quick tools (area / full-screen screenshot, screen text OCR, QR reader, colour picker, screen recording, command bar) and a launcher strip: drop programs, folders or files on it |
+| **Home** | Player for whatever is playing in one of three styles (soft mirror, fill, compact; an optional lyrics column; cover, seek, volume, output device), quick tools (area / full-screen screenshot, screen text OCR, QR reader, colour picker, screen recording, command bar) and a launcher strip: drop programs, folders or files on it |
 | **Clipboard** | History of text, images and files with search, pinning, paste as plain text, AI actions on text and a "wipe everything" button |
 | **Shelf** | Drag a file towards the island and drop it to keep it on the shelf; drag it out again later |
 | **Text** | Text tools (case, RU/EN layout fix, transliteration, JSON, Base64, URL, sort, dedupe, word count, QR) and, with an AI endpoint, translate / fix errors / shorten / summarise / formal or friendly tone; dictation |

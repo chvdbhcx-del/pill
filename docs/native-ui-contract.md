@@ -39,6 +39,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `live:steam` | pill | `json!({ "state": "idle" })`<br>`done`<br>`p.clone()` | steam.rs, steam.rs, steam.rs, steam.rs |
 | `live:usb` | pill | `json!({ "letter": c.to_string(), "added": added })` | liveplus.rs |
 | `live:volume` | pill | `json!({ "level": cur.0, "muted": cur.1 })` | livesys.rs |
+| `lyrics:changed` | pill | `json!({ "track": t.key, "lines": null })`<br>`payload` | lyrics.rs, lyrics.rs |
 | `media:changed` | pill | `&st` | media.rs |
 | `pill:collapse` | pill | `()` | pill.rs |
 | `pill:expand` | pill | `json!({ "tab": tab, "via": via })` | pill.rs |
@@ -82,6 +83,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `whatsnew_check` | - | `Value` | whatsnew.rs |
 | `report_problem` | - | `Value` | report.rs |
 | `media_state` | `known: Option<u64>` | `MediaState` | media.rs |
+| `lyrics_state` | - | `Value` | lyrics.rs |
 | `media_sessions` | - | `Vec<SessionInfo>` | media.rs |
 | `media_select` | `id: Option<String>` | `()` | media.rs |
 | `media_control` | `action: String` | `()` | media.rs |

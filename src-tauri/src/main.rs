@@ -8,6 +8,7 @@ mod fspeek;
 mod guard;
 mod keepalive;
 mod media;
+mod lyrics;
 mod pill;
 mod settings;
 mod settings_backup;

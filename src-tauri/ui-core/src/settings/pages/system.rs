@@ -392,6 +392,32 @@ pub fn sound() -> Page {
                 ],
             ),
             group(
+                tr("Музыка", "Music"),
+                vec![
+                    toggle(
+                        "music.lyrics",
+                        tr("Тексты песен", "Song lyrics"),
+                        tr(
+                            "Выключено по умолчанию. Если включить, название, исполнитель, альбом и длительность играющего трека отправляются в открытую базу lrclib.net, только для трека, который играет сейчас. Найденные тексты хранятся на этом компьютере. Показ: режим «С текстом» у пилюли, кнопка-кавычки в мини-плеере и колонка на вкладке «Главная»",
+                            "Off by default. When on, the title, artist, album and duration of the track that is playing are sent to the open database lrclib.net, only for the track being played. Found lyrics are kept on this computer. Shown by the “Lyrics” pill mode, the quote button of the mini player and a column on the Home tab",
+                        ),
+                        false,
+                    )
+                    .kw(&["lyrics", "lrclib", "karaoke", "текст", "песни", "слова", "network", "сеть"]),
+                    seg(
+                        "home.player",
+                        tr("Плеер на главной", "Player on Home"),
+                        tr("«Зеркало» — большая обложка по центру и размытые отражения по бокам. «Заливка» — весь плеер в цветах обложки. «Компакт» — как раньше", "“Soft mirror”: a large cover in the middle with blurred reflections at the sides. “Fill”: the whole player in the cover's colours. “Compact”: as before"),
+                        so(&[("mirror", tr("Зеркало", "Soft mirror")), ("fill", tr("Заливка", "Fill")), ("compact", tr("Компакт", "Compact"))]),
+                        json!("mirror"),
+                    )
+                    .kw(&["home", "player", "cover", "главная", "плеер", "обложка", "mirror", "зеркало"]),
+                    toggle("home.lyrics", tr("Текст песни на главной", "Lyrics on Home"), tr("Колонка справа от плеера: строка, которая звучит, ярче, соседние тусклее. Нужны «Тексты песен»", "A column right of the player: the line being sung is bright, its neighbours dim. Needs “Song lyrics”"), true)
+                        .enabled(Cond::On("music.lyrics"))
+                        .kw(&["lyrics", "home", "текст", "главная"]),
+                ],
+            ),
+            group(
                 tr("Напоминания", "Reminders"),
                 vec![
                     toggle("sound.reminders", tr("Звук напоминаний", "Sound for reminders"), tr("Короткий сигнал, когда срабатывает напоминание или таймер", "A short signal when a reminder or a timer goes off"), true).kw(&["reminder", "timer", "напоминание", "таймер"]),

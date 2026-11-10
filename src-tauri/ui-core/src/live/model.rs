@@ -182,6 +182,8 @@ pub enum IconName {
     Plus,
     Prev,
     Qr,
+    Quote,
+    QuoteOff,
     ScanText,
     Shelf,
     Sparkles,
@@ -222,6 +224,8 @@ impl IconName {
             Plus => "plus",
             Prev => "prev",
             Qr => "qr",
+            Quote => "quote",
+            QuoteOff => "quoteoff",
             ScanText => "scantext",
             Shelf => "shelf",
             Sparkles => "sparkles",
@@ -332,6 +336,9 @@ pub enum Elem {
     Levels { bars: Vec<f32>, color: Rgba },
     /// Fixed gap.
     Spacer(f32),
+    /// One line of song lyrics. When `text` changes (`seq` counts the changes) the renderer slides `prev` out and the new line in on a spring;
+    /// the element is always `max_w` wide, so a new line never re-measures the capsule.
+    Lyric { text: String, prev: String, seq: u64, max_w: f32 },
     /// Flexible gap (pushes what follows to the right).
     Flex,
     /// Thin vertical separator.
