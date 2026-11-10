@@ -7,6 +7,7 @@
 //! island, progress bars and the QR card flow. Targets are set in `step` (`sync`), `draw` only reads. Reduce motion lands everything at once.
 //! Nothing polls: the model is fed by the bus events `phone:state` / `phone:notif` / `phone:files` and by command replies; frames run only while
 //! something moves (or while the reply field is focused, for the caret).
+use super::phone_card::Card;
 use super::phone_img::Images;
 use crate::ui::liquid::{Feel, Flow};
 use crate::ui::tabs::b::kit::{lang_of, Calls, Clicks, Field, FlowSwitch, Icons, Lit, GROW};
@@ -91,7 +92,9 @@ pub struct PhoneView {
     seg_ready: bool,
     pub(super) rows: HashMap<String, RowAnim>,
     pub(super) files: HashMap<String, FileAnim>,
-    pub(super) scroll: [ScrollView; 2],
+    /// Notifications, Files, and the left card of the Phone sub-tab
+    pub(super) scroll: [ScrollView; 3],
+    pub(super) card: Card,
     pub(super) drag: bool,
     pub(super) drop_k: Lit,
     pub(super) drop_err: Option<String>,
@@ -143,7 +146,8 @@ impl PhoneView {
             seg_ready: false,
             rows: HashMap::new(),
             files: HashMap::new(),
-            scroll: [ScrollView::new(), ScrollView::new()],
+            scroll: [ScrollView::new(), ScrollView::new(), ScrollView::new()],
+            card: Card::new(),
             drag: false,
             drop_k: Lit::new(Feel::FLOW),
             drop_err: None,
@@ -171,7 +175,11 @@ impl PhoneView {
         self
     }
 
-    fn wall(&self) -> i64 {
+    pub(super) fn wall_pinned(&self) -> bool {
+        self.wall_override.is_some()
+    }
+
+    pub(super) fn wall(&self) -> i64 {
         self.wall_override.unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64))
     }
 
@@ -315,6 +323,9 @@ impl PhoneView {
         self.qr_k.set(self.model.code().is_some());
         let bat = self.model.link().phone().and_then(|p| p.battery).unwrap_or(0) as f32 / 100.0;
         go(&mut self.bat, bat, reduced);
+        if let Some(p) = self.model.link().phone().cloned() {
+            self.card.sync(&p, reduced);
+        }
         self.switch.set_on(self.model.link().enabled, !reduced);
     }
 
@@ -382,12 +393,11 @@ impl PhoneView {
                 return Response { cursor: Some(glasskit::input::Cursor::Text), ..r };
             }
         }
-        let i = match self.model.sub() {
-            Sub::Notifs => 0,
-            Sub::Files => 1,
-            Sub::Phone => return r,
+        let (i, body) = match self.model.sub() {
+            Sub::Notifs => (0, self.body_rect()),
+            Sub::Files => (1, self.body_rect()),
+            Sub::Phone => (2, self.card_area()),
         };
-        let body = self.body_rect();
         r.merge(self.scroll[i].event(ev, body))
     }
 }
@@ -515,6 +525,7 @@ impl View for PhoneView {
             a.progress.step(dt_ms);
             busy |= a.open.moving() || a.progress.moving();
         }
+        busy |= self.card.step(dt_ms);
         busy |= self.clicks.step(dt);
         busy |= self.switch.step(dt);
         for s in &mut self.scroll {
@@ -534,7 +545,7 @@ impl View for PhoneView {
 }
 
 /// Line icons of this tab (24 x 24 grid, stroke 1.7).
-const ICONS: [(&str, &str); 14] = [
+const ICONS: [(&str, &str); 15] = [
     ("p-x", r#"<path d="M6 6l12 12M18 6 6 18"/>"#),
     ("p-check", r#"<path d="M20 6 9 17l-5-5"/>"#),
     ("p-reply", r#"<path d="M9 17 4 12l5-5"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>"#),
@@ -549,6 +560,7 @@ const ICONS: [(&str, &str); 14] = [
     ("p-moon", r#"<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>"#),
     ("p-upload", r#"<path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>"#),
     ("p-phone", r#"<rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18.5h2"/>"#),
+    ("p-plane", r#"<path d="M21 15.5v-2L13 9V4.5a1.5 1.5 0 0 0-3 0V9l-8 4.5v2l8-2.5V18l-2 1.5V21l3.5-1 3.5 1v-1.5L13 18v-5z"/>"#),
 ];
 
 #[cfg(test)]

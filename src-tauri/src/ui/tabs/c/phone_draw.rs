@@ -2,6 +2,7 @@
 //! click targets are registered here in window coordinates (the scroll offset is subtracted) and clipped to the body, so a row scrolled out of
 //! sight cannot be clicked.
 use super::phone::{PhoneView, K};
+use super::phone_card::LEFT_W;
 use crate::ui::tabs::b::kit::{button, button_w, Bk, Clicks};
 use crate::ui::view::Cx;
 use glasskit::canvas::Canvas;
@@ -374,60 +375,11 @@ impl PhoneView {
     fn draw_phone(&mut self, cv: &Canvas, th: &Theme) {
         let body = self.body_rect();
         let l = self.model.lang();
-        let left = Rect::new(body.x, body.y, 316.0, body.h);
-        let right = Rect::new(left.right() + 8.0, body.y, body.w - 316.0 - 8.0, body.h);
-        cv.fill_rr(left, 16.0, th.card);
+        let left = Rect::new(body.x, body.y, LEFT_W, body.h);
+        let right = Rect::new(left.right() + 8.0, body.y, body.w - LEFT_W - 8.0, body.h);
+        self.draw_phone_left(cv, th, left);
         cv.fill_rr(right, 16.0, th.card);
         let link = self.model.link().clone();
-        let k = self.conn_k.at();
-        let (x, mut y) = (left.x + 18.0, left.y + 16.0);
-        // state
-        let phone = link.phone().cloned();
-        let title = match &phone {
-            Some(p) if p.connected => l.t("Телефон подключён", "Phone connected"),
-            Some(_) => l.t("Телефон не в сети", "Phone offline"),
-            None => l.t("Телефон не подключён", "No phone paired"),
-        };
-        cv.fill_circle((x + 5.0, y + 10.0), 5.0, th.dim.mix(th.green, k));
-        cv.text(Rect::new(x + 18.0, y, left.w - 40.0, 20.0), title, Style::new(15.0, 600).ellipsis(), th.text);
-        y += 24.0;
-        match &phone {
-            Some(p) => {
-                cv.text(Rect::new(x, y, left.w - 36.0, 16.0), &p.name, Style::new(12.0, 400).ellipsis(), th.dim);
-                y += 28.0;
-                // battery
-                let bar = Rect::new(x + 28.0, y + 7.0, 120.0, 8.0);
-                cv.fill_rr(bar, 4.0, th.track);
-                let bv = self.bat.at01();
-                if bv > 0.0 {
-                    let col = if bv < 0.2 { th.red } else { th.green };
-                    cv.fill_rr(Rect::new(bar.x, bar.y, (bar.w * bv).max(8.0), 8.0), 4.0, col);
-                }
-                self.ic.draw_sw(cv, if p.charging { "p-bolt" } else { "p-phone" }, Rect::new(x, y + 1.0, 20.0, 20.0), if p.charging { th.green } else { th.dim }, 1.7);
-                let bt = p.battery.map_or("—".to_string(), |b| format!("{b}%"));
-                cv.text(Rect::new(bar.right() + 10.0, y, 60.0, 22.0), &bt, Style::new(13.0, 600), th.text);
-                y += 32.0;
-                // network
-                let (icon, net) = match p.network.as_str() {
-                    "wifi" => ("p-wifi", p.ssid.clone().unwrap_or_else(|| "Wi-Fi".into())),
-                    "mobile" => ("p-mobile", l.t("Мобильная сеть", "Mobile data").to_string()),
-                    _ => ("p-mobile", l.t("Нет сети", "No network").to_string()),
-                };
-                self.ic.draw_sw(cv, icon, Rect::new(x, y + 1.0, 20.0, 20.0), th.dim, 1.7);
-                cv.text(Rect::new(x + 28.0, y, left.w - 80.0, 22.0), &net, Style::new(13.0, 500).ellipsis(), th.text);
-                y += 32.0;
-                if p.dnd {
-                    self.ic.draw_sw(cv, "p-moon", Rect::new(x, y + 1.0, 20.0, 20.0), th.amber, 1.7);
-                    cv.text(Rect::new(x + 28.0, y, left.w - 80.0, 22.0), l.t("Не беспокоить", "Do not disturb"), Style::new(13.0, 500), th.amber);
-                }
-            }
-            None => {
-                let t = l.t("Наведи камеру телефона на код справа, установи Pill Phone и открой его по кнопке на странице.", "Point your phone's camera at the code on the right, install Pill Phone and open it with the button on the page.");
-                cv.text(Rect::new(x, y + 2.0, left.w - 36.0, 70.0), t, Style::new(12.0, 400).wrap(), th.dim);
-            }
-        }
-        let foot = format!("{} · {}:{}", link.pc_name, link.ip, link.port);
-        cv.text(Rect::new(x, left.bottom() - 28.0, left.w - 36.0, 16.0), &foot, Style::new(11.0, 400).mono().ellipsis(), th.faint);
         // the QR card
         let cap = if link.paired > 0 { l.t("Подключить ещё телефон", "Pair another phone") } else { l.t("Подключить телефон", "Pair your phone") };
         cv.text(Rect::new(right.x, right.y + 14.0, right.w, 18.0), cap, Style::new(13.0, 600).center(), th.text);

@@ -311,6 +311,90 @@ fn click_targets_scrolled_out_of_sight_are_not_registered() {
     assert_eq!((r.y, r.h), (50.0, 28.0));
 }
 
+fn rich(connected: bool, battery: i64, notifs: u64) -> Value {
+    json!({ "id": "d1", "name": "Pixel 8", "model": "Pixel 8", "os": "Android 15", "appVersion": "1.1.0", "firstSeen": WALL - 20 * 86_400_000, "lastSeen": WALL - 300_000,
+            "connected": connected, "battery": battery, "charging": true, "network": "wifi", "ssid": "Home-5G", "dnd": true, "ip": "192.168.1.23", "connectedAt": WALL - 134 * 60_000,
+            "info": { "charge": "charging", "plug": "ac", "tempC": 31.5, "health": "good", "fullInMin": 42, "storage": { "free": 52_000_000_000u64, "total": 128_000_000_000u64 },
+                      "ram": { "free": 3100, "total": 8000 }, "net": { "type": "wifi", "mbps": 866, "bars": 3 }, "airplane": false, "ringer": "vibrate", "screen": true, "tz": "Europe/Moscow", "utcMin": 180 },
+            "stats": { "notifs": notifs, "replies": 2, "filesIn": 1, "filesOut": 3, "bytesIn": 2_400_000, "bytesOut": 15_000_000 } })
+}
+
+fn state_with(d: Value) -> Value {
+    status(true, json!([d]))
+}
+
+#[test]
+fn the_phone_card_counts_numbers_and_glides_bars_then_idles() {
+    let _m = motion_on();
+    let mut r = rig(true, json!([]));
+    r.click(K::Sub(2));
+    r.feed("phone:state", state_with(rich(true, 87, 3)));
+    r.settle();
+    let d = r.v.model.link().phone().unwrap().clone();
+    assert_eq!((d.model.as_str(), d.ip.as_str(), d.stats.files_out, d.info.ringer), ("Pixel 8", "192.168.1.23", 3, Some(pill_ui_core::panel::c::phone_info::Ringer::Vibrate)));
+    assert_eq!(r.v.card.n_notifs.at().round(), 3.0);
+    assert!(!r.frames(2), "settled: no frames wanted");
+    // one more notification and a new battery level: the counter and the bar move, they do not jump
+    r.feed("phone:state", state_with(rich(true, 40, 12)));
+    r.frames(3);
+    let (n, b) = (r.v.card.n_notifs.at(), r.v.bat.at());
+    assert!(n > 3.0 && n < 12.0, "counting: {n}");
+    assert!(b > 0.4 && b < 0.87, "gliding: {b}");
+    assert!(r.frames(1), "still moving");
+    r.settle();
+    assert_eq!((r.v.card.n_notifs.at().round(), (r.v.bat.at() * 100.0).round()), (12.0, 40.0));
+    assert!(!r.frames(2));
+}
+
+#[test]
+fn the_first_values_of_an_opening_card_are_simply_there_and_reduced_motion_lands_at_once() {
+    let mut r = rig(true, json!([]));
+    r.cx.reduced_motion = true;
+    r.click(K::Sub(2));
+    r.feed("phone:state", state_with(rich(true, 87, 3)));
+    r.frames(2);
+    assert_eq!((r.v.card.n_notifs.at(), r.v.card.sig.at()), (3.0, 3.0));
+    r.feed("phone:state", state_with(rich(true, 87, 9)));
+    r.frames(2);
+    assert_eq!(r.v.card.n_notifs.at(), 9.0, "reduced motion: at once");
+    assert!(r.v.card.dnd.at01() > 0.99 && r.v.card.ringer.at01() > 0.99);
+}
+
+#[test]
+fn offline_keeps_the_last_known_values_dimmed_and_an_old_phone_still_draws() {
+    let _m = motion_on();
+    let mut r = rig(true, json!([]));
+    r.click(K::Sub(2));
+    r.feed("phone:state", state_with(rich(true, 87, 3)));
+    r.settle();
+    r.feed("phone:state", state_with(rich(false, 87, 3)));
+    r.settle();
+    assert!(r.v.conn_k.at() < 0.01, "dimmed");
+    assert_eq!((r.v.card.temp.target(), r.v.card.st_used.target() > 0.5, r.v.card.n_notifs.target()), (31.5, true, 3.0), "the last values stay");
+    assert!(!r.v.model.link().phone().unwrap().connected);
+    // an old phone: only the original fields
+    r.feed("phone:state", state_with(json!({ "id": "d1", "name": "Old", "connected": true, "battery": 20, "charging": false, "network": "mobile", "dnd": false })));
+    r.settle();
+    r.shoot();
+    assert!(r.v.card.detail_k.at01() < 0.01 && r.v.card.store_k.at01() < 0.01, "nothing to show for the missing fields");
+}
+
+#[test]
+fn the_left_card_scrolls_when_there_is_more_than_room() {
+    let mut r = rig(true, json!([]));
+    r.click(K::Sub(2));
+    r.feed("phone:state", state_with(rich(true, 87, 3)));
+    r.settle();
+    r.shoot();
+    let sv = &r.v.scroll[2];
+    assert!(sv.state.scrollable(), "content {} in view {}", sv.state.content(), sv.state.viewport());
+    let a = r.v.card_area();
+    assert!(a.h > 200.0 && a.w < 400.0, "{a:?}");
+    let ev = InputEvent::Wheel { pos: a.center(), delta: (0.0, 120.0), mods: Modifiers::NONE, precise: false };
+    assert!(r.v.event(&ev, &mut r.cx).consumed);
+    assert!(r.v.scroll[2].state.target() > 0.0);
+}
+
 /// Review pictures of the four states (only written when `PILL_SNAP_DIR` is set; the name keeps it out of the default run).
 #[test]
 fn snapshot_states() {
@@ -338,6 +422,16 @@ fn snapshot_states() {
     r.click(K::Sub(2));
     r.frames(400);
     save(&mut r, "phone");
+    r.feed("phone:state", state_with(rich(true, 87, 12)));
+    r.frames(400);
+    save(&mut r, "phone-rich");
+    r.v.scroll[2].state.scroll_to(1000.0, false);
+    r.frames(60);
+    save(&mut r, "phone-rich-scrolled");
+    r.feed("phone:state", state_with(rich(false, 87, 12)));
+    r.v.scroll[2].state.scroll_to(0.0, false);
+    r.frames(400);
+    save(&mut r, "phone-offline");
     let mut off = rig(false, json!([]));
     off.frames(100);
     let img = render_view_cx(&mut off.v, &off.cx, SIZE, 2.0, &Theme::pill_dark());

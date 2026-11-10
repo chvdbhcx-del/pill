@@ -2,6 +2,7 @@
 #![allow(dead_code)] // wired by the island view
 
 mod phone;
+mod phone_card;
 mod phone_draw;
 mod phone_img;
 
