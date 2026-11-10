@@ -1,9 +1,12 @@
-// Music-reactive edge: WASAPI loopback of the default render device -> 32 spectrum bands for the pill page.
+// Music-reactive edge: WASAPI loopback -> 32 spectrum bands for the pill page. Source: the PLAYER's own sound (process loopback, proc_loopback.rs,
+// setting `audio.perApp`, default on) so mixers that route it to a virtual device still work; else the default render device (also the fallback).
 // Owner: media agent (lane L2).
 // PRIVACY: captured samples live only in a 2048-sample in-memory ring, are never stored, logged or sent anywhere.
 // Only 32 level numbers (+ one rms value and a timestamp) leave Rust, as the `audio:bands` event (~60 Hz) to the local window "pill".
 // The capture runs only while the pill is visible AND the selected media session is playing AND setting
 // `audio.reactive` (default true) is on; otherwise the thread is parked and no audio client is open.
+use crate::player_audio::{self, Hint, Source};
+use crate::proc_loopback;
 use crate::ui::bus;
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,6 +18,8 @@ use windows::Win32::Media::Audio::{
     AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
 };
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED};
+use windows::Win32::Foundation::HANDLE;
+use windows::Win32::System::Threading::WaitForSingleObject;
 
 const N: usize = 2048; // 23 Hz bins at 48 kHz; window 43 ms, hop FRAME_EVERY = 16 ms (~62 % overlap)
 const B: usize = 32;
@@ -351,8 +356,25 @@ fn default_device() -> windows::core::Result<IMMDevice> {
     }
 }
 
-/// Returns Ok when capture is no longer wanted or the default device changed; Err when the stream died.
-fn run_capture(app: &tauri::AppHandle) -> Result<(), String> {
+/// Setting `audio.perApp` (default on): capture the player's own sound (process loopback) instead of the default device's.
+fn per_app_on() -> bool {
+    crate::settings::get_bool("audio.perApp", true)
+}
+
+/// What the capture loop reads from: a device loopback (`device_id` set) or the process loopback of one player.
+struct Input {
+    client: IAudioClient,
+    cap: IAudioCaptureClient,
+    fmt: Fmt,
+    /// signalled when data is ready (process loopback); the device loopback is polled
+    event: Option<HANDLE>,
+    label: String,
+    device_id: Option<String>,
+    /// owns the process-loopback stream (stops it and closes the event on drop)
+    _stream: Option<proc_loopback::Stream>,
+}
+
+fn open_device() -> Result<Input, String> {
     let e = |what: &'static str| move |err: windows::core::Error| format!("{what}: {err}");
     unsafe {
         let dev = default_device().map_err(e("default device"))?;
@@ -368,13 +390,84 @@ fn run_capture(app: &tauri::AppHandle) -> Result<(), String> {
         init.map_err(e("initialize loopback"))?;
         let cap: IAudioCaptureClient = client.GetService().map_err(e("capture service"))?;
         client.Start().map_err(e("start"))?;
-        *STATUS.lock().unwrap_or_else(|x| x.into_inner()) = Some((id.clone(), fmt.rate));
+        Ok(Input { client, cap, fmt, event: None, label: id.clone(), device_id: Some(id), _stream: None })
+    }
+}
+
+fn open_process(pid: u32) -> Result<Input, String> {
+    let s = proc_loopback::open(pid)?;
+    let fmt = Fmt { channels: proc_loopback::CHANNELS, rate: proc_loopback::RATE, bits: 32, float: true };
+    Ok(Input { client: s.client.clone(), cap: s.cap.clone(), fmt, event: Some(s.event), label: format!("process:{pid}"), device_id: None, _stream: Some(s) })
+}
+
+/// Decides when the open capture no longer matches what is wanted. Cheap: a second-by-second compare of cached values; the process lists
+/// are only walked when the player changed, died, or (while no process was found) every few seconds.
+struct Watch {
+    per_app: bool,
+    hint: Hint,
+    /// the pid asked for at the start (not necessarily the one captured: a failed activation falls back to the device)
+    desired: Option<u32>,
+    next_resolve: Instant,
+}
+
+const RESOLVE_EVERY: Duration = Duration::from_secs(5);
+
+impl Watch {
+    fn new() -> Self {
+        let per_app = per_app_on();
+        Watch { per_app, hint: player_audio::hint(), desired: if per_app { player_audio::resolve_target() } else { None }, next_resolve: Instant::now() + RESOLVE_EVERY }
+    }
+
+    fn source(&self) -> Source {
+        player_audio::choose_source(self.per_app, self.desired)
+    }
+
+    /// True when the capture should be reopened.
+    fn changed(&mut self, now: Instant) -> bool {
+        if per_app_on() != self.per_app {
+            return true;
+        }
+        if !self.per_app {
+            return false;
+        }
+        let h = player_audio::hint();
+        let died = self.desired.map_or(false, |p| !player_audio::alive(p));
+        if h == self.hint && !died && !(self.desired.is_none() && !h.is_empty() && now >= self.next_resolve) {
+            return false;
+        }
+        self.hint = h;
+        self.next_resolve = now + RESOLVE_EVERY;
+        player_audio::resolve_target() != self.desired
+    }
+}
+
+/// The default render device's master volume (for the volume-aware gain) and its id.
+fn master_volume() -> (Option<IAudioEndpointVolume>, String) {
+    match default_device() {
+        Ok(d) => (unsafe { d.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) }.ok(), device_id(&d)),
+        Err(_) => (None, String::new()),
+    }
+}
+
+/// Returns Ok when capture is no longer wanted or the source changed (default device, player, setting); Err when the stream died.
+fn run_capture(app: &tauri::AppHandle) -> Result<(), String> {
+    unsafe {
+        let mut watch = Watch::new();
+        let input = match watch.source() {
+            Source::Process(pid) => open_process(pid).or_else(|er| {
+                eprintln!("[audio] per-app capture of pid {pid} failed ({er}); using the default device");
+                open_device()
+            })?,
+            Source::DefaultDevice => open_device()?,
+        };
+        let Input { client, cap, fmt, event, label, device_id: dev_id, .. } = &input;
+        *STATUS.lock().unwrap_or_else(|x| x.into_inner()) = Some((label.clone(), fmt.rate));
 
         let mut an = Analyzer::new(fmt.rate as f32);
         an.set_sensitivity(crate::settings::get_f64("audio.sensitivity", 1.0) as f32);
         // the loopback is pre-volume: scale the bars by the device's master volume (polled, cheap), unless `audio.volumeAware` is off
         let aware = crate::settings::get_bool("audio.volumeAware", true);
-        let vol_ep: Option<IAudioEndpointVolume> = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None).ok();
+        let (mut vol_ep, mut vol_dev) = master_volume();
         let mut gain = 1.0f32;
         let mut next_vol = Instant::now();
         let mut mono: Vec<f32> = Vec::new();
@@ -387,7 +480,13 @@ fn run_capture(app: &tauri::AppHandle) -> Result<(), String> {
         let stale_zeros = vec![0.0f32; fmt.rate as usize / 10 + 1]; // up to 100 ms of zeros
         let res = loop {
             // Wake at most every POLL, but never sleep past the frame deadline (std sleep is high-resolution on Windows).
-            std::thread::sleep(POLL.min(next_frame.saturating_duration_since(Instant::now())));
+            let nap = POLL.min(next_frame.saturating_duration_since(Instant::now()));
+            match event {
+                Some(ev) => {
+                    WaitForSingleObject(*ev, nap.as_micros().div_ceil(1000) as u32);
+                }
+                None => std::thread::sleep(nap),
+            }
             let mut fail = None;
             loop {
                 let n = match cap.GetNextPacketSize() {
@@ -406,7 +505,7 @@ fn run_capture(app: &tauri::AppHandle) -> Result<(), String> {
                 if flags & BUFFERFLAGS_SILENT != 0 || p.is_null() {
                     mono.resize(frames as usize, 0.0);
                 } else {
-                    to_mono(std::slice::from_raw_parts(p, frames as usize * fmt.bits as usize / 8 * fmt.channels), &fmt, &mut mono);
+                    to_mono(std::slice::from_raw_parts(p, frames as usize * fmt.bits as usize / 8 * fmt.channels), fmt, &mut mono);
                 }
                 let _ = cap.ReleaseBuffer(frames);
                 an.push(&mono);
@@ -418,9 +517,14 @@ fn run_capture(app: &tauri::AppHandle) -> Result<(), String> {
             let now = Instant::now();
             if now >= next_check {
                 next_check = now + Duration::from_secs(1);
-                // The loopback follows the device it was opened on: reopen when the default output changes.
-                if !wanted() || default_device().map(|d| device_id(&d)).unwrap_or_default() != id {
+                // A device loopback follows the device it was opened on: reopen when the default output changes.
+                // A process loopback follows the player: reopen when the player (or the setting) changed.
+                let cur = default_device().map(|d| device_id(&d)).unwrap_or_default();
+                if !wanted() || watch.changed(now) || dev_id.as_ref().map_or(false, |id| *id != cur) {
                     break Ok(());
+                }
+                if cur != vol_dev {
+                    (vol_ep, vol_dev) = master_volume(); // process mode: the gain follows the new default device
                 }
             }
             if now < next_frame {

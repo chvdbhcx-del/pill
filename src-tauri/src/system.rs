@@ -309,7 +309,7 @@ pub async fn sys_set(key: String, value: Value) -> Value {
         ("ethernet", Some(on)) => tauri::async_runtime::spawn_blocking(move || set_nic(IF_ETHERNET, on)).await.unwrap_or_else(|_| res("error", "task failed")),
         ("wifi", Some(on)) => tauri::async_runtime::spawn_blocking(move || set_nic(IF_WIFI, on)).await.unwrap_or_else(|_| res("error", "task failed")),
         ("muted", Some(m)) => {
-            crate::media::media_mute(m).await;
+            crate::media::media_mute(m, None).await;
             res("ok", "")
         }
         ("micMuted", Some(m)) => match endpoint(eCapture).and_then(|ep| unsafe { ep.SetMute(m, std::ptr::null()) }) {
@@ -318,7 +318,7 @@ pub async fn sys_set(key: String, value: Value) -> Value {
         },
         ("volume", _) => match value.as_f64() {
             Some(v) => {
-                crate::media::media_volume_set(v.clamp(0.0, 100.0).round() as u32).await;
+                crate::media::media_volume_set(v.clamp(0.0, 100.0).round() as u32, None).await;
                 res("ok", "")
             }
             None => res("error", "bad value"),

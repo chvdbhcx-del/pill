@@ -338,6 +338,18 @@ pub fn sound() -> Page {
                     out.kw(&["volume", "device", "громкость", "устройство", "output"]),
                     mic.kw(&["microphone", "mic", "микрофон"]),
                     toggle("audio.reactive", tr("Жидкий край по частотам", "Reactive edge"), tr("Край острова двигается под музыку: слева низкие частоты, справа высокие", "The pill edge moves with the music: low frequencies on the left, high on the right"), true).kw(&["audio", "reactive", "equalizer", "эквалайзер", "частоты"]),
+                    toggle("audio.perApp", tr("Звук самого плеера", "The player's own sound"), tr("Край слушает звук именно проигрывателя, а не всего выхода: работает и тогда, когда Sonar, Voicemeeter и подобные программы уводят плеер на виртуальное устройство. Нужна Windows 10 2004 или новее; иначе слушается устройство по умолчанию. Звук обрабатывается только в памяти", "The edge listens to the player itself rather than the whole output, so it also works when Sonar, Voicemeeter and the like route the player to a virtual device. Needs Windows 10 2004 or newer, otherwise the default device is used. The sound is only analysed in memory"), true)
+                        .enabled(Cond::On("audio.reactive"))
+                        .kw(&["per-app", "process", "sonar", "voicemeeter", "mixer", "плеер", "микшер", "виртуальное устройство"]),
+                    toggle("media.legacyPlayers", tr("AIMP и Winamp", "AIMP and Winamp"), tr("Показывать на «Главной» плееры, которые не сообщают о себе Windows: AIMP и Winamp. Пока такой плеер не запущен, остров его не опрашивает", "Show players that do not report to Windows (AIMP, Winamp) on Home. While such a player is not running the pill does not poll it"), true).kw(&["aimp", "winamp", "wacup", "player", "плеер"]),
+                    seg(
+                        "audio.volumeTarget",
+                        tr("Что регулирует ползунок громкости на «Главной»", "What the Home volume bar controls"),
+                        tr("«Компьютер» — общая громкость Windows. «Плеер» — только звук текущего проигрывателя. Переключатель есть и рядом с ползунком. Пока у плеера нет своего звука, регулируется общая громкость", "“Computer”: the Windows master volume. “Player”: only the current player's own volume. The same switch sits next to the bar. While the player has no audio of its own, the master volume is controlled"),
+                        so(&[("master", tr("Компьютер", "Computer")), ("player", tr("Плеер", "Player"))]),
+                        json!("master"),
+                    )
+                    .kw(&["volume", "player", "master", "громкость", "плеер"]),
                     seg(
                         "musicPill",
                         tr("Пилюля во время музыки", "Pill during music"),

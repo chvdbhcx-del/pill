@@ -266,7 +266,7 @@ fn rows_per_page() {
     eprintln!("rows per page: {counts:?}");
     let expect = [
         ("character", 7), ("general", 4), ("appearance", 20), ("behavior", 11), ("hotkeys", 19), ("modules", 14), ("live", 33), ("clipboard", 15), ("search", 4),
-        ("sound", 7), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
+        ("sound", 10), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
     ];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");

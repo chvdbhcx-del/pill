@@ -1,6 +1,8 @@
 // Now playing, media controls, master volume, battery. Owner: media agent (lane L2).
 // GSMTC sessions with event subscriptions (no polling); one worker thread coalesces events and emits `media:changed`.
 // The page interpolates the timeline between events.
+use crate::extplayer;
+use crate::player_audio;
 use crate::ui::bus;
 use base64::Engine;
 use serde::Serialize;
@@ -83,7 +85,7 @@ static THUMB: Mutex<ThumbCache> = Mutex::new(ThumbCache { key: String::new(), id
 /// Set by MediaPropertiesChanged and the retry timer: re-read the thumbnail on the next refresh.
 static FORCE_THUMB: AtomicBool = AtomicBool::new(false);
 
-fn com() {
+pub(crate) fn com() {
     // Ignore the result: S_FALSE / RPC_E_CHANGED_MODE just mean COM is already initialised on this thread.
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -140,7 +142,7 @@ fn enabled() -> bool {
 
 /// settings.rs calls this after every patch: wake the worker / the audio thread when a switch that gates them changed.
 pub fn on_settings(patch: &serde_json::Map<String, serde_json::Value>) {
-    if ["module.media", "live.music", "audio.reactive"].iter().any(|k| patch.contains_key(*k)) {
+    if ["module.media", "live.music", "audio.reactive", "media.legacyPlayers"].iter().any(|k| patch.contains_key(*k)) {
         wake();
         if enabled() {
             notify(Msg::Refresh);
@@ -307,7 +309,7 @@ mod tests {
     }
 }
 
-fn read_media(known: Option<u64>) -> windows::core::Result<MediaState> {
+fn read_system(known: Option<u64>) -> windows::core::Result<MediaState> {
     let s = pick(&mgr()?)?;
     let props = s.TryGetMediaPropertiesAsync()?.get()?;
     let info = s.GetPlaybackInfo()?;
@@ -376,6 +378,73 @@ fn read_media(known: Option<u64>) -> windows::core::Result<MediaState> {
         thumbnail,
         accent: c.accent.clone(),
     })
+}
+
+// ---------- legacy players (AIMP, Winamp): extplayer.rs ----------
+
+/// Session id of what the last read showed ("ext:aimp" for a legacy player); the transport buttons go there.
+static SHOWN: Mutex<String> = Mutex::new(String::new());
+
+fn shown_ext() -> Option<extplayer::Kind> {
+    extplayer::Kind::from_id(&SHOWN.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+/// A legacy player as `media:changed` data. No cover art (neither remote interface offers one); the page keeps its placeholder.
+fn ext_state(i: &extplayer::Info) -> MediaState {
+    let id = i.kind.id();
+    let mut c = THUMB.lock().unwrap_or_else(|e| e.into_inner());
+    let key = format!("{id}\u{1}{}\u{1}{}", i.title, i.artist);
+    if c.key != key {
+        c.key = key;
+        c.data = None;
+        c.accent = None;
+        c.hash = 0;
+        c.id += 1;
+    }
+    MediaState {
+        has_session: true,
+        playing: i.playing,
+        title: i.title.clone(),
+        artist: i.artist.clone(),
+        album: i.album.clone(),
+        session_id: id.to_string(),
+        app: i.kind.name().to_string(),
+        position_ms: i.position_ms,
+        duration_ms: i.duration_ms,
+        thumb_id: c.id,
+        thumbnail: None,
+        accent: None,
+    }
+}
+
+/// The state the page shows: Windows' current session, or a running AIMP / Winamp when `extplayer::choose` prefers it.
+/// Also tells player_audio.rs whose sound belongs to it (per-app capture, the volume strip's "player" mode).
+fn read_media(known: Option<u64>) -> windows::core::Result<MediaState> {
+    let sys = read_system(known);
+    let ext = extplayer::read_all();
+    let (has, playing) = sys.as_ref().map(|s| (s.has_session, s.playing)).unwrap_or((false, false));
+    let sel = SELECTED.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let summary: Vec<_> = ext.iter().map(|i| (i.kind, i.playing)).collect();
+    let (out, hint) = match extplayer::choose(sel.as_deref(), has, playing, &summary).and_then(|k| ext.iter().find(|i| i.kind == k)) {
+        Some(i) => (Ok(ext_state(i)), player_audio::Hint { app_id: i.kind.id().to_string(), pid: Some(i.pid) }),
+        None => {
+            let h = sys.as_ref().ok().filter(|s| s.has_session).map(|s| player_audio::Hint { app_id: s.session_id.clone(), pid: None }).unwrap_or_default();
+            (sys, h)
+        }
+    };
+    player_audio::set_hint(hint);
+    *SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = out.as_ref().map(|s| s.session_id.clone()).unwrap_or_default();
+    out
+}
+
+/// extplayer.rs: the pill is visible and the Media module is on (otherwise legacy players are not polled).
+pub fn is_active() -> bool {
+    ACTIVE.load(Ordering::Relaxed) && crate::settings::get_bool("module.media", true)
+}
+
+/// extplayer.rs: a legacy player changed, read and emit again.
+pub fn refresh() {
+    notify(Msg::Refresh);
 }
 
 // ---------- worker: subscriptions + emit ----------
@@ -471,6 +540,7 @@ pub fn init(app: &tauri::App) {
     let _ = TX.set(Mutex::new(tx.clone()));
     let handle = app.handle().clone();
     std::thread::spawn(move || worker(handle, tx, rx));
+    extplayer::init();
 }
 
 // ---------- commands ----------
@@ -498,11 +568,21 @@ pub async fn media_sessions() -> Vec<SessionInfo> {
                 .map(|p| (p.Title().map(|t| t.to_string()).unwrap_or_default(), p.Artist().map(|t| t.to_string()).unwrap_or_default()))
                 .unwrap_or_default();
             let playing = s.GetPlaybackInfo().and_then(|i| i.PlaybackStatus()).map(|p| p == Status::Playing).unwrap_or(false);
-            out.push(SessionInfo { app: app_name(&id), selected: id == cur, id, title, artist, playing });
+            out.push(SessionInfo { app: app_name(&id), selected: id == cur && shown_ext().is_none(), id, title, artist, playing });
         }
         Ok(out)
     };
-    run().unwrap_or_default()
+    let mut out = run().unwrap_or_default();
+    let shown = shown_ext();
+    out.extend(extplayer::read_all().into_iter().map(|i| SessionInfo {
+        id: i.kind.id().to_string(),
+        app: i.kind.name().to_string(),
+        title: i.title,
+        artist: i.artist,
+        playing: i.playing,
+        selected: shown == Some(i.kind),
+    }));
+    out
 }
 
 /// Pick a player by session id; None/empty goes back to the system's current session.
@@ -513,6 +593,11 @@ pub async fn media_select(id: Option<String>) {
 
 /// action: "play_pause" | "next" | "prev"
 pub async fn media_control(action: String) {
+    if let Some(k) = shown_ext() {
+        extplayer::control(k, &action);
+        notify(Msg::Refresh);
+        return;
+    }
     let _ = (|| -> windows::core::Result<()> {
         let s = pick(&mgr()?)?;
         match action.as_str() {
@@ -526,6 +611,11 @@ pub async fn media_control(action: String) {
 }
 
 pub async fn media_seek(ms: u64) {
+    if let Some(k) = shown_ext() {
+        extplayer::seek(k, ms);
+        notify(Msg::Refresh);
+        return;
+    }
     let _ = (|| -> windows::core::Result<()> {
         let s = pick(&mgr()?)?;
         let start = s.GetTimelineProperties()?.StartTime()?.Duration;
@@ -566,7 +656,18 @@ pub struct Volume {
     muted: bool,
 }
 
-pub async fn media_volume_get() -> Volume {
+/// `target` = Some("player"): the Home volume strip is switched to the player and these three act on the player's own audio session
+/// (ISimpleAudioVolume, player_audio.rs). A player without a session yet (nothing played so far) falls back to the master volume.
+fn player_target(target: &Option<String>) -> bool {
+    target.as_deref() == Some("player")
+}
+
+pub async fn media_volume_get(target: Option<String>) -> Volume {
+    if player_target(&target) {
+        if let Some((volume, muted)) = player_audio::session_volume() {
+            return Volume { volume, muted };
+        }
+    }
     endpoint()
         .and_then(|ep| unsafe {
             Ok(Volume { volume: (ep.GetMasterVolumeLevelScalar()? * 100.0).round() as u32, muted: ep.GetMute()?.as_bool() })
@@ -574,7 +675,10 @@ pub async fn media_volume_get() -> Volume {
         .unwrap_or_default()
 }
 
-pub async fn media_volume_set(v: u32) {
+pub async fn media_volume_set(v: u32, target: Option<String>) {
+    if player_target(&target) && player_audio::set_session_volume(v) {
+        return;
+    }
     if let Ok(ep) = endpoint() {
         unsafe {
             let _ = ep.SetMasterVolumeLevelScalar(v.min(100) as f32 / 100.0, std::ptr::null());
@@ -582,7 +686,10 @@ pub async fn media_volume_set(v: u32) {
     }
 }
 
-pub async fn media_mute(muted: bool) {
+pub async fn media_mute(muted: bool, target: Option<String>) {
+    if player_target(&target) && player_audio::set_session_mute(muted) {
+        return;
+    }
     if let Ok(ep) = endpoint() {
         unsafe {
             let _ = ep.SetMute(BOOL::from(muted), std::ptr::null());

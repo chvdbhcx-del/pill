@@ -46,7 +46,7 @@ Chips and cards available today:
 
 | Event | What you see |
 | --- | --- |
-| Music | Track title (or a mini player with cover and buttons); the edge spikes to the real spectrum of what is playing |
+| Music | Track title (or a mini player with cover and buttons); the edge spikes to the real spectrum of the player itself (its own sound, so it also works behind Sonar / Voicemeeter; AIMP and Winamp are shown too) |
 | Timer and reminders | A running-timer chip; a card when a reminder or timer goes off |
 | AI coding agents | "Agent working" / "Needs your input" chips and an "Agent finished" card; hooks for **Claude Code** and **Codex** (the app never edits your config, *Settings* shows the snippet to paste) |
 | Downloads | Progress chip for browser downloads and a card with *Show in folder* when a file lands in Downloads |
@@ -89,7 +89,7 @@ Hover the island (or press `Ctrl+Alt+I`) and it expands into a panel. Every tab 
 
 | Tab | What it does |
 | --- | --- |
-| **Home** | Player for whatever is playing (cover, seek, volume, output device), quick tools (area / full-screen screenshot, screen text OCR, QR reader, colour picker, screen recording, command bar) and a launcher strip: drop programs, folders or files on it |
+| **Home** | Player for whatever is playing (cover, seek, volume for the computer or just for the player, output device), quick tools (area / full-screen screenshot, screen text OCR, QR reader, colour picker, screen recording, command bar) and a launcher strip: drop programs, folders or files on it |
 | **Clipboard** | History of text, images and files with search, pinning, paste as plain text, AI actions on text and a "wipe everything" button |
 | **Shelf** | Drag a file towards the island and drop it to keep it on the shelf; drag it out again later |
 | **Text** | Text tools (case, RU/EN layout fix, transliteration, JSON, Base64, URL, sort, dedupe, word count, QR) and, with an AI endpoint, translate / fix errors / shorten / summarise / formal or friendly tone; dictation |

@@ -17,7 +17,8 @@ pub const MAIN: Rect = Rect::new(240.0, 110.0, 36.0, 36.0);
 pub const NEXT: Rect = Rect::new(292.0, 114.0, 28.0, 28.0);
 pub const VOL_ROW: Rect = Rect::new(0.0, 162.0, 412.0, 38.0);
 pub const MUTE: Rect = Rect::new(8.0, 169.0, 24.0, 24.0);
-pub const VOL: Rect = Rect::new(40.0, 173.0, 190.0, 16.0);
+/// 156 wide: the computer / player chip (target.rs) sits between the bar and the number.
+pub const VOL: Rect = Rect::new(40.0, 173.0, 156.0, 16.0);
 pub const VOL_NUM: Rect = Rect::new(238.0, 173.0, 28.0, 16.0);
 pub const DEV: Rect = Rect::new(274.0, 168.0, 132.0, 26.0);
 pub const STRIP: Rect = Rect::new(0.0, 208.0, 648.0, 52.0);
@@ -76,7 +77,7 @@ mod tests {
         assert_eq!(NEXT.right() - PREV.x, 124.0);
         assert_eq!(PREV.x - COL_X, COL_X + COL_W - NEXT.right());
         assert_eq!(DEV.right() + 6.0, VOL_ROW.right());
-        assert_eq!(VOL.right() + 8.0, VOL_NUM.x);
+        assert_eq!(VOL.right() + 8.0 + 26.0 + 8.0, VOL_NUM.x, "bar, chip (26 px), number");
         assert_eq!(VOL_NUM.right() + 8.0, DEV.x);
     }
 

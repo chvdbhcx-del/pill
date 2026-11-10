@@ -53,6 +53,10 @@ pub(crate) fn defaults() -> Cfg {
         "island.color": "", "island.colorCustom": "", "live.keyboardLayoutAlways": false, "live.virtualDesktop": "off", "cards.duration": "normal", "search.engine": "google", "search.customUrl": ""
     }) else { unreachable!() };
     m.extend(look);
+    // audio sources (audio.rs, media.rs): perApp = the spectrum follows the player's own sound (process loopback), legacyPlayers = AIMP / Winamp
+    // as media sources, volumeTarget = what the Home volume strip controls ("master" computer | "player" the player's audio session)
+    let Value::Object(src) = json!({ "audio.perApp": true, "media.legacyPlayers": true, "audio.volumeTarget": "master" }) else { unreachable!() };
+    m.extend(src);
     m
 }
 
