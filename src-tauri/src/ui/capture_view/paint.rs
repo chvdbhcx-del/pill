@@ -167,7 +167,8 @@ pub(crate) fn paint(v: &mut CaptureView, cv: &Canvas, theme: &Theme, rect: Rect,
         let col = tools::parse_color(&t.color);
         let (px, wt) = (16.0f32, 600u16);
         let (tw, _) = gpu.tools.measure(cv.gfx, &t.text, px, wt);
-        let box_ = Rect::new(t.pos.x as f32, t.pos.y as f32, (tw + 4.0).max(40.0), 20.0);
+        // the text origin IS the op anchor (what the export draws at): the box hangs 2 px out to the left of it, so the text does not jump on commit
+        let box_ = Rect::new(t.pos.x as f32 - 2.0, t.pos.y as f32, (tw + 4.0).max(40.0), 20.0);
         unsafe {
             let o = box_.inset(-0.5);
             cv.dc.DrawRectangle(&rf(o.x, o.y, o.right(), o.bottom()), gpu.tools.brush(WHITE.alpha(0.8)), 1.0, gpu.tools.dashed());

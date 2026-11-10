@@ -607,7 +607,8 @@ fn every_markup_tool_draws_and_stays_inside_the_selection() {
     r.sim.now_ms += 2000.0;
     r.sim.run(2000);
     let img = r.shot("05-markup-all-tools");
-    assert!(editing.diff(&img, 8) > 100);
+    // the text is drawn where the editor showed it: only the dashed box and the caret go away (before, the text jumped 2 px on commit and more than 100 pixels differed)
+    assert!(editing.diff(&img, 8) < 60, "the committed text must not move: {} pixels differ", editing.diff(&img, 8));
     let ops = r.model().ops().len();
     assert_eq!(ops, 9, "rect, arrow, pen, blur, highlighter, ellipse, 2 steps, text -> {ops}");
     // red stroke of the rectangle's left edge (x = 150, y = 160) and nothing red outside the selection

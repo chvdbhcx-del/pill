@@ -27,6 +27,8 @@ mod agents;
 mod launcher;
 mod settingswin;
 mod capture;
+mod recaudio;
+mod captranslate;
 mod voice;
 mod aisetup;
 mod everything;

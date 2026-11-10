@@ -176,7 +176,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         // the frame is w*h*4 raw bytes, not JSON: `ui::api::capture_frame(label)` returns it without a copy
         "capture_frame" => Err("capture_frame returns raw RGBA bytes: use ui::api::capture_frame(label)".into()),
         "capture_ready" => ok(capture::capture_ready(app.clone(), a.req("label")?)),
-        "capture_action" => res(capture::capture_action(a.req("action")?, a.req("value")?)),
+        "capture_action" => res(capture::capture_action(app, a.req("action")?, a.req("value")?)),
         "voice_toggle" => ok(voice::voice_toggle(app.clone())),
         "voice_start" => ok(voice::voice_start(app.clone())),
         "voice_stop" => ok(voice::voice_stop()),
