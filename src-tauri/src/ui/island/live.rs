@@ -26,6 +26,8 @@ pub struct Ctx<'a> {
     pub cards: &'a HashMap<String, lm::CardSpec>,
     pub reduced: bool,
     pub ru: bool,
+    /// smoothed music levels for the media row's equaliser (see `Anim::eq`)
+    pub eq: Option<[f32; 4]>,
 }
 
 fn item_w(it: &ClockItem, m: &dyn Meter) -> f32 {
@@ -374,7 +376,7 @@ pub fn paint_content(
             out.row_id = Some(id.clone());
             cv.with_opacity(alpha * a2, |cv| {
                 cv.with_scale_about((area.cx(), cy), sc, |cv| {
-                    cv.with_offset(0.0, dy, |cv| paint_row(cv, th, gpu, row, &lay, x0, cy, Anim { t, age: age_ms, reduced: ctx.reduced }, &mut out.row_hits));
+                    cv.with_offset(0.0, dy, |cv| paint_row(cv, th, gpu, row, &lay, x0, cy, Anim { t, age: age_ms, reduced: ctx.reduced, eq: ctx.eq }, &mut out.row_hits));
                 })
             });
         }

@@ -146,6 +146,10 @@ pub struct IslandView {
     now: f64,
     started: bool,
     device_id: usize,
+    /// the media row's equaliser: spectrum slices as last delivered / as drawn (eased in `step`), and when the last frame arrived
+    eq_target: [f32; 4],
+    eq: [f32; 4],
+    eq_seen: f64,
 }
 
 impl IslandView {
@@ -196,6 +200,9 @@ impl IslandView {
             last_gaze: None,
             last_theme_light: None,
             last_style: None,
+            eq_target: [0.0; 4],
+            eq: [0.0; 4],
+            eq_seen: f64::NEG_INFINITY,
             now: cx.now_ms,
             started: false,
             device_id: 0,
@@ -499,6 +506,30 @@ fn cursor_of(h: &Hit) -> Cursor {
     }
 }
 
+/// Audio frames older than this (ms) no longer drive the media row's equaliser.
+const EQ_FRESH_MS: f64 = 600.0;
+
+/// The four equaliser bars from the spectrum: bass, low-mid, high-mid and treble slices, each averaged and lifted a little (0..1).
+fn eq_levels(bands: &[f64]) -> [f32; 4] {
+    let n = bands.len();
+    let mut out = [0.0f32; 4];
+    for (i, o) in out.iter_mut().enumerate() {
+        // slice edges at 0, 5/32, 12/32, 20/32, 1 of the band count: the low end is narrow because the low bands carry the beat
+        let edge = |k: usize| n * [0, 5, 12, 20, 32][k] / 32;
+        let s = &bands[edge(i)..edge(i + 1).max(edge(i) + 1).min(n)];
+        if !s.is_empty() {
+            *o = ((s.iter().sum::<f64>() / s.len() as f64) as f32 * 1.25).clamp(0.0, 1.0);
+        }
+    }
+    out
+}
+
+/// One step of a level towards its goal: quick attack, slower release, so the bars snap to a hit and fall back smoothly.
+fn ease_level(cur: f32, goal: f32, dt_ms: f32) -> f32 {
+    let tau = if goal > cur { 45.0 } else { 130.0 };
+    cur + (goal - cur) * (1.0 - (-dt_ms / tau).exp())
+}
+
 /// What the island's live strip says, as plain text for a screen reader: the clock's time, a card's title and subtitle, or the visible
 /// text of a slot row (every `text` / `title` / `sub` / `label` string of its spec, in order, without repeats).
 fn spoken(content: &LiveContent) -> String {
@@ -556,6 +587,8 @@ impl View for IslandView {
                     if let Some(b) = payload.get("b").and_then(|b| b.as_array()) {
                         let bands: Vec<f64> = b.iter().filter_map(|x| x.as_f64()).collect();
                         self.comp.feed_audio(&bands, cx.now_ms);
+                        self.eq_target = eq_levels(&bands);
+                        self.eq_seen = cx.now_ms;
                     }
                 }
                 self.core.bus_event(&name, &payload, cx.now_ms);
@@ -621,6 +654,11 @@ impl View for IslandView {
         self.live_a = lin(self.live_a, if v.live.visible { 1.0 } else { 0.0 }, mo::LIVE_FADE_MS);
         self.panel_a = if v.panel.visible { mo::PANEL_IN.at(v.panel.shown_age_ms, reduced).opacity as f32 } else { lin(self.panel_a, 0.0, mo::PANEL_OUT_MS) };
         self.flare_a = lin(self.flare_a, if v.body.flare_visible { 1.0 } else { 0.0 }, 200.0);
+        // equaliser bars follow the music; with no audio frames for a while they ease down
+        let goal = if now - self.eq_seen < EQ_FRESH_MS { self.eq_target } else { [0.0; 4] };
+        for (cur, g) in self.eq.iter_mut().zip(goal) {
+            *cur = ease_level(*cur, g, dt_ms as f32);
+        }
         let mut tabs_moving = false;
         for t in &v.tabs {
             let k = self.tab_k.entry(t.id.clone()).or_insert(if t.active { 1.0 } else { 0.0 });
@@ -848,7 +886,7 @@ impl View for IslandView {
         let body = Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32);
         let (rt, rb) = shapes::clamp_radii(body.w, body.h, b.radius_top as f32, b.radius_bottom as f32);
         shapes::paint_body(cv, b, b.radius_top as f32, b.radius_bottom as f32, self.flare_a, 1.0);
-        let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru() };
+        let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq) };
         // ---- everything inside the body is clipped to its silhouette
         let mut painted = Painted::default();
         cv.with_clip_rr(body, rb.max(rt), |cv| {
@@ -1028,6 +1066,35 @@ impl IslandView {
     }
     pub fn debug_pet_rect(&self) -> Option<Rect> {
         self.pet_rect
+    }
+}
+
+#[cfg(test)]
+mod eq_tests {
+    use super::*;
+
+    #[test]
+    fn each_bar_follows_its_own_slice_of_the_spectrum() {
+        assert_eq!(eq_levels(&[]), [0.0; 4]);
+        assert_eq!(eq_levels(&[0.0; 32]), [0.0; 4], "silence is flat");
+        let mut b = [0.0f64; 32];
+        b[..5].fill(0.8); // only the bass
+        let l = eq_levels(&b);
+        assert!(l[0] > 0.9 && l[1] == 0.0 && l[2] == 0.0 && l[3] == 0.0, "{l:?}");
+        let mut b = [0.0f64; 32];
+        b[20..].fill(0.4); // only the treble
+        let l = eq_levels(&b);
+        assert!(l[3] > 0.4 && l[0] == 0.0, "{l:?}");
+        assert!(eq_levels(&[1.0; 32]).iter().all(|&x| x == 1.0), "clamped to 1");
+        assert_eq!(eq_levels(&[0.5; 3]).len(), 4, "a short spectrum does not panic");
+    }
+
+    #[test]
+    fn levels_rise_faster_than_they_fall() {
+        let up = ease_level(0.0, 1.0, 16.0);
+        let down = 1.0 - ease_level(1.0, 0.0, 16.0);
+        assert!(up > down && up > 0.2 && down > 0.0, "{up} {down}");
+        assert_eq!(ease_level(0.5, 0.5, 16.0), 0.5);
     }
 }
 

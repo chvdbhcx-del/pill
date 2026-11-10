@@ -179,6 +179,8 @@ pub struct Anim {
     /// ms since the row appeared (check mark drawing)
     pub age: f64,
     pub reduced: bool,
+    /// Live music levels (0..1) for the four equaliser bars, from the loopback spectrum; `None` = no fresh audio data (the bars then run their own loop)
+    pub eq: Option<[f32; 4]>,
 }
 
 /// Clickable parts found while painting: (rect in window px, row element index).
@@ -223,8 +225,14 @@ fn paint_elem(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &RowSpec, e: &Elem, r
             const P: [f64; 4] = [800.0, 600.0, 1000.0, 750.0];
             const D: [f64; 4] = [0.0, -300.0, -500.0, -100.0];
             for b in 0..4 {
-                let scale = if *playing && !an.reduced { 0.45 + 0.55 * sin01(an.t, P[b], D[b]) } else { 0.45 };
-                let h = r.h * if b == 1 { 1.0 } else { H[b] } * scale;
+                let h = match an.eq {
+                    // the music itself: each bar is one slice of the spectrum, never fully flat
+                    Some(lv) if *playing && !an.reduced => r.h * (0.18 + 0.82 * lv[b].clamp(0.0, 1.0)),
+                    _ => {
+                        let scale = if *playing && !an.reduced { 0.45 + 0.55 * sin01(an.t, P[b], D[b]) } else { 0.45 };
+                        r.h * if b == 1 { 1.0 } else { H[b] } * scale
+                    }
+                };
                 let x = r.x + b as f32 * 6.5;
                 cv.fill_rr(Rect::new(x, r.cy() - h / 2.0, 3.5, h), 1.75, c);
             }
