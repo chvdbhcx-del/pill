@@ -54,15 +54,7 @@ fn thumb(cv: &Canvas, r: Rect, pct: f32, alpha: f32, scale: f32) {
 
 impl HomeView {
     pub(super) fn paint(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
-        let o = |r: Rect| r.offset(ox, oy);
-        self.paint_player(cv, th, ox, oy);
-        self.paint_volume(cv, th, ox, oy);
-        self.paint_target(cv, th, ox, oy);
-        for (i, t) in self.v.tiles.iter().enumerate() {
-            self.paint_tile(cv, th, o(L::tile(i)), Hit::Tile(i), t);
-        }
-        self.paint_launcher(cv, th, ox, oy);
-        self.paint_menu(cv, th, ox, oy);
+        self.paint_parts(cv, th, ox, oy);
     }
 
     fn hov(&self, h: Hit) -> f32 {
@@ -79,7 +71,7 @@ impl HomeView {
 
     // ------------------------------------------------------------------------------------------------------------------ player
 
-    fn paint_player(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
+    pub(super) fn paint_player(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
         let o = |r: Rect| r.offset(ox, oy);
         let card = o(L::PLAYER);
         let p = &self.v.player;
@@ -179,7 +171,7 @@ impl HomeView {
 
     // ------------------------------------------------------------------------------------------------------------------ volume row
 
-    fn paint_volume(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
+    pub(super) fn paint_volume(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
         let o = |r: Rect| r.offset(ox, oy);
         let row = o(L::VOL_ROW);
         cv.fill_rr(row, th.m.radius, th.card);
@@ -219,7 +211,7 @@ impl HomeView {
 
     // ------------------------------------------------------------------------------------------------------------------ tiles
 
-    fn paint_tile(&self, cv: &Canvas, th: &Theme, r: Rect, h: Hit, t: &pill_ui_core::panel::a::home::TileView) {
+    pub(super) fn paint_tile(&self, cv: &Canvas, th: &Theme, r: Rect, h: Hit, t: &pill_ui_core::panel::a::home::TileView) {
         let k = if t.soon { 0.0 } else { self.hov(h) };
         let kb = self.hov(h);
         cv.with_scale_about(r.center(), if t.soon { 1.0 } else { self.press(h, 0.96) }, |cv| {
@@ -239,7 +231,7 @@ impl HomeView {
 
     // ------------------------------------------------------------------------------------------------------------------ launcher
 
-    fn paint_launcher(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
+    pub(super) fn paint_launcher(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
         let o = |r: Rect| r.offset(ox, oy);
         let strip = o(L::STRIP);
         let lv = &self.v.launcher;
@@ -318,17 +310,19 @@ impl HomeView {
 
     // ------------------------------------------------------------------------------------------------------------------ device list
 
-    fn paint_menu(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
+    pub(super) fn paint_menu(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
         let a = self.menu_a.at01();
         if a <= 0.005 {
             return;
         }
         let items = &self.v.devices.items;
-        let r = L::menu(items.len()).offset(ox, oy);
+        let (r, low) = self.menu_geom();
+        let r = r.offset(ox, oy);
         let p = self.menu_p.at();
         let (bg, hover, text) = if th.dark { (Color::rgb8(0x17, 0x17, 0x17), Color::rgb8(0x22, 0x22, 0x22), Color::rgb8(0xe8, 0xe8, 0xe8)) } else { (th.raised, th.raised2, th.text) };
-        // grows out of the chip below it: scale .98 -> 1 about the bottom-right corner, 4 px rise
-        let m = glasskit::canvas::mul(&glasskit::canvas::scale_about((r.right(), r.bottom()), 0.98 + 0.02 * p, 0.98 + 0.02 * p), &glasskit::canvas::translation(0.0, 4.0 * (1.0 - p)));
+        // grows out of the chip next to it: scale .98 -> 1 about the corner at the chip, 4 px rise
+        let (corner, rise) = if low { ((r.right(), r.y), -4.0) } else { ((r.right(), r.bottom()), 4.0) };
+        let m = glasskit::canvas::mul(&glasskit::canvas::scale_about(corner, 0.98 + 0.02 * p, 0.98 + 0.02 * p), &glasskit::canvas::translation(0.0, rise * (1.0 - p)));
         cv.with_opacity(a, |cv| {
             cv.with_transform(m, |cv| {
                 cv.shadow_rr(r, 14.0, 30.0, 12.0, Color::rgba(0.0, 0.0, 0.0, 0.6));

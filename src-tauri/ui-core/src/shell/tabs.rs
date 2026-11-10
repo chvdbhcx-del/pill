@@ -33,10 +33,19 @@ pub fn module_key(id: &str) -> Option<&'static str> {
     }
 }
 
-/// `tabOff(id)`: Home stays while the player OR the launcher is on.
+/// Tabs the user may take off the strip (Settings > Modules > Island tabs). Home stays; the notification centre and the agents tab follow
+/// their own switches.
+pub const HIDEABLE: [&str; 7] = ["clipboard", "shelf", "text", "chat", "note", "weather", "controls"];
+
+/// `tabs.hidden`: the tab is not drawn in the tab strip, yet it is still registered, so its hotkey and command open it.
+pub fn strip_hidden(id: &str, s: &ShellSettings) -> bool {
+    HIDEABLE.contains(&id) && s.raw.get("tabs.hidden").and_then(|v| v.as_array()).is_some_and(|a| a.iter().any(|x| x.as_str() == Some(id)))
+}
+
+/// `tabOff(id)`: Home stays while any of its parts (player, recently copied, volume, a tile, the shortcuts) is on.
 pub fn tab_off(id: &str, s: &ShellSettings) -> bool {
     if id == "home" {
-        return !s.module_on("module.media") && !s.module_on("module.launcher");
+        return !crate::panel::a::home_mods::On::from_get(|k| s.raw.get(k).cloned()).any();
     }
     match module_key(id) {
         Some(k) => !s.module_on(k),
@@ -70,11 +79,13 @@ pub struct Tabs {
     /// the user (or code) picked a tab: stop auto-selecting the first one
     pub chosen: bool,
     pub dir: TabDir,
+    /// Body height of the Home tab for the parts that are on (`panel::a::home_mods::body_h`); `None` = the registered height.
+    pub home_h: Option<f64>,
 }
 
 impl Default for Tabs {
     fn default() -> Self {
-        Tabs { list: Vec::new(), cur: None, prev: None, chosen: false, dir: TabDir::Right }
+        Tabs { list: Vec::new(), cur: None, prev: None, chosen: false, dir: TabDir::Right, home_h: None }
     }
 }
 
@@ -114,6 +125,7 @@ impl Tabs {
     pub fn body_height(&mut self, exp_frame_h: f64, exp_top: f64, wave_pad: f64) -> (f64, bool) {
         let cur = self.cur.clone();
         let want = match cur.as_deref().and_then(|id| self.get(id)) {
+            Some(t) if t.spec.id == "home" && self.home_h.is_some() => self.home_h.unwrap_or(DEF_H_FALLBACK),
             Some(t) => t.spec.height.filter(|h| *h != 0.0).unwrap_or_else(|| default_height(&t.spec.id)),
             None => DEF_H_FALLBACK,
         };
@@ -180,13 +192,39 @@ mod tests {
     }
 
     #[test]
+    fn hidden_tabs_leave_the_strip_but_stay_registered() {
+        let s = ShellSettings::from_json(&json!({"tabs.hidden": ["weather", "home", "bogus", "chat"]}));
+        assert!(strip_hidden("weather", &s) && strip_hidden("chat", &s));
+        assert!(!strip_hidden("home", &s), "Home never leaves the strip");
+        assert!(!strip_hidden("note", &s) && !tab_off("weather", &s), "hiding is not the module switch");
+        assert!(!strip_hidden("weather", &ShellSettings::from_json(&json!({}))));
+    }
+
+    #[test]
+    fn home_height_follows_its_parts() {
+        let mut t = Tabs { list: vec![tab("home", 1, false)], cur: Some("home".into()), ..Default::default() };
+        assert_eq!(t.body_height(480.0, 8.0, 28.0).0, 331.0);
+        t.home_h = Some(401.0);
+        assert_eq!(t.body_height(480.0, 8.0, 28.0).0, 401.0);
+        t.home_h = Some(900.0);
+        assert_eq!(t.body_height(480.0, 8.0, 28.0), (444.0, true), "clamped to the frame like any tab");
+    }
+
+    #[test]
     fn module_switches_hide_tabs() {
         let s = ShellSettings::from_json(&json!({"module.chat": false, "live.agents": false, "module.media": false}));
         assert!(tab_off("chat", &s));
         assert!(tab_off("agents", &s));
         assert!(!tab_off("shelf", &s));
         assert!(!tab_off("home", &s)); // the launcher is still on
+        // player and shortcuts off, but the tiles and the volume row are still on Home
         let s = ShellSettings::from_json(&json!({"module.media": false, "module.launcher": false}));
+        assert!(!tab_off("home", &s));
+        let mut all_off = json!({"module.media": false, "module.launcher": false, "home.recent": false, "home.volume": false});
+        for p in crate::panel::a::home_mods::PARTS.iter().filter(|p| p.key.starts_with("home.tile.")) {
+            all_off[p.key] = json!(false);
+        }
+        let s = ShellSettings::from_json(&all_off);
         assert!(tab_off("home", &s));
         assert!(!tab_off("unknown", &s));
     }

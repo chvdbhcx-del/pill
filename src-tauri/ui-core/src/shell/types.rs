@@ -229,6 +229,8 @@ pub struct TabView {
     pub order: i32,
     pub hidden: bool,
     pub off: bool,
+    /// Taken off the strip by Settings > Modules > Island tabs (still opens by hotkey and command).
+    pub stripped: bool,
     pub active: bool,
     pub badge: u32,
 }

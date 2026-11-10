@@ -397,6 +397,10 @@ impl Home {
     pub fn media(&self) -> Option<&Media> {
         self.st.as_ref()
     }
+    /// Which parts of the tab are on (Settings > Modules > What is on Home), see [`super::home_mods`].
+    pub fn parts_on(&self) -> super::home_mods::On {
+        super::home_mods::On::from_get(|k| self.cfg.get(k).cloned())
+    }
     pub fn sessions(&self) -> &[Session] {
         &self.sessions
     }

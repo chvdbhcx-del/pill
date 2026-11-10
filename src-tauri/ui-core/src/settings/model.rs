@@ -250,6 +250,23 @@ impl SettingsModel {
     /// Validate / normalise one change into the patch it stands for (may hold more than one key).
     pub fn normalize(&self, key: &str, value: &Value) -> Result<Map<String, Value>, SetError> {
         let sc = schema();
+        // the chips of the Home and tab widgets own keys without a row (see `panel::a::home_mods`, `shell::tabs::HIDEABLE`)
+        if crate::panel::a::home_mods::is_home_key(key) {
+            return value.as_bool().map(|b| one(key, json!(b))).ok_or(SetError::WrongType("bool"));
+        }
+        if key == "tabs.hidden" {
+            let mut out: Vec<&str> = Vec::new();
+            for v in value.as_array().ok_or(SetError::WrongType("array"))? {
+                let id = v.as_str().ok_or(SetError::WrongType("string"))?;
+                if !crate::shell::tabs::HIDEABLE.contains(&id) {
+                    return Err(SetError::NotAnOption);
+                }
+                if !out.contains(&id) {
+                    out.push(id);
+                }
+            }
+            return Ok(one(key, json!(out)));
+        }
         let Some(row) = sc.row_for_key(key) else {
             return if EXTRA_WRITABLE.contains(&key) { Ok(one(key, value.clone())) } else { Err(SetError::UnknownKey(key.to_string())) };
         };

@@ -789,6 +789,12 @@ impl<B: Backend, C: Clock> Shell<B, C> {
     /// Settings > Modules: a module that is off hides its tab (live, from settings:changed).
     pub(super) fn apply_modules(&mut self) {
         let mut changed = false;
+        // the Home tab is as tall as the parts that are on (Settings > Modules > What is on Home)
+        let home_h = crate::panel::a::home_mods::body_h(|k| self.s.raw.get(k).cloned());
+        if self.tabs.home_h != Some(home_h) {
+            self.tabs.home_h = Some(home_h);
+            changed = self.tabs.cur.as_deref() == Some("home");
+        }
         let ids: Vec<String> = self.tabs.list.iter().map(|t| t.spec.id.clone()).collect();
         for id in ids {
             let off = tab_off(&id, &self.s);

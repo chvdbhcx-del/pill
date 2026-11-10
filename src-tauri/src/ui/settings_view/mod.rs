@@ -30,6 +30,7 @@ mod cw1;
 mod cw2;
 mod cw3;
 mod cw3b;
+mod cw_home;
 mod customacts;
 mod prim;
 mod replies;
@@ -272,3 +273,5 @@ impl View for SettingsView {
 mod tests2;
 #[cfg(test)]
 mod tests_motion;
+#[cfg(test)]
+mod tests_home;
