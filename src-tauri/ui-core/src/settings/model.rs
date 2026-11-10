@@ -267,6 +267,14 @@ impl SettingsModel {
             }
             return Ok(one(key, json!(out)));
         }
+        if key == "phone.mutedApps" {
+            // package names from the Phone page's app chips
+            let list = value.as_array().ok_or(SetError::WrongType("array"))?;
+            if list.len() > 500 || list.iter().any(|v| v.as_str().map_or(true, |s| s.is_empty() || s.len() > 120)) {
+                return Err(SetError::WrongType("list of package names"));
+            }
+            return Ok(one(key, value.clone()));
+        }
         let Some(row) = sc.row_for_key(key) else {
             return if EXTRA_WRITABLE.contains(&key) { Ok(one(key, value.clone())) } else { Err(SetError::UnknownKey(key.to_string())) };
         };
