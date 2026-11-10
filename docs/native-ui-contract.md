@@ -81,9 +81,9 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `media_select` | `id: Option<String>` | `()` | media.rs |
 | `media_control` | `action: String` | `()` | media.rs |
 | `media_seek` | `ms: u64` | `()` | media.rs |
-| `media_volume_get` | - | `Volume` | media.rs |
-| `media_volume_set` | `v: u32` | `()` | media.rs |
-| `media_mute` | `muted: bool` | `()` | media.rs |
+| `media_volume_get` | `target: Option<String>` | `Volume` | media.rs |
+| `media_volume_set` | `v: u32, target: Option<String>` | `()` | media.rs |
+| `media_mute` | `muted: bool, target: Option<String>` | `()` | media.rs |
 | `media_pause_updates` | - | `()` | media.rs |
 | `media_resume_updates` | - | `()` | media.rs |
 | `battery_state` | - | `Battery` | media.rs |

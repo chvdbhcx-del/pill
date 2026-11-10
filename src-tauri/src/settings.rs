@@ -47,6 +47,10 @@ pub(crate) fn defaults() -> Cfg {
     // quiet hours (src/quiet.js, Settings > Behavior): days are strings "0" (Sunday) .. "6"
     let Value::Object(quiet) = json!({ "quiet.on": false, "quiet.from": "22:00", "quiet.to": "07:00", "quiet.days": ["0", "1", "2", "3", "4", "5", "6"] }) else { unreachable!() };
     m.extend(quiet);
+    // audio sources (audio.rs, media.rs): perApp = the spectrum follows the player's own sound (process loopback), legacyPlayers = AIMP / Winamp
+    // as media sources, volumeTarget = what the Home volume strip controls ("master" computer | "player" the player's audio session)
+    let Value::Object(src) = json!({ "audio.perApp": true, "media.legacyPlayers": true, "audio.volumeTarget": "master" }) else { unreachable!() };
+    m.extend(src);
     m
 }
 

@@ -57,6 +57,7 @@ impl HomeView {
         let o = |r: Rect| r.offset(ox, oy);
         self.paint_player(cv, th, ox, oy);
         self.paint_volume(cv, th, ox, oy);
+        self.paint_target(cv, th, ox, oy);
         for (i, t) in self.v.tiles.iter().enumerate() {
             self.paint_tile(cv, th, o(L::tile(i)), Hit::Tile(i), t);
         }

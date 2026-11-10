@@ -24,6 +24,7 @@
 mod css;
 mod layout;
 mod paint;
+mod target;
 #[cfg(test)]
 mod tests;
 
@@ -83,6 +84,7 @@ enum Hit {
     Seek,
     Mute,
     Vol,
+    Target,
     Dev,
     Tile(usize),
     Add,
@@ -143,6 +145,8 @@ pub struct HomeView {
     glyph_f: Flow,
     vol_prev: f64,
     vol_kick: u8,
+    /// the "computer / player" switch of the volume strip (target.rs)
+    target: target::Target,
 }
 
 impl HomeView {
@@ -188,6 +192,7 @@ impl HomeView {
             glyph_f: Flow::new(1.0, Feel::FADE),
             vol_prev: 0.0,
             vol_kick: 0,
+            target: target::Target::new(),
         }
     }
 
@@ -204,7 +209,8 @@ impl HomeView {
         }
     }
 
-    fn run(&mut self, cx: &mut Cx, calls: Vec<BackendCall>) {
+    fn run(&mut self, cx: &mut Cx, mut calls: Vec<BackendCall>) {
+        self.target.retarget(&mut calls);
         self.base.calls.run(cx, calls);
     }
 
@@ -469,6 +475,9 @@ impl HomeView {
         if Rect::new(layout::VOL.x, layout::VOL.y - 4.0, layout::VOL.w, layout::VOL.h + 8.0).contains(x, y) {
             return Some(Hit::Vol);
         }
+        if target::rect().contains(x, y) {
+            return Some(Hit::Target);
+        }
         if layout::DEV.contains(x, y) {
             return Some(Hit::Dev);
         }
@@ -573,7 +582,7 @@ impl HomeView {
             f.step(dt_ms);
             busy |= f.moving();
         }
-        busy
+        busy | self.target.step(dt_ms)
     }
 
     fn activate(&mut self, h: Hit, cx: &mut Cx) {
@@ -583,6 +592,10 @@ impl HomeView {
             Hit::Next => self.act(cx, Action::Ctl(Ctl::Next)),
             Hit::Src => self.act(cx, Action::SourceClick),
             Hit::Mute => self.act(cx, Action::MuteClick),
+            Hit::Target => {
+                let write = self.target.toggle();
+                self.run(cx, vec![write, BackendCall::bare("media_volume_get")]); // the bar now shows the other volume
+            }
             Hit::Dev => self.act(cx, Action::DevToggle),
             Hit::Tile(i) => {
                 if let Some(t) = self.v.tiles.get(i).filter(|t| !t.soon) {
@@ -600,6 +613,7 @@ impl HomeView {
                 }
             }
             Hit::Seek | Hit::Vol => {}
+            // (Hit::Target is handled above)
         }
     }
 
@@ -802,7 +816,12 @@ impl View for HomeView {
         self.advance(cx);
         match self.base.classify(msg, cx) {
             Incoming::Event { name, payload } => {
-                let calls = self.model.on_event(&name, &payload);
+                let mut calls = if self.target.ignores_event(&name) { vec![] } else { self.model.on_event(&name, &payload) };
+                if (self.target.is_player() && name == "media:changed") // another player: another audio session
+                    || (name == "settings:changed" && self.target.load(&payload)) // switched in Settings > Sound
+                {
+                    calls.push(BackendCall::bare("media_volume_get"));
+                }
                 self.run(cx, calls);
             }
             Incoming::Result { cmd, args, result } => {
@@ -812,7 +831,10 @@ impl View for HomeView {
                     Err(_) if cmd == "media_volume_set" => Value::Null,
                     Err(_) => return Response::NONE,
                 };
-                let calls = self.model.on_result(cmd, &args, &value, tr(cx));
+                let mut calls = self.model.on_result(cmd, &args, &value, tr(cx));
+                if cmd == "settings_get" && self.target.load(&value) {
+                    calls.push(BackendCall::bare("media_volume_get")); // switched in Settings > Sound
+                }
                 self.run(cx, calls);
             }
             Incoming::Tick(_) => {}

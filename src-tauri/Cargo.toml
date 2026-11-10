@@ -94,6 +94,7 @@ windows = { version = "0.58", features = [
   "Win32_System_Com_StructuredStorage", # ui/host: drag-and-drop STGMEDIUM
   "Win32_UI_Accessibility", # ui/host/uia.rs: screen readers (UI Automation provider)
   "Win32_System_Variant",
+  "Win32_Storage_Packaging_Appx", # player_audio.rs: package family name of a media player (match a Store app to its process)
   # @windows-features
 ] }
 

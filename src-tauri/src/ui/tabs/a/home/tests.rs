@@ -330,3 +330,5 @@ fn dark_and_light_differ_and_scale_two_is_twice_as_big() {
     let c = shoot(&mut *r.sim.view, &r.sim.cx, &Theme::pill_dark(), 2.0, "home", "probe-x2");
     assert_eq!((c.w, c.h), (a.w * 2, a.h * 2));
 }
+
+mod chip;
