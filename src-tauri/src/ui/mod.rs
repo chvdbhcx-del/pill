@@ -14,3 +14,4 @@ pub mod tabs;
 pub mod settings_view;
 #[allow(dead_code)]
 pub mod island;
+pub mod liquid;

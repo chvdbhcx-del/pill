@@ -12,8 +12,8 @@ use super::tabfx::Act;
 use crate::ui::tabs::fx::TabFx;
 use crate::ui::view::{Cx, CursorShape, DropEvent, DropPayload, DropPhase, Msg, ProximityEvent, Ticket, View, Waker};
 use glasskit::canvas::{scale_about, translation, mul, Canvas};
-use glasskit::ease::Spring;
 use glasskit::geom::Rect;
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::input::{Cursor, InputEvent, KeyCode, MouseButton, Response};
 use glasskit::theme::Theme;
 use pill_ui_core::live::model::{Action, Query};
@@ -159,23 +159,10 @@ pub struct IslandView {
     fast_hz: f32,
     /// springs behind `live_a` / `panel_a` (fade-out) / `flare_a` and the tab highlights (`tab_k`): critically damped, they keep their velocity
     /// when the target flips half-way
-    live_sp: Spring,
-    panel_sp: Spring,
-    flare_sp: Spring,
-    tab_sp: HashMap<String, Spring>,
-}
-
-/// A critically damped spring that settles (95 %) in about `settle_ms`.
-fn spring_ms(x: f32, settle_ms: f64) -> Spring {
-    let w = 4.74 / (settle_ms as f32 / 1000.0);
-    Spring::new(x, w * w, 1.0).with_eps(0.002)
-}
-
-/// One step of `sp` towards `target` after `dt_ms`; the new value. Reduced motion lands on the target at once (the spring does that itself).
-fn chase(sp: &mut Spring, target: f32, dt_ms: f64) -> f32 {
-    sp.set_target(target);
-    sp.step((dt_ms / 1000.0) as f32);
-    sp.x
+    live_sp: Flow,
+    panel_sp: Flow,
+    flare_sp: Flow,
+    tab_sp: HashMap<String, Flow>,
 }
 
 /// How long the full frame rate stays after the last real movement.
@@ -235,9 +222,9 @@ impl IslandView {
             busy_at: cx.now_ms,
             cap: None,
             fast_hz: 0.0,
-            live_sp: spring_ms(1.0, mo::LIVE_FADE_MS),
-            panel_sp: spring_ms(0.0, mo::PANEL_OUT_MS),
-            flare_sp: spring_ms(1.0, 200.0),
+            live_sp: Flow::new(1.0, Feel::FADE.within(mo::LIVE_FADE_MS as f32)),
+            panel_sp: Flow::new(0.0, Feel::FADE.within(mo::PANEL_OUT_MS as f32)),
+            flare_sp: Flow::new(1.0, Feel::FADE.within(200.0)),
             tab_sp: HashMap::new(),
             now: cx.now_ms,
             started: false,
@@ -683,15 +670,15 @@ impl View for IslandView {
         self.exec(cx);
         let v = self.core.shell.view();
         let reduced = v.reduced;
-        self.live_a = chase(&mut self.live_sp, if v.live.visible { 1.0 } else { 0.0 }, dt_ms);
+        self.live_a = self.live_sp.chase(if v.live.visible { 1.0 } else { 0.0 }, dt_ms);
         self.panel_a = if v.panel.visible {
             let a = mo::PANEL_IN.at(v.panel.shown_age_ms, reduced).opacity as f32;
             self.panel_sp.jump(a); // when the panel leaves, the fade-out springs on from where the entry curve was
             a
         } else {
-            chase(&mut self.panel_sp, 0.0, dt_ms)
+            self.panel_sp.chase(0.0, dt_ms)
         };
-        self.flare_a = chase(&mut self.flare_sp, if v.body.flare_visible { 1.0 } else { 0.0 }, dt_ms);
+        self.flare_a = self.flare_sp.chase(if v.body.flare_visible { 1.0 } else { 0.0 }, dt_ms);
         // equaliser bars follow the music; with no audio frames for a while they ease down
         let goal = if now - self.eq_seen < EQ_FRESH_MS { self.eq_target } else { [0.0; 4] };
         for (cur, g) in self.eq.iter_mut().zip(goal) {
@@ -700,8 +687,8 @@ impl View for IslandView {
         let mut tabs_moving = false;
         for t in &v.tabs {
             let target = if t.active { 1.0 } else { 0.0 };
-            let sp = self.tab_sp.entry(t.id.clone()).or_insert_with(|| spring_ms(target, mo::DUR_MED_MS));
-            let nk = chase(sp, target, dt_ms);
+            let sp = self.tab_sp.entry(t.id.clone()).or_insert_with(|| Flow::new(target, Feel::FADE.within(mo::DUR_MED_MS as f32)));
+            let nk = sp.chase(target, dt_ms);
             tabs_moving |= nk != target;
             self.tab_k.insert(t.id.clone(), nk);
         }
@@ -1191,26 +1178,6 @@ mod eq_tests {
         assert!(l[3] > 0.4 && l[0] == 0.0, "{l:?}");
         assert!(eq_levels(&[1.0; 32]).iter().all(|&x| x == 1.0), "clamped to 1");
         assert_eq!(eq_levels(&[0.5; 3]).len(), 4, "a short spectrum does not panic");
-    }
-
-    #[test]
-    fn a_fade_keeps_its_momentum_when_it_is_reversed_and_settles_in_about_its_time() {
-        let _m = crate::ui::host::testing::motion_on();
-        let mut sp = spring_ms(0.0, 200.0);
-        let mut x = 0.0;
-        for _ in 0..6 {
-            x = chase(&mut sp, 1.0, 16.0); // ~100 ms towards 1
-        }
-        assert!(x > 0.15 && x < 0.9 && sp.v > 0.0, "{x} {}", sp.v);
-        let after = chase(&mut sp, 0.0, 16.0); // flipped: it carries on a little, then turns (no kink)
-        assert!(after >= x - 1e-4, "inertia: {after} vs {x}");
-        let mut sp = spring_ms(0.0, 200.0);
-        let mut t = 0.0;
-        while chase(&mut sp, 1.0, 8.0) < 0.95 {
-            t += 8.0;
-            assert!(t < 400.0, "too slow");
-        }
-        assert!(t > 100.0, "settles near its time, not at once: {t} ms");
     }
 
     #[test]
