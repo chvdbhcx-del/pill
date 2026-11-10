@@ -32,8 +32,8 @@ use super::draw::{decode_data_url, Source};
 use crate::ui::view::{Cx, DropEvent, DropPayload, DropPhase, Msg, View};
 use glasskit::canvas::Canvas;
 use glasskit::color::Color;
-use glasskit::controls::Interact;
-use glasskit::ease::{curves, Tween};
+use super::touch::Touch;
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{Cursor, InputEvent, KeyCode, MouseButton, Response};
 use glasskit::lang::Lang;
@@ -107,28 +107,40 @@ pub struct HomeView {
     v: hm::View,
     clock: Option<f64>,
     started: bool,
-    hov: HashMap<Hit, Interact>,
+    hov: HashMap<Hit, Touch>,
     hover: Option<Hit>,
     down: Option<Hit>,
     seek_drag: bool,
     vol_drag: bool,
     vol_focus: bool,
     menu_open: bool,
-    menu_a: Tween<f32>,
-    menu_p: Tween<f32>,
+    menu_a: Flow,
+    menu_p: Flow,
+    /// the device list highlight slides from row to row (y in list content px, how lit)
+    mh_y: Flow,
+    mh_a: Flow,
     menu_scroll: ScrollView,
     art_key: Option<String>,
     art_prev: Option<String>,
     cov_last: Option<CoverColors>,
     cov_from: Option<(Color, Color)>,
     cov_to: Option<(Color, Color)>,
-    cov_t: Tween<f32>,
+    cov_t: Flow,
     strip: ScrollState,
     apps: Vec<AppDraw>,
     add_x: f32,
     flip_from: HashMap<i64, f32>,
-    off: HashMap<i64, Tween<f32>>,
-    gone: HashMap<i64, Tween<f32>>,
+    off: HashMap<i64, Flow>,
+    gone: HashMap<i64, Flow>,
+    /// the seek fill and the volume fill / knob (0..1) glide to the model value; the knob grows while grabbed
+    seek_f: Flow,
+    vol_f: Flow,
+    vol_grab: Flow,
+    seek_init: bool,
+    vol_seen: bool,
+    /// the mute icon cross-fades when its glyph changes: (previous, current), 0 -> 1
+    glyph: (&'static str, &'static str),
+    glyph_f: Flow,
     vol_prev: f64,
     vol_kick: u8,
 }
@@ -150,21 +162,30 @@ impl HomeView {
             vol_drag: false,
             vol_focus: false,
             menu_open: false,
-            menu_a: Tween::at_rest(0.0),
-            menu_p: Tween::at_rest(0.0),
+            menu_a: Flow::new(0.0, Feel::FADE),
+            menu_p: Flow::new(0.0, Feel::FLOW),
+            mh_y: Flow::px(0.0, Feel::FLOW),
+            mh_a: Flow::new(0.0, Feel::FADE),
             menu_scroll: ScrollView::new(),
             art_key: None,
             art_prev: None,
             cov_last: None,
             cov_from: None,
             cov_to: None,
-            cov_t: Tween::at_rest(1.0),
+            cov_t: Flow::new(1.0, Feel::FADE.within(600.0)),
             strip: ScrollState::new(),
             apps: vec![],
             add_x: 0.0,
             flip_from: HashMap::new(),
             off: HashMap::new(),
             gone: HashMap::new(),
+            seek_f: Flow::new(0.0, Feel::DRAG),
+            vol_f: Flow::new(0.0, Feel::DRAG),
+            vol_grab: Flow::new(0.0, Feel::SNAP),
+            seek_init: false,
+            vol_seen: false,
+            glyph: ("", ""),
+            glyph_f: Flow::new(1.0, Feel::FADE),
             vol_prev: 0.0,
             vol_kick: 0,
         }
@@ -288,11 +309,12 @@ impl HomeView {
         match (cur, to) {
             (Some(from), Some(_)) => {
                 self.cov_from = Some(from);
-                self.cov_t = Tween::new(0.0, 1.0, 0.6, curves::EASE_OUT);
+                self.cov_t.jump(0.0);
+                self.cov_t.to(1.0);
             }
             _ => {
                 self.cov_from = None;
-                self.cov_t = Tween::at_rest(1.0);
+                self.cov_t.jump(1.0);
             }
         }
         self.cov_to = to;
@@ -302,8 +324,8 @@ impl HomeView {
     fn cov_tint(&self) -> Option<(Color, Color)> {
         let to = self.cov_to?;
         match self.cov_from {
-            Some(f) if !self.cov_t.finished() => {
-                let t = self.cov_t.value();
+            Some(f) if self.cov_t.moving() => {
+                let t = self.cov_t.at01();
                 Some((f.0.mix(to.0, t), f.1.mix(to.1, t)))
             }
             _ => Some(to),
@@ -315,12 +337,12 @@ impl HomeView {
         if open != self.menu_open {
             self.menu_open = open;
             if open {
-                self.menu_a.retarget(1.0, 0.22, curves::EASE_OUT);
-                self.menu_p.retarget(1.0, 0.38, curves::SPRING_SETTLE);
+                self.menu_a.to(1.0);
+                self.menu_p.to(1.0);
                 self.menu_scroll.state.scroll_to(0.0, false);
             } else {
-                self.menu_a.retarget(0.0, 0.14, curves::EASE_IN);
-                self.menu_p.retarget(0.0, 0.14, curves::EASE_IN);
+                self.menu_a.to(0.0);
+                self.menu_p.to(0.0);
             }
         }
         let n = self.v.devices.items.len();
@@ -338,20 +360,32 @@ impl HomeView {
         let scroll = self.strip.offset();
         let mut out = Vec::with_capacity(self.v.launcher.tiles.len());
         for (i, t) in self.v.launcher.tiles.iter().enumerate() {
-            let off = self.off.entry(t.id).or_insert_with(|| Tween::at_rest(t.offset_x));
-            if t.dragging {
-                off.jump(t.offset_x);
-            } else {
-                off.retarget(t.offset_x, 0.2, curves::EASE_OUT_EXPO);
+            let off = self.off.entry(t.id).or_insert_with(|| Flow::px(t.offset_x, Feel::FLOW));
+            // the dragged icon follows the pointer heavily, the others slide aside like water
+            let feel = if t.dragging { Feel::DRAG } else { Feel::FLOW };
+            if off.feel() != feel {
+                off.set_feel(feel);
             }
-            let mut rect = layout::app(i).offset(off.value() - scroll, 0.0);
+            off.to(t.offset_x);
+            let mut rect = layout::app(i).offset(off.at() - scroll, 0.0);
             if flip_on {
                 if let Some(ox) = self.flip_from.get(&t.id) {
                     rect.x = ox + (rect.x - ox) * flip.p;
                 }
             }
             let pop = self.base.player.sample(&format!("link:{}", t.id));
-            let g = if t.gone { self.gone.entry(t.id).or_insert_with(|| Tween::new(0.0, 1.0, 0.16, curves::EASE_OUT)).value() } else { 0.0 };
+            let g = if t.gone {
+                self.gone
+                    .entry(t.id)
+                    .or_insert_with(|| {
+                        let mut f = Flow::new(0.0, Feel::FADE);
+                        f.to(1.0);
+                        f
+                    })
+                    .at01()
+            } else {
+                0.0
+            };
             let missing = if t.missing { 0.4 } else { 1.0 };
             out.push(AppDraw {
                 id: t.id,
@@ -380,7 +414,7 @@ impl HomeView {
     }
 
     fn menu_visible(&self) -> bool {
-        self.menu_open || self.menu_a.value() > 0.01
+        self.menu_open || self.menu_a.at() > 0.01
     }
 
     fn hit(&self, p: Pt) -> Option<Hit> {
@@ -463,10 +497,20 @@ impl HomeView {
             }
         }
         if let Some(n) = h {
-            self.hov.entry(n).or_insert_with(Interact::new).set_hover(true);
+            self.hov.entry(n).or_insert_with(Touch::new).set_hover(true);
             if let Hit::AppX(id) = n {
-                self.hov.entry(Hit::App(id)).or_insert_with(Interact::new).set_hover(true);
+                self.hov.entry(Hit::App(id)).or_insert_with(Touch::new).set_hover(true);
             }
+        }
+        if let Some(Hit::MenuItem(i)) = h {
+            let y = i as f32 * layout::MENU_ROW;
+            if self.mh_a.target() < 0.5 && !self.mh_a.moving() {
+                self.mh_y.jump(y);
+            }
+            self.mh_y.to(y);
+            self.mh_a.to(1.0);
+        } else {
+            self.mh_a.to(0.0);
         }
         self.hover = h;
         true
@@ -474,7 +518,7 @@ impl HomeView {
 
     fn set_press(&mut self, h: Option<Hit>, on: bool) {
         if let Some(h) = h {
-            self.hov.entry(h).or_insert_with(Interact::new).set_press(on);
+            self.hov.entry(h).or_insert_with(Touch::new).set_press(on);
         }
     }
 
@@ -492,6 +536,44 @@ impl HomeView {
 
     fn vol_value(&self, x: f32) -> f32 {
         hm::vol_at(x, layout::VOL.x, layout::VOL.w, layout::VOL.w)
+    }
+
+    /// Advance every spring of the tab (from `step`, after the view-model is fresh); true while one still moves.
+    fn step_flows(&mut self, dt_ms: f64) -> bool {
+        // the bars glide to the model's value: at once the first time (no slide in from empty), quick while the pointer holds them
+        let (seek, vol) = (self.v.player.seek.fill_pct as f32 / 100.0, (self.v.volume.shown / 100.0) as f32);
+        if !self.seek_init || self.v.player.none {
+            self.seek_init = !self.v.player.none;
+            self.seek_f.jump(seek);
+        }
+        if !self.vol_seen {
+            self.vol_seen = vol > 0.0;
+            self.vol_f.jump(vol);
+        }
+        for (f, held) in [(&mut self.seek_f, self.seek_drag), (&mut self.vol_f, self.vol_drag)] {
+            let feel = if held { Feel::SNAP } else { Feel::DRAG };
+            if f.feel() != feel {
+                f.set_feel(feel);
+            }
+        }
+        self.seek_f.to(seek);
+        self.vol_f.to(vol);
+        self.vol_grab.to(self.vol_drag as u8 as f32);
+        if self.v.volume.glyph != self.glyph.1 {
+            self.glyph = (if self.glyph.1.is_empty() { self.v.volume.glyph } else { self.glyph.1 }, self.v.volume.glyph);
+            self.glyph_f.jump(if self.glyph.0 == self.glyph.1 { 1.0 } else { 0.0 });
+            self.glyph_f.to(1.0);
+        }
+        let mut busy = false;
+        for f in [&mut self.seek_f, &mut self.vol_f, &mut self.vol_grab, &mut self.glyph_f, &mut self.menu_a, &mut self.menu_p, &mut self.mh_y, &mut self.mh_a, &mut self.cov_t]
+            .into_iter()
+            .chain(self.off.values_mut())
+            .chain(self.gone.values_mut())
+        {
+            f.step(dt_ms);
+            busy |= f.moving();
+        }
+        busy
     }
 
     fn activate(&mut self, h: Hit, cx: &mut Cx) {
@@ -694,6 +776,8 @@ impl View for HomeView {
     fn on_show(&mut self, cx: &mut Cx) {
         self.base.show(cx, &["media:changed", "live:volume", "settings:changed", "pill:show", "pill:hide", "launcher:changed"], TICK_MS);
         self.clock = Some(cx.now_ms);
+        self.seek_init = false;
+        self.vol_seen = false;
         let mut calls = vec![];
         if !self.started {
             self.started = true;
@@ -810,13 +894,9 @@ impl View for HomeView {
         let dt = (dt_ms / 1000.0) as f32;
         let mut busy = self.base.player.step(dt_ms);
         for i in self.hov.values_mut() {
-            busy |= i.step(dt);
+            busy |= i.step(dt_ms);
         }
-        busy |= self.menu_a.step(dt) | self.menu_p.step(dt) | self.cov_t.step(dt);
         busy |= self.menu_scroll.step(dt) | self.strip.step(dt);
-        for t in self.off.values_mut().chain(self.gone.values_mut()) {
-            busy |= t.step(dt);
-        }
         // the model eases the volume itself: keep frames coming while the shown value still moves
         self.v = self.model.view(tr(cx));
         let shown = self.v.volume.shown;
@@ -824,6 +904,7 @@ impl View for HomeView {
         self.vol_prev = shown;
         self.vol_kick = self.vol_kick.saturating_sub(1);
         busy |= self.v.launcher.tiles.iter().any(|t| t.gone);
+        busy |= self.step_flows(dt_ms);
         self.sync_menu();
         self.compute_apps();
         busy

@@ -197,6 +197,27 @@ fn frames_stop_when_settled_and_reduced_motion_plays_no_cues() {
     assert!(!r.sim.frame.wants_frame(), "settled = idle");
 }
 
+#[test]
+fn a_row_highlight_glides_over_many_frames_turns_around_and_the_tab_idles() {
+    let _m = motion(false);
+    let mut r = Rig::open("text");
+    assert!(!r.sim.frame.wants_frame());
+    let p = r.row(1);
+    r.mv(p);
+    // 240 Hz frames: the hover fade is a spring of about 200 ms, never a single step
+    let mut n = 0;
+    while n < 20 && r.sim.step_frame() {
+        n += 1;
+    }
+    assert_eq!(n, 20, "still moving after 20 frames");
+    // leaving half-way turns it around; it still comes to rest
+    r.sim.send(&InputEvent::MouseLeave);
+    r.mv((260.0, 2.0));
+    let rest = r.sim.run(1500);
+    assert!(rest > 10 && rest < 1500, "settles smoothly: {rest} frames");
+    assert!(!r.sim.frame.wants_frame(), "idle again");
+}
+
 // ------------------------------------------------------------------------------------------------------------------ pixels
 
 fn shoot_all(r: &mut Rig, name: &str) {
