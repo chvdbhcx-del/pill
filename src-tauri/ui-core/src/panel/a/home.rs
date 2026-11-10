@@ -6,13 +6,15 @@
 //! `media_volume_get|set {v}`, `media_mute {muted}`, `media_devices`, `media_set_default_device {id}`,
 //! `media_pause_updates|resume_updates`, `settings_get`. Events: `media:changed`, `live:volume`, `settings:changed`,
 //! `pill:show|hide`, plus the launcher's (`launcher:changed`, `tauri://drag-*`).
-//! Settings: `musicPill` (title | mini), `module.media`, `module.launcher`, `live.music`.
+//! Settings: `musicPill` (title | mini), `module.media`, `module.launcher`, `live.music`, `home.player` (mirror | fill | compact), `music.lyrics`, `home.lyrics`
+//! (the style and the lyrics column: [`super::home_player`]; `lyrics:changed` / `lyrics_state` bring the lines).
 //!
 //! Time: the model keeps its own monotonic clock advanced by [`Home::tick`]; the seek position is `base + (now - at)` of that clock,
 //! so the renderer only has to call `tick(dt)` once per frame while [`Home::animating`] is true.
 
 use super::anim::Anim;
 use super::cover::{CoverCache, CoverColors};
+use super::home_player::{HomeLyrics, LyricsView, PlayerStyle};
 use super::launcher::{self, Launcher};
 use super::util::fmt_ms;
 use super::{bool_of, i64_of, str_of, BackendCall, Cfg, Fx, FxQueue, LiveBody, LiveSpec, MusicMode, Tr};
@@ -208,6 +210,10 @@ pub struct Player {
     pub prev_title: String,
     pub play_title: String,
     pub next_title: String,
+    /// `home.player`
+    pub style: PlayerStyle,
+    /// The lyrics column (`music.lyrics` + `home.lyrics`, lines of the playing track known); `None` = no column.
+    pub lyrics: Option<LyricsView>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -303,6 +309,9 @@ pub struct Home {
     art_key: Option<String>,
     launcher: Launcher,
     fx: FxQueue,
+    // player style + lyrics column
+    style: PlayerStyle,
+    hl: HomeLyrics,
 }
 
 impl Default for Home {
@@ -355,12 +364,14 @@ impl Home {
             art_key: None,
             launcher: Launcher::new(),
             fx: FxQueue::default(),
+            style: PlayerStyle::default(),
+            hl: HomeLyrics::default(),
         }
     }
 
     /// Calls to run once at startup (`media_state` for the first state, `settings_get` for the mode).
     pub fn init_calls(&mut self) -> Vec<BackendCall> {
-        vec![BackendCall::new("media_state", json!({ "known": null })), BackendCall::bare("settings_get")]
+        vec![BackendCall::new("media_state", json!({ "known": null })), BackendCall::bare("settings_get"), BackendCall::bare("lyrics_state")]
     }
 
     pub fn launcher_mut(&mut self) -> &mut Launcher {
@@ -417,6 +428,8 @@ impl Home {
     fn apply_cfg(&mut self, p: &Value) -> Vec<BackendCall> {
         self.cfg.apply(p);
         self.mode = if self.cfg.str("musicPill") == "mini" { MusicMode::Mini } else { MusicMode::Title };
+        self.style = PlayerStyle::from_setting(self.cfg.str("home.player"));
+        self.hl.configure(self.cfg.truthy("music.lyrics"), self.cfg.not_false("home.lyrics"));
         self.launcher.configure(self.cfg.not_false("module.launcher"), self.reduce());
         let media = self.media_on();
         let mut calls = vec![];
@@ -450,6 +463,7 @@ impl Home {
         }
         self.base_pos = m.position_ms;
         self.base_at = self.mono;
+        self.hl.track(&m.artist, &m.title, &m.album, m.duration_ms.max(0) as u64, m.has_session);
         self.st = Some(m);
         self.render();
         self.update_live();
@@ -714,6 +728,10 @@ impl Home {
                 vec![BackendCall::bare("media_resume_updates"), BackendCall::bare("settings_get")]
             }
             "settings:changed" => self.load_mode(Some(payload)),
+            "lyrics:changed" => {
+                self.hl.payload(payload);
+                vec![]
+            }
             _ => self.launcher.on_event(name, payload),
         }
     }
@@ -722,6 +740,10 @@ impl Home {
     pub fn on_result(&mut self, cmd: &str, args: &Value, res: &Value, tr: &dyn Tr) -> Vec<BackendCall> {
         match cmd {
             "settings_get" => self.load_mode(Some(res)).into_iter().collect(),
+            "lyrics_state" => {
+                self.hl.payload(res);
+                vec![]
+            }
             "media_state" => {
                 if self.cover_fetch {
                     self.cover_fetch = false;
@@ -957,6 +979,8 @@ impl Home {
                 prev_title: tr.t("Назад", "Previous"),
                 play_title: tr.t("Пауза / пуск", "Play / pause"),
                 next_title: tr.t("Вперёд", "Next"),
+                style: self.style,
+                lyrics: if has { self.hl.view(p) } else { None },
             },
             tiles: TILES
                 .iter()
@@ -1008,6 +1032,32 @@ mod tests {
         let c = h.init_calls();
         assert_eq!(c[0], BackendCall::new("media_state", json!({ "known": null })));
         assert_eq!(c[1].cmd, "settings_get");
+        assert_eq!(c[2].cmd, "lyrics_state", "the lyrics that arrived before the tab existed");
+    }
+
+    #[test]
+    fn the_player_style_and_the_lyrics_column_follow_the_settings_and_the_track() {
+        use crate::live::lyrics::{parse_lrc, track_key};
+        let mut h = open(); // Band - Song (LP), 200 s, at 10 s
+        let v = h.view(&EnTr).player;
+        assert_eq!((v.style, v.lyrics.is_some()), (PlayerStyle::Mirror, false), "defaults: the mirror, no lyrics");
+        h.on_event("settings:changed", &json!({ "home.player": "compact", "music.lyrics": true }));
+        assert_eq!(h.view(&EnTr).player.style, PlayerStyle::Compact);
+        let lrc = parse_lrc("[00:05.00]one\n[00:12.00]two\n[00:20.00]three");
+        h.on_event("lyrics:changed", &lrc.to_payload("someone else"));
+        assert!(h.view(&EnTr).player.lyrics.is_none(), "another track's lines never show");
+        h.on_event("lyrics:changed", &lrc.to_payload(&track_key("Band", "Song", "LP", 200_000)));
+        let col = h.view(&EnTr).player.lyrics.expect("column");
+        assert_eq!((col.cur, col.lines.len()), (Some(0), 3));
+        h.tick(3000.0); // 13 s: the second line
+        assert_eq!(h.view(&EnTr).player.lyrics.unwrap().cur, Some(1), "the column follows the interpolated position");
+        h.on_event("settings:changed", &json!({ "music.lyrics": true, "home.lyrics": false }));
+        assert!(h.view(&EnTr).player.lyrics.is_none(), "home.lyrics off");
+        h.on_event("settings:changed", &json!({ "music.lyrics": false }));
+        assert!(h.view(&EnTr).player.lyrics.is_none(), "music.lyrics off");
+        h.on_result("lyrics_state", &Value::Null, &lrc.to_payload(&track_key("Band", "Song", "LP", 200_000)), &EnTr);
+        h.on_event("settings:changed", &json!({ "music.lyrics": true }));
+        assert!(h.view(&EnTr).player.lyrics.is_some(), "an answer to lyrics_state counts like the event");
     }
 
     #[test]

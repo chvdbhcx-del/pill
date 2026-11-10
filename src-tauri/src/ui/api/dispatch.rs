@@ -48,6 +48,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         "whatsnew_check" => ok(whatsnew::whatsnew_check()),
         "report_problem" => ok(report::report_problem()),
         "media_state" => ok(blk(media::media_state(a.opt("known")?))),
+        "lyrics_state" => ok(lyrics::lyrics_state()),
         "media_sessions" => ok(blk(media::media_sessions())),
         "media_select" => ok(blk(media::media_select(a.opt("id")?))),
         "media_control" => ok(blk(media::media_control(a.req("action")?))),

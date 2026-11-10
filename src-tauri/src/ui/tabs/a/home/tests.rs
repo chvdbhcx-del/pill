@@ -46,12 +46,19 @@ struct Rig {
 
 impl Rig {
     fn with(playing: Option<bool>, cover: bool, n_links: usize) -> Rig {
+        // the tests below click the original card (the default style is the mirror)
+        Rig::with_cfg(playing, cover, n_links, json!({ "home.player": "compact" }), None)
+    }
+    fn with_cfg(playing: Option<bool>, cover: bool, n_links: usize, cfg: Value, lyrics: Option<Value>) -> Rig {
         let (svc, f) = Services::fake();
+        if let Some(l) = lyrics {
+            f.api.reply("lyrics_state", Ok(l));
+        }
         match playing {
             Some(p) => f.api.reply("media_state", Ok(media(p, cover))),
             None => f.api.reply("media_state", Ok(json!({ "has_session": false }))),
         };
-        f.api.reply("settings_get", Ok(json!({})));
+        f.api.reply("settings_get", Ok(cfg));
         f.api.reply("media_sessions", Ok(json!([{ "id": "s1", "app": "Spotify.exe", "title": "Midnight City", "artist": "M83", "playing": true, "selected": true }])));
         f.api.reply("media_volume_get", Ok(json!({ "volume": 42, "muted": false })));
         f.api.reply("media_devices", Ok(json!([{ "id": "d1", "name": "Speakers (Realtek)", "default": true }, { "id": "d2", "name": "Headphones (USB)", "default": false }])));
@@ -136,6 +143,55 @@ fn transport_buttons_send_media_control() {
     assert_eq!(acts.len(), 3, "{acts:?}");
     assert!(acts[0].contains("play") || acts[0].contains("pause"), "{acts:?}");
     assert!(acts[1].contains("next") && acts[2].contains("prev"), "{acts:?}");
+}
+
+fn lyric_payload() -> Value {
+    pill_ui_core::live::lyrics::parse_lrc("[01:00.00]before\n[01:20.00]now\n[02:00.00]after").to_payload(&pill_ui_core::live::lyrics::track_key("M83", "Midnight City", "Hurry Up", 244_000))
+}
+
+#[test]
+fn the_default_mirror_card_answers_clicks_where_it_draws_its_buttons() {
+    let _m = motion(false);
+    let mut r = Rig::with_cfg(Some(true), false, 4, json!({}), None); // no style set: the mirror
+    let g = player::Geo::new(pill_ui_core::panel::a::home_player::PlayerStyle::Mirror, false);
+    assert_ne!(g.main, layout::MAIN, "sanity: the mirror moved the buttons");
+    r.click(ctr(g.main));
+    r.click(ctr(g.next));
+    r.click(ctr(g.prev));
+    let acts: Vec<String> = r.calls("media_control").iter().map(|a| a["action"].as_str().unwrap().to_string()).collect();
+    assert_eq!(acts.len(), 3, "{acts:?}");
+    assert!(acts[1].contains("next") && acts[2].contains("prev"), "{acts:?}");
+    r.click((g.seek.x + g.seek.w / 2.0, g.seek.cy()));
+    let ms = r.calls("media_seek")[0]["ms"].as_i64().unwrap();
+    assert!((ms - 122_000).abs() < 8_000, "half of 244 s, got {ms}");
+}
+
+#[test]
+fn the_lyrics_column_moves_the_buttons_to_make_room() {
+    use pill_ui_core::panel::a::home_player::PlayerStyle;
+    let _m = motion(false);
+    let cfg = json!({ "home.player": "compact", "music.lyrics": true });
+    let mut r = Rig::with_cfg(Some(true), false, 4, cfg, Some(lyric_payload()));
+    let with = player::Geo::new(PlayerStyle::Compact, true);
+    assert!(with.next.x < layout::NEXT.x, "the transport shrank into the part left of the column");
+    r.click(ctr(layout::NEXT)); // where the old card had it: now empty space
+    assert!(r.calls("media_control").is_empty(), "{:?}", r.calls("media_control"));
+    r.click(ctr(with.next));
+    let acts = r.calls("media_control");
+    assert_eq!(acts.len(), 1);
+    assert_eq!(acts[0]["action"], "next");
+    // lyrics switched off: the card is whole again
+    let mut r2 = Rig::with_cfg(Some(true), false, 4, json!({ "home.player": "compact" }), Some(lyric_payload()));
+    r2.click(ctr(layout::NEXT));
+    assert_eq!(r2.calls("media_control").len(), 1, "music.lyrics off: the lines are not used");
+}
+
+#[test]
+fn the_card_idles_once_the_style_and_the_column_have_settled() {
+    let _m = motion(false);
+    let mut r = Rig::with_cfg(Some(false), false, 4, json!({ "music.lyrics": true }), Some(lyric_payload()));
+    r.settle();
+    assert!(!r.sim.frame.wants_frame(), "a paused mirror card with a lyrics column keeps no frames coming");
 }
 
 #[test]
@@ -315,6 +371,38 @@ fn snapshots_of_the_typical_states() {
     r.mv(ctr(layout::app(1)));
     r.sim.run(120);
     shoot_all(&mut r, "hover-icon");
+}
+
+#[test]
+fn the_three_styles_and_the_lyrics_column_all_paint_and_look_different() {
+    let _m = motion(false);
+    let shot = |cfg: Value, lyrics: Option<Value>, theme: &Theme, name: &str| {
+        let mut r = Rig::with_cfg(Some(true), true, 3, cfg, lyrics);
+        r.settle();
+        r.sim.cx.scale = 1.0;
+        shoot(&mut *r.sim.view, &r.sim.cx, theme, 1.0, "home", name)
+    };
+    // sampled pixels of the player card that differ between two renders
+    let differ = |a: &glasskit::testkit::Image, b: &glasskit::testkit::Image| {
+        let mut n = 0;
+        for y in (0..154).step_by(3) {
+            for x in (0..412).step_by(3) {
+                n += (a.at(x as f32, y as f32) != b.at(x as f32, y as f32)) as usize;
+            }
+        }
+        n
+    };
+    let dark = Theme::pill_dark();
+    let compact = shot(json!({ "home.player": "compact" }), None, &dark, "style-compact");
+    let mirror = shot(json!({ "home.player": "mirror" }), None, &dark, "style-mirror");
+    let fill = shot(json!({ "home.player": "fill" }), None, &dark, "style-fill");
+    let lyrics = shot(json!({ "home.player": "mirror", "music.lyrics": true }), Some(lyric_payload()), &dark, "style-mirror-lyrics");
+    let light_fill = shot(json!({ "home.player": "fill" }), None, &Theme::pill_light(), "style-fill-light");
+    assert!(differ(&compact, &mirror) > 200, "mirror vs compact: {}", differ(&compact, &mirror));
+    assert!(differ(&compact, &fill) > 200, "fill vs compact: {}", differ(&compact, &fill));
+    assert!(differ(&mirror, &fill) > 200);
+    assert!(differ(&mirror, &lyrics) > 200, "the lyrics column and the narrower card change the picture");
+    assert!(differ(&fill, &light_fill) > 200);
 }
 
 #[test]

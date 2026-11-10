@@ -47,6 +47,9 @@ pub(crate) fn defaults() -> Cfg {
     // quiet hours (src/quiet.js, Settings > Behavior): days are strings "0" (Sunday) .. "6"
     let Value::Object(quiet) = json!({ "quiet.on": false, "quiet.from": "22:00", "quiet.to": "07:00", "quiet.days": ["0", "1", "2", "3", "4", "5", "6"] }) else { unreachable!() };
     m.extend(quiet);
+    // song lyrics (lyrics.rs, opt-in: sends the playing track's title/artist/album/duration to lrclib.net) and the Home player (tab-home): style mirror | fill | compact, lyrics column
+    let Value::Object(lyr) = json!({ "music.lyrics": false, "home.player": "mirror", "home.lyrics": true }) else { unreachable!() };
+    m.extend(lyr);
     m
 }
 
@@ -220,6 +223,7 @@ pub fn apply_patch(app: &tauri::AppHandle, mut patch: Cfg) -> (Cfg, Result<(), S
     }
     crate::pill::on_settings(app, &patch);
     crate::media::on_settings(&patch);
+    crate::lyrics::on_settings(&patch);
     let all = merged();
     let _ = bus::emit("settings:changed", &all);
     (all, res)

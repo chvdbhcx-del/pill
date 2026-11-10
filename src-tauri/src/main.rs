@@ -6,6 +6,7 @@ mod clipboard;
 mod command;
 mod guard;
 mod media;
+mod lyrics;
 mod pill;
 mod settings;
 mod settings_backup;

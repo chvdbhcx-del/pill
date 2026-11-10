@@ -442,6 +442,7 @@ fn worker(_app: tauri::AppHandle, tx: Sender<Msg>, rx: Receiver<Msg>) {
         }
         EMITTED_THUMB.store(st.thumb_id, Ordering::Relaxed);
         let _ = bus::emit("media:changed", &st);
+        crate::lyrics::on_track(st.has_session, &st.artist, &st.title, &st.album, st.duration_ms); // opt-in lyrics lookup (lyrics.rs), only when the track changed
         // New track: browsers publish the artwork after the title (until then Windows may hand out the
         // app icon), so re-read the thumbnail a couple of times.
         let key = format!("{}\u{1}{}\u{1}{}", st.session_id, st.title, st.artist);

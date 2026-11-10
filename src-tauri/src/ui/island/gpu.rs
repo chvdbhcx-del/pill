@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn every_icon_the_live_layer_names_exists() {
         use pill_ui_core::live::model::IconName::*;
-        for n in [Area, Bell, Battery, Bolt, Calendar, Check, Clipboard, Copy, Download, File, Folder, Keyboard, Mail, Mic, Monitor, Mute, Next, Note2, Pause, Play, Plus, Prev, Qr, ScanText, Shelf, Sparkles, Terminal, Timer, Trash, Usb, Video, Volume, Warn, X] {
+        for n in [Area, Bell, Battery, Bolt, Calendar, Check, Clipboard, Copy, Download, File, Folder, Keyboard, Mail, Mic, Monitor, Mute, Next, Note2, Pause, Play, Plus, Prev, Qr, Quote, QuoteOff, ScanText, Shelf, Sparkles, Terminal, Timer, Trash, Usb, Video, Volume, Warn, X] {
             assert!(Gpu::has_icon(n.as_str()), "{}", n.as_str());
         }
         for must in ["home", "settings", "pin", "wave", "bell", "x", "check", "play", "pause", "prev", "next", "note2", "copy", "download", "volume", "mute", "mic", "sparkles", "video", "monitor", "area", "folder", "file", "battery", "bolt", "terminal", "trash", "plus", "qr", "scantext", "shelf", "clipboard"] {
