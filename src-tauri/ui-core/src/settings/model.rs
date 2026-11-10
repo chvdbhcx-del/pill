@@ -25,7 +25,7 @@ use crate::settings::wizard::Wizard;
 use serde_json::{json, Map, Value};
 
 /// Keys the UI may write although no row owns them.
-pub const EXTRA_WRITABLE: [&str; 2] = ["ai.preset", "firstRunDone"];
+pub const EXTRA_WRITABLE: [&str; 3] = ["ai.preset", "firstRunDone", "phone.mutedApps"];
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SetError {

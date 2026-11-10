@@ -6,6 +6,7 @@ use crate::settings::schema::Page;
 
 mod ai;
 mod base;
+mod phone;
 mod system;
 
 /// Schema ids and rows are `&'static str`; the few dynamic ones (hotkey.<action>) are leaked once, at schema build.
@@ -26,6 +27,7 @@ pub fn build() -> Vec<Page> {
         system::search(),
         system::sound(),
         system::weather(),
+        phone::phone(),
         ai::ai(),
         ai::aisetup(),
         ai::voice(),

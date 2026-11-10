@@ -37,7 +37,13 @@ pub(super) struct T {
 }
 
 pub(super) fn boot(settings: Value, page: &str) -> T {
+    boot_with(settings, page, |_| {})
+}
+
+/// `boot` with extra canned backend answers (registered before the first frame).
+pub(super) fn boot_with(settings: Value, page: &str, setup: impl FnOnce(&Fakes)) -> T {
     let (svc, fakes) = Services::fake();
+    setup(&fakes);
     fakes.api.reply("settings_get", Ok(settings)).reply("settings_info", Ok(json!({"version": "0.5.3", "dir": "C:/x"}))).reply("hotkey_set", Ok(json!({"ok": true, "combo": "Ctrl+Alt+K"})));
     let mut sim = Sim::with_services(Box::new(Probe(Rc::new(RefCell::new(unsafe_placeholder())))), svc);
     let v = Rc::new(RefCell::new(SettingsView::new(&mut sim.cx, &json!({ "page": page }))));

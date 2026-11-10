@@ -30,6 +30,7 @@ mod cw1;
 mod cw2;
 mod cw3;
 mod cw3b;
+mod cw_phone;
 mod cw_home;
 mod customacts;
 mod prim;
@@ -275,3 +276,5 @@ mod tests2;
 mod tests_motion;
 #[cfg(test)]
 mod tests_home;
+#[cfg(test)]
+mod tests_phone;

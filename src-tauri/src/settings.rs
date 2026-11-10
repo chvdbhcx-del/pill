@@ -84,7 +84,7 @@ pub(crate) fn defaults() -> Cfg {
     // notifications are ignored, module.phone / live.phone = the island tab and the cards on the folded island.
     let Value::Object(phone) = json!({
         "phone.enabled": false, "phone.port": 41717, "phone.downloadDir": "", "phone.maxFileMB": 4096, "phone.autoAccept": true,
-        "phone.apkUrl": crate::phone::DEFAULT_APK_URL, "phone.mutedApps": [], "module.phone": true, "live.phone": true
+        "phone.apkUrl": "https://github.com/chvdbhcx-del/pill-phone/releases/latest/download/PillPhone.apk", "phone.mutedApps": [], "module.phone": true, "live.phone": true
     }) else { unreachable!() };
     m.extend(phone);
     m

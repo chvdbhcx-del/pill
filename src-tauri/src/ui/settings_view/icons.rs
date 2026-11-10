@@ -5,7 +5,7 @@ use glasskit::geom::Rect;
 use glasskit::svgpath::{GeomCache, Svg};
 use std::collections::HashMap;
 
-const IC: [(&str, &str); 16] = [
+const IC: [(&str, &str); 17] = [
     ("character", r##"<circle cx="12" cy="12" r="9"/><path d="M8.5 14a4.2 4.2 0 0 0 7 0"/><path d="M9 9.5h.01M15 9.5h.01"/>"##),
     ("general", r##"<path d="M21 6h-9M8 6H3M21 12h-3M14 12H3M21 18h-9M8 18H3"/><circle cx="10" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/>"##),
     ("hotkeys", r##"<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M7 14.5h10"/>"##),
@@ -21,6 +21,7 @@ const IC: [(&str, &str); 16] = [
     ("appearance", r##"<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/>"##),
     ("behavior", r##"<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>"##),
     ("search", r##"<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/>"##),
+    ("phone", r##"<rect x="6.5" y="2.5" width="11" height="19" rx="2.8"/><path d="M10.5 18.5h3"/>"##),
     ("power", r##"<path d="M12 3v8"/><path d="M6.8 6.6a8 8 0 1 0 10.4 0"/>"##),
 ];
 

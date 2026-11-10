@@ -13,7 +13,7 @@ pub enum NavItem {
 }
 
 /// Sidebar order (separators as in the JS `PAGES`).
-pub const NAV: [NavItem; 19] = [
+pub const NAV: [NavItem; 20] = [
     NavItem::Page("character"),
     NavItem::Sep,
     NavItem::Page("general"),
@@ -27,6 +27,7 @@ pub const NAV: [NavItem; 19] = [
     NavItem::Page("search"),
     NavItem::Page("sound"),
     NavItem::Page("weather"),
+    NavItem::Page("phone"),
     NavItem::Sep,
     NavItem::Page("ai"),
     NavItem::Page("aisetup"),
@@ -36,10 +37,10 @@ pub const NAV: [NavItem; 19] = [
 ];
 
 /// Icon ids of the sidebar (one per page, plus "power" for Quit); the renderer owns the drawings.
-pub const ICONS: [&str; 16] = ["character", "general", "hotkeys", "ai", "voice", "weather", "sound", "live", "clipboard", "modules", "updates", "aisetup", "appearance", "behavior", "search", "power"];
+pub const ICONS: [&str; 17] = ["character", "general", "hotkeys", "ai", "voice", "weather", "sound", "live", "clipboard", "modules", "updates", "aisetup", "appearance", "behavior", "search", "phone", "power"];
 
 /// The pages `settings_open` accepts (settingswin.rs `PAGES`); "welcome" starts the wizard.
-pub const OPENABLE: [&str; 16] = ["character", "general", "appearance", "behavior", "search", "hotkeys", "ai", "voice", "weather", "sound", "live", "clipboard", "modules", "updates", "aisetup", "welcome"];
+pub const OPENABLE: [&str; 17] = ["character", "general", "appearance", "behavior", "search", "hotkeys", "ai", "voice", "weather", "sound", "live", "clipboard", "modules", "updates", "aisetup", "phone", "welcome"];
 
 pub const SAVED_NOTE: Tr = tr("Изменения сохраняются сразу", "Changes are saved instantly");
 pub const QUIT: Tr = tr("Выйти из Pill", "Quit Pill");
@@ -192,7 +193,7 @@ mod tests {
         let mut sorted_ids = ids.clone();
         sorted_ids.sort();
         assert_eq!(sorted_nav, sorted_ids, "every page is in the sidebar exactly once");
-        assert_eq!(pages.len(), 15);
+        assert_eq!(pages.len(), 16);
         assert_eq!(NAV.iter().filter(|n| **n == NavItem::Sep).count(), 4);
         for pg in &schema().pages {
             assert!(ICONS.contains(&pg.icon), "icon {}", pg.icon);

@@ -167,6 +167,13 @@ impl SettingsView {
                 self.ensure_ticker(cx, 1000);
             }
             "weather" => {}
+            "phone" => {
+                calls.extend([BackendCall::PhoneStatus, BackendCall::PhoneApps]);
+                if self.model.get_bool("phone.enabled") {
+                    calls.push(BackendCall::PhonePairCode { renew: false });
+                }
+                self.ensure_ticker(cx, 2000);
+            }
             _ => {}
         }
         self.run(cx, calls);
