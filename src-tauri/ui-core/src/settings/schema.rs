@@ -120,6 +120,9 @@ pub enum Action {
     NotifAllow,
     ProfileSave,
     AiSetupLater,
+    /// Append the program that was in front before the settings to `hideInApps` / `showInApps`.
+    HideAddActive,
+    ShowAddActive,
 }
 
 #[derive(Clone, Debug, PartialEq)]

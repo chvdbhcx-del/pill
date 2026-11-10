@@ -57,6 +57,10 @@ pub(crate) fn defaults() -> Cfg {
     // as media sources, volumeTarget = what the Home volume strip controls ("master" computer | "player" the player's audio session)
     let Value::Object(src) = json!({ "audio.perApp": true, "media.legacyPlayers": true, "audio.volumeTarget": "master" }) else { unreachable!() };
     m.extend(src);
+    // window behaviour (guard.rs / fspeek.rs / win32.rs): programs where the pill always stays, the pill over fullscreen apps (hotkey, top edge),
+    // GPU drawing (off = software rendering, read once at start)
+    let Value::Object(win) = json!({ "showInApps": [], "fullscreenPeek": true, "fullscreenPeekEdge": false, "ui.gpu": true }) else { unreachable!() };
+    m.extend(win);
     m
 }
 

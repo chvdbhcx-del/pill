@@ -121,7 +121,7 @@ impl SettingsView {
                     self.begin(serde_json::Map::new(), cx);
                 }
             }
-            C::SettingsSet { .. } => {
+            C::SettingsSet { .. } | C::PillAddActiveApp { .. } => {
                 if v.is_object() {
                     self.model.on_set_result(&v);
                     self.sync_page();

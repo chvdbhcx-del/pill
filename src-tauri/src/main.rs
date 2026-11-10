@@ -4,7 +4,9 @@
 // init() is called once from setup().
 mod clipboard;
 mod command;
+mod fspeek;
 mod guard;
+mod keepalive;
 mod media;
 mod pill;
 mod settings;
@@ -43,6 +45,7 @@ mod liveplus;
 mod mail;
 mod notifhist;
 mod whatsnew;
+mod watchdog;
 mod report;
 mod openarg;
 mod uninstall;
@@ -50,6 +53,7 @@ mod ui;
 mod applog;
 
 fn main() {
+    watchdog::wait_for_predecessor(); // restarted by the watchdog: the hung instance must be gone before the single-instance check
     applog::init(); // stderr -> %LOCALAPPDATA%\Pill\logs\pill.log (the release build has no console)
     // `pill.exe --uninstall-admin <port>:<token>`: the elevated helper of the uninstaller (uninstall/admin.rs); nothing else starts in that process
     if let Some(code) = uninstall::admin_main() {
@@ -69,6 +73,7 @@ fn main() {
             settings::init(app);
             pill::init(app);
             guard::init(app);
+            watchdog::init();
             media::init(app);
             audio::init(app);
             clipboard::init(app);

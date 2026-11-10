@@ -29,7 +29,7 @@ pub fn ensure_wired(app: &tauri::AppHandle) -> host::HostHandle {
     h
 }
 
-fn is_russian() -> bool {
+pub fn is_russian() -> bool {
     match crate::settings::get_str("language", "auto").as_str() {
         "ru" => true,
         "en" => false,

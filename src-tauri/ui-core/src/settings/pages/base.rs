@@ -190,6 +190,17 @@ pub fn appearance() -> Page {
                         json!(30),
                     )
                     .kw(&["fps", "idle", "покой"]),
+                    toggle(
+                        "ui.gpu",
+                        tr("Ускорение видеокартой", "GPU acceleration"),
+                        tr(
+                            "Выключите, если остров мерцает, пропадает или видеодрайвер зависает: рисование перейдёт на процессор. Применится после перезапуска Pill",
+                            "Turn off if the pill flickers, disappears or the graphics driver hangs: drawing moves to the processor. Applied after Pill restarts",
+                        ),
+                        true,
+                    )
+                    .restart()
+                    .kw(&["gpu", "hardware", "software", "warp", "render", "видеокарта", "ускорение", "процессор", "перезапуск"]),
                 ],
             ),
         ],
@@ -207,6 +218,28 @@ pub fn behavior() -> Page {
                 Tr::NONE,
                 vec![
                     toggle("hideInFullscreen", tr("Прятать в полноэкранных приложениях", "Hide in full-screen apps"), tr("Игры, видео на весь экран, презентации", "Games, full-screen video, presentations"), true).kw(&["fullscreen", "game", "игры", "полноэкранный"]),
+                    toggle(
+                        "fullscreenPeek",
+                        tr("Показывать остров поверх полноэкранных приложений по своей клавише", "Show the pill over full-screen apps with its own key"),
+                        tr(
+                            "Клавиша острова открывает его поверх игры или видео на весь экран. Остров прячется снова, когда закроется. Не действует в программах из списка «Прятать остров»",
+                            "The pill's key opens it over a full-screen game or video. It hides again when it folds. Does not work in programs of the “Hide the pill” list",
+                        ),
+                        true,
+                    )
+                    .enabled(Cond::On("hideInFullscreen"))
+                    .kw(&["fullscreen", "hotkey", "game", "поверх", "полноэкранный", "клавиша"]),
+                    toggle(
+                        "fullscreenPeekEdge",
+                        tr("Открывать остров у верхнего края в полноэкранных приложениях", "Open the pill at the top edge in full-screen apps"),
+                        tr(
+                            "Задержите курсор на верхней кромке экрана на долю секунды. Выключено по умолчанию: в играх с прокруткой у края остров мог бы выскакивать сам",
+                            "Rest the cursor on the top edge of the screen for a moment. Off by default: in games that scroll at the edge the pill could pop up by itself",
+                        ),
+                        false,
+                    )
+                    .enabled(Cond::All(vec![Cond::On("hideInFullscreen"), Cond::On("fullscreenPeek")]))
+                    .kw(&["fullscreen", "edge", "cursor", "край", "курсор", "полноэкранный"]),
                     toggle(
                         "autoHide",
                         tr("Прятать остров, пока он не нужен", "Hide the pill until it is needed"),
@@ -240,6 +273,37 @@ pub fn behavior() -> Page {
                     ))
                     .kw(&["apps", "programs", "exclude", "программы", "исключения", "процесс"])
                     .block(),
+                    button(
+                        "behavior.hideAddActive",
+                        tr("Добавить активную программу в список «Прятать»", "Add the active program to the “Hide” list"),
+                        tr("Берёт программу, которая была впереди, пока вы не открыли настройки, и дописывает её в список выше", "Takes the program that was in front before you opened the settings and adds it to the list above"),
+                        tr("Добавить", "Add"),
+                        Action::HideAddActive,
+                        ButtonStyle::Small,
+                    )
+                    .kw(&["active", "current", "add", "активная", "текущая", "добавить"]),
+                    Row::new(
+                        "showInApps",
+                        "showInApps",
+                        tr("Не прятать остров в этих программах", "Keep the pill visible in these programs"),
+                        Control::Lines { rows: 3, mono: false, placeholder: Tr::NONE, exe_suffix: false },
+                        json!([]),
+                    )
+                    .hint(tr(
+                        "По одной на строку, имя процесса: code.exe, obs64.exe. Пока такое окно впереди, остров остаётся на виду: не прячется ни в полноэкранном режиме, ни автоскрытием.",
+                        "One per line, the process name: code.exe, obs64.exe. While such a window is in front, the pill stays in view: full-screen mode and auto-hide do not hide it.",
+                    ))
+                    .kw(&["apps", "programs", "always", "visible", "exceptions", "программы", "исключения", "процесс", "всегда"])
+                    .block(),
+                    button(
+                        "behavior.showAddActive",
+                        tr("Добавить активную программу в список «Не прятать»", "Add the active program to the “Keep visible” list"),
+                        tr("Берёт программу, которая была впереди, пока вы не открыли настройки, и дописывает её в список выше", "Takes the program that was in front before you opened the settings and adds it to the list above"),
+                        tr("Добавить", "Add"),
+                        Action::ShowAddActive,
+                        ButtonStyle::Small,
+                    )
+                    .kw(&["active", "current", "add", "активная", "текущая", "добавить"]),
                 ],
             ),
             group(

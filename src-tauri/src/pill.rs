@@ -203,13 +203,83 @@ pub fn set_hidden_bg(app: &AppHandle, mask: u8, on: bool, reason: &'static str) 
 
 /// Enlarge the window, then tell the page to animate.
 pub fn expand(app: &AppHandle, tab: Option<String>, via: &str) {
-    if st().hidden & HIDE_GUARD != 0 {
-        return; // never pop up over a fullscreen app
+    if st().hidden & HIDE_GUARD != 0 && !peek_over_guard(app, via) {
+        return; // never pop up over a fullscreen app by itself: only the hotkey, the top edge and the tray entry may
     }
     set_hidden(app, HIDE_USER | HIDE_AUTO, false, "expand");
     st().expanded = true;
     place(app);
     let _ = bus::emit("pill:expand", json!({ "tab": tab, "via": via }));
+}
+
+/// The guard hides the island (fullscreen app / hide list) and `via` is allowed to override it: lift the guard until the island folds.
+fn peek_over_guard(app: &AppHandle, via: &str) -> bool {
+    let Some(level) = crate::fspeek::peek_level(via, crate::fspeek::why(), crate::settings::get_bool("fullscreenPeek", true)) else { return false };
+    st().expanded = true; // the guard poll folds a peek whose island is not expanded
+    crate::fspeek::start_peek(level);
+    set_hidden(app, HIDE_GUARD, false, "peek");
+    true
+}
+
+/// From the guard thread: the cursor rested on the top edge of a fullscreen app.
+pub fn peek(app: &AppHandle, via: &'static str) {
+    on_main(app, move |a| expand(a, None, via));
+}
+
+/// A peek is over (the island folded): the guard hides the island again at once if it still wants to.
+pub fn end_peek(app: &AppHandle) {
+    if crate::fspeek::end_peek() && crate::fspeek::hides(crate::fspeek::why(), crate::fspeek::PEEK_NONE) {
+        set_hidden_bg(app, HIDE_GUARD, true, "guard");
+    }
+}
+
+pub fn is_expanded() -> bool {
+    st().expanded
+}
+
+/// The guard (fullscreen / hide list) is what hides the island right now.
+pub fn guard_hidden() -> bool {
+    st().hidden & HIDE_GUARD != 0
+}
+
+/// Where the top-edge request counts: the island's monitor (physical px) and the x range of its body (the whole frame until measured).
+pub fn edge_geometry() -> Option<([i32; 4], (i32, i32))> {
+    let s = st();
+    if s.mon == [0; 4] || s.layout[2] <= 0 {
+        return None;
+    }
+    let x = if s.rect[2] > 0.0 {
+        let l = s.layout[0] + (s.rect[0] * s.scale).round() as i32;
+        (l, l + (s.rect[2] * s.scale).round() as i32)
+    } else {
+        (s.layout[0], s.layout[0] + s.layout[2])
+    };
+    Some((s.mon, x))
+}
+
+/// Guard poll: if another program hid, minimised or un-topmosted the island, or it ended up off every monitor, put it back.
+pub fn keep_alive(app: &AppHandle) {
+    if st().hidden & (HIDE_USER | HIDE_GUARD) != 0 {
+        return; // hidden on purpose
+    }
+    on_main(app, |a| {
+        if crate::keepalive::repair(me(), &monitor_rects()) {
+            place(a);
+        }
+    });
+}
+
+fn monitor_rects() -> Vec<[i32; 4]> {
+    crate::ui::host::handle().map(|h| h.monitors().iter().map(|m| [m.rect.l, m.rect.t, m.rect.r, m.rect.b]).collect()).unwrap_or_default()
+}
+
+/// Tray "Open island": whatever hides it (tray toggle, auto-hide, a fullscreen app, the hide list, the OS) is undone and it opens.
+fn open_island(app: &AppHandle) {
+    set_hidden(app, HIDE_USER | HIDE_AUTO, false, "tray");
+    if crate::keepalive::repair(me(), &monitor_rects()) {
+        place(app);
+    }
+    expand(app, None, "tray");
 }
 
 pub fn toggle(app: &AppHandle) {
@@ -264,6 +334,7 @@ pub fn pill_set_state(app: AppHandle, state: String, tab: Option<String>, via: O
         pill_activate(app.clone(), false);
         st().expanded = false;
         place(&app);
+        end_peek(&app);
     }
 }
 
@@ -302,12 +373,16 @@ pub fn pill_set_gaze(_on: bool) {}
 
 fn tray(app: &tauri::App) {
     let build = || -> tauri::Result<()> {
-        let toggle_i = MenuItem::with_id(app, "toggle", "Show / Hide", true, None::<&str>)?;
-        let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-        let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-        let menu = Menu::with_items(app, &[&toggle_i, &settings_i, &quit_i])?;
+        let ru = crate::ui::capture_view::windows::is_russian();
+        let t = |ru_text: &'static str, en: &'static str| if ru { ru_text } else { en };
+        let open_i = MenuItem::with_id(app, "open", t("Открыть остров", "Open island"), true, None::<&str>)?;
+        let toggle_i = MenuItem::with_id(app, "toggle", t("Показать / скрыть", "Show / Hide"), true, None::<&str>)?;
+        let settings_i = MenuItem::with_id(app, "settings", t("Настройки", "Settings"), true, None::<&str>)?;
+        let quit_i = MenuItem::with_id(app, "quit", t("Выход", "Quit"), true, None::<&str>)?;
+        let menu = Menu::with_items(app, &[&open_i, &toggle_i, &settings_i, &quit_i])?;
         let mut b = TrayIconBuilder::with_id("pill").tooltip("Pill").menu(&menu).on_menu_event(|app, ev| {
             match ev.id.as_ref() {
+                "open" => open_island(app),
                 "toggle" => {
                     let hid = st().hidden & HIDE_USER != 0;
                     set_hidden(app, HIDE_USER, !hid, "tray");

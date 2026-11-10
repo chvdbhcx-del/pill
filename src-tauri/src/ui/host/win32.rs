@@ -242,7 +242,9 @@ fn apply_text_mode(gfx: &Gfx) {
 
 impl Gpu {
     fn new() -> windows::core::Result<Gpu> {
-        let gfx = if std::env::var_os("PILL_FORCE_WARP").is_some() { Gfx::warp()? } else { Gfx::new(None)? };
+        // software drawing (WARP): the env var of old, or the setting `ui.gpu` = off (read once, applied at the next start)
+        let warp = std::env::var_os("PILL_FORCE_WARP").is_some() || !crate::settings::get_bool("ui.gpu", true);
+        let gfx = if warp { Gfx::warp()? } else { Gfx::new(None)? };
         apply_text_mode(&gfx);
         let res = Res::new(&gfx, FONTS.get().copied().unwrap_or(&SYSTEM_FONTS))?;
         Ok(Gpu { gfx, res })
@@ -393,6 +395,7 @@ unsafe fn quick(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT>
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    crate::watchdog::beat(); // also inside modal loops (a window drag), where run_loop's own beat does not run
     if let Some(r) = quick(hwnd, msg, wp, lp) {
         return r;
     }
@@ -1763,6 +1766,7 @@ fn ui_thread(shared: Arc<Shared>) {
         RegisterClassExW(&mcls);
         let msg_hwnd = CreateWindowExW(WINDOW_EX_STYLE(0), MSG_CLASS, w!("pill-ui-host"), WINDOW_STYLE(0), 0, 0, 0, 0, HWND_MESSAGE, None, hinst, None).unwrap_or_default();
         shared.msg_hwnd.store(hv(msg_hwnd), Ordering::Release);
+        crate::watchdog::set_ping_target(hv(msg_hwnd));
         let timer = CreateWaitableTimerExW(None, PCWSTR::null(), 0x2 /* CREATE_WAITABLE_TIMER_HIGH_RESOLUTION */, 0x1F0003 /* TIMER_ALL_ACCESS */).unwrap_or_default();
         let host = Host { shared, t0: Instant::now(), gpu: None, wins: HashMap::new(), by_hwnd: HashMap::new(), msg_hwnd, timer, quit: false, ready: Default::default() };
         HOST.with(|h| *h.borrow_mut() = Some(host));
@@ -1851,6 +1855,7 @@ fn run_loop() {
             }
             let r = MsgWaitForMultipleObjectsEx(Some(&set), timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
             perf::wake();
+            crate::watchdog::beat();
             if trace() {
                 eprintln!("ui host: woke with {:#x}", r.0);
             }
