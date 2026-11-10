@@ -84,3 +84,17 @@ Clarifications and details the PC implements; none breaks the text above (the ap
 * **Pairing page.** `GET /p?c=<code>` also works without a code (only the download button is shown). The deep link carries the PC's LAN address, port, code and name, URL-encoded.
 * **Rate limit.** The 20-per-minute counter counts bad bearer tokens and wrong pairing codes together, per source address; while it is over the limit even correct requests from that address get `429`.
 * **Binding.** The PC listens on its private LAN address (first free port from 41717 up, remembered); if it has none the link stays off with "no private network".
+
+## Changes by the phone side
+
+No existing field or message was changed; the phone app (v1.0.0) only pins down things the text left open. The PC side may rely on them:
+
+* `notif.posted.progress` is an integer percent 0..100, or `null` when there is no determinate progress.
+* `notif.posted.category` is one of `msg`, `call`, `email`, `social`, `event`, `progress`, `transport`, `system`, `other`.
+* `notif.posted.actions[].id` is `"a<index>"` (position in the notification's action list); the reply action is not listed, "mark as read" style actions are.
+* `notif.posted.replay` is present (as `true`) only on the replay after a (re)connect; absent otherwise. Group-summary notifications are never sent. `ongoing` ones are sent only when the user turned "Ongoing notifications" on.
+* `reply.result.error` is `expired` (no entry for that key, e.g. after an app restart or a cancelled PendingIntent) or `no_action`; it is absent when `ok` is true.
+* `mime` in `file.offer` may be an empty string when the phone does not know it; a plain text share is offered as `Shared text.txt` (`text/plain`).
+* The phone sends `file.done {ok:false}` when a PC file download failed, and answers `file.offer` from the PC only through the download itself (it never sends `file.reject`).
+* Close code `4001` or HTTP 401 on the socket makes the phone forget the pairing and show "Pairing was removed".
+* The phone pings with `{"t":"ping"}` every 20 s and treats 50 s without any frame as a dead socket. The PC should answer `pong`.
