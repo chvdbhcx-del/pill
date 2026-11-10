@@ -265,7 +265,7 @@ fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
     let expect = [
-        ("character", 5), ("general", 4), ("appearance", 18), ("behavior", 11), ("hotkeys", 17), ("modules", 14), ("live", 30), ("clipboard", 15), ("search", 2),
+        ("character", 5), ("general", 4), ("appearance", 20), ("behavior", 11), ("hotkeys", 19), ("modules", 14), ("live", 33), ("clipboard", 15), ("search", 4),
         ("sound", 7), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
     ];
     for (id, n) in expect {
@@ -436,6 +436,8 @@ const UI_ONLY: &[(&str, &str)] = &[
     ("hotkey.qr", "settingswin::ACTIONS default"),
     ("hotkey.passThrough", "settingswin::ACTIONS default"),
     ("hotkey.vpn", "settingswin::ACTIONS default"),
+    ("hotkey.theme", "settingswin::ACTIONS default"),
+    ("hotkey.musicView", "settingswin::ACTIONS default"),
 ];
 
 /// Keys of `settings.rs::defaults()` the schema has no row for, with the reason. The test lists them and fails when the
@@ -502,7 +504,7 @@ fn hotkey_table_matches_settingswin() {
             Some((id.to_string(), combo.to_string()))
         })
         .collect();
-    assert_eq!(rust.len(), 15, "settingswin::ACTIONS parsed");
+    assert_eq!(rust.len(), 17, "settingswin::ACTIONS parsed");
     for a in hotkey::ACTIONS.iter() {
         match rust.get(a.id) {
             Some(c) => assert_eq!(c, a.default, "default combo of {}", a.id),

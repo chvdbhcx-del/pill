@@ -126,6 +126,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         "timer_state" => ok(timers::timer_state()),
         "sound_play" => ok(timers::sound_play(a.opt("tone")?)),
         "kbd_state" => ok(watch::kbd_state()),
+        "vdesk_state" => ok(crate::vdesk::vdesk_state()),
         "watch_pause" => ok(watch::watch_pause()),
         "watch_resume" => ok(watch::watch_resume()),
         "livesys_visible" => ok(livesys::livesys_visible(a.req("on")?)),

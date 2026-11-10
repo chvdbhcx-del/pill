@@ -200,8 +200,19 @@ impl<B: Backend, C: Clock> Shell<B, C> {
     }
 
     // ---------- cards ----------
+    /// The chips beside the time changed (Settings > Live events): the row is built again, the new chip pops in.
+    pub fn set_chips(&mut self, chips: [Vec<String>; 2]) {
+        if self.s.chips == chips {
+            return;
+        }
+        self.s.chips = chips;
+        self.clock_state.invalidate(); // not invalidate_live: the row stays the clock, so the new chip pops in instead of a crossfade
+        if !self.hidden {
+            self.render_live();
+        }
+    }
     /// `Pill.toast(o)`
-    pub fn toast(&mut self, o: CardSpec) {
+    pub fn toast(&mut self, mut o: CardSpec) {
         if self.hidden {
             return;
         }
@@ -209,6 +220,10 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             return; // quiet hours: dropped, never shown later
         }
         self.cancel_away();
+        if self.s.card_scale != 1.0 {
+            // Settings > Live events > How long cards stay
+            o.ttl_ms = (if o.ttl_ms != 0.0 { o.ttl_ms } else { crate::shell::cards::DEFAULT_TTL_MS }) * self.s.card_scale;
+        }
         self.cards.enqueue(o);
         self.reveal();
         self.next();

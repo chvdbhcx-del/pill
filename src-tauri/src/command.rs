@@ -566,13 +566,30 @@ fn pct_encode(s: &str) -> String {
     o
 }
 
-fn web_row(q: &str) -> Res {
-    let (name, base) = match settings::get_str("search.engine", "google").to_lowercase().as_str() {
+/// Settings > File search > Search in the browser: (engine name, address) for query `q`. "custom" is the user's `search.customUrl` with `{q}`
+/// where the query goes; it must be an http(s) address with `{q}`, anything else falls back to Google (the payload is opened as it is).
+fn engine_url(engine: &str, custom: &str, q: &str) -> (String, String) {
+    let enc = pct_encode(q);
+    let (name, base) = match engine.to_lowercase().as_str() {
+        "yandex" => ("Yandex", "https://yandex.com/search/?text="),
         "bing" => ("Bing", "https://www.bing.com/search?q="),
         "duckduckgo" => ("DuckDuckGo", "https://duckduckgo.com/?q="),
+        "custom" => {
+            let c = custom.trim();
+            if c.len() < 2000 && c.contains("{q}") && (c.starts_with("https://") || c.starts_with("http://")) {
+                let host = c.split("//").nth(1).and_then(|r| r.split(['/', '?', '#']).next()).unwrap_or("custom");
+                return (host.to_string(), c.replace("{q}", &enc));
+            }
+            ("Google", "https://www.google.com/search?q=")
+        }
         _ => ("Google", "https://www.google.com/search?q="),
     };
-    res("web", format!("web:{q}"), format!("Search {name} for \"{q}\""), "Opens your default browser".into(), format!("{base}{}", pct_encode(q)))
+    (name.to_string(), format!("{base}{enc}"))
+}
+
+fn web_row(q: &str) -> Res {
+    let (name, url) = engine_url(&settings::get_str("search.engine", "google"), &settings::get_str("search.customUrl", ""), q);
+    res("web", format!("web:{q}"), format!("Search {name} for \"{q}\""), "Opens your default browser".into(), url)
 }
 
 // ---- system commands (always need a second Enter within 3 s; never executed by tests) ----
@@ -1227,6 +1244,14 @@ mod tests {
     #[test]
     fn web_search_encoding() {
         assert_eq!(pct_encode("a b&ü"), "a+b%26%C3%BC");
+        assert_eq!(engine_url("yandex", "", "a b").1, "https://yandex.com/search/?text=a+b");
+        assert_eq!(engine_url("DuckDuckGo", "", "x").0, "DuckDuckGo");
+        assert_eq!(engine_url("?", "", "x").0, "Google");
+        let c = "https://example.com/s?w={q}&l=en";
+        assert_eq!(engine_url("custom", c, "a&b"), ("example.com".to_string(), "https://example.com/s?w=a%26b&l=en".to_string()));
+        for bad in ["", "https://example.com/", "ftp://x/{q}", "javascript:alert({q})"] {
+            assert_eq!(engine_url("custom", bad, "x").0, "Google", "{bad}");
+        }
     }
 
     #[test]

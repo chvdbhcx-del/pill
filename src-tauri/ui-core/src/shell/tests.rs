@@ -1551,3 +1551,63 @@ fn hidden_shell_ignores_the_hover_open_and_keeps_zero_work() {
     assert_eq!(h.calls("battery_state"), 0);
     assert_eq!(h.calls("weather_get"), 0);
 }
+
+// ---------------- island colour, card duration, clock chips ----------------
+
+#[test]
+fn island_colour_paints_the_body_and_the_brightness_picks_the_text() {
+    use super::color::Theme;
+    let v = H::with(json!({"island.color": "#0b1b3d"})).sh.view();
+    assert_eq!((v.body.fill.rgb_tuple(), v.theme, v.palette.text.rgb_tuple()), ((0x0b, 0x1b, 0x3d), Theme::Dark, (255, 255, 255)));
+    let v = H::with(json!({"island.color": "#bcd9f5"})).sh.view();
+    assert_eq!((v.body.fill.rgb_tuple(), v.theme, v.palette.text.rgb_tuple()), ((0xbc, 0xd9, 0xf5), Theme::Light, (0x16, 0x16, 0x16)));
+    // the typed colour beats the ready one; a typo falls back to it; empty values keep the theme's own black
+    assert_eq!(H::with(json!({"island.color": "#bcd9f5", "island.colorCustom": "#112233"})).sh.view().body.fill.rgb_tuple(), (0x11, 0x22, 0x33));
+    assert_eq!(H::with(json!({"island.color": "#bcd9f5", "island.colorCustom": "oops"})).sh.view().body.fill.rgb_tuple(), (0xbc, 0xd9, 0xf5));
+    let v = H::with(json!({"island.color": "", "island.colorCustom": "", "theme": "dark"})).sh.view();
+    assert_eq!((v.body.fill.rgb_tuple(), v.theme), ((0, 0, 0), Theme::Dark));
+}
+
+#[test]
+fn changing_the_colour_live_moves_the_theme_with_it() {
+    use super::color::Theme;
+    let mut h = H::new();
+    assert_eq!(h.sh.view().theme, Theme::Dark);
+    h.ev(Event::SettingsChanged(json!({"island.color": "#f6f6f6"})));
+    assert_eq!(h.sh.view().theme, Theme::Light);
+    h.ev(Event::SettingsChanged(json!({"island.color": ""})));
+    assert_eq!(h.sh.view().theme, Theme::Dark);
+}
+
+#[test]
+fn card_duration_scales_every_cards_lifetime() {
+    // a 1 s card plus its 180 ms fold: gone by ~1.2 s normally, by ~0.8 s when short, still up at 1.5 s when long
+    let gone_after = |setting: &str, ms: f64| {
+        let mut h = H::with(json!({"cards.duration": setting}));
+        h.sh.toast(CardSpec { ttl_ms: 1000.0, ..card("a") });
+        h.run(ms);
+        !h.sh.cards().has_current()
+    };
+    assert!(!gone_after("normal", 700.0) && gone_after("normal", 1500.0));
+    assert!(gone_after("short", 900.0), "0.6 s + the fold");
+    assert!(!gone_after("long", 1500.0) && gone_after("long", 2500.0));
+    // a card without its own ttl is the 4 s default, scaled as well
+    let mut h = H::with(json!({"cards.duration": "long"}));
+    h.sh.toast(card("d"));
+    h.run(5000.0);
+    assert!(h.sh.cards().has_current(), "8 s, not 4");
+}
+
+#[test]
+fn chips_stand_beside_the_time_and_pop_in() {
+    use super::clock::ClockItem;
+    let mut h = H::new();
+    h.ev(Event::ClockChips(vec!["RU".into()], vec!["2/3".into()]));
+    h.run(50.0);
+    let LiveContent::Clock { row, .. } = h.sh.view().live.content else { panic!("the clock row") };
+    assert_eq!((row.left.last(), row.right.last()), (Some(&ClockItem::Tag("RU".into())), Some(&ClockItem::Tag("2/3".into()))));
+    assert!(!h.sh.view().live.entering.is_empty(), "new chips pop in");
+    h.ev(Event::ClockChips(vec![], vec![]));
+    let LiveContent::Clock { row, .. } = h.sh.view().live.content else { panic!("the clock row") };
+    assert!(row.left.iter().chain(row.right.iter()).all(|i| !matches!(i, ClockItem::Tag(_))));
+}

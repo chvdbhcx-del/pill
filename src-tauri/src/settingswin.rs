@@ -96,6 +96,8 @@ pub const ACTIONS: &[(&str, &str)] = &[
     ("pipette", "Ctrl+Alt+C"),
     ("qr", "Ctrl+Alt+Shift+Q"), // Ctrl+Alt+Q is the always-on quit hotkey of pill.rs
     ("passThrough", ""),
+    ("theme", ""),
+    ("musicView", ""),
     ("vpn", ""),
 ];
 /// Combos owned by the app itself (pill.rs registers Ctrl+Alt+Q = quit with a raw RegisterHotKey).

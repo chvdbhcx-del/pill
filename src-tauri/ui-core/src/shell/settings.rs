@@ -7,7 +7,7 @@
 
 use serde_json::{Map, Value};
 
-use crate::shell::color::Theme;
+use crate::shell::color::{Rgba, Theme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThemeSetting {
@@ -117,6 +117,13 @@ pub struct ShellSettings {
     pub pet: String,
     pub monitor: String,
     pub quiet: QuietSettings,
+    /// `island.color` (a ready colour or any hex) and `island.colorCustom` (typed hex, wins): the body colour of the capsule, see `tint`.
+    pub color_pick: Option<Rgba>,
+    pub color_custom: Option<Rgba>,
+    /// `cards.duration` as a factor on every card's lifetime (short 0.6, normal 1, long 2).
+    pub card_scale: f64,
+    /// Chips beside the time, filled by the island (keyboard layout, virtual desktop): left column, right column. Not a setting.
+    pub chips: [Vec<String>; 2],
     /// Every key ever received (also the typed ones), for `module.*` / `live.*` lookups.
     pub raw: Map<String, Value>,
 }
@@ -154,6 +161,10 @@ impl Default for ShellSettings {
             pet: String::new(),
             monitor: "primary".into(),
             quiet: QuietSettings::default(),
+            color_pick: None,
+            color_custom: None,
+            card_scale: 1.0,
+            chips: [Vec::new(), Vec::new()],
             raw: Map::new(),
         }
     }
@@ -282,6 +293,9 @@ impl ShellSettings {
                 "net.weather" => self.net_weather = truthy(val),
                 "pet" => self.pet = text(val),
                 "monitor" => self.monitor = text(val),
+                "island.color" => self.color_pick = crate::shell::tint::parse_hex(&text(val)),
+                "island.colorCustom" => self.color_custom = crate::shell::tint::parse_hex(&text(val)),
+                "cards.duration" => self.card_scale = crate::shell::tint::card_scale(&text(val)),
                 "quiet.on" => self.quiet.on = *val == Value::Bool(true),
                 "quiet.from" => self.quiet.from = if val.is_null() { "22:00".into() } else { js_string(val) },
                 "quiet.to" => self.quiet.to = if val.is_null() { "07:00".into() } else { js_string(val) },
@@ -315,8 +329,16 @@ impl ShellSettings {
         1.0 - self.opacity_exp.clamp(0.0, 60.0) / 100.0
     }
 
-    /// `data-theme` after the `auto` setting is resolved against the OS preference.
+    /// The body colour the user chose (the typed hex beats the ready colour); `None` = the theme's own.
+    pub fn island_color(&self) -> Option<Rgba> {
+        self.color_custom.or(self.color_pick)
+    }
+
+    /// `data-theme` after the `auto` setting is resolved against the OS preference. A chosen body colour decides by its brightness.
     pub fn resolved_theme(&self, os_prefers_light: bool) -> Theme {
+        if let Some(c) = self.island_color() {
+            return crate::shell::tint::theme_for(c);
+        }
         match self.theme {
             ThemeSetting::Light => Theme::Light,
             ThemeSetting::Dark => Theme::Dark,

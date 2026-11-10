@@ -100,7 +100,7 @@ pub const ISLAND_EVENTS: &[&str] = &[
     "settings:changed", "pill:show", "pill:hide", "pill:expand", "pill:collapse", "pill:open-tab", "audio:bands", "weather:current", "kbd:layout", "clip:added",
     "live:volume", "live:privacy", "live:download", "update:available", "live:obs", "live:steam", "live:notification", "uninstall:ready", "live:file-done",
     "live:usb", "live:battery", "live:calendar", "live:mail", "agents:changed", "agents:done", "rec:state", "capture:done", "voice:state", "voice:level",
-    "sysmon:tick", "media:changed", "timer:tick", "remind:due", "shelf:changed", "timer:done", "remind:changed",
+    "sysmon:tick", "media:changed", "timer:tick", "remind:due", "shelf:changed", "timer:done", "remind:changed", "kbd:now", "vdesk:now",
 ];
 
 pub struct Core {
@@ -119,6 +119,8 @@ pub struct Core {
     /// effective edge reaction for the pets / characters: (preset name, css colour)
     pub reaction: (String, String),
     pub now_mono: f64,
+    /// the chips beside the time (keyboard layout, virtual desktop)
+    pub chips: super::chips::Chips,
     /// cards shown since the last [`Core::take_toast_recs`] (the notifications tab records them, as `Pill.toast` fed `notif_history_add`)
     toast_recs: Vec<pill_ui_core::panel::a::notifs::ToastRec>,
     clock: SysClock,
@@ -143,6 +145,7 @@ impl Core {
             pulse: None,
             reaction: ("calm".into(), String::new()),
             now_mono: 0.0,
+            chips: Default::default(),
             toast_recs: Vec::new(),
             clock,
             cmds,
@@ -230,6 +233,9 @@ impl Core {
             "weather:current" => sh(self, Event::WeatherCurrent(payload.clone())),
             _ => {}
         }
+        if self.chips.feed(name, payload) || name == "settings:changed" {
+            self.sync_chips(now_mono);
+        }
         // providers also want settings / show / hide (and everything else that is theirs)
         let (ru, quiet, expanded) = self.env_for();
         let settings = self.settings.clone();
@@ -238,6 +244,13 @@ impl Core {
         let cmds = self.hub.dispatch(&env, name, payload, wall);
         self.apply_cmds(cmds);
         self.pump_notices();
+    }
+
+    /// Tells the shell the chips beside the time when they changed (a new value, a switch, the language).
+    fn sync_chips(&mut self, now_mono: f64) {
+        if let Some((l, r)) = self.chips.update(&self.settings, self.ru()) {
+            self.shell.handle_at(now_mono, Event::ClockChips(l, r));
+        }
     }
 
     /// The answer of a hub [`Query`] (or a button's backend call) re-enters as an event.
@@ -455,6 +468,31 @@ mod tests {
 
     fn content(c: &Core) -> LiveContent {
         c.shell.view().live.content
+    }
+
+    #[test]
+    fn the_layout_and_desktop_chips_follow_their_switches_and_values() {
+        use pill_ui_core::shell::clock::ClockItem;
+        let tags = |c: &Core| match content(c) {
+            LiveContent::Clock { row, .. } => row.left.iter().chain(row.right.iter()).filter_map(|i| if let ClockItem::Tag(t) = i { Some(t.clone()) } else { None }).collect::<Vec<_>>(),
+            other => panic!("{other:?}"),
+        };
+        let mut c = core();
+        c.bus_event("kbd:now", &json!({"lang": "RU", "name": "Russian"}), 1.0);
+        c.bus_event("vdesk:now", &json!({"index": 2, "total": 3, "name": null}), 1.0);
+        assert!(tags(&c).is_empty(), "both are off by default");
+        c.bus_event("settings:changed", &json!({"live.keyboardLayoutAlways": true, "live.virtualDesktop": "number"}), 2.0);
+        assert_eq!(tags(&c), ["RU", "2/3"]);
+        c.bus_event("kbd:now", &json!({"lang": "EN"}), 3.0);
+        c.bus_event("vdesk:now", &json!({"index": 3, "total": 3, "name": "Games"}), 3.0);
+        c.bus_event("settings:changed", &json!({"live.virtualDesktop": "name"}), 4.0);
+        assert_eq!(tags(&c), ["EN", "Games"]);
+        c.bus_event("settings:changed", &json!({"live.keyboardLayoutAlways": false, "live.virtualDesktop": "off"}), 5.0);
+        assert!(tags(&c).is_empty());
+        // while the chip is always there the 1.4 s flash stays away
+        c.bus_event("settings:changed", &json!({"live.keyboardLayoutAlways": true}), 6.0);
+        c.bus_event("kbd:layout", &json!({"lang": "RU", "name": "Russian"}), 7.0);
+        assert!(!c.rows.contains_key("kbd"));
     }
 
     #[test]

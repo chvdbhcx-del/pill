@@ -88,6 +88,8 @@ fn run(app: &AppHandle, action: &str) {
             m.insert("passThrough".into(), json!(!settings::get_bool("passThrough", false)));
             settings::settings_set(app.clone(), m);
         }
+        "theme" => crate::islandkeys::toggle_theme(app),
+        "musicView" => crate::islandkeys::cycle_music_view(app),
         a if a.starts_with("launcher.") => {
             if let Ok(id) = a["launcher.".len()..].parse::<i64>() {
                 std::thread::spawn(move || {

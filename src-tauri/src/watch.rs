@@ -88,10 +88,42 @@ fn info(lid: u16) -> Value {
     json!({ "lang": if iso.is_empty() { format!("{lid:04X}") } else { display_code(&iso) }, "name": locale_str(lid, LOCALE_SENGLISHLANGUAGENAME) })
 }
 
+/// Debounce of the always-visible chip: the layout of the foreground window, announced once it has been the same for two polls.
+#[derive(Default)]
+struct Chip {
+    shown: u16,
+    cand: Option<(u16, u8)>,
+}
+
+impl Chip {
+    fn step(&mut self, lid: u16) -> Option<u16> {
+        if lid == self.shown {
+            self.cand = None;
+            return None;
+        }
+        let n = match self.cand {
+            Some((c, n)) if c == lid => n + 1,
+            _ => 1,
+        };
+        if n >= 2 {
+            *self = Chip { shown: lid, cand: None };
+            return Some(lid);
+        }
+        self.cand = Some((lid, n));
+        None
+    }
+}
+
 fn run(_app: AppHandle) {
     let mut t = Tracker::default();
+    let mut chip = Chip::default();
     loop {
-        if !crate::settings::get_bool("live.keyboardLayout", true) {
+        // Settings > Live events > Layout in the pill: the chip follows every change of the foreground layout (a flash is not needed then)
+        let always = crate::settings::get_bool("live.keyboardLayoutAlways", false);
+        if !always {
+            chip = Chip::default();
+        }
+        if !always && !crate::settings::get_bool("live.keyboardLayout", true) {
             // Settings > Live events > Keyboard layout is off: no polling of the foreground window at all
             t = Tracker::default();
             std::thread::sleep(std::time::Duration::from_millis(1000));
@@ -100,6 +132,11 @@ fn run(_app: AppHandle) {
         if let Some((tid, lid)) = current() {
             if let Some(new) = t.step(tid, lid) {
                 let _ = bus::emit("kbd:layout", info(new));
+            }
+            if always {
+                if let Some(new) = chip.step(lid) {
+                    let _ = bus::emit("kbd:now", info(new));
+                }
             }
         } else {
             t.step(0, 0);
@@ -138,6 +175,19 @@ mod tests {
         assert_eq!(display_code("uk"), "UA");
         assert_eq!(display_code(" UK "), "UA");
         assert_eq!(display_code("de"), "DE");
+    }
+
+    #[test]
+    fn the_chip_follows_any_stable_layout() {
+        let (en, ru) = (0x0409, 0x0419);
+        let mut c = Chip::default();
+        assert_eq!(c.step(en), None); // first sight: not stable yet
+        assert_eq!(c.step(en), Some(en));
+        assert_eq!(c.step(en), None);
+        assert_eq!(c.step(ru), None);
+        assert_eq!(c.step(en), None); // flicker
+        assert_eq!(c.step(ru), None);
+        assert_eq!(c.step(ru), Some(ru));
     }
 
     #[test]

@@ -99,6 +99,8 @@ enum Pending {
     SettingsOpen,
     DesktopFg,
     Answer(&'static str),
+    /// the answer of `kbd_state` / `vdesk_state`: handed to the core as this chip event
+    Chip(&'static str),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -238,6 +240,7 @@ impl IslandView {
         };
         v.sync_env(cx);
         v.exec_outs(outs, cx);
+        v.ask_chips(cx);
         v.apply_settings_side(cx);
         // the tabs with background duties exist from the start (docs/native-tabs-a.md section 3)
         v.host.warm(&["home", "shelf", "notifs", "clipboard"], cx);
@@ -261,6 +264,18 @@ impl IslandView {
         if self.env != Some(e) {
             self.env = Some(e);
             self.core.set_env(e, cx.now_ms);
+        }
+    }
+
+    /// A chip beside the time that is switched on but has no value yet (the backend announces changes only): ask for it once.
+    fn ask_chips(&mut self, cx: &mut Cx) {
+        let on = |k: &str| self.core.settings.get(k).is_some_and(|v| *v == Value::Bool(true));
+        let desk = self.core.settings.get("live.virtualDesktop").and_then(|v| v.as_str()).is_some_and(|s| s != "off");
+        if on("live.keyboardLayoutAlways") && !self.core.chips.has_layout() {
+            self.call(cx, "kbd_state", Value::Null, Pending::Chip("kbd:now"));
+        }
+        if desk && !self.core.chips.has_desktop() {
+            self.call(cx, "vdesk_state", Value::Null, Pending::Chip("vdesk:now"));
         }
     }
 
@@ -520,10 +535,10 @@ impl IslandView {
     // ------------------------------------------------------------------------------------------------ drawing
 
     fn theme(&self) -> Theme {
-        if self.light() {
-            Theme::pill_light()
-        } else {
-            Theme::pill_dark()
+        let base = if self.light() { Theme::pill_light() } else { Theme::pill_dark() };
+        match self.core.shell.settings().island_color() {
+            Some(c) => super::tint::tinted(base, c),
+            None => base,
         }
     }
 }
@@ -624,6 +639,9 @@ impl View for IslandView {
                 if matches!(name.as_str(), "settings:changed" | "pill:show") {
                     self.apply_settings_side(cx);
                 }
+                if name == "settings:changed" {
+                    self.ask_chips(cx);
+                }
                 self.host.event_msg(&name, &payload, latest, cx);
             }
             Msg::Reply { ticket, result } => match self.pending.remove(&ticket.0) {
@@ -632,6 +650,11 @@ impl View for IslandView {
                 Some(Pending::SettingsOpen) => self.core.shell_event(Event::SettingsOpened(result.is_ok()), cx.now_ms),
                 Some(Pending::DesktopFg) => self.core.shell_event(Event::DesktopFg(result.ok().and_then(|v| v.as_bool()).unwrap_or(false)), cx.now_ms),
                 Some(Pending::Answer(ev)) => self.core.dispatch_answer(ev, &result.unwrap_or(Value::Null), cx.now_ms),
+                Some(Pending::Chip(ev)) => {
+                    if let Some(v) = result.ok().filter(|v| v.is_object()) {
+                        self.core.bus_event(ev, &v, cx.now_ms);
+                    }
+                }
                 Some(Pending::Fire) | None => {
                     redraw = self.host.other_msg(Msg::Reply { ticket, result }, cx);
                 }

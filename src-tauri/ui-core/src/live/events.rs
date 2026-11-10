@@ -37,8 +37,9 @@ impl Provider for KbdLive {
     fn on_event(&mut self, env: &dyn Env, name: &str, p: &Value, _now: i64) -> Vec<LiveCmd> {
         match name {
             "kbd:layout" => {
-                // Settings > Live events > Keyboard layout (watch.rs also stops polling)
-                if p.is_null() || !truthy(p.get("lang")) || !env.collapsed() || !env.live_on("keyboardLayout") {
+                // Settings > Live events > Keyboard layout (watch.rs also stops polling); with "Layout in the pill, always" the chip beside the
+                // time says it all and the flash would only repeat it
+                if p.is_null() || !truthy(p.get("lang")) || !env.collapsed() || !env.live_on("keyboardLayout") || env.setting_true("live.keyboardLayoutAlways") {
                     return Vec::new();
                 }
                 let code = u16_slice(&text(p.get("lang")), 0, 3);
@@ -155,6 +156,15 @@ mod tests {
         assert!(k.on_event(&env, "kbd:layout", &json!({"lang": "EN"}), T0).is_empty());
         env.state = PillState::Collapsed;
         env.set("live.keyboardLayout", json!(false));
+        assert!(k.on_event(&env, "kbd:layout", &json!({"lang": "EN"}), T0).is_empty());
+    }
+
+    #[test]
+    fn no_flash_while_the_chip_is_always_there() {
+        let mut k = KbdLive;
+        let mut env = MemEnv::default();
+        assert!(!k.on_event(&env, "kbd:layout", &json!({"lang": "EN"}), T0).is_empty());
+        env.set("live.keyboardLayoutAlways", json!(true));
         assert!(k.on_event(&env, "kbd:layout", &json!({"lang": "EN"}), T0).is_empty());
     }
 
