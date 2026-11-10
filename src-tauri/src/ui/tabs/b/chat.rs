@@ -1948,6 +1948,7 @@ mod tests {
 
     #[test]
     fn animated_enter_plays_when_motion_is_on() {
+        let _m = crate::ui::host::testing::motion_on(); // the springs read the process-wide reduced-motion override
         let mut r = Rig::new("chat-streaming");
         r.cx.reduced_motion = false;
         r.v.on_show(&mut r.cx);
