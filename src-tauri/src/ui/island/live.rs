@@ -245,7 +245,8 @@ pub fn layout_card_open(c: &lm::CardSpec, m: &dyn Meter, open: bool) -> CardLayo
     };
     let (tw, th_) = match &c.body {
         CardBody::Text { title, sub } => {
-            let tw = m.w(title, TITLE).max(sub.as_deref().map_or(0.0, |s| m.w(s, SUB)));
+            // a few px of slack: text that exactly fills its box is ellipsised by the painter ("Reply se...")
+            let tw = m.w(title, TITLE).max(sub.as_deref().map_or(0.0, |s| m.w(s, SUB))) + 6.0;
             (tw, 18.0 + if sub.is_some() { 4.0 + 16.0 } else { 0.0 })
         }
         CardBody::Notification { title, body, max_title_lines, max_body_lines, .. } => {

@@ -11,6 +11,7 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import app.pill.phone.data.AppFilter
 import app.pill.phone.data.Store
@@ -27,6 +28,8 @@ import java.util.concurrent.ConcurrentHashMap
  * app replay the active notifications on reconnect instead.
  */
 object NotifBridge {
+    private const val TAG = "PillReply"
+
     /** What we need to act on a notification later; lives in memory only (a reply after a process restart is "expired"). */
     private class Entry(val reply: Notification.Action?, val read: PendingIntent?)
 
@@ -86,10 +89,13 @@ object NotifBridge {
         val results = Bundle().also { b -> inputs.forEach { b.putCharSequence(it.resultKey, text) } }
         val fill = Intent()
         RemoteInput.addResultsToIntent(inputs, fill, results)
+        // diagnostics for "the answer does not reach the other person": who owns the action, which keys, and how the delivery ended (never the text)
+        Log.i(TAG, "reply -> ${action.actionIntent.creatorPackage} keys=${inputs.map { it.resultKey }} len=${text.length} source=${if (Build.VERSION.SDK_INT >= 28) RemoteInput.getResultsSource(fill) else -1}")
         return try {
-            action.actionIntent.send(ctx, 0, fill)
+            action.actionIntent.send(ctx, 0, fill, PendingIntent.OnFinished { _, _, code, _, _ -> Log.i(TAG, "reply delivered to the app, result code $code") }, null)
             null
         } catch (_: PendingIntent.CanceledException) {
+            Log.w(TAG, "reply: the notification's action was cancelled")
             "expired"
         }
     }
