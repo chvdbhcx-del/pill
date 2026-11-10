@@ -2,15 +2,12 @@
 use super::page::*;
 use super::SettingsView;
 use crate::ui::view::{Cx, WindowCmd};
-use glasskit::ease::{curves, Ease, Tween};
+use super::flow::{from_to, go};
 use pill_ui_core::settings::anim::AnimKind;
 use pill_ui_core::settings::calls::BackendCall;
 use pill_ui_core::settings::nav::OpenTarget;
 use pill_ui_core::settings::schema::{schema, Control};
 use serde_json::Value;
-
-/// `cubic-bezier(.2, .8, .2, 1)`: the page rise.
-pub const RISE: Ease = Ease::bezier(0.2, 0.8, 0.2, 1.0);
 
 impl SettingsView {
     pub(super) fn fid(&mut self) -> u32 {
@@ -31,7 +28,7 @@ impl SettingsView {
                 self.side.snap_to(p);
                 let pg = self.build_page(p);
                 self.page = pg;
-                self.enter_t = Tween::at_rest(1.0);
+                self.enter_t.jump(1.0);
                 self.focus.set_order(&self.focus_order());
                 self.page_shown(p, cx);
             }
@@ -108,9 +105,12 @@ impl SettingsView {
         if self.wiz.active() {
             self.wiz.end_chrome();
         }
-        if let (Some(exit), true) = (plan.exit, has_old && !self.page.wizard) {
+        if let (Some(exit), true) = (plan.exit.filter(|e| !e.is_instant()), has_old && !self.page.wizard && !self.reduce()) {
             self.leaving = Some(std::mem::replace(&mut self.page, Page::empty()));
-            self.leave_t = Tween::new(0.0, 1.0, exit.dur_ms as f32 / 1000.0, curves::EASE_IN);
+            // a page that was still rising in turns around where it is: the leave starts at what is left of it, with its momentum
+            self.leave_t.jump(1.0 - self.enter_t.at01());
+            self.leave_t.nudge(-self.enter_t.velocity());
+            self.leave_t.to(1.0);
             self.want_page = Some(plan.page.to_string());
         } else if self.leaving.is_some() {
             self.want_page = Some(plan.page.to_string());
@@ -126,8 +126,8 @@ impl SettingsView {
         self.leaving = None;
         self.want_page = None;
         self.page = pg;
-        let spec = self.model.anim(AnimKind::PageEnter);
-        self.enter_t = Tween::new(0.0, 1.0, spec.dur_ms as f32 / 1000.0, RISE);
+        let reduce = self.reduce() || self.model.anim(AnimKind::PageEnter).is_instant();
+        from_to(&mut self.enter_t, 0.0, 1.0, reduce);
         self.ui.reset();
         self.grab = None;
         self.open_select = None;
@@ -212,7 +212,9 @@ impl SettingsView {
         let id = self.model.current;
         let pg = self.build_page(id);
         self.page = pg;
-        self.enter_t = Tween::at_rest(1.0);
+        // the text changed language under a still page: it settles in softly instead of swapping at once
+        let reduce = self.reduce();
+        from_to(&mut self.enter_t, 0.5, 1.0, reduce);
         self.page.scroll.scroll_to(off, false);
         self.focus.set_order(&self.focus_order());
         self.search.refresh_lang(self.lang());
@@ -222,26 +224,24 @@ impl SettingsView {
     /// Rewrites every control from the model. Visibility and enabled changes animate (row expand / collapse, the opacity fade).
     pub(super) fn sync_page(&mut self) {
         let reduce = self.reduce();
-        let ex = self.model.anim(AnimKind::RowExpand).dur_ms as f32 / 1000.0;
-        let co = self.model.anim(AnimKind::RowCollapse).dur_ms as f32 / 1000.0;
         let model = &self.model;
         let lang = model.lang();
         let dy = &self.dy;
         for r in self.page.rows_mut().chain(std::iter::empty()) {
-            sync_row(r, model, dy, lang, reduce, ex, co);
+            sync_row(r, model, dy, lang, reduce);
         }
     }
 }
 
-pub(super) fn sync_row(r: &mut RowRt, model: &pill_ui_core::settings::SettingsModel, dy: &Dyn, lang: pill_ui_core::settings::tr::Lang, _reduce: bool, ex: f32, co: f32) {
+pub(super) fn sync_row(r: &mut RowRt, model: &pill_ui_core::settings::SettingsModel, dy: &Dyn, lang: pill_ui_core::settings::tr::Lang, reduce: bool) {
     let st = model.row_state(r.row);
     if st.visible != r.vis_on {
         r.vis_on = st.visible;
-        r.vis.retarget(st.visible as u8 as f32, if st.visible { ex } else { co }, curves::EASE_OUT);
+        go(&mut r.vis, st.visible as u8 as f32, reduce);
     }
     if st.enabled != r.en_on {
         r.en_on = st.enabled;
-        r.en.retarget(if st.enabled { 1.0 } else { 0.5 }, 0.22, curves::EASE_OUT);
+        go(&mut r.en, if st.enabled { 1.0 } else { 0.5 }, reduce);
     }
     let key = r.row.key;
     let rect = r.ctl_rect;

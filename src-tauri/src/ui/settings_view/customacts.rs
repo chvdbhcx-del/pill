@@ -136,8 +136,8 @@ impl SettingsView {
             Act::Disclosure => {
                 self.data.whatsnew_open = !self.data.whatsnew_open;
                 let to = self.data.whatsnew_open as u8 as f32;
-                let dur = if self.reduce() { 0.0 } else { 0.34 };
-                self.data.whatsnew = glasskit::ease::Tween::new(self.data.whatsnew.value(), to, dur, glasskit::ease::curves::EASE_OUT);
+                let reduce = self.reduce();
+                super::flow::go(&mut self.data.whatsnew, to, reduce);
             }
             _ => {}
         }

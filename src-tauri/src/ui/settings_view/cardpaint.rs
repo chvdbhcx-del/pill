@@ -16,9 +16,20 @@ impl SettingsView {
         let inner_w = CARD_W - 2.0 - 2.0 * PAD_X;
         let mut metrics: Vec<(RowM, f32)> = Vec::with_capacity(rows.len());
         let mut total = 0.0;
-        for r in rows.iter() {
-            let v = r.vis.value().clamp(0.0, 1.0);
-            let m = if v > 0.001 { self.row_metrics(d, r, inner_w) } else { RowM::default() };
+        for r in rows.iter_mut() {
+            // the row opens / closes on a spring: a little overshoot opens it a touch too far, never below nothing
+            let v = r.vis.at().max(0.0);
+            let mut m = if v > 0.001 { self.row_metrics(d, r, inner_w) } else { RowM::default() };
+            if v > 0.001 {
+                if !r.mh_seen || (r.kick == 0 && !r.mh.moving() && (r.mh.target() - m.msg_need).abs() > 0.01) {
+                    // first sight, or a re-wrap after a resize / language change: take the new height at once, nothing to glide from
+                    r.mh.jump(m.msg_need);
+                    r.mh_seen = true;
+                    m = self.row_metrics(d, r, inner_w);
+                } else if (r.mh.target() - m.msg_need).abs() > 0.01 {
+                    super::flow::go(&mut r.mh, m.msg_need, d.reduced);
+                }
+            }
             let h = m.nh * v;
             total += h;
             metrics.push((m, h));
@@ -54,8 +65,8 @@ impl SettingsView {
     fn paint_row(&mut self, d: &Dc, r: &mut RowRt, m: &RowM, h: f32, first: bool) {
         let (cv, p) = (d.cv, d.p);
         let full = r.rect;
-        let vis = r.vis.value().clamp(0.0, 1.0);
-        let en = r.en.value().clamp(0.4, 1.0);
+        let vis = r.vis.at01();
+        let en = r.en.at().clamp(0.4, 1.0);
         let enabled = r.en_on;
         cv.with_clip(Rect::new(full.x, full.y, full.w, h), |cv| {
             cv.with_opacity(vis * en, |cv| {
@@ -71,8 +82,8 @@ impl SettingsView {
                     self.paint_label(d, r, m, x, full.y);
                     self.paint_ctl(d, r, m, full, enabled);
                 }
-                if let Some(t) = r.hl {
-                    let a = hl_alpha(t, d.reduced);
+                if let Some(pulse) = &r.hl {
+                    let a = pulse.alpha(d.reduced);
                     if a > 0.0 {
                         cv.fill_rect(Rect::new(full.x, full.y, full.w, m.nh), p.accent.alpha(a));
                     }

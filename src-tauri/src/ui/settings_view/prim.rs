@@ -6,26 +6,20 @@ use super::txt;
 use super::ui::{key, Act};
 use super::SettingsView;
 use glasskit::controls::{Button, ButtonKind, Widget};
-use glasskit::ease::curves;
+use super::flow::from_to;
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::text::Style;
 
 impl SettingsView {
-    /// Pop scale of a chip that was just switched on (`ChipPop`: .88 -> 1 over 400 ms on the spring-pop curve).
-    pub(super) fn pop_scale(&self, k: u64, now_ms: f64) -> f32 {
-        match self.data.pops.iter().find(|p| p.0 == k) {
-            Some((_, t0)) => {
-                let u = ((now_ms - t0) / 400.0).clamp(0.0, 1.0) as f32;
-                0.88 + 0.12 * curves::SPRING_POP.at(u)
-            }
-            None => 1.0,
-        }
+    /// Scale of a chip that was just switched on (`ChipPop`: flows from .88 to 1 with a lively landing).
+    pub(super) fn pop_scale(&self, k: u64) -> f32 {
+        self.data.pops.get(&k).map_or(1.0, |p| p.at())
     }
 
     pub(super) fn start_pop(&mut self, k: u64) {
         if !self.reduce() {
-            self.data.pops.retain(|p| p.0 != k);
-            self.data.pops.push((k, self.now_ms));
+            from_to(self.data.pops.entry(k).or_insert_with(|| Flow::new(1.0, Feel::POP)), 0.88, 1.0, false);
         }
     }
 
@@ -45,7 +39,7 @@ impl SettingsView {
         let k = key(&format!("chip:{name}"));
         self.ui.add(k, r, act, true, false, true);
         let (hv, pr) = (self.ui.hover_of(k), self.ui.press_of(k));
-        let scale = (1.0 - 0.07 * pr.max(0.0)) * if on { self.pop_scale(k, d.now_ms) } else { 1.0 };
+        let scale = (1.0 - 0.07 * pr.max(0.0)) * if on { self.pop_scale(k) } else { 1.0 };
         cv.with_scale_about(r.center(), scale, |cv| {
             cv.fill_rr(r, 8.0, if on { p.accent_bg } else { mix(p.ctl, p.ctl_hover, hv) });
             if on {

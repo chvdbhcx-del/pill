@@ -7,7 +7,8 @@ use super::SettingsView;
 use crate::ui::pets::characters::Characters;
 use crate::ui::pets::engine::{box_size, PetEngine, Place, Side, Size};
 use glasskit::color::Color;
-use glasskit::ease::{curves, Tween};
+use super::flow::{go, tick};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::text::Style;
 use pill_ui_core::settings::pickers::{self, STYLES};
@@ -19,7 +20,7 @@ pub struct Pickers {
     pub engines: HashMap<String, PetEngine>,
     pub tail: Option<Characters>,
     pub legs: Option<Characters>,
-    pub sel: HashMap<String, Tween<f32>>,
+    pub sel: HashMap<String, Flow>,
     /// (title, rect in page space) of every card painted last frame: where "go to" aims
     pub cards: HashMap<String, Rect>,
     pub focus_i: usize,
@@ -47,7 +48,7 @@ impl SettingsView {
     pub(super) fn step_pickers(&mut self, dt: f32) -> bool {
         let mut busy = false;
         for t in self.pets.sel.values_mut() {
-            busy |= t.step(dt);
+            busy |= tick(t, dt);
         }
         if self.model.current != "character" || self.wiz.active() {
             return busy;
@@ -75,16 +76,12 @@ impl SettingsView {
 
     pub(super) fn card_on_t(&mut self, id: &str, on: bool) -> f32 {
         let reduce = self.reduce();
-        let t = self.pets.sel.entry(id.to_string()).or_insert_with(|| Tween::at_rest(on as u8 as f32));
+        let t = self.pets.sel.entry(id.to_string()).or_insert_with(|| Flow::new(on as u8 as f32, Feel::FADE));
         let to = on as u8 as f32;
         if (t.target() - to).abs() > 0.01 {
-            if reduce {
-                *t = Tween::at_rest(to);
-            } else {
-                t.retarget(to, 0.22, curves::EASE_OUT);
-            }
+            go(t, to, reduce);
         }
-        t.value().clamp(0.0, 1.0)
+        t.at01()
     }
 
     /// The card frame: hover / selected look, press scale; returns the stage rectangle inside it.
@@ -100,8 +97,7 @@ impl SettingsView {
             cv.fill_rr(r, 14.0, bg);
             let line = mix(Color::rgba(0.0, 0.0, 0.0, 0.0), if on > 0.01 { p.pcard_on_line } else { p.card_line }, (hv * 0.8).max(on));
             cv.stroke_rr(r.inset(0.5), 13.5, 1.0, line);
-            if let Some(a) = self.hl_card.as_ref().filter(|a| a.0 == title).map(|a| a.1) {
-                let al = hl_alpha(a, d.reduced);
+            if let Some(al) = self.hl_card.as_ref().filter(|a| a.0 == title).map(|a| a.1.alpha(d.reduced)) {
                 cv.fill_rr(r, 14.0, p.accent.alpha(al));
             }
         });

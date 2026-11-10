@@ -16,7 +16,7 @@ impl SettingsView {
         let content = parts.content;
         let cv = d.cv;
         if let Some(mut old) = self.leaving.take() {
-            let t = self.leave_t.value().clamp(0.0, 1.0);
+            let t = self.leave_t.at01();
             let n = self.ui.hits.len();
             cv.with_opacity(1.0 - t, |cv| {
                 cv.with_offset(-10.0 * t, 0.0, |cv| {
@@ -28,11 +28,12 @@ impl SettingsView {
             self.leaving = Some(old);
             return;
         }
-        let e = self.enter_t.value().clamp(0.0, 1.0);
+        let e = self.enter_t.at01();
+        let ea = self.enter_t.at();
         let spec = if self.wiz.active() { self.wiz.enter_dx() } else { (0.0, 8.0) };
         let mut page = std::mem::replace(&mut self.page, Page::empty());
         cv.with_opacity(e, |cv| {
-            cv.with_offset((1.0 - e) * spec.0, (1.0 - e) * spec.1, |cv| {
+            cv.with_offset((1.0 - ea) * spec.0, (1.0 - ea) * spec.1, |cv| {
                 let d2 = dc2(cv, d);
                 self.paint_page(&d2, &mut page, content, true);
             });

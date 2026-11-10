@@ -31,7 +31,7 @@ impl SettingsView {
             self.ui.add(k, r, Act::Recorder(a.to_string()), true, false, enabled);
         }
         let hv = self.ui.hover_of(k);
-        let rec = if recording { self.rec_t.value().max(0.0001) } else { 0.0 };
+        let rec = if recording { self.rec_t.at01().max(0.0001) } else { 0.0 };
         cv.fill_rr(r, 8.0, mix(p.ctl, p.ctl_hover, hv));
         if recording || rec > 0.0 {
             cv.stroke_rr(r.inset(1.0), 7.0, 2.0, p.accent.fade(rec.max(if recording { 1.0 } else { 0.0 })));

@@ -108,7 +108,7 @@ impl SettingsView {
 
     pub(super) fn w_whatsnew(&mut self, d: &Dc, full: Rect, paint: bool) -> f32 {
         let (cv, p) = (d.cv, d.p);
-        let open = self.data.whatsnew.value().clamp(0.0, 1.0);
+        let open = self.data.whatsnew.at().max(0.0);
         let mut notes: Vec<String> = whatsnew::PAGE_NOTES.iter().map(|t| t.get(d.lang).to_string()).collect();
         if let Some(n) = whatsnew::notes_for(CHANGELOG, &self.version) {
             notes.extend(n);

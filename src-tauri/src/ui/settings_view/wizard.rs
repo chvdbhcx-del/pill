@@ -1,12 +1,12 @@
 //! The first-run wizard (page "welcome"): four steps built from the same rows as the pages, a title row with Skip, progress dots, Back / Next.
-use super::nav::RISE;
+use super::flow::{from_to, go};
 use super::page::*;
 use super::rows::*;
 use super::ui::{key, Act};
 use super::SettingsView;
 use crate::ui::view::Cx;
 use glasskit::controls::{Button, ButtonKind, Widget};
-use glasskit::ease::{curves, Tween};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::text::Style;
 use pill_ui_core::settings::schema::{schema, Action, ButtonStyle, Control, Row};
@@ -19,12 +19,12 @@ pub struct WizState {
     on: bool,
     dx: f32,
     dy: f32,
-    pub dots: [Tween<f32>; 4],
+    pub dots: [Flow; 4],
 }
 
 impl Default for WizState {
     fn default() -> Self {
-        WizState { on: false, dx: 0.0, dy: 0.0, dots: std::array::from_fn(|_| Tween::at_rest(1.0)) }
+        WizState { on: false, dx: 0.0, dy: 0.0, dots: std::array::from_fn(|_| Flow::new(1.0, Feel::POP)) }
     }
 }
 
@@ -74,15 +74,11 @@ impl SettingsView {
         self.wiz.dy = spec.dy as f32;
         let pg = self.build_wizard_page();
         self.page = pg;
-        self.enter_t = Tween::new(0.0, 1.0, spec.dur_ms as f32 / 1000.0, RISE);
+        from_to(&mut self.enter_t, 0.0, 1.0, reduce || spec.is_instant());
         let step = self.model.wizard.step() as usize;
         for (i, d) in self.wiz.dots.iter_mut().enumerate() {
             let to = if i + 1 == step { 1.5 } else { 1.0 };
-            if reduce {
-                *d = Tween::at_rest(to);
-            } else {
-                d.retarget(to, 0.4, curves::SPRING_POP);
-            }
+            go(d, to, reduce);
         }
         self.ui.reset();
         self.focus.set_order(&self.focus_order());
@@ -160,7 +156,7 @@ impl SettingsView {
         cv.text(Rect::new(4.0, sy, 200.0, 16.0), &super::txt::upper(&v.step_label), Style::new(11.0, 600).track(0.88), p.cap);
         let mut x = CARD_W - 6.0;
         for (i, dot) in v.dots.iter().enumerate().rev() {
-            let s = self.wiz.dots[i].value().max(0.5);
+            let s = self.wiz.dots[i].at().max(0.5);
             let col = match dot {
                 Dot::Current => p.accent,
                 Dot::Past => p.accent_line,

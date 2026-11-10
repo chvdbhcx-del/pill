@@ -1,4 +1,5 @@
 //! Per-frame work: advancing every animation, collecting what the text fields did, resolving a pending "go to row", the caption region.
+use super::flow::{tick, Pulse};
 use super::page::*;
 use super::SettingsView;
 use crate::ui::view::Cx;
@@ -17,18 +18,18 @@ enum Edit {
 impl SettingsView {
     pub(super) fn step_all(&mut self, dt: f32, cx: &mut Cx) -> bool {
         let mut busy = false;
-        busy |= self.win_t.step(dt);
-        busy |= self.enter_t.step(dt);
-        busy |= self.rec_t.step(dt);
-        busy |= self.side.ind_y.step(dt);
-        busy |= self.search.stag.step(dt);
-        busy |= self.search.pop.step(dt);
+        busy |= tick(&mut self.win_t, dt);
+        busy |= tick(&mut self.enter_t, dt);
+        busy |= tick(&mut self.rec_t, dt);
+        busy |= tick(&mut self.side.ind_y, dt);
+        busy |= self.search.step(dt, self.model.search.open);
         for d in self.wiz.dots.iter_mut() {
-            busy |= d.step(dt);
+            busy |= tick(d, dt);
         }
         if self.leaving.is_some() {
-            busy |= self.leave_t.step(dt);
-            if self.leave_t.finished() {
+            busy |= tick(&mut self.leave_t, dt);
+            // the old page is gone once it has (almost) arrived at its exit; the next one rises while that last bit settles
+            if self.leave_t.at() >= 0.97 {
                 if let Some(p) = self.want_page.take() {
                     let _ = p;
                     let id = self.model.current;
@@ -61,18 +62,27 @@ impl SettingsView {
 
     fn step_rows(&mut self, dt: f32) -> bool {
         let mut busy = false;
+        let reduce = self.reduce();
         for r in self.page.rows_mut() {
-            busy |= r.vis.step(dt);
-            busy |= r.en.step(dt);
-            if let Some((_, t)) = &mut r.msg {
-                busy |= t.step(dt);
+            busy |= tick(&mut r.vis, dt);
+            busy |= tick(&mut r.en, dt);
+            busy |= tick(&mut r.mh, dt);
+            if r.kick > 0 {
+                // a message / status just changed: the next paint sets the new height target, so stay awake until it has
+                r.kick -= 1;
+                busy = true;
             }
-            if let Some(t) = &mut r.hl {
-                *t += dt;
-                if *t > 1.7 {
-                    r.hl = None;
-                } else {
+            if let Some((_, f)) = &mut r.msg {
+                busy |= tick(f, dt);
+                if f.target() == 0.0 && !f.moving() {
+                    r.msg = None;
+                }
+            }
+            if let Some(p) = &mut r.hl {
+                if p.step(dt, reduce) {
                     busy = true;
+                } else {
+                    r.hl = None;
                 }
             }
             match &mut r.ctl {
@@ -83,18 +93,17 @@ impl SettingsView {
                 Ctl::Field(f) => busy |= f.tf.step(dt),
                 Ctl::Week(w) => {
                     for p in w.pop.iter_mut() {
-                        busy |= p.step(dt);
+                        busy |= tick(p, dt);
                     }
                 }
                 _ => {}
             }
         }
-        if let Some((_, t)) = &mut self.hl_card {
-            *t += dt;
-            if *t > 1.7 {
-                self.hl_card = None;
-            } else {
+        if let Some((_, p)) = &mut self.hl_card {
+            if p.step(dt, reduce) {
                 busy = true;
+            } else {
+                self.hl_card = None;
             }
         }
         busy
@@ -184,11 +193,11 @@ impl SettingsView {
         let mut target = None;
         if !g.row_id.is_empty() {
             if let Some(r) = self.page.row_mut(&g.row_id) {
-                r.hl = Some(0.0);
+                r.hl = Some(Pulse::new());
                 target = Some(r.rect);
             }
         } else if let Some(rc) = self.card_rect_by_title(&g.title) {
-            self.hl_card = Some((g.title.clone(), 0.0));
+            self.hl_card = Some((g.title.clone(), Pulse::new()));
             target = Some(rc);
         }
         self.goto = None;

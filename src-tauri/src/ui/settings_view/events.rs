@@ -100,11 +100,8 @@ impl SettingsView {
         self.rec_live.clear();
         let on = self.model.recorder.active().is_some();
         let to = if on { 1.0 } else { 0.0 };
-        if self.reduce() {
-            self.rec_t = glasskit::ease::Tween::at_rest(to);
-        } else {
-            self.rec_t.retarget(to, 0.12, glasskit::ease::curves::EASE_OUT);
-        }
+        let reduce = self.reduce();
+        super::flow::go(&mut self.rec_t, to, reduce);
     }
 
     pub(super) fn focus_search(&mut self) {
@@ -241,7 +238,7 @@ impl SettingsView {
         let mut changes: Vec<Change> = Vec::new();
         let left_down = matches!(ev, InputEvent::MouseDown { button: MouseButton::Left, .. });
         for r in self.page.rows_mut() {
-            if only.is_some_and(|f| f != r.fid) || r.vis.value() < 0.5 {
+            if only.is_some_and(|f| f != r.fid) || r.vis.at() < 0.5 {
                 continue;
             }
             let rect = r.ctl_rect;

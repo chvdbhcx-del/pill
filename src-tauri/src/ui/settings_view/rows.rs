@@ -7,7 +7,8 @@ use super::ui::{key, Act};
 use super::SettingsView;
 use glasskit::canvas::Canvas;
 use glasskit::controls::{Button, ButtonKind, Widget};
-use glasskit::ease::{curves, Tween};
+use super::flow::{from_to, Pulse};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::text::Style;
 use glasskit::theme::Theme;
@@ -128,26 +129,6 @@ impl SettingsView {
     }
 }
 
-/// Opacity of the search highlight wash `t` seconds after it started: the CSS `hl-pulse` keyframes (0, .34, .1, .28, 0 over 1.6 s).
-pub fn hl_alpha(t: f32, reduced: bool) -> f32 {
-    if reduced {
-        return if t < 1.7 { 0.2 } else { 0.0 };
-    }
-    let k = [(0.0, 0.0), (0.192, 0.34), (0.544, 0.1), (0.832, 0.28), (1.6, 0.0)];
-    if t >= 1.6 {
-        return 0.0;
-    }
-    for w in k.windows(2) {
-        let ((t0, a0), (t1, a1)) = (w[0], w[1]);
-        if t >= t0 && t <= t1 {
-            let u = (t - t0) / (t1 - t0);
-            let e = curves::EASE_OUT.at(u);
-            return a0 + (a1 - a0) * e;
-        }
-    }
-    0.0
-}
-
 /// Measured pieces of one row.
 #[derive(Clone, Copy, Default)]
 pub struct RowM {
@@ -158,6 +139,8 @@ pub struct RowM {
     pub title_h: f32,
     pub hint_h: f32,
     pub msg_h: f32,
+    /// the height the message / status lines would take in full (`msg_h` flows towards it)
+    pub msg_need: f32,
     pub label_w: f32,
     /// y of the label column's first line relative to the row top
     pub top: f32,
@@ -176,7 +159,7 @@ impl SettingsView {
         let title_h = txt::wrapped_h(d.cv, title, st_title(), label_w, 18.0).max(18.0);
         let hint_h = if hint.is_empty() { 0.0 } else { 2.0 + txt::wrapped_h(d.cv, hint, st_hint(), label_w, 16.0) };
         let mut msg_h = 0.0;
-        if let Some((m, _)) = &r.msg {
+        if let Some(m) = r.live_msg() {
             if !m.text.is_empty() {
                 msg_h += 2.0 + txt::wrapped_h(d.cv, &m.text, st_hint(), label_w, 16.0);
             }
@@ -186,9 +169,14 @@ impl SettingsView {
                 msg_h += 2.0 + txt::wrapped_h(d.cv, &m.text, st_hint(), label_w, 16.0);
             }
         }
+        // what the lines need vs what is shown now: the shown height flows towards the need (see `paint_card`)
+        let msg_need = msg_h;
+        if r.mh_seen {
+            msg_h = r.mh.at().max(0.0);
+        }
         let text_h = title_h + hint_h + msg_h;
         let nh = if block { 11.0 + text_h + 10.0 + ch + 14.0 } else { (11.0 + text_h + 11.0).max(56.0).max(ch + 24.0) };
-        RowM { nh, cw, ch, block, title_h, hint_h, msg_h, label_w, top: 11.0 }
+        RowM { nh, cw, ch, block, title_h, hint_h, msg_h, msg_need, label_w, top: 11.0 }
     }
 
     /// Paints the label column of a row: title, hint, message and status lines.
@@ -208,23 +196,27 @@ impl SettingsView {
             if !s.text.is_empty() {
                 yy += 2.0;
                 let h = txt::wrapped_h(cv, &s.text, st_hint(), m.label_w, 16.0);
-                txt::para(cv, Rect::new(x, yy, m.label_w, h), &s.text, st_hint(), msg_color(p, s.kind));
+                let k = r.grow();
+                cv.with_opacity(k, |cv| txt::para(cv, Rect::new(x, yy, m.label_w, h), &s.text, st_hint(), msg_color(p, s.kind)));
                 yy += h;
             }
         }
-        if let Some((s, t)) = &r.msg {
+        if let Some((s, f)) = &r.msg {
             if !s.text.is_empty() {
-                let k = t.value().clamp(0.0, 1.0);
+                let (k, rise) = (f.at01(), (1.0 - f.at()) * 6.0);
                 yy += 2.0;
                 let h = txt::wrapped_h(cv, &s.text, st_hint(), m.label_w, 16.0);
-                cv.with_opacity(k, |cv| txt::para(cv, Rect::new(x, yy + (1.0 - k) * 6.0, m.label_w, h), &s.text, st_hint(), msg_color(p, s.kind)));
+                cv.with_opacity(k, |cv| txt::para(cv, Rect::new(x, yy + rise, m.label_w, h), &s.text, st_hint(), msg_color(p, s.kind)));
             }
         }
     }
 }
 
-pub fn new_msg_tween() -> Tween<f32> {
-    Tween::new(0.0, 1.0, 0.38, curves::EASE_OUT)
+/// A message under a row's hint: fades in and rises 6 px (it flows from 0 to 1).
+pub fn new_msg_flow(reduce: bool) -> Flow {
+    let mut f = Flow::new(0.0, Feel::FLOW);
+    from_to(&mut f, 0.0, 1.0, reduce);
+    f
 }
 
 pub fn act_for_row(r: &RowRt) -> Act {
