@@ -69,6 +69,9 @@ pub(crate) fn defaults() -> Cfg {
     // song lyrics (lyrics.rs, opt-in: sends the playing track's title/artist/album/duration to lrclib.net) and the Home player (tab-home): style mirror | fill | compact, lyrics column
     let Value::Object(lyr) = json!({ "music.lyrics": false, "home.player": "mirror", "home.lyrics": true }) else { unreachable!() };
     m.extend(lyr);
+    // VPN (vpn.rs): the whole feature is behind module.vpn; the own client is a name plus a connect and a disconnect command (or client:// link)
+    let Value::Object(vpn) = json!({ "module.vpn": true, "vpn.own.name": "", "vpn.own.connect": "", "vpn.own.disconnect": "", "vpn.admin": false }) else { unreachable!() };
+    m.extend(vpn);
     m
 }
 

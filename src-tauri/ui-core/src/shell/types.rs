@@ -237,6 +237,8 @@ pub struct TabView {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChromeView {
     pub vpn: String,
+    /// the VPN is up (the chip is lit); a chip with this off is dim but still clickable
+    pub vpn_on: bool,
     pub pinned: bool,
     /// the settings button looks pressed while the in-pill settings tab is current
     pub settings_current: bool,

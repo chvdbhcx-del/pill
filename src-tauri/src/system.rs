@@ -77,6 +77,8 @@ pub struct SysState {
     muted: bool,
     #[serde(rename = "micMuted", skip_serializing_if = "Option::is_none")]
     mic_muted: Option<bool>,
+    /// vpn.rs: {enabled, configured, on, name} for the Controls tile
+    vpn: Value,
 }
 
 fn com() {
@@ -207,6 +209,7 @@ fn build_state() -> SysState {
         volume,
         muted,
         mic_muted: get_mic_muted(),
+        vpn: crate::vpn::vpn_state(),
     }
 }
 

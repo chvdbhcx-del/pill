@@ -93,11 +93,13 @@ pub mod lyrics;
 pub mod media;
 pub mod model;
 pub mod plus;
+pub mod powertimer;
 pub mod shelf;
 pub mod sysmon;
 pub mod system;
 pub mod timers;
 pub mod util;
+pub mod vpn;
 pub mod voice;
 pub mod whatsnew;
 

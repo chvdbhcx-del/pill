@@ -38,7 +38,7 @@ pub const ACTIONS: [HotkeyAction; 18] = [
     a("passThrough", tr("Сквозной режим: включить / выключить", "Pass-through mode: on / off"), Tr::NONE, ""),
     a("theme", tr("Тема острова: тёмная / светлая", "Island theme: dark / light"), tr("Переключает тему; выбранный цвет острова при этом сбрасывается, у цвета свой светлый или тёмный текст", "Switches the theme; a chosen island colour is cleared, because a colour has light or dark text of its own"), ""),
     a("musicView", tr("Музыка: вид пилюли по кругу", "Music: cycle the pill view"), tr("Пока играет музыка: название, мини-плеер, текст песни (если выбран). Тихо, без карточки", "While music plays: title, mini player, lyrics (if chosen). Silent, no card"), ""),
-    a("vpn", tr("VPN: включить / выключить", "VPN: on / off"), tr("Пока ничего не делает: переключателя VPN в Pill ещё нет, клавиша только запоминается", "Does nothing yet: Pill has no VPN switch, the key is only remembered"), ""),
+    a("vpn", tr("VPN: включить / выключить", "VPN: on / off"), tr("Запускает ваш клиент командой из Настройки > Модули > VPN", "Starts your own client with the command from Settings > Modules > VPN"), ""),
 ];
 
 /// The actions the wizard's third step lists.

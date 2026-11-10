@@ -65,6 +65,7 @@ windows = { version = "0.58", features = [
   "Win32_System_Console", # applog.rs: SetStdHandle (stderr -> log file)
   "Win32_NetworkManagement_IpHelper",
   "Win32_NetworkManagement_Ndis",
+  "Win32_NetworkManagement_WiFi", # wifi.rs: the WLAN API (scan, connect, profiles)
   "Win32_Networking_WinHttp",
   "Win32_Security_Cryptography",
   "Win32_System_Time",

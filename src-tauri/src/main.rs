@@ -57,6 +57,8 @@ mod openarg;
 mod uninstall;
 mod ui;
 mod applog;
+mod vpn;
+mod wifi;
 
 fn main() {
     watchdog::wait_for_predecessor(); // restarted by the watchdog: the hung instance must be gone before the single-instance check
@@ -87,6 +89,7 @@ fn main() {
             shelf::init(app);
             command::init(app);
             system::init(app);
+            vpn::init(app);
             net::init(app);
             chat::init(app);
             notes::init(app);

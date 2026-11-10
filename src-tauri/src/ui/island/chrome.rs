@@ -23,6 +23,8 @@ pub enum Btn {
     Dict,
     Pin,
     Settings,
+    /// The VPN chip: not part of `ChromeLayout::buttons`, hit-tested through `ChromeLayout::vpn`.
+    Vpn,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -109,10 +111,11 @@ pub struct Hover {
 /// the settings button, the badge counts and the VPN chip appearing. Stepped by the view; `moving()` says whether frames are still needed.
 pub struct HeaderFx {
     tabs: HashMap<String, TabFlow>,
-    btns: [(Flow, Flow); 3],
+    btns: [(Flow, Flow); 4],
     pin: Flow,
     cur: Flow,
     vpn: Flow,
+    vpn_on: Flow,
     vpn_text: String,
     busy: bool,
 }
@@ -132,6 +135,7 @@ fn btn_ix(b: Btn) -> usize {
         Btn::Dict => 0,
         Btn::Pin => 1,
         Btn::Settings => 2,
+        Btn::Vpn => 3,
     }
 }
 
@@ -144,7 +148,7 @@ impl Default for HeaderFx {
 impl HeaderFx {
     pub fn new() -> HeaderFx {
         let pair = || (Flow::new(0.0, HOVER), Flow::new(0.0, Feel::SNAP));
-        HeaderFx { tabs: HashMap::new(), btns: [pair(), pair(), pair()], pin: Flow::new(0.0, HOVER), cur: Flow::new(0.0, HOVER), vpn: Flow::new(0.0, Feel::POP), vpn_text: String::new(), busy: false }
+        HeaderFx { tabs: HashMap::new(), btns: [pair(), pair(), pair(), pair()], pin: Flow::new(0.0, HOVER), cur: Flow::new(0.0, HOVER), vpn: Flow::new(0.0, Feel::POP), vpn_on: Flow::new(0.0, Feel::FADE), vpn_text: String::new(), busy: false }
     }
 
     pub fn moving(&self) -> bool {
@@ -173,7 +177,7 @@ impl HeaderFx {
             }
             e.badge.to(bt);
         }
-        for (i, b) in [Btn::Dict, Btn::Pin, Btn::Settings].into_iter().enumerate() {
+        for (i, b) in [Btn::Dict, Btn::Pin, Btn::Settings, Btn::Vpn].into_iter().enumerate() {
             let h = hover_btn == Some(b);
             self.btns[i].0.to(if h { 1.0 } else { 0.0 });
             self.btns[i].1.to(if h && pressed { 1.0 } else { 0.0 });
@@ -184,6 +188,7 @@ impl HeaderFx {
             self.vpn_text = v.chrome.vpn.clone();
         }
         self.vpn.to(if v.chrome.vpn.is_empty() { 0.0 } else { 1.0 });
+        self.vpn_on.to(if v.chrome.vpn_on { 1.0 } else { 0.0 });
         let mut busy = false;
         let mut each = |f: &mut Flow| {
             f.step(dt_ms);
@@ -202,6 +207,7 @@ impl HeaderFx {
         each(&mut self.pin);
         each(&mut self.cur);
         each(&mut self.vpn);
+        each(&mut self.vpn_on);
         self.busy = busy;
         busy
     }
@@ -261,10 +267,16 @@ pub fn paint(cv: &Canvas, th: &Theme, gpu: &mut Gpu, lay: &ChromeLayout, fx: &He
     if let Some(r) = lay.vpn {
         let k = fx.vpn.at();
         let a = k.clamp(0.0, 1.0);
-        cv.with_scale_about(r.center(), (0.8 + 0.2 * k).max(0.0), |cv| {
-            cv.fill_rr(r, 12.0, th.green_bg.fade(a));
-            gpu.icon(cv, "shield", Rect::new(r.x + 8.0, r.cy() - 7.5, 15.0, 15.0), th.green.fade(a), 1.7);
-            cv.text(Rect::new(r.x + 8.0 + 15.0 + 4.0, r.y, r.w, r.h), &fx.vpn_text, VPN, th.green.fade(a));
+        // lit (green) while the VPN is up, a dim chip while it is off; the chip is the VPN switch
+        let (on, (hov, press)) = (fx.vpn_on.at01(), (fx.btns[btn_ix(Btn::Vpn)].0.at01(), fx.btns[btn_ix(Btn::Vpn)].1.at01()));
+        let (bg, fg) = (th.raised.mix(th.green_bg, on), th.text2.mix(th.green, on));
+        cv.with_scale_about(r.center(), ((0.8 + 0.2 * k) * (1.0 - 0.04 * press)).max(0.0), |cv| {
+            cv.fill_rr(r, 12.0, bg.fade(a));
+            if hov > 0.0 {
+                cv.fill_rr(r, 12.0, th.hover.fade(hov * a));
+            }
+            gpu.icon(cv, "shield", Rect::new(r.x + 8.0, r.cy() - 7.5, 15.0, 15.0), fg.fade(a), 1.7);
+            cv.text(Rect::new(r.x + 8.0 + 15.0 + 4.0, r.y, r.w, r.h), &fx.vpn_text, VPN, fg.fade(a));
         });
     }
     for (b, r) in &lay.buttons {
@@ -272,6 +284,7 @@ pub fn paint(cv: &Canvas, th: &Theme, gpu: &mut Gpu, lay: &ChromeLayout, fx: &He
             Btn::Dict => ("wave", 0.0),
             Btn::Pin => ("pin", fx.pin.at01()),
             Btn::Settings => ("settings", fx.cur.at01()),
+            Btn::Vpn => continue, // the chip is painted above
         };
         let (hov, press) = (fx.btns[btn_ix(*b)].0.at01(), fx.btns[btn_ix(*b)].1.at01());
         cv.with_scale_about(r.center(), 1.0 - 0.04 * press, |cv| {
@@ -298,7 +311,7 @@ mod tests {
         // only the fields the layout reads
         let mut v = crate::ui::island::tests_support::blank_view();
         v.tabs = ["home", "clipboard", "shelf", "controls"].iter().enumerate().map(|(i, id)| TabView { id: id.to_string(), title: id.to_string(), order: i as i32, hidden: false, off: false, active: *id == active, badge: 0 }).collect();
-        v.chrome = ChromeView { vpn: vpn.into(), pinned: false, settings_current: false };
+        v.chrome = ChromeView { vpn: vpn.into(), vpn_on: false, pinned: false, settings_current: false };
         v
     }
 
@@ -384,6 +397,35 @@ mod tests {
         }
         assert!(grown[0] - base < 4.0 && *grown.last().unwrap() > base + 10.0, "{base} -> {grown:?}");
         assert!(grown.iter().cloned().fold(0.0, f32::max) > *grown.last().unwrap(), "it overshoots a little before it rests");
+    }
+
+    #[test]
+    fn the_vpn_chip_lights_up_with_the_vpn_and_answers_a_hover_on_springs() {
+        let _m = crate::ui::host::testing::motion_on();
+        let mut v = view("home", "VPN");
+        let mut fx = HeaderFx::new();
+        for _ in 0..300 {
+            fx.step(&v, None, None, false, 8.0);
+        }
+        assert!(fx.vpn_on.at01() < 0.01 && !fx.moving(), "an off chip is dim and at rest");
+        assert!(fx.layout(&v, false, 338.0, &Mono(0.5)).vpn.is_some(), "the chip stays for a VPN that is off: it is the switch");
+        v.chrome.vpn_on = true;
+        fx.step(&v, None, None, false, 8.0);
+        assert!(fx.moving(), "the colour flows to green, not at once");
+        let first = fx.vpn_on.at01();
+        for _ in 0..300 {
+            fx.step(&v, None, None, false, 8.0);
+        }
+        assert!(first < 0.5 && fx.vpn_on.at01() > 0.99 && !fx.moving());
+        // hovering and pressing the chip moves its own pair of flows and settles
+        for _ in 0..30 {
+            fx.step(&v, None, Some(Btn::Vpn), true, 8.0);
+        }
+        assert!(fx.btns[btn_ix(Btn::Vpn)].1.at01() > 0.9 && fx.btns[btn_ix(Btn::Vpn)].0.at01() > 0.9);
+        for _ in 0..300 {
+            fx.step(&v, None, None, false, 8.0);
+        }
+        assert!(!fx.moving());
     }
 
     #[test]

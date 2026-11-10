@@ -2,6 +2,7 @@
 // calculator, unit conversion, web search, `>` shell, confirmed system commands. Owner: command agent.
 // The bar is a native window (ui/bar_view), created on first use; placement, blur-hide and the keyboard hand-over belong to the host.
 // Commands: cmd_toggle, cmd_query, cmd_run, cmd_icon.
+// Timed power commands ("shut down in 30 minutes", "restart at 23:00", "cancel shutdown") live in command/power_timer.rs.
 // Not done (later slice): timer / remind parsing, currency, runtime hotkey rebind (restart needed).
 use crate::ui::bus;
 use crate::{settings, store};
@@ -226,6 +227,7 @@ fn query(text: &str) -> Vec<Res> {
             }
         }
         if all {
+            out.extend(power_timer::rows(rest));
             out.extend(system_rows(rest));
         }
         let words: Vec<String> = rest
@@ -715,6 +717,16 @@ pub fn cmd_run(app: AppHandle, id: String, mode: String) -> Outcome {
             if !confirmed(&id) {
                 return Outcome { status: "confirm", message: "Press Enter again within 3 s".into() };
             }
+            if let Some(done) = power_timer::run_payload(&r.payload) {
+                // a timed shutdown / restart / cancel: the island shows the countdown chip
+                return match done {
+                    Ok(()) => {
+                        hide(&app);
+                        ok()
+                    }
+                    Err(e) => err(e),
+                };
+            }
             hide(&app);
             power(&r.payload);
             return ok();
@@ -781,6 +793,14 @@ pub fn cmd_run(app: AppHandle, id: String, mode: String) -> Outcome {
             "voice" => {
                 crate::voice::toggle(&app);
                 ok()
+            }
+            "vpn" => {
+                let v = crate::vpn::vpn_toggle();
+                match v["status"].as_str() {
+                    Some("ok" | "setup") => ok(),
+                    Some("off") => err("VPN is switched off in Settings > Modules"),
+                    _ => err(v["message"].as_str().unwrap_or("The VPN command failed").to_string()),
+                }
             }
             _ => err("Unknown action"),
         },
@@ -1059,6 +1079,9 @@ fn static_rows(lw: &[String]) -> Vec<Res> {
             res("action", format!("act:{id}"), (if cyr { ru } else { en }).to_string(), sub, id.to_string())
         })
         .collect();
+    if let Some((t, sub)) = crate::vpn::bar_row(lw, cyr) {
+        o.push(res("action", "act:vpn".into(), t, sub, "vpn".into())); // only with an own client set and module.vpn on
+    }
     o.extend(TABS.iter().filter(|(id, en, ru)| tab_on(id) && hit_pre(&format!("{en} {ru}"), lw)).map(|(id, en, ru)| {
         let (a, b) = if cyr { (ru, en) } else { (en, ru) };
         res("tab", format!("tab:{id}"), a.to_string(), format!("Pill tab, {b}"), id.to_string())
@@ -1236,6 +1259,7 @@ fn toggle_setting(app: &AppHandle, key: &str, label: &str) -> Outcome {
 // ---- calculator and unit conversion: command/calc.rs ----
 mod calc;
 use calc::{calc_row, convert};
+pub(crate) mod power_timer; // "shut down in 30 minutes", "cancel shutdown": command/power_timer.rs
 
 #[cfg(test)]
 mod tests {

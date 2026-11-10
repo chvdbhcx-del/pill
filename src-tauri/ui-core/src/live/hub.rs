@@ -24,11 +24,13 @@ use super::ext::{NotificationLive, ObsLive, SteamLive, UninstallLive};
 use super::media::MediaLive;
 use super::model::{LiveCmd, Query};
 use super::plus::{BatteryLive, CalendarLive, FileDoneLive, MailLive, UsbLive};
+use super::powertimer::PowerTimerLive;
 use super::shelf::ShelfLive;
 use super::sysmon::SysmonLive;
 use super::system::{DownloadLive, PrivacyLive, UpdateLive, VolumeLive};
 use super::timers::TimerLive;
 use super::voice::VoiceLive;
+use super::vpn::VpnLive;
 use super::whatsnew::WhatsNewLive;
 
 /// One live-event producer's UI side.
@@ -88,6 +90,8 @@ impl Hub {
             Box::new(WhatsNewLive),
             Box::new(MediaLive::default()),
             Box::new(TimerLive::default()),
+            Box::new(PowerTimerLive::default()),
+            Box::new(VpnLive::default()),
             Box::new(ShelfLive::default()),
         ])
     }

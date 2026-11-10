@@ -6,7 +6,7 @@
 //! `settings_get | weather_get | settings_set | weather_search_city | weather_set_city` go to `Weather::on_result` (a rejected command is fed as
 //! `null`, like the JS wrapper's `inv`); `Fx::Anim` cues play on the `Player` (`gradient` crossfade, `refresh` spin) and the view adds enter
 //! cues of its own for card changes, result rows and day rows. Text input goes through `weather::field::Field` (input is applied on the next frame).
-mod field;
+pub(super) mod field; // the Controls tab's password field uses it too
 #[cfg(test)]
 mod tests;
 mod wxicons;

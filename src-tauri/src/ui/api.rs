@@ -195,6 +195,7 @@ mod tests {
             }
         }
         text.push_str(include_str!("../uninstall/commands.rs")); // split out of uninstall.rs: the scan above only reads src/*.rs
+        text.push_str(include_str!("../command/power_timer.rs")); // split out of command.rs: emits power:timer
         let events = contract_events();
         assert!(events.len() >= 45, "event parse looks broken: {}", events.len());
         let missing: Vec<_> = events.iter().filter(|e| !text.contains(&format!("\"{e}\""))).collect();
@@ -207,6 +208,7 @@ mod tests {
         let mut bad = Vec::new();
         let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&src).unwrap().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "rs")).collect();
         files.push(src.join("uninstall").join("commands.rs")); // split out of uninstall.rs
+        files.push(src.join("command").join("power_timer.rs")); // split out of command.rs
         for p in files {
             for (n, l) in std::fs::read_to_string(&p).unwrap().lines().enumerate() {
                 let code = l.split("//").next().unwrap_or("");

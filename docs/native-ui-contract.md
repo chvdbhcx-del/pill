@@ -46,6 +46,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `pill:hide` | pill | `json!({ "reason": reason })` | pill.rs |
 | `pill:open-tab` | pill | `p` | command.rs |
 | `pill:show` | pill | `json!({ "reason": reason })` | pill.rs |
+| `power:timer` | pill | `p.clone()` | command/power_timer.rs |
 | `rec:state` | pill | `json!({ "recording": true, "startedAt": started, "mode": kind, "fps": opts.fps })`<br>`json!({ "recording": false, "startedAt": r.started })` | capture.rs, capture.rs |
 | `remind:changed` | pill | `serde_json::Value::Null` | timers.rs, timers.rs |
 | `remind:due` | pill | `serde_json::json!({ "id": d.id, "text": d.text, "kind": d.kind, "late": now - d.due_at > LATE_MS, "repeat": d.rule, "due_at": d.due_at })` | timers.rs |
@@ -55,6 +56,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `sysmon:tick` | pill | `sample()` | sysmon.rs |
 | `timer:done` | pill | `serde_json::json!({ "id": d.id })` | timers.rs |
 | `timer:tick` | pill | `serde_json::json!({ "id": t.id, "remaining_ms": t.remaining_ms, "total_s": t.total_s })` | timers.rs |
+| `vpn:changed` | pill | `json!({ "country": if show { "VPN" } else { "" }, "on": s.on })` | vpn.rs |
 | `uninstall:focus` | bar | `json!({})` | uninstall.rs |
 | `uninstall:item` | bar | `json!({ "shown": shown, "ok": ok, "error": err, "n": n, "total": total })` | uninstall.rs |
 | `uninstall:ready` | all windows | `json!({ "name": name, "kind": kind, "count": count })` | uninstall.rs |
@@ -126,6 +128,13 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `sys_state` | - | `SysState` | system.rs |
 | `sys_set` | `key: String, value: Value` | `Value` | system.rs |
 | `sys_power` | `action: String, confirmed: bool` | `Value` | system.rs |
+| `power_timer_state` | - | `Value` | command/power_timer.rs |
+| `power_timer_cancel` | - | `Value` | command/power_timer.rs |
+| `wifi_scan` | - | `Value` | wifi.rs |
+| `wifi_connect` | `ssid: String, password: Option<String>` | `Value` | wifi.rs |
+| `wifi_disconnect` | - | `Value` | wifi.rs |
+| `vpn_state` | - | `Value` | vpn.rs |
+| `vpn_toggle` | - | `Value` | vpn.rs |
 | `weather_get` | `force: Option<bool>, tz: Option<i64>` | `Value` | net.rs |
 | `weather_search_city` | `query: String, lang: Option<String>` | `Value` | net.rs |
 | `weather_set_city` | `name: String, lat: f64, lon: f64` | `bool` | net.rs |

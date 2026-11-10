@@ -109,7 +109,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             tabs,
             tab_dir: self.tabs.dir,
             current_tab: self.tabs.cur.clone(),
-            chrome: ChromeView { vpn: self.s.vpn_country.clone(), pinned: self.s.pinned, settings_current: self.tabs.cur.as_deref() == Some("settings") },
+            chrome: ChromeView { vpn: self.s.vpn_country.clone(), vpn_on: self.s.vpn_on, pinned: self.s.pinned, settings_current: self.tabs.cur.as_deref() == Some("settings") },
             wave_color,
             hit_rect: self.hit_rect(),
             panel_anim: PANEL_IN,
