@@ -173,6 +173,11 @@ impl<K: Clone + Eq + Hash> Clicks<K> {
         1.0 - (1.0 - depth) * self.prs.get(k).map_or(0.0, |t| t.at())
     }
 
+    /// How far `k` is pressed, 0..1 (for a fill that deepens while held).
+    pub fn press_amt(&self, k: &K) -> f32 {
+        self.prs.get(k).map_or(0.0, |t| t.at01())
+    }
+
     fn retarget(map: &mut HashMap<K, Flow>, k: &K, to: f32, feel: Feel, reduced: bool) {
         let t = map.entry(k.clone()).or_insert_with(|| Flow::new(0.0, feel));
         if reduced {
