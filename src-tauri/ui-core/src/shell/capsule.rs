@@ -325,7 +325,11 @@ impl<B: Backend, C: Clock> Shell<B, C> {
         Times { mono: self.now, wall: self.wall }
     }
     pub(super) fn palette(&self) -> Palette {
-        palette(self.s.resolved_theme(self.env.os_prefers_light))
+        let mut p = palette(self.s.resolved_theme(self.env.os_prefers_light));
+        if let Some(c) = self.s.island_color() {
+            p.bg = c; // the chosen body colour; the text colours came with the theme it decided
+        }
+        p
     }
     pub(super) fn body_alpha(&self) -> f64 {
         if self.state == PillState::Expanded {
@@ -1053,6 +1057,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             }
             Event::WeatherCurrent(v) => self.set_wx(Weather::from_json(&v)),
             Event::BatteryState(v) => self.on_battery(&v),
+            Event::ClockChips(l, r) => self.set_chips([l, r]),
             Event::WeatherGet(v) => self.on_weather_get(&v),
             Event::SettingsOpened(ok) => match self.pending_open.take() {
                 Some(PendingOpen::FromExpand) => {

@@ -26,6 +26,8 @@ mod voice;
 mod aisetup;
 mod everything;
 mod hotkeys;
+mod islandkeys;
+mod vdesk;
 mod obs;
 mod steam;
 mod wake;
@@ -76,6 +78,7 @@ fn main() {
             notes::init(app);
             timers::init(app);
             watch::init(app);
+            vdesk::init(app);
             livesys::init(app);
             agents::init(app);
             launcher::init(app);

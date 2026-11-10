@@ -23,6 +23,8 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `clip:added` | pill | `item` | clipboard.rs |
 | `clip:open` | pill | `()` | hotkeys.rs |
 | `kbd:layout` | pill | `info(new)` | watch.rs |
+| `kbd:now` | pill | `info(lid)` | watch.rs |
+| `vdesk:now` | pill | `v` | vdesk.rs |
 | `launcher:changed` | pill | `serde_json::json!({ "count": v.len(), "items": &v })` | launcher.rs |
 | `live:battery` | pill | `json!({ "kind": kind, "percent": percent })` | liveplus.rs |
 | `live:calendar` | pill | `json!({ "title": title, "minutes": minutes })` | liveplus.rs |
@@ -155,6 +157,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `timer_state` | - | `TimerState` | timers.rs |
 | `sound_play` | `tone: Option<String>` | `()` | timers.rs |
 | `kbd_state` | - | `Option<Value>` | watch.rs |
+| `vdesk_state` | - | `Value` | vdesk.rs |
 | `watch_pause` | - | `()` | watch.rs |
 | `watch_resume` | - | `()` | watch.rs |
 | `livesys_visible` | `on: bool` | `()` | livesys.rs |

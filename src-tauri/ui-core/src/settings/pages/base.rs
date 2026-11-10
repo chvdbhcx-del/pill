@@ -89,6 +89,13 @@ pub fn general() -> Page {
     )
 }
 
+/// Options of the "Island colour" select: the theme's own, then the nine ready colours (their hex is the stored value).
+fn island_colors() -> Vec<Opt> {
+    let mut v = vec![opt(json!(""), tr("По теме", "From the theme"))];
+    v.extend(crate::shell::tint::PRESETS.iter().map(|p| opt(json!(p.hex), p.name)));
+    v
+}
+
 pub fn appearance() -> Page {
     let mut monitor = seg("monitor", tr("Монитор", "Monitor"), Tr::NONE, so(&[("primary", tr("Основной", "Primary"))]), json!("primary"));
     if let Control::Segmented { dynamic, .. } = &mut monitor.control {
@@ -113,6 +120,23 @@ pub fn appearance() -> Page {
                         json!("dark"),
                     )
                     .kw(&["theme", "тема", "dark", "light", "тёмная", "светлая", "цвет"]),
+                    select(
+                        "island.color",
+                        tr("Цвет острова", "Island colour"),
+                        tr("Готовые цвета. Текст сам становится светлым или тёмным под цвет. «По теме» — чёрный или светлый, как в теме выше", "Ready colours. The text turns light or dark to suit the colour. “From the theme” is black or light, as the theme above says"),
+                        island_colors(),
+                        json!(""),
+                    )
+                    .kw(&["color", "colour", "island", "цвет", "остров", "фон", "background"]),
+                    text(
+                        "island.colorCustom",
+                        tr("Свой цвет острова", "Custom island colour"),
+                        tr("Любой цвет в виде #RRGGBB, например #3a2a5c. Если задан, он главнее готового цвета выше; пустое поле его убирает", "Any colour as #RRGGBB, for example #3a2a5c. When set, it beats the ready colour above; an empty field removes it"),
+                        TextKind::Plain,
+                        same("#RRGGBB"),
+                        "",
+                    )
+                    .kw(&["color", "colour", "hex", "custom", "цвет", "свой"]),
                     slider("size", tr("Размер острова", "Island size"), tr("На большом мониторе остров можно сделать крупнее", "On a large monitor the pill can be made bigger"), 80.0, 200.0, 5.0, Unit::Percent, 100.0).kw(&["size", "scale", "размер", "масштаб", "крупнее"]),
                     slider("opacityCol", tr("Прозрачность свёрнутого острова", "Transparency of the folded island"), tr("Пилюля и её карточки", "The pill and its cards"), 0.0, 60.0, 5.0, Unit::Percent, 0.0).kw(&["opacity", "transparency", "прозрачность"]),
                     slider("opacityExp", tr("Прозрачность раскрытого острова", "Transparency of the open island"), Tr::NONE, 0.0, 60.0, 5.0, Unit::Percent, 0.0).kw(&["opacity", "transparency", "прозрачность"]),

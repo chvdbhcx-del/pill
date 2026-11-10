@@ -21,6 +21,7 @@ pub mod settings;
 pub mod spring;
 pub mod tabs;
 pub mod timers;
+pub mod tint;
 pub mod types;
 mod rowlive;
 #[cfg(test)]

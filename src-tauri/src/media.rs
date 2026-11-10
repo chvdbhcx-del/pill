@@ -123,6 +123,11 @@ fn wake() {
     WAKE.1.notify_all();
 }
 
+/// True while the selected session is playing (the "cycle the music view" hotkey acts only then).
+pub fn playing() -> bool {
+    PLAYING.load(Ordering::Relaxed)
+}
+
 /// True while the pill is visible and the selected session is playing (audio.rs captures only then).
 pub fn want_capture() -> bool {
     ACTIVE.load(Ordering::Relaxed) && PLAYING.load(Ordering::Relaxed) && enabled()

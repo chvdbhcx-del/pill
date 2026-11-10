@@ -16,6 +16,8 @@ pub const TIME_STYLE: Style = Style::new(13.0, 600).mono().track(0.13);
 const DATE_STYLE: Style = Style::new(12.0, 600).mono();
 const TEMP_STYLE: Style = Style::new(13.0, 600).mono();
 const BATT_STYLE: Style = Style::new(12.0, 600).mono();
+const TAG_STYLE: Style = Style::new(11.0, 700).mono();
+const TAG_PAD: f32 = 5.0;
 const COL_GAP: f32 = 16.0;
 const SIDE_GAP: f32 = 12.0;
 
@@ -64,6 +66,7 @@ fn item_w(it: &ClockItem, m: &dyn Meter) -> f32 {
         ClockItem::Date(t) => m.w(t, DATE_STYLE),
         ClockItem::Battery { percent, .. } => 20.0 + 4.0 + m.w(&format!("{}%", percent.round() as i32), BATT_STYLE),
         ClockItem::Temp(t) => m.w(&format!("{t}°"), TEMP_STYLE),
+        ClockItem::Tag(t) => m.w(t, TAG_STYLE) + 2.0 * TAG_PAD,
         ClockItem::Slot(SlotItem::WxIcon(_)) => 20.0,
         ClockItem::Slot(SlotItem::Temp(t)) => m.w(&format!("{t}°"), TEMP_STYLE),
         ClockItem::Slot(SlotItem::Text(t)) => m.w(t, TEMP_STYLE),
@@ -169,6 +172,10 @@ fn paint_item(cv: &Canvas, th: &Theme, gpu: &mut Gpu, it: &ClockItem, r: Rect, s
             ClockItem::Date(t) => cv.text(Rect::new(r.x, r.cy() - 8.0, r.w, 16.0), t, DATE_STYLE, th.text.fade(0.6)),
             ClockItem::Temp(t) | ClockItem::Slot(SlotItem::Temp(t)) => cv.text(Rect::new(r.x, r.cy() - 9.0, r.w + 2.0, 18.0), &format!("{t}°"), TEMP_STYLE, th.text),
             ClockItem::Slot(SlotItem::Text(t)) => cv.text(Rect::new(r.x, r.cy() - 9.0, r.w + 2.0, 18.0), t, TEMP_STYLE, th.text),
+            ClockItem::Tag(t) => {
+                cv.fill_rr(Rect::new(r.x, r.cy() - 7.5, r.w, 15.0), 5.0, th.text.fade(0.14));
+                cv.text(Rect::new(r.x + TAG_PAD, r.cy() - 8.0, r.w, 16.0), t, TAG_STYLE, th.text.fade(0.85));
+            }
             ClockItem::Slot(SlotItem::Spec(_)) => {}
             ClockItem::Battery { percent, low, charging } => {
                 let c = if *low { th.red } else { th.text };

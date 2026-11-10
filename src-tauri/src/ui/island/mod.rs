@@ -1,4 +1,5 @@
 //! The native island: the always-resident `pill` window as a `View`. See docs/native-island.md.
+pub mod chips;
 pub mod chrome;
 pub mod companions;
 pub mod core;
@@ -14,6 +15,7 @@ pub mod shapes;
 pub mod start;
 pub mod sys;
 pub mod tabfx;
+pub mod tint;
 pub mod view;
 mod wx_data;
 

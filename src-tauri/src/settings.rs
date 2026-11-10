@@ -48,6 +48,11 @@ pub(crate) fn defaults() -> Cfg {
     // quiet hours (src/quiet.js, Settings > Behavior): days are strings "0" (Sunday) .. "6"
     let Value::Object(quiet) = json!({ "quiet.on": false, "quiet.from": "22:00", "quiet.to": "07:00", "quiet.days": ["0", "1", "2", "3", "4", "5", "6"] }) else { unreachable!() };
     m.extend(quiet);
+    // island looks and small behaviour (island.color: a ready colour or hex, "" = the theme's own; island.colorCustom: typed hex that wins), chips beside the time, card lifetime, web search engine
+    let Value::Object(look) = json!({
+        "island.color": "", "island.colorCustom": "", "live.keyboardLayoutAlways": false, "live.virtualDesktop": "off", "cards.duration": "normal", "search.engine": "google", "search.customUrl": ""
+    }) else { unreachable!() };
+    m.extend(look);
     m
 }
 
@@ -221,6 +226,7 @@ pub fn apply_patch(app: &tauri::AppHandle, mut patch: Cfg) -> (Cfg, Result<(), S
     }
     crate::pill::on_settings(app, &patch);
     crate::media::on_settings(&patch);
+    crate::vdesk::on_settings(&patch);
     let all = merged();
     let _ = bus::emit("settings:changed", &all);
     (all, res)

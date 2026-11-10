@@ -131,6 +131,16 @@ pub fn live() -> Page {
             rows.push(button("live.agents.snippets", tr("Фрагменты для настроек агентов", "Agent settings snippets"), tr("Pill сам не меняет настройки агентов. «Показать» выведет фрагменты: хуки для ~/.claude/settings.json (Claude Code) и notify для ~/.codex/config.toml (Codex). Для новых сессий.", "Pill never edits agent settings itself. “Show” prints the snippets: hooks for ~/.claude/settings.json (Claude Code) and notify for ~/.codex/config.toml (Codex). For new sessions."), tr("Показать", "Show"), Action::AgentsSnippets, ButtonStyle::Small));
         }
     }
+    // chips beside the time and how long cards stay (they read nothing off the PC beyond the layout of the window in front and the desktop number)
+    rows.push(toggle("live.keyboardLayoutAlways", tr("Раскладка в пилюле всегда", "Layout in the pill, always"), tr("Метка RU / EN остаётся слева от времени, а не вспыхивает на 1,4 с при смене языка", "The RU / EN chip stays left of the time instead of flashing for 1.4 s when the language changes"), false).kw(&["keyboard", "layout", "language", "раскладка", "язык ввода", "chip"]));
+    rows.push(
+        seg("live.virtualDesktop", tr("Виртуальный рабочий стол", "Virtual desktop"), tr("Метка справа от времени: номер или название текущего рабочего стола Windows (Win+Ctrl+стрелки). Читается из реестра пользователя, раз в секунду, пока включено", "A chip right of the time: the number or the name of the current Windows desktop (Win+Ctrl+arrows). Read from your user registry once a second while it is on"), so(&[("off", tr("Выкл.", "Off")), ("number", tr("Номер", "Number")), ("name", tr("Название", "Name"))]), json!("off"))
+            .kw(&["desktop", "virtual", "рабочий стол", "виртуальный", "workspace"]),
+    );
+    rows.push(
+        seg("cards.duration", tr("Сколько висят карточки", "How long cards stay"), tr("Все карточки острова: коротко (0,6 от обычного), обычно, долго (вдвое дольше)", "All island cards: short (0.6 of normal), normal, long (twice as long)"), so(&[("short", tr("Коротко", "Short")), ("normal", tr("Обычно", "Normal")), ("long", tr("Долго", "Long"))]), json!("normal"))
+            .kw(&["card", "duration", "timeout", "карточка", "время показа", "уведомление"]),
+    );
     // the calendar and the mailbox are the two network opt-ins of this page (off by default)
     let (cal_t, cal_h) = (tr("Ближайшее событие календаря", "Next calendar event"), tr("За 10 минут до события из файла .ics или ссылки-подписки (https:// / webcal://). Файл только читается, ссылка скачивается раз в 30 минут, без аккаунтов", "Ten minutes before an event from an .ics file or a subscription link (https:// / webcal://). A file is only read, a link is fetched every 30 minutes, no accounts"));
     rows.push(toggle("live.calendar", cal_t, cal_h, false).status("calendar").kw(&["calendar", "ics", "календарь", "webcal"]));
@@ -277,6 +287,31 @@ pub fn search() -> Page {
             group(
                 tr("Запуск", "Start"),
                 vec![toggle("everything.autostart", tr("Запускать Everything сам", "Start Everything by itself"), tr("Если поиск файлов не отвечает, при первом поиске за сеанс запускается Everything (скрыто, в трее)", "If file search does not answer, the first search of a session starts Everything (hidden in the tray)"), true).kw(&["everything", "autostart"])],
+            ),
+            group_note(
+                tr("Поиск в браузере", "Search in the browser"),
+                tr(
+                    "Запрос уходит в поисковик только когда вы сами нажали Enter на строке «Искать» в командной строке; Pill ничего не отправляет сам.",
+                    "The query goes to the search engine only when you press Enter on the “Search” line of the command bar; Pill sends nothing by itself.",
+                ),
+                vec![
+                    select(
+                        "search.engine",
+                        tr("Поисковик", "Search engine"),
+                        tr("Что открывает строка «Искать» командной строки", "What the “Search” line of the command bar opens"),
+                        vec![
+                            opt(json!("google"), same("Google")),
+                            opt(json!("yandex"), tr("Яндекс", "Yandex")),
+                            opt(json!("bing"), same("Bing")),
+                            opt(json!("duckduckgo"), same("DuckDuckGo")),
+                            opt(json!("custom"), tr("Свой адрес", "Custom URL")),
+                        ],
+                        json!("google"),
+                    )
+                    .kw(&["search", "engine", "google", "yandex", "bing", "duckduckgo", "поисковик", "яндекс", "поиск в браузере"]),
+                    text("search.customUrl", tr("Адрес своего поисковика", "Custom search URL"), tr("Адрес с {q} на месте запроса, например https://example.com/?s={q}", "An address with {q} where the query goes, for example https://example.com/?s={q}"), TextKind::Url, same("https://…/?q={q}"), "")
+                        .enabled(Cond::Eq("search.engine", json!("custom"))),
+                ],
             ),
         ],
     )

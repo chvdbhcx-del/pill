@@ -94,6 +94,8 @@ pub enum Event {
     TabClicked(String),
     /// a card action button was pressed (index into the showing card's actions)
     CardAction(usize),
+    /// the chips beside the time (left column, right column): keyboard layout, virtual desktop; empty = none
+    ClockChips(Vec<String>, Vec<String>),
     /// renderer facts
     Env(Env),
     /// measured size of the live row content (screen css px incl. scale), from the layout pass / ResizeObserver

@@ -19,7 +19,7 @@ const fn a(id: &'static str, title: Tr, hint: Tr, default: &'static str) -> Hotk
 }
 
 /// The rows of Settings > Hotkeys, in screen order (the first six also appear on step 3 of the wizard).
-pub const ACTIONS: [HotkeyAction; 16] = [
+pub const ACTIONS: [HotkeyAction; 18] = [
     a("toggle", tr("Открыть / закрыть остров", "Open / close the pill"), Tr::NONE, "Ctrl+Alt+I"),
     a("command", tr("Командная строка", "Command bar"), tr("Программы, калькулятор, конвертер, вопрос ИИ", "Apps, calculator, converter, ask the AI"), "Alt+Shift+Space"),
     a("chat", tr("Чат с ИИ", "AI chat"), tr("Остров открывается на вкладке «Чат», курсор сразу в поле ввода", "The pill opens on the Chat tab with the cursor in the input"), "Ctrl+Alt+A"),
@@ -36,6 +36,8 @@ pub const ACTIONS: [HotkeyAction; 16] = [
     a("pipette", tr("Пипетка", "Colour picker"), Tr::NONE, "Ctrl+Alt+C"),
     a("qr", tr("QR-код с экрана", "QR code from the screen"), Tr::NONE, "Ctrl+Alt+Shift+Q"),
     a("passThrough", tr("Сквозной режим: включить / выключить", "Pass-through mode: on / off"), Tr::NONE, ""),
+    a("theme", tr("Тема острова: тёмная / светлая", "Island theme: dark / light"), tr("Переключает тему; выбранный цвет острова при этом сбрасывается, у цвета свой светлый или тёмный текст", "Switches the theme; a chosen island colour is cleared, because a colour has light or dark text of its own"), ""),
+    a("musicView", tr("Музыка: вид пилюли по кругу", "Music: cycle the pill view"), tr("Пока играет музыка: название, мини-плеер, текст песни (если выбран). Тихо, без карточки", "While music plays: title, mini player, lyrics (if chosen). Silent, no card"), ""),
     a("vpn", tr("VPN: включить / выключить", "VPN: on / off"), tr("Пока ничего не делает: переключателя VPN в Pill ещё нет, клавиша только запоминается", "Does nothing yet: Pill has no VPN switch, the key is only remembered"), ""),
 ];
 

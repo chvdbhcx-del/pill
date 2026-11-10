@@ -129,6 +129,7 @@ All of these are defaults and can be changed or cleared in *Settings → Hotkeys
 | Text from the screen (OCR) | `Ctrl+Alt+O` |
 | Colour picker / QR code from the screen | `Ctrl+Alt+C` / `Ctrl+Alt+Shift+Q` |
 | Mute / unmute the microphone | `Ctrl+Alt+M` |
+| Island theme dark / light, cycle the music view of the pill (silent, while music plays) | not assigned by default |
 | Quit (fixed) | `Ctrl+Alt+Q` |
 
 ## Privacy

@@ -162,6 +162,8 @@ pub enum ClockItem {
     Battery { percent: f64, low: bool, charging: bool },
     /// `Math.round(wx.temp)` + a degree sign
     Temp(i32),
+    /// a small chip: the keyboard layout ("RU"), the virtual desktop ("2" or its name)
+    Tag(String),
     Slot(SlotItem),
 }
 
@@ -173,6 +175,7 @@ impl ClockItem {
             ClockItem::Date(_) => "lp-date",
             ClockItem::Battery { .. } => "lp-batt",
             ClockItem::Temp(_) => "lp-aux",
+            ClockItem::Tag(_) => "lp-tag",
             ClockItem::Slot(SlotItem::WxIcon(_)) => "lp-ico",
             ClockItem::Slot(SlotItem::Temp(_)) => "lp-aux",
             ClockItem::Slot(_) => "slot",
@@ -248,6 +251,9 @@ pub fn build_row(i: &ClockInputs) -> ClockRow {
         None if show_deg => right.push(ClockItem::Temp(js_round(i.wx.unwrap().temp) as i32)),
         None => {}
     }
+    // chips: the layout hugs the time on the left, the desktop closes the right column
+    left.extend(s.chips[0].iter().cloned().map(ClockItem::Tag));
+    right.extend(s.chips[1].iter().cloned().map(ClockItem::Tag));
     // the legs' eyes normally stand in a 30 px slot after the row; when their own side column is empty they stand in that column
     let eye_col_left = i.char_side == CharSide::Left;
     let eic = i.char_legs && if eye_col_left { left.is_empty() } else { right.is_empty() };
