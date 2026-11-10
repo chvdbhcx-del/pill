@@ -3,13 +3,13 @@
 //!
 //! Tab views share the island's `Cx`. What they may ask of the window is filtered (`guarded`): the island owns the hit region, the gaze
 //! feed, pass-through and the window commands; a tab may request frames, the cursor, keyboard focus, other windows, a drop zone and the IME rect.
+use crate::ui::liquid::{Feel, Flow};
 use crate::ui::view::{Cx, DropEvent, Effects, Msg, View};
 use glasskit::canvas::{translation, Canvas};
 use glasskit::geom::Rect;
 use glasskit::input::{InputEvent, Response};
 use glasskit::text::Style;
 use glasskit::theme::Theme;
-use pill_ui_core::shell::motion as mo;
 use pill_ui_core::shell::types::TabDir;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -112,9 +112,39 @@ impl View for Placeholder {
     }
 }
 
+/// A tab view and where it stands in the switch: opacity and sideways offset are flows, so a switch that is cancelled half-way turns around
+/// from where the views are instead of restarting.
 struct Slot {
     view: Box<dyn View>,
     placeholder: bool,
+    a: Flow,
+    dx: Flow,
+}
+
+const ENTER_FADE: Feel = Feel::FADE.within(190.0);
+const LEAVE_FADE: Feel = Feel::FADE.within(110.0);
+const ENTER_SLIDE: Feel = Feel::FLOW.within(300.0);
+const LEAVE_SLIDE: Feel = Feel::FLOW.within(220.0);
+/// How far a view travels sideways when it enters or leaves (css px).
+const SHIFT: f32 = 10.0;
+
+impl Slot {
+    fn new(view: Box<dyn View>, placeholder: bool) -> Slot {
+        Slot { view, placeholder, a: Flow::new(0.0, ENTER_FADE), dx: Flow::px(0.0, ENTER_SLIDE) }
+    }
+
+    fn visible(&self) -> bool {
+        self.a.at() > 0.003 || self.a.moving()
+    }
+
+    fn set_feel(&mut self, fade: Feel, slide: Feel) {
+        if self.a.feel() != fade {
+            self.a.set_feel(fade);
+        }
+        if self.dx.feel() != slide {
+            self.dx.set_feel(slide);
+        }
+    }
 }
 
 #[derive(Default)]
@@ -125,27 +155,16 @@ pub struct TabHost {
     overlay: Option<Box<dyn View>>,
     /// true from `OpenClipAi` until the overlay says `OverlayClosed`: Esc and clicks go to it first
     pub overlay_open: bool,
-    prev: Option<(String, f64)>,
-    cur_t0: f64,
     pub dir: Option<TabDir>,
 }
 
-/// (opacity, dx) of the incoming view `age` ms after the switch.
-pub fn enter_anim(dir: TabDir, age: f64, reduced: bool) -> (f32, f32) {
-    if reduced {
-        return (1.0, 0.0);
+/// The sideways offset a view comes from when the switch goes in direction `dir` (it leaves towards the opposite side).
+fn from_dx(dir: TabDir) -> f32 {
+    if dir == TabDir::Right {
+        SHIFT
+    } else {
+        -SHIFT
     }
-    let fade = mo::EASE_OUT.eval(((age - 50.0) / 140.0).clamp(0.0, 1.0)) as f32;
-    let slide = mo::eval_linear(&mo::SPRING_SETTLE, ((age - 30.0) / 240.0).clamp(0.0, 1.0)) as f32;
-    let from = if dir == TabDir::Right { 10.0 } else { -10.0 };
-    (fade, from * (1.0 - slide))
-}
-
-/// (opacity, dx) of the outgoing view `age` ms after the switch; opacity 0 = gone.
-pub fn leave_anim(dir: TabDir, age: f64) -> (f32, f32) {
-    let fade = (1.0 - (age / 80.0).clamp(0.0, 1.0)) as f32;
-    let away = mo::EASE_IN.eval((age / 120.0).clamp(0.0, 1.0)) as f32;
-    (fade, if dir == TabDir::Right { -10.0 } else { 10.0 } * away)
 }
 
 impl TabHost {
@@ -169,7 +188,7 @@ impl TabHost {
                     view.on_show(cx);
                     view.on_hide(cx);
                 });
-                self.slots.insert(id.to_string(), Slot { view, placeholder: false });
+                self.slots.insert(id.to_string(), Slot::new(view, false));
             }
         }
     }
@@ -210,24 +229,43 @@ impl TabHost {
         self.overlay_open = false;
     }
 
-    /// Shows `id` (creating its view the first time); `dir` is the slide direction of this switch.
-    pub fn show(&mut self, id: &str, dir: TabDir, ru: bool, cx: &mut Cx, now: f64) {
+    /// Shows `id` (creating its view the first time); `dir` is the slide direction of this switch. The view that was current flows out the
+    /// other way; one that is still on its way out (a quick switch back) turns around from where it is.
+    pub fn show(&mut self, id: &str, dir: TabDir, ru: bool, cx: &mut Cx, _now: f64) {
         if !self.slots.contains_key(id) {
             let real = crate::ui::tabs::create(id);
             let placeholder = real.is_none();
             let view = real.unwrap_or_else(|| Box::new(Placeholder::new(id, ru)));
-            self.slots.insert(id.to_string(), Slot { view, placeholder });
+            self.slots.insert(id.to_string(), Slot::new(view, placeholder));
         }
+        let from = from_dx(dir);
         if let Some(old) = self.cur.take() {
             if old != id {
-                self.prev = Some((old, now));
+                if let Some(o) = self.slots.get_mut(&old) {
+                    o.set_feel(LEAVE_FADE, LEAVE_SLIDE);
+                    o.a.to(0.0);
+                    o.dx.to(-from);
+                }
             }
         }
         self.cur = Some(id.to_string());
-        self.cur_t0 = now;
         self.dir = Some(dir);
+        let reduced = cx.reduced_motion;
         if let Some(s) = self.slots.get_mut(id) {
+            if !s.visible() {
+                s.dx.jump(from); // a fresh entry starts beside its place
+            }
+            s.set_feel(ENTER_FADE, ENTER_SLIDE);
+            s.a.to(1.0);
+            s.dx.to(0.0);
             guarded(cx, |cx| s.view.on_show(cx));
+        }
+        if reduced {
+            for (k, s) in self.slots.iter_mut() {
+                let here = self.cur.as_deref() == Some(k.as_str());
+                s.a.jump(if here { 1.0 } else { 0.0 });
+                s.dx.jump(0.0);
+            }
         }
     }
 
@@ -342,24 +380,17 @@ impl TabHost {
         }
     }
 
-    /// Steps every view that exists but the hidden ones only when they are animating out; true while any asks for frames.
-    pub fn step(&mut self, dt_ms: f64, now: f64, cx: &mut Cx) -> bool {
+    /// Steps the flows of the switch and the views that are visible (the current one and those still flowing out); true while any asks for frames.
+    pub fn step(&mut self, dt_ms: f64, _now: f64, cx: &mut Cx) -> bool {
         let mut keep = false;
-        let (cur, prev) = (self.cur.clone(), self.prev.as_ref().map(|p| p.0.clone()));
+        let cur = self.cur.clone();
         for (id, s) in self.slots.iter_mut() {
-            if Some(id) == cur.as_ref() || Some(id) == prev.as_ref() {
+            s.a.step(dt_ms);
+            s.dx.step(dt_ms);
+            keep |= s.a.moving() || s.dx.moving();
+            if Some(id) == cur.as_ref() || s.visible() {
                 keep |= guarded(cx, |cx| s.view.step(dt_ms, cx));
             }
-        }
-        if let Some((_, t0)) = self.prev {
-            if now - t0 >= 200.0 {
-                self.prev = None;
-            } else {
-                keep = true;
-            }
-        }
-        if now - self.cur_t0 < 300.0 && self.cur.is_some() {
-            keep = true;
         }
         if let Some(o) = self.overlay.as_mut() {
             keep |= guarded(cx, |cx| o.step(dt_ms, cx));
@@ -368,23 +399,20 @@ impl TabHost {
     }
 
     /// Draws the outgoing and the incoming view into `views` (panel css px) of the current canvas transform.
-    pub fn draw(&mut self, cv: &Canvas, th: &Theme, views: Rect, cx: &Cx, now: f64, alpha: f32) {
-        let dir = self.dir.unwrap_or_default();
-        let reduced = cx.reduced_motion;
+    pub fn draw(&mut self, cv: &Canvas, th: &Theme, views: Rect, cx: &Cx, _now: f64, alpha: f32) {
         let local = Rect::new(0.0, 0.0, views.w, views.h);
+        let cur = self.cur.clone();
         cv.with_clip(views, |cv| {
-            if let Some((id, t0)) = self.prev.clone() {
-                let (a, dx) = leave_anim(dir, now - t0);
-                if a > 0.0 && !reduced {
-                    if let Some(s) = self.slots.get_mut(&id) {
+            // the ones flowing out first, the current one on top
+            let mut order: Vec<&String> = self.slots.keys().filter(|k| Some(*k) != cur.as_ref()).collect();
+            order.sort();
+            let order: Vec<String> = order.into_iter().cloned().chain(cur.clone()).collect();
+            for id in order {
+                if let Some(s) = self.slots.get_mut(&id) {
+                    let (a, dx) = (s.a.at01(), s.dx.at());
+                    if a > 0.003 {
                         cv.with_opacity(a * alpha, |cv| cv.with_transform(translation(views.x + dx, views.y), |cv| s.view.draw(cv, th, local, cx)));
                     }
-                }
-            }
-            if let Some(id) = self.cur.clone() {
-                let (a, dx) = enter_anim(dir, now - self.cur_t0, reduced);
-                if let Some(s) = self.slots.get_mut(&id) {
-                    cv.with_opacity(a * alpha, |cv| cv.with_transform(translation(views.x + dx, views.y), |cv| s.view.draw(cv, th, local, cx)));
                 }
             }
             // the overlay covers the whole body of the tab (it paints nothing while closed)
@@ -392,6 +420,18 @@ impl TabHost {
                 cv.with_opacity(alpha, |cv| cv.with_transform(translation(views.x, views.y), |cv| o.draw(cv, th, local, cx)));
             }
         });
+    }
+
+    /// Is any flow of the switch still moving? (the views themselves may keep asking for frames)
+    #[cfg(test)]
+    pub fn flows_moving(&self) -> bool {
+        self.slots.values().any(|s| s.a.moving() || s.dx.moving())
+    }
+
+    /// (opacity, dx) of a tab's view in the switch, for tests.
+    #[cfg(test)]
+    pub fn look(&self, id: &str) -> Option<(f32, f32)> {
+        self.slots.get(id).map(|s| (s.a.at(), s.dx.at()))
     }
 }
 
@@ -418,32 +458,95 @@ mod tests {
         assert!(fx.frame && fx.cursor == Some(CursorShape::Hand) && fx.focus == Some(true));
     }
 
-    #[test]
-    fn slide_directions_mirror_and_end_at_rest() {
-        let (a0, dx0) = enter_anim(TabDir::Right, 0.0, false);
-        assert_eq!(a0, 0.0);
-        assert_eq!(dx0, 10.0);
-        let (a1, dx1) = enter_anim(TabDir::Left, 0.0, false);
-        assert_eq!((a1, dx1), (0.0, -10.0));
-        let (a, dx) = enter_anim(TabDir::Right, 1000.0, false);
-        assert!((a - 1.0).abs() < 1e-6 && dx.abs() < 0.2);
-        assert_eq!(enter_anim(TabDir::Right, 0.0, true), (1.0, 0.0), "reduced motion: end state");
-        assert_eq!(leave_anim(TabDir::Right, 0.0), (1.0, 0.0));
-        assert_eq!(leave_anim(TabDir::Right, 200.0).0, 0.0);
-        assert!(leave_anim(TabDir::Right, 100.0).1 < 0.0 && leave_anim(TabDir::Left, 100.0).1 > 0.0);
+    fn frames(h: &mut TabHost, cx: &mut Cx, n: usize) {
+        for _ in 0..n {
+            h.step(8.0, 0.0, cx);
+        }
     }
 
     #[test]
-    fn an_unported_tab_gets_the_placeholder_and_switching_keeps_the_old_view_for_the_exit() {
+    fn a_switch_flows_in_the_direction_of_travel_and_idles_afterwards() {
+        let _m = crate::ui::host::testing::motion_on();
         let mut cx = Cx::headless();
+        cx.reduced_motion = false;
+        let mut h = TabHost::new();
+        h.show("home", TabDir::Right, false, &mut cx, 0.0);
+        frames(&mut h, &mut cx, 100);
+        assert_eq!(h.look("home"), Some((1.0, 0.0)), "the first view has settled");
+        assert!(!h.flows_moving(), "idle");
+        h.show("shelf", TabDir::Right, false, &mut cx, 1000.0);
+        assert_eq!(h.look("shelf"), Some((0.0, 10.0)), "the new view starts beside its place, invisible");
+        let mut last = h.look("shelf").unwrap();
+        for _ in 0..8 {
+            assert!(h.step(8.0, 0.0, &mut cx), "animating");
+            let now = h.look("shelf").unwrap();
+            assert!(now.0 >= last.0 && now.1 <= last.1 + 1e-3, "it only moves towards its place: {last:?} -> {now:?}");
+            last = now;
+        }
+        assert!(last.0 > 0.0 && last.1 > 0.0 && last.1 < 10.0, "softly under way, not there yet: {last:?}");
+        let (a, dx) = h.look("home").unwrap();
+        assert!(a < 1.0 && dx < 0.0, "the old view leaves the other way: {a} {dx}");
+        // ~1.5 x its feel is enough to be there and quiet
+        frames(&mut h, &mut cx, 70);
+        let (a, dx) = h.look("shelf").unwrap();
+        assert!((a - 1.0).abs() < 0.01 && dx.abs() < 0.3, "{a} {dx}");
+        assert_eq!(h.look("home").unwrap().0, 0.0);
+        frames(&mut h, &mut cx, 100);
+        assert!(!h.flows_moving(), "idle once everything has settled");
+        // left switches the other way round
+        h.show("home", TabDir::Left, false, &mut cx, 2000.0);
+        assert_eq!(h.look("home").unwrap().1, -10.0);
+    }
+
+    #[test]
+    fn a_cancelled_switch_turns_around_from_where_the_views_are() {
+        let _m = crate::ui::host::testing::motion_on();
+        let mut cx = Cx::headless();
+        cx.reduced_motion = false;
+        let mut h = TabHost::new();
+        h.show("home", TabDir::Right, false, &mut cx, 0.0);
+        frames(&mut h, &mut cx, 100);
+        h.show("shelf", TabDir::Right, false, &mut cx, 1000.0);
+        frames(&mut h, &mut cx, 6);
+        let (home_a, home_dx) = h.look("home").unwrap();
+        let (shelf_a, _) = h.look("shelf").unwrap();
+        assert!(home_a > 0.0 && home_a < 1.0 && shelf_a > 0.0 && shelf_a < 1.0, "both are mid-flight");
+        h.show("home", TabDir::Left, false, &mut cx, 1050.0);
+        let (a, dx) = h.look("home").unwrap();
+        assert_eq!((a, dx), (home_a, home_dx), "the returning view does not restart: it keeps its place");
+        frames(&mut h, &mut cx, 3);
+        let (a2, _) = h.look("home").unwrap();
+        assert!(a2 > a - 0.2, "it turns around after at most a small carry-on: {a} -> {a2}");
+        frames(&mut h, &mut cx, 150);
+        assert_eq!(h.look("home").unwrap().0, 1.0);
+        assert_eq!(h.look("shelf").unwrap().0, 0.0);
+    }
+
+    #[test]
+    fn reduced_motion_swaps_the_views_at_once() {
+        let _lock = crate::ui::host::testing::motion_lock();
+        let mut cx = Cx::headless();
+        cx.reduced_motion = true;
+        let mut h = TabHost::new();
+        h.show("home", TabDir::Right, false, &mut cx, 0.0);
+        h.show("shelf", TabDir::Right, false, &mut cx, 1.0);
+        assert_eq!(h.look("shelf"), Some((1.0, 0.0)));
+        assert_eq!(h.look("home"), Some((0.0, 0.0)));
+    }
+
+    #[test]
+    fn an_unported_tab_gets_the_placeholder_and_the_old_view_stays_alive_for_the_exit() {
+        let _m = crate::ui::host::testing::motion_on();
+        let mut cx = Cx::headless();
+        cx.reduced_motion = false;
         let mut h = TabHost::new();
         h.show("home", TabDir::Right, false, &mut cx, 0.0);
         assert!(h.has("home") && h.cur.as_deref() == Some("home"));
+        frames(&mut h, &mut cx, 100);
         h.show("shelf", TabDir::Right, false, &mut cx, 1000.0);
-        assert!(h.prev.is_some() && h.has("home"));
+        assert!(h.has("home"));
         assert!(h.step(16.0, 1050.0, &mut cx), "animating");
-        h.step(16.0, 1300.0, &mut cx);
-        assert!(h.prev.is_none(), "the exit is over");
-        assert!(!h.step(16.0, 5000.0, &mut cx) || true);
+        frames(&mut h, &mut cx, 150);
+        assert!(!h.slots["home"].visible(), "the exit is over");
     }
 }

@@ -1,11 +1,12 @@
 //! Per-window drawing resources of the island: the line-icon and forecast-icon SVGs (parsed once, geometry cached), cover pictures decoded
-//! through WIC (cached by their id, `object-fit: cover`, cross-fade in), the value tweens of bars / rings, and small colour helpers.
+//! through WIC (cached by their id, `object-fit: cover`, cross-fade in), the liquid followers of bars / rings / levels, and small colour helpers.
 use super::icons_data::ICONS;
 use super::wx_data::WX_ICONS;
 use base64::Engine as _;
 use glasskit::geom::Rect;
 use glasskit::svgpath::{GeomCache, Svg, SvgStyle};
 use glasskit::theme::Theme;
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::{Canvas, Color};
 use pill_ui_core::live::model::Rgba;
 use std::collections::HashMap;
@@ -35,8 +36,18 @@ pub const EXTRA_ICONS: &[(&str, &str)] = &[
 
 struct Cover {
     bmp: Option<ID2D1Bitmap1>,
-    born: f64,
+    /// the picture fades in on a spring; `t` = host clock of the last draw
+    fade: Flow,
+    t: f64,
     px: u32,
+}
+
+/// A value that follows its target on a spring, stepped by the host clock of the draws that ask for it.
+struct Keyed {
+    f: Flow,
+    t: f64,
+    /// the age last seen by [`Gpu::appear`]: when it goes back the thing has appeared again
+    age: f64,
 }
 
 #[derive(Default)]
@@ -45,7 +56,7 @@ pub struct Gpu {
     wx: HashMap<String, Svg>,
     gc: GeomCache,
     covers: HashMap<u64, Cover>,
-    glides: HashMap<String, (f32, f32, f64)>,
+    glides: HashMap<String, Keyed>,
 }
 
 /// `data:image/...;base64,....` (or a bare base64 string) -> bytes
@@ -123,19 +134,23 @@ impl Gpu {
                 .and_then(data_url_bytes)
                 .and_then(|b| decode_cover(cv, &b, px))
                 .and_then(|p| cv.gfx.from_bgra(px, px, &p).ok());
-            self.covers.insert(id, Cover { bmp, born: t, px });
+            let mut fade = Flow::new(0.0, Feel::FADE.within(250.0));
+            fade.to(1.0);
+            self.covers.insert(id, Cover { bmp, fade, t, px });
             if self.covers.len() > 8 {
                 let keep = id;
                 self.covers.retain(|k, _| *k == keep);
             }
         }
-        let c = &self.covers[&id];
+        let c = self.covers.get_mut(&id).expect("just inserted");
+        let dt = (t - c.t).clamp(0.0, 100.0);
+        c.t = t;
+        let a = c.fade.chase(1.0, dt).clamp(0.0, 1.0);
         cv.fill_rr(r, 7.0, th.raised2);
         let Some(b) = &c.bmp else {
             self.icon_placeholder(cv, th, r);
             return;
         };
-        let a = (((t - c.born) / 250.0) as f32).clamp(0.0, 1.0);
         cv.with_clip_rr(r, 7.0, |cv| unsafe {
             let d = D2D_RECT_F { left: r.x, top: r.y, right: r.right(), bottom: r.bottom() };
             cv.dc.DrawBitmap(b, Some(&d), a, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, None, None);
@@ -146,26 +161,55 @@ impl Gpu {
         self.icon(cv, "note2", r.inset(r.w * 0.25), th.dim, 1.7);
     }
 
-    /// Value tween toward `target` over about `ms` (exponential approach; `reduced` jumps).
+    /// Value that follows `target` and settles in about `ms` (a heavy spring, no bounce; `reduced` jumps).
     pub fn glide(&mut self, key: &str, target: f32, ms: f64, t: f64, reduced: bool) -> f32 {
-        let e = self.glides.entry(key.to_string()).or_insert((target, target, t));
-        if reduced || ms <= 0.0 {
-            *e = (target, target, t);
-            return target;
-        }
-        let dt = (t - e.2).clamp(0.0, 100.0);
-        e.2 = t;
-        e.1 = target;
-        e.0 += (target - e.0) * (1.0 - (-dt / (ms / 3.0)).exp()) as f32;
-        if (e.0 - target).abs() < 0.0005 {
-            e.0 = target;
-        }
-        e.0
+        self.follow(key, target, Feel::DRAG.within(ms.max(0.0) as f32), t, reduced)
     }
 
-    /// True while any tween has not reached its target (the view keeps asking for frames).
+    /// Value that follows `target` with the given feel. It starts AT the target the first time it is asked (no animation from a wrong start).
+    pub fn follow(&mut self, key: &str, target: f32, feel: Feel, t: f64, reduced: bool) -> f32 {
+        let e = self.keyed(key, target, feel, t, 0.0);
+        if reduced || feel.settle_ms <= 0.0 {
+            e.f.jump(target);
+            e.t = t;
+            return target;
+        }
+        Self::advance(e, target, feel, t)
+    }
+
+    /// 0 -> 1 when what `key` names shows up; `age_ms` = how long it has been there, so it starts over when the age goes back.
+    /// A huge age (a ghost of the old content) means "has been there forever": it is simply complete.
+    pub fn appear(&mut self, key: &str, age_ms: f64, feel: Feel, t: f64, reduced: bool) -> f32 {
+        if reduced || age_ms >= 1e8 {
+            return 1.0;
+        }
+        let e = self.keyed(key, 0.0, feel, t, age_ms);
+        if age_ms < e.age {
+            e.f.jump(0.0);
+        }
+        e.age = age_ms;
+        Self::advance(e, 1.0, feel, t)
+    }
+
+    fn keyed(&mut self, key: &str, start: f32, feel: Feel, t: f64, age: f64) -> &mut Keyed {
+        if !self.glides.contains_key(key) && self.glides.len() > 128 {
+            self.glides.retain(|_, g| g.f.moving());
+        }
+        self.glides.entry(key.to_string()).or_insert_with(|| Keyed { f: Flow::new(start, feel), t, age })
+    }
+
+    fn advance(e: &mut Keyed, target: f32, feel: Feel, t: f64) -> f32 {
+        let dt = (t - e.t).clamp(0.0, 100.0);
+        e.t = t;
+        if e.f.feel() != feel {
+            e.f.set_feel(feel);
+        }
+        e.f.chase(target, dt)
+    }
+
+    /// True while any follower or fade has not settled (the view keeps asking for frames).
     pub fn gliding(&self) -> bool {
-        self.glides.values().any(|g| (g.0 - g.1).abs() > 0.0005)
+        self.glides.values().any(|g| g.f.moving()) || self.covers.values().any(|c| c.fade.moving())
     }
 }
 
@@ -181,19 +225,49 @@ mod tests {
     }
 
     #[test]
-    fn glide_approaches_and_reduced_motion_jumps() {
+    fn glide_flows_towards_its_target_settles_and_reduced_motion_jumps() {
+        let _m = crate::ui::host::testing::motion_on();
         let mut g = Gpu::new();
-        assert_eq!(g.glide("a", 0.0, 300.0, 0.0, false), 0.0);
-        let mid = g.glide("a", 1.0, 300.0, 50.0, false);
-        assert!(mid > 0.0 && mid < 1.0);
+        assert_eq!(g.glide("a", 0.0, 300.0, 0.0, false), 0.0, "starts at the target");
+        let first = g.glide("a", 1.0, 300.0, 16.0, false);
+        assert!(first > 0.0 && first < 0.1, "inertia: it starts softly, not with a jump: {first}");
         assert!(g.gliding());
-        for i in 0..100 {
-            g.glide("a", 1.0, 300.0, 100.0 + i as f64 * 16.0, false);
+        let mut prev = first;
+        for i in 2..40 {
+            let v = g.glide("a", 1.0, 300.0, i as f64 * 16.0, false);
+            assert!(v >= prev && v <= 1.01, "monotone, hardly any overshoot: {prev} -> {v}");
+            prev = v;
+        }
+        for i in 40..60 {
+            g.glide("a", 1.0, 300.0, i as f64 * 16.0, false);
         }
         assert_eq!(g.glide("a", 1.0, 300.0, 5000.0, false), 1.0);
-        assert!(!g.gliding());
+        assert!(!g.gliding(), "idle once it has arrived");
         assert_eq!(g.glide("b", 0.2, 300.0, 0.0, true), 0.2);
         assert_eq!(g.glide("b", 0.9, 300.0, 16.0, true), 0.9);
+    }
+
+    #[test]
+    fn a_reversed_glide_keeps_its_velocity_and_an_appearance_restarts_when_the_age_goes_back() {
+        let _m = crate::ui::host::testing::motion_on();
+        let mut g = Gpu::new();
+        g.glide("v", 0.0, 300.0, 0.0, false);
+        let mut x = 0.0;
+        for i in 1..8 {
+            x = g.glide("v", 1.0, 300.0, i as f64 * 16.0, false);
+        }
+        let after = g.glide("v", 0.0, 300.0, 8.0 * 16.0, false);
+        assert!(after >= x - 1e-3 && (after - x).abs() < 0.15, "carries on a little, no kink: {x} -> {after}");
+        let f = Feel::FADE.within(300.0);
+        let a1 = g.appear("c", 0.0, f, 0.0, false);
+        let a2 = g.appear("c", 16.0, f, 16.0, false);
+        assert!(a1 == 0.0 && a2 > 0.0 && a2 < 0.1);
+        for i in 2..80 {
+            g.appear("c", i as f64 * 16.0, f, i as f64 * 16.0, false);
+        }
+        assert_eq!(g.appear("c", 1300.0, f, 1300.0, false), 1.0);
+        assert!(g.appear("c", 0.0, f, 1316.0, false) < 0.1, "it appeared again, from nothing");
+        assert_eq!(g.appear("r", 0.0, f, 0.0, true), 1.0, "reduced motion: there at once");
     }
 
     #[test]

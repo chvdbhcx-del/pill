@@ -3,6 +3,7 @@ pub mod chrome;
 pub mod companions;
 pub mod core;
 pub mod fonts;
+pub mod fx;
 pub mod gpu;
 mod icons_data;
 pub mod live;

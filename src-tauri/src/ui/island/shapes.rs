@@ -78,14 +78,14 @@ pub fn flare_geometry(cv: &Canvas, r: Rect, left: bool) -> Option<ID2D1Geometry>
     })
 }
 
-/// Paints the light-theme shadow, the body and (when `flare_a` > 0) the notch flares. `flare_a` is the animated opacity of the flares.
-pub fn paint_body(cv: &Canvas, b: &BodyView, rt: f32, rb: f32, flare_a: f32, shadow_k: f32) {
+/// Paints the light-theme shadow, the body and (when `flare_a` > 0) the notch flares. `flare_a` is the animated opacity of the flares,
+/// `shadow_k` the animated strength of the light theme's shadow and `fill` the body colour as it is right now (both ease between themes).
+pub fn paint_body(cv: &Canvas, b: &BodyView, rt: f32, rb: f32, flare_a: f32, shadow_k: f32, fill: Color) {
     let r = Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32);
     if r.w <= 0.0 || r.h <= 0.0 {
         return;
     }
-    let fill = cs(b.fill);
-    if b.shadow && shadow_k > 0.0 {
+    if shadow_k > 0.001 {
         for (dx, dy, blur, a) in LIGHT_SHADOW {
             cv.shadow_rr(r.offset(dx as f32, 0.0), rb.max(rt), blur as f32, dy as f32, Color::rgba(0.0, 0.0, 0.0, a as f32 * shadow_k));
         }

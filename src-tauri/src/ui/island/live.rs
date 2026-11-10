@@ -7,9 +7,8 @@ use glasskit::text::Style;
 use glasskit::theme::Theme;
 use glasskit::{Canvas, Color};
 use pill_ui_core::live::model::{self as lm, ActionKind, CardBody, CardIcon, Tone};
-use pill_ui_core::shell::cards::{CardPhase, CardView};
+use pill_ui_core::shell::cards::CardView;
 use pill_ui_core::shell::clock::{ClockItem, ClockRow, DigitRoll, SlotItem};
-use pill_ui_core::shell::motion::{self as mo, AnimSpec};
 use pill_ui_core::shell::types::LiveContent;
 use std::collections::HashMap;
 
@@ -21,6 +20,7 @@ const COL_GAP: f32 = 16.0;
 const SIDE_GAP: f32 = 12.0;
 
 /// What a content needs from the model while measuring / painting.
+#[derive(Clone)]
 pub struct Ctx<'a> {
     pub rows: &'a HashMap<String, lm::RowSpec>,
     pub cards: &'a HashMap<String, lm::CardSpec>,
@@ -28,6 +28,34 @@ pub struct Ctx<'a> {
     pub ru: bool,
     /// smoothed music levels for the media row's equaliser (see `Anim::eq`)
     pub eq: Option<[f32; 4]>,
+    /// where the content's own entry motions stand (the flows of `fx.rs`)
+    pub fx: Fx<'a>,
+}
+
+/// The card on screen as the flows of `fx.rs` have it right now.
+#[derive(Clone, Copy)]
+pub struct CardPaint<'a> {
+    pub alpha: f32,
+    pub scale: f32,
+    /// how much of the check mark is drawn
+    pub check: f32,
+    /// 0..1 hover amount per action button
+    pub hover: &'a [f32],
+}
+
+/// Per-frame numbers of the content's own motions, resolved from the flows of `fx.rs`: digits rolling (progress), clock side items popping in
+/// (right column?, index, scale, opacity), the row's enter (scale, dy, opacity) and the card.
+#[derive(Clone)]
+pub struct Fx<'a> {
+    pub rolls: &'a [(DigitRoll, f32)],
+    pub entering: &'a [(bool, usize, f32, f32)],
+    pub row: (f32, f32, f32),
+    pub card: CardPaint<'a>,
+}
+
+impl Fx<'static> {
+    /// Everything at rest (measuring, tests).
+    pub const REST: Fx<'static> = Fx { rolls: &[], entering: &[], row: (1.0, 0.0, 1.0), card: CardPaint { alpha: 1.0, scale: 1.0, check: 1.0, hover: &[] } };
 }
 
 fn item_w(it: &ClockItem, m: &dyn Meter) -> f32 {
@@ -77,18 +105,9 @@ pub fn layout_clock(row: &ClockRow, time: Option<&str>, m: &dyn Meter) -> ClockL
     ClockLayout { w: end + 16.0, left_w: lcol, right_w: rcol, time_w, time_x, right_x }
 }
 
-fn ease(t: f32) -> f32 {
-    mo::EASE_OUT.eval(t as f64) as f32
-}
-
 /// The clock row; `x0` = left edge, `cy` = vertical centre.
-pub fn paint_clock(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &ClockRow, time: Option<&str>, rolls: &[(DigitRoll, f64)], entering: &[(bool, usize, f64)], lay: &ClockLayout, x0: f32, cy: f32, reduced: bool) {
-    let pop = |right: bool, i: usize| -> (f32, f32) {
-        entering.iter().find(|e| e.0 == right && e.1 == i).map_or((1.0, 1.0), |e| {
-            let a = mo::RESHAPE_POP.at(e.2, reduced);
-            (a.scale as f32, if e.2 >= mo::RESHAPE_POP_FADE_MS { 1.0 } else { ease((e.2 / mo::RESHAPE_POP_FADE_MS) as f32) })
-        })
-    };
+pub fn paint_clock(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &ClockRow, time: Option<&str>, rolls: &[(DigitRoll, f32)], entering: &[(bool, usize, f32, f32)], lay: &ClockLayout, x0: f32, cy: f32) {
+    let pop = |right: bool, i: usize| -> (f32, f32) { entering.iter().find(|e| e.0 == right && e.1 == i).map_or((1.0, 1.0), |e| (e.2, e.3)) };
     // left column: right aligned against the time
     let mut x = x0 + 16.0 + lay.left_w;
     for (i, it) in row.left.iter().enumerate().rev() {
@@ -121,7 +140,7 @@ fn it_w_cached(it: &ClockItem, cv: &Canvas) -> f32 {
     item_w(it, &CvMeter(cv))
 }
 
-fn paint_time(cv: &Canvas, th: &Theme, time: &str, rolls: &[(DigitRoll, f64)], r: Rect) {
+fn paint_time(cv: &Canvas, th: &Theme, time: &str, rolls: &[(DigitRoll, f32)], r: Rect) {
     let chars: Vec<char> = time.chars().collect();
     let mut x = r.x;
     for (i, ch) in chars.iter().enumerate() {
@@ -129,11 +148,12 @@ fn paint_time(cv: &Canvas, th: &Theme, time: &str, rolls: &[(DigitRoll, f64)], r
         let w = cv.text_width(&s, TIME_STYLE);
         let cell = Rect::new(x, r.y, w, r.h);
         match rolls.iter().find(|(d, _)| d.index == i) {
-            Some((d, age)) => {
-                let p = ease((*age / mo::DIGIT_ROLL_MS).clamp(0.0, 1.0) as f32);
+            Some((d, p)) => {
+                // the roll is a flow: the position may swing a hair past the end, the opacity may not
+                let (p, k) = (*p, p.clamp(0.0, 1.0));
                 cv.with_clip(cell, |cv| {
-                    cv.text(cell.offset(0.0, -r.h * p), &d.from.to_string(), TIME_STYLE, th.text.fade(1.0 - p));
-                    cv.text(cell.offset(0.0, r.h * (1.0 - p)), &d.to.to_string(), TIME_STYLE, th.text.fade(p));
+                    cv.text(cell.offset(0.0, -r.h * p), &d.from.to_string(), TIME_STYLE, th.text.fade(1.0 - k));
+                    cv.text(cell.offset(0.0, r.h * (1.0 - p)), &d.to.to_string(), TIME_STYLE, th.text.fade(k));
                 });
             }
             None => cv.text(cell, &s, TIME_STYLE, th.text),
@@ -230,7 +250,7 @@ fn tone_colors(t: Tone, th: &Theme) -> (Color, Color) {
 }
 
 /// Paints a card at `x0, y0` (top-left). Returns the button rects (window-independent, same space as the arguments).
-pub fn paint_card(cv: &Canvas, th: &Theme, gpu: &mut Gpu, c: &lm::CardSpec, lay: &CardLayout, x0: f32, y0: f32, t: f64, hover: Option<usize>) -> Vec<Rect> {
+pub fn paint_card(cv: &Canvas, th: &Theme, gpu: &mut Gpu, c: &lm::CardSpec, lay: &CardLayout, x0: f32, y0: f32, check: f32, hover: &[f32]) -> Vec<Rect> {
     let (tone, tone_bg) = tone_colors(c.tone, th);
     let ir = lay.icon.offset(x0, y0);
     match (&c.icon, &c.body) {
@@ -241,7 +261,7 @@ pub fn paint_card(cv: &Canvas, th: &Theme, gpu: &mut Gpu, c: &lm::CardSpec, lay:
         }
         (Some(CardIcon::Check), _) => {
             cv.fill_circle(ir.center(), 20.0, tone_bg);
-            let k = (((t) / 360.0) as f32).clamp(0.0, 1.0);
+            let k = check.clamp(0.0, 1.0);
             let (a, b, d) = ((ir.cx() - 6.0, ir.cy()), (ir.cx() - 1.5, ir.cy() + 5.0), (ir.cx() + 7.0, ir.cy() - 5.0));
             let s1 = (k * 2.0).clamp(0.0, 1.0);
             let s2 = (k * 2.0 - 1.0).clamp(0.0, 1.0);
@@ -294,7 +314,8 @@ pub fn paint_card(cv: &Canvas, th: &Theme, gpu: &mut Gpu, c: &lm::CardSpec, lay:
         let r = br.offset(x0, y0);
         let white = a.kind == ActionKind::White;
         let base = if white { Color::rgb8(255, 255, 255) } else { th.raised };
-        let bg = if hover == Some(i) { if white { base.mix(Color::rgb8(220, 220, 220), 0.5) } else { rows_hover(base) } } else { base };
+        let h = hover.get(i).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+        let bg = if white { base.mix(Color::rgb8(220, 220, 220), 0.5 * h) } else { rows_hover(base, h) };
         cv.fill_rr(r, 16.0, bg);
         cv.text(r, &a.label, BTN.center(), if white { Color::rgb8(0, 0, 0) } else { th.text2 });
         out.push(r);
@@ -302,25 +323,11 @@ pub fn paint_card(cv: &Canvas, th: &Theme, gpu: &mut Gpu, c: &lm::CardSpec, lay:
     out
 }
 
-fn rows_hover(c: Color) -> Color {
-    c.mix(Color::rgb8(255, 255, 255), 0.12)
+fn rows_hover(c: Color, amount: f32) -> Color {
+    c.mix(Color::rgb8(255, 255, 255), 0.12 * amount)
 }
 
 // ------------------------------------------------------------------------------------------------ content
-
-/// Row-level enter animation (`RowSpec::anim.enter`) on top of the swap fade: (scale, dy, opacity) at `age_ms` since the row appeared.
-pub fn row_enter(a: lm::Anim, age_ms: f64, reduced: bool) -> (f32, f32, f32) {
-    if reduced || age_ms >= super::core::anim_ms(a) {
-        return (1.0, 0.0, 1.0);
-    }
-    let p = (age_ms / super::core::anim_ms(a)).clamp(0.0, 1.0);
-    match a {
-        lm::Anim::Pop => (0.92 + 0.08 * mo::eval_linear(&mo::SPRING_POP, p) as f32, 0.0, ease((age_ms / 220.0).clamp(0.0, 1.0) as f32)),
-        lm::Anim::Slide => (1.0, -8.0 * (1.0 - ease(p as f32)), ease(p as f32)),
-        lm::Anim::Fade => (1.0, 0.0, ease(p as f32)),
-        _ => (1.0, 0.0, 1.0),
-    }
-}
 
 /// Natural size of a content (css px at 100 %); `None` when there is nothing to size.
 pub fn measure(content: &LiveContent, ctx: &Ctx, m: &dyn Meter, th: &Theme) -> Option<(f32, f32)> {
@@ -347,11 +354,10 @@ pub struct Painted {
     pub card_rect: Option<Rect>,
 }
 
-/// Paints `content` centred in `area` (local css px at 100 %), with `alpha` and the entry animation of age `age_ms`.
+/// Paints `content` centred in `area` (local css px at 100 %), with `alpha`; its own entry motions come from `ctx.fx`, `age_ms` is how long
+/// it has been there (things that draw themselves start over when it goes back).
 #[allow(clippy::too_many_arguments)]
-pub fn paint_content(
-    cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, content: &LiveContent, rolls: &[(DigitRoll, f64)], entering: &[(bool, usize, f64)], area: Rect, alpha: f32, age_ms: f64, t: f64, hover_btn: Option<usize>, out: &mut Painted,
-) {
+pub fn paint_content(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, content: &LiveContent, area: Rect, alpha: f32, age_ms: f64, t: f64, out: &mut Painted) {
     if alpha <= 0.0 {
         return;
     }
@@ -362,7 +368,7 @@ pub fn paint_content(
             let m = CvMeter(cv);
             let lay = layout_clock(row, time.as_deref(), &m);
             let x0 = area.cx() - lay.w / 2.0;
-            cv.with_opacity(alpha, |cv| paint_clock(cv, th, gpu, row, time.as_deref(), rolls, entering, &lay, x0, cy, ctx.reduced));
+            cv.with_opacity(alpha, |cv| paint_clock(cv, th, gpu, row, time.as_deref(), ctx.fx.rolls, ctx.fx.entering, &lay, x0, cy));
         }
         LiveContent::Slot { id, .. } => {
             let Some(row) = ctx.rows.get(id) else { return };
@@ -371,7 +377,7 @@ pub fn paint_content(
             // while the capsule is still narrower than the row (state change, pet column already reserved) the row must not spill out on the
             // left (the leading icon / spinner would be clipped and the text pushed to the edge): pin it to the left, the right end is revealed
             let x0 = (area.cx() - lay.w / 2.0).max(area.x);
-            let (sc, dy, a2) = row_enter(row.anim.enter, age_ms, ctx.reduced);
+            let (sc, dy, a2) = ctx.fx.row;
             let cy = if row.tall { area.cy() } else { cy };
             out.row_id = Some(id.clone());
             cv.with_opacity(alpha * a2, |cv| {
@@ -380,25 +386,21 @@ pub fn paint_content(
                 })
             });
         }
-        LiveContent::Card(view) => paint_card_view(cv, th, gpu, ctx, view, area, alpha, t, hover_btn, out),
+        LiveContent::Card(view) => paint_card_view(cv, th, gpu, ctx, view, area, alpha, out),
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn paint_card_view(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, view: &CardView, area: Rect, alpha: f32, t: f64, hover_btn: Option<usize>, out: &mut Painted) {
+fn paint_card_view(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, view: &CardView, area: Rect, alpha: f32, out: &mut Painted) {
     let Some(card) = view.spec.id.as_ref().and_then(|id| ctx.cards.get(id)) else { return };
     let m = CvMeter(cv);
     let lay = layout_card(card, &m);
     let (x0, y0) = (area.cx() - lay.w / 2.0, area.cy() - lay.h / 2.0);
-    let (spec, age): (&AnimSpec, f64) = match view.phase {
-        CardPhase::In { since_ms } => (&mo::CARD_IN, t - since_ms),
-        CardPhase::Out { since_ms } => (&mo::CARD_OUT, t - since_ms),
-    };
-    let p = spec.at(age.max(0.0), ctx.reduced);
+    let k = ctx.fx.card;
     out.card_rect = Some(Rect::new(x0, y0, lay.w, lay.h));
-    cv.with_opacity(alpha * p.opacity as f32, |cv| {
-        cv.with_scale_about((area.cx(), y0), p.scale as f32, |cv| {
-            out.card_buttons = paint_card(cv, th, gpu, card, &lay, x0, y0, age.max(0.0), hover_btn);
+    cv.with_opacity(alpha * k.alpha, |cv| {
+        cv.with_scale_about((area.cx(), y0), k.scale, |cv| {
+            out.card_buttons = paint_card(cv, th, gpu, card, &lay, x0, y0, k.check, k.hover);
         })
     });
 }
@@ -457,15 +459,5 @@ mod tests {
         assert_eq!(c.buttons.len(), 1);
         assert_eq!(c.buttons[0].h, 32.0);
         assert!(c.buttons[0].right() <= c.w - 20.0 + 1e-3 && c.text.right() <= c.buttons[0].x);
-    }
-
-    #[test]
-    fn row_enter_animations_end_at_rest_and_reduced_motion_skips_them() {
-        assert_eq!(row_enter(lm::Anim::Pop, 0.0, true), (1.0, 0.0, 1.0));
-        assert_eq!(row_enter(lm::Anim::Pop, 1000.0, false), (1.0, 0.0, 1.0));
-        let (s, _, a) = row_enter(lm::Anim::Pop, 0.0, false);
-        assert!((s - 0.92).abs() < 1e-3 && a == 0.0);
-        let (_, dy, _) = row_enter(lm::Anim::Slide, 0.0, false);
-        assert!(dy < 0.0);
     }
 }

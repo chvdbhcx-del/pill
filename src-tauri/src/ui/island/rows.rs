@@ -1,6 +1,7 @@
 //! Live rows: layout (`Elem` vocabulary -> positioned boxes, the numbers of live-*.css) and painting. The layout is generic over a text
 //! meter so it is unit-tested without a GPU; the shell is told the measured size (`Event::LiveMeasured`) and sizes the capsule from it.
 use super::gpu::{c8, Gpu};
+use crate::ui::liquid::Feel;
 use glasskit::geom::Rect;
 use glasskit::text::Style;
 use glasskit::{Canvas, Color};
@@ -176,7 +177,7 @@ pub fn layout_row(row: &RowSpec, m: &dyn Meter, th: &Theme) -> RowLayout {
 pub struct Anim {
     /// ms on the host clock (loops)
     pub t: f64,
-    /// ms since the row appeared (check mark drawing)
+    /// ms since the row appeared (a thing that appears with it, like the check mark, starts over when this goes back)
     pub age: f64,
     pub reduced: bool,
     /// Live music levels (0..1) for the four equaliser bars, from the loopback spectrum; `None` = no fresh audio data (the bars then run their own loop)
@@ -253,16 +254,22 @@ fn paint_elem(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &RowSpec, e: &Elem, r
         }
         Elem::Check { size, color } => {
             let c = role_color(*color, th);
-            let k = if an.reduced { 1.0 } else { ((an.age / 360.0) as f32).clamp(0.0, 1.0) };
-            cv.stroke_circle(r.center(), size / 2.0 - 1.0, 1.7, c);
-            let (cx, cy, s) = (r.cx(), r.cy(), *size);
-            let (a, b, d) = ((cx - 0.22 * s, cy + 0.0), (cx - 0.06 * s, cy + 0.16 * s), (cx + 0.24 * s, cy - 0.16 * s));
-            let seg1 = (k * 2.0).clamp(0.0, 1.0);
-            let seg2 = (k * 2.0 - 1.0).clamp(0.0, 1.0);
-            cv.line(a, (a.0 + (b.0 - a.0) * seg1, a.1 + (b.1 - a.1) * seg1), 1.8, c);
-            if seg2 > 0.0 {
-                cv.line(b, (b.0 + (d.0 - b.0) * seg2, b.1 + (d.1 - b.1) * seg2), 1.8, c);
-            }
+            // the ring pops in on the spring, the tick draws itself on a soft fade; both start over when the row appears again
+            let key = format!("{}#{}:ck", row.id, idx);
+            let k = gpu.appear(&key, an.age, Feel::FADE.within(320.0), an.t, an.reduced);
+            let pop = gpu.appear(&format!("{key}p"), an.age, Feel::POP.within(380.0), an.t, an.reduced);
+            let k = k.clamp(0.0, 1.0);
+            cv.with_scale_about(r.center(), 0.8 + 0.2 * pop, |cv| {
+                cv.stroke_circle(r.center(), size / 2.0 - 1.0, 1.7, c.fade(pop.clamp(0.0, 1.0)));
+                let (cx, cy, s) = (r.cx(), r.cy(), *size);
+                let (a, b, d) = ((cx - 0.22 * s, cy + 0.0), (cx - 0.06 * s, cy + 0.16 * s), (cx + 0.24 * s, cy - 0.16 * s));
+                let seg1 = (k * 2.0).clamp(0.0, 1.0);
+                let seg2 = (k * 2.0 - 1.0).clamp(0.0, 1.0);
+                cv.line(a, (a.0 + (b.0 - a.0) * seg1, a.1 + (b.1 - a.1) * seg1), 1.8, c);
+                if seg2 > 0.0 {
+                    cv.line(b, (b.0 + (d.0 - b.0) * seg2, b.1 + (d.1 - b.1) * seg2), 1.8, c);
+                }
+            });
         }
         Elem::Ring { value, size, glide_ms } => {
             let key = format!("{}#{}", row.id, idx);
@@ -289,7 +296,8 @@ fn paint_elem(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &RowSpec, e: &Elem, r
         Elem::Levels { bars, color } => {
             let c = c8(*color);
             for (i, b) in bars.iter().enumerate() {
-                let k = b.clamp(0.14, 1.0);
+                // each bar follows its level on a quick spring (the levels arrive a few times per second)
+                let k = gpu.follow(&format!("{}#{}:lv{}", row.id, idx, i), b.clamp(0.14, 1.0), Feel::SNAP, an.t, an.reduced).clamp(0.14, 1.0);
                 let h = r.h * k;
                 cv.fill_rr(Rect::new(r.x + i as f32 * 7.0, r.cy() - h / 2.0, 4.0, h), 2.0, c);
             }

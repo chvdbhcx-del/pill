@@ -314,3 +314,40 @@ fn the_system_monitor_meters_sit_over_the_controls_tiles() {
     let lit = img.count(Some(row), |p| p[3] > 0 && (p[0] > 60 || p[1] > 60 || p[2] > 60));
     assert!(lit > 100, "the meter row is painted: {lit}");
 }
+
+#[test]
+fn every_motion_settles_so_the_flows_stop_asking_for_frames() {
+    use glasskit::input::Buttons;
+    let _m = crate::ui::host::testing::motion_on();
+    let mut g = G::new();
+    // a card comes in and flows to rest (the shell's own edge may keep frames coming while a card is up; the island's flows must not)
+    g.emit("capture:done", json!({"kind": "screenshot", "path": "C:\\a\\shot.png", "copied": true, "w": 1920, "h": 1080}));
+    assert!(matches!(g.v.borrow().core.shell.view().live.content, pill_ui_core::shell::types::LiveContent::Card(_)), "the card is up");
+    g.sim.run(300);
+    assert!(!g.v.borrow().dbg_frames_wanted(), "the card's flows have settled");
+    // opening the panel and hovering a tab: the highlight eases in (monotone, no jump) and settles
+    g.expand("home");
+    g.sim.run(200);
+    let _ = g.draw();
+    let (x, y) = g.v.borrow().dbg_tab_center("clipboard").expect("the clipboard tab is laid out");
+    g.sim.send(&InputEvent::MouseMove { pos: (x, y), mods: Modifiers::default(), buttons: Buttons::default() });
+    let mut seen = Vec::new();
+    for _ in 0..120 {
+        g.sim.step_frame();
+        seen.push(g.v.borrow().dbg_hover_of("clipboard"));
+    }
+    assert!(seen[0] < 0.4 && seen.windows(2).all(|w| w[1] >= w[0] - 1e-4) && *seen.last().unwrap() > 0.99, "{seen:?}");
+    assert!(!g.v.borrow().dbg_frames_wanted(), "settled");
+    // leaving turns the highlight back out smoothly
+    g.sim.send(&InputEvent::MouseLeave);
+    let mut back = Vec::new();
+    for _ in 0..120 {
+        g.sim.step_frame();
+        back.push(g.v.borrow().dbg_hover_of("clipboard"));
+    }
+    assert!(back.windows(2).all(|w| w[1] <= w[0] + 1e-4) && *back.last().unwrap() < 0.01, "{back:?}");
+    // collapsing hands the strip back and everything rests
+    g.esc();
+    g.sim.run(300);
+    assert!(!g.v.borrow().dbg_frames_wanted());
+}

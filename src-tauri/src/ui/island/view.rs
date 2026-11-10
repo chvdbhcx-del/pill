@@ -1,8 +1,9 @@
 //! `IslandView`: the always-resident `pill` window as a native `View` (Overlay). It owns the [`Core`] (shell model + live hub), the drawing
 //! resources, the panel host and the pets; this file is the glue between the host's calls and those parts. See docs/native-island.md.
-use super::chrome::{self, Btn, ChromeLayout, Hover};
+use super::chrome::{self, Btn, ChromeLayout, HeaderFx, Hover};
 use super::companions::{char_side, reserve_px, Companions};
 use super::core::{Core, DropStep, Out, ISLAND_EVENTS};
+use super::fx::{self, LiveFx};
 use super::gpu::Gpu;
 use super::live::{self, Painted};
 use super::panel::TabHost;
@@ -126,7 +127,6 @@ pub struct IslandView {
     live_a: f32,
     panel_a: f32,
     flare_a: f32,
-    tab_k: HashMap<String, f32>,
     painted: Painted,
     chrome: ChromeLayout,
     panel_origin: (f32, f32, f32),
@@ -157,13 +157,19 @@ pub struct IslandView {
     cap: Option<u32>,
     /// the display rate seen from the real frame intervals (the rate the host reports can be wrong): the shortest interval so far
     fast_hz: f32,
-    /// springs behind `live_a` / `panel_a` (fade-out) / `flare_a` and the tab highlights (`tab_k`): critically damped, they keep their velocity
-    /// when the target flips half-way
+    /// springs behind `live_a` / `panel_a` / `flare_a`: they keep their velocity when the target flips half-way
     live_sp: Flow,
     panel_sp: Flow,
     flare_sp: Flow,
-    tab_sp: HashMap<String, Flow>,
+    /// the flows of the live strip (swap, card, digits, dots, pulse, body colour) and of the header (tab highlights, hover, badges)
+    fx: LiveFx,
+    hdr: HeaderFx,
 }
+
+/// The panel content fades in on this feel, after a short head start of the body; it leaves a little quicker.
+const PANEL_IN: Feel = Feel::FADE.within(200.0);
+const PANEL_OUT: Feel = Feel::FADE.within(120.0);
+const PANEL_DELAY_MS: f64 = 40.0;
 
 /// How long the full frame rate stays after the last real movement.
 const CALM_AFTER_MS: f64 = 600.0;
@@ -199,7 +205,6 @@ impl IslandView {
             live_a: 1.0,
             panel_a: 0.0,
             flare_a: 1.0,
-            tab_k: HashMap::new(),
             painted: Painted::default(),
             chrome: ChromeLayout::default(),
             panel_origin: (0.0, 0.0, 1.0),
@@ -223,9 +228,10 @@ impl IslandView {
             cap: None,
             fast_hz: 0.0,
             live_sp: Flow::new(1.0, Feel::FADE.within(mo::LIVE_FADE_MS as f32)),
-            panel_sp: Flow::new(0.0, Feel::FADE.within(mo::PANEL_OUT_MS as f32)),
+            panel_sp: Flow::new(0.0, PANEL_OUT),
             flare_sp: Flow::new(1.0, Feel::FADE.within(200.0)),
-            tab_sp: HashMap::new(),
+            fx: LiveFx::new(),
+            hdr: HeaderFx::new(),
             now: cx.now_ms,
             started: false,
             device_id: 0,
@@ -671,27 +677,26 @@ impl View for IslandView {
         let v = self.core.shell.view();
         let reduced = v.reduced;
         self.live_a = self.live_sp.chase(if v.live.visible { 1.0 } else { 0.0 }, dt_ms);
-        self.panel_a = if v.panel.visible {
-            let a = mo::PANEL_IN.at(v.panel.shown_age_ms, reduced).opacity as f32;
-            self.panel_sp.jump(a); // when the panel leaves, the fade-out springs on from where the entry curve was
-            a
-        } else {
-            self.panel_sp.chase(0.0, dt_ms)
-        };
+        // the panel's content follows the body: it fades in a moment after the body starts to grow, and out quickly
+        let want_panel = v.panel.visible && (reduced || v.panel.shown_age_ms >= PANEL_DELAY_MS);
+        let feel = if v.panel.visible { PANEL_IN } else { PANEL_OUT };
+        if self.panel_sp.feel() != feel {
+            self.panel_sp.set_feel(feel);
+        }
+        if reduced {
+            self.panel_sp.jump(if want_panel { 1.0 } else { 0.0 });
+        }
+        self.panel_a = self.panel_sp.chase(if want_panel { 1.0 } else { 0.0 }, dt_ms);
         self.flare_a = self.flare_sp.chase(if v.body.flare_visible { 1.0 } else { 0.0 }, dt_ms);
         // equaliser bars follow the music; with no audio frames for a while they ease down
         let goal = if now - self.eq_seen < EQ_FRESH_MS { self.eq_target } else { [0.0; 4] };
         for (cur, g) in self.eq.iter_mut().zip(goal) {
             *cur = ease_level(*cur, g, dt_ms as f32);
         }
-        let mut tabs_moving = false;
-        for t in &v.tabs {
-            let target = if t.active { 1.0 } else { 0.0 };
-            let sp = self.tab_sp.entry(t.id.clone()).or_insert_with(|| Flow::new(target, Feel::FADE.within(mo::DUR_MED_MS as f32)));
-            let nk = sp.chase(target, dt_ms);
-            tabs_moving |= nk != target;
-            self.tab_k.insert(t.id.clone(), nk);
-        }
+        let hover_tab = self.hover.tab.and_then(|i| self.chrome.tabs.get(i)).map(|t| t.id.clone());
+        let hdr_busy = self.hdr.step(&v, hover_tab.as_deref(), self.hover.btn, self.hover.pressed, dt_ms);
+        let inp = fx::Inputs { rows: Some(&self.core.rows), hover_btn: self.hover_card_btn, privacy: self.core.privacy, pulse: self.core.pulse, pad: self.content_pad() };
+        let fx_busy = self.fx.step(&v, inp, dt_ms);
         // the tab view follows the shell's current tab while the panel is open
         if v.panel.visible {
             if let Some(id) = v.current_tab.clone() {
@@ -715,29 +720,20 @@ impl View for IslandView {
             cx.request_frame();
         }
         let rows_busy = self.loops(&v);
-        let pulse_busy = self.core.pulse.is_some_and(|(_, t0)| now - t0 < 800.0);
+        let fades = self.live_sp.moving() || self.flare_sp.moving() || self.panel_sp.moving() || (v.panel.visible && v.panel.shown_age_ms < PANEL_DELAY_MS);
         crate::ui::host::perf::why(&[
             ("shell", v.wants_frames),
             ("measure", self.pending_measure.is_some()),
             ("pets", pets_busy),
             ("host", host_busy),
-            ("tabs", tabs_moving),
+            ("header", hdr_busy),
             ("rows", rows_busy),
-            ("pulse", pulse_busy),
+            ("fx", fx_busy),
             ("glide", self.gpu.gliding()),
-            ("fades", self.live_a != (if v.live.visible { 1.0 } else { 0.0 }) || self.flare_a != (if v.body.flare_visible { 1.0 } else { 0.0 })),
-            ("swap", v.live.swap_age_ms < 400.0 && !reduced),
-            ("ghost", v.live.ghost.is_some() || !v.live.rolls.is_empty()),
-            ("card", matches!(v.live.content, LiveContent::Card(_))),
+            ("fades", fades),
         ]);
-        self.pace_ambient(&v, cx, now, tabs_moving || host_busy || pulse_busy);
-        v.wants_frames || self.pending_measure.is_some() || pets_busy || host_busy || tabs_moving || rows_busy || pulse_busy || self.gpu.gliding() || self.live_a != (if v.live.visible { 1.0 } else { 0.0 }) || self.flare_a != (if v.body.flare_visible { 1.0 } else { 0.0 })
-            || (self.panel_a != 0.0 && !v.panel.visible)
-            || v.live.swap_age_ms < 400.0 && !reduced
-            || v.live.ghost.is_some()
-            || !v.live.rolls.is_empty()
-            || (v.panel.visible && v.panel.shown_age_ms < 400.0 && !reduced)
-            || matches!(v.live.content, LiveContent::Card(_))
+        self.pace_ambient(&v, cx, now, hdr_busy || host_busy || fx_busy || fades);
+        v.wants_frames || self.pending_measure.is_some() || pets_busy || host_busy || hdr_busy || rows_busy || fx_busy || self.gpu.gliding() || fades
     }
 
     fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
@@ -930,31 +926,23 @@ impl View for IslandView {
         let b = &v.body;
         let body = Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32);
         let (rt, rb) = shapes::clamp_radii(body.w, body.h, b.radius_top as f32, b.radius_bottom as f32);
-        shapes::paint_body(cv, b, b.radius_top as f32, b.radius_bottom as f32, self.flare_a, 1.0);
-        let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq) };
+        shapes::paint_body(cv, b, b.radius_top as f32, b.radius_bottom as f32, self.flare_a, self.fx.shadow(), self.fx.fill());
+        let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq), fx: self.fx.fx() };
         // ---- everything inside the body is clipped to its silhouette
         let mut painted = Painted::default();
         cv.with_clip_rr(body, rb.max(rt), |cv| {
             if self.live_a > 0.0 {
-                let pad = if self.comp.cfg.id.is_empty() { 0.0 } else { reserve_px(&self.comp.cfg) as f32 };
-                let (pl, pr) = if self.comp.cfg.side == crate::ui::pets::engine::Side::Left { (pad, 0.0) } else { (0.0, pad) };
                 let legs_slot = if self.comp.style == EdgeStyle::Legs { 30.0f32 } else { 0.0 };
-                let (cs_, slot_dx) = match (legs_slot > 0.0, char_side(&self.comp.cfg)) {
-                    (true, CharSide::Left) => (legs_slot, legs_slot / 2.0),
-                    (true, _) => (legs_slot, -legs_slot / 2.0),
-                    _ => (0.0, 0.0),
-                };
-                let _ = cs_;
-                let local = Rect::new(pl + slot_dx, 0.0, body.w / s - pl - pr, body.h / s);
+                let [pl, pr, slot_dx] = self.fx.pad();
+                let local = Rect::new(pl + slot_dx, 0.0, (body.w / s - pl - pr).max(0.0), body.h / s);
                 let m = mul(&scale_about((0.0, 0.0), s, s), &translation(body.x, body.y));
                 cv.with_transform(m, |cv| {
                     let alpha = self.live_a;
                     if let Some(g) = &v.live.ghost {
-                        let a = mo::LIVE_GHOST_OUT.at(g.age_ms, v.reduced).opacity as f32;
-                        live::paint_content(cv, &th, &mut self.gpu, &ctx, &g.content, &[], &[], local, alpha * a, 1e9, now, None, &mut Painted::default());
+                        let gctx = live::Ctx { fx: self.fx.ghost_fx(), ..ctx.clone() };
+                        live::paint_content(cv, &th, &mut self.gpu, &gctx, &g.content, local, alpha * self.fx.ghost(), 1e9, now, &mut Painted::default());
                     }
-                    let swap = if v.reduced { 1.0 } else { mo::LIVE_SWAP.at(v.live.swap_age_ms, false).opacity as f32 };
-                    live::paint_content(cv, &th, &mut self.gpu, &ctx, &v.live.content, &v.live.rolls, &v.live.entering, local, alpha * swap, v.live.swap_age_ms, now, self.hover_card_btn, &mut painted);
+                    live::paint_content(cv, &th, &mut self.gpu, &ctx, &v.live.content, local, alpha * self.fx.swap(), v.live.swap_age_ms, now, &mut painted);
                 });
                 // the size the capsule should have (screen px incl. the island size and the legs' eye slot)
                 let m = LiveMeter(cv);
@@ -967,7 +955,7 @@ impl View for IslandView {
                     }
                 }
             }
-            // pets: on the capsule floor while closed, in the header gap while open
+            // pets: on the capsule floor while closed, in the header gap while open (both while one fades into the other)
             self.pet_rect = None;
             if !self.comp.cfg.id.is_empty() {
                 if self.live_a > 0.0 {
@@ -975,7 +963,8 @@ impl View for IslandView {
                         self.pet_rect = Some(r);
                         self.comp.draw_pet(cv, r, self.live_a);
                     }
-                } else if self.panel_a > 0.0 && self.chrome.pet_slot.w >= 56.0 {
+                }
+                if self.panel_a > 0.0 && self.chrome.pet_slot.w >= 56.0 {
                     let (w, h) = crate::ui::pets::engine::box_size(&self.comp.cfg.id, self.comp.cfg.size, crate::ui::pets::engine::Place::Head, 1.0);
                     let slot = self.chrome.pet_slot;
                     let x = if self.comp.cfg.side == crate::ui::pets::engine::Side::Left { slot.x + 6.0 } else { slot.right() - 6.0 - w };
@@ -990,13 +979,12 @@ impl View for IslandView {
                 let oy = body.y;
                 self.panel_origin = (ox, oy, s);
                 let ru = self.core.ru();
-                let tab_k = self.tab_k.clone();
                 let mut meter = LiveMeter(cv);
                 let ph = body.h / s;
-                self.chrome = chrome::layout(&v, ru, ph, &|id, active| tab_k.get(id).copied().unwrap_or(if active { 1.0 } else { 0.0 }), &mut meter);
+                self.chrome = self.hdr.layout(&v, ru, ph, &mut meter);
                 let m = mul(&scale_about((0.0, 0.0), s, s), &translation(ox, oy));
                 cv.with_transform(m, |cv| {
-                    cv.with_opacity(self.panel_a, |cv| chrome::paint(cv, &th, &mut self.gpu, &v, &self.chrome, self.hover, ru));
+                    cv.with_opacity(self.panel_a, |cv| chrome::paint(cv, &th, &mut self.gpu, &self.chrome, &self.hdr, ru));
                     self.host.draw(cv, &th, self.chrome.views, cx, now, self.panel_a);
                 });
             } else {
@@ -1004,21 +992,22 @@ impl View for IslandView {
             }
         });
         self.painted = painted;
-        // privacy dots in the top-right corner
-        let (cam, mic) = self.core.privacy;
-        if (cam || mic) && self.live_a > 0.0 {
-            let k = if v.reduced { 1.0 } else { 0.775 + 0.225 * (std::f64::consts::TAU * now / 2400.0).cos() as f32 };
+        // privacy dots in the top-right corner: they pop in, and the other one slides over when one leaves
+        let (mic, cam) = (self.fx.dot(0), self.fx.dot(1));
+        if (cam > 0.002 || mic > 0.002) && self.live_a > 0.0 {
+            let breath = if v.reduced { 1.0 } else { 0.775 + 0.225 * (std::f64::consts::TAU * now / 2400.0).cos() as f32 };
             let mut x = body.right() - 11.0 * s - 6.0 * s;
-            for (on, c) in [(mic, glasskit::Color::rgb8(0xff, 0x9f, 0x0a)), (cam, glasskit::Color::rgb8(0x30, 0xd1, 0x58))] {
-                if on {
-                    cv.fill_circle((x + 3.0 * s, body.y + 10.0 * s), 5.0 * s, c.alpha(0.18 * self.live_a));
-                    cv.fill_circle((x + 3.0 * s, body.y + 10.0 * s), 3.0 * s, c.fade(k * self.live_a));
-                    x -= 9.0 * s;
+            for (k, c) in [(mic, glasskit::Color::rgb8(0xff, 0x9f, 0x0a)), (cam, glasskit::Color::rgb8(0x30, 0xd1, 0x58))] {
+                if k > 0.002 {
+                    let a = k.min(1.0) * self.live_a;
+                    cv.fill_circle((x + 3.0 * s, body.y + 10.0 * s), 5.0 * s * k, c.alpha(0.18 * a));
+                    cv.fill_circle((x + 3.0 * s, body.y + 10.0 * s), 3.0 * s * k, c.fade(breath * a));
                 }
+                x -= 9.0 * s * k;
             }
         }
         // ---- the liquid edge and the capsule characters hang below / outside the body
-        let pulse = self.core.pulse.map_or(0.0, |(a, t0)| a * (1.0 - ((now - t0) / 800.0) as f32).clamp(0.0, 1.0));
+        let pulse = self.fx.pulse();
         if self.comp.take_created() {
             cx.post(Msg::Custom(Box::new(Own::Wake))); // a fresh engine: tick + draw it so it starts moving
         }
@@ -1042,6 +1031,19 @@ impl View for IslandView {
 }
 
 impl IslandView {
+    /// The content area's side padding and the legs' eye-slot shift, as the pet / characters need them now (css px): where the flows head to.
+    fn content_pad(&self) -> [f32; 3] {
+        let pad = if self.comp.cfg.id.is_empty() { 0.0 } else { reserve_px(&self.comp.cfg) as f32 };
+        let (pl, pr) = if self.comp.cfg.side == crate::ui::pets::engine::Side::Left { (pad, 0.0) } else { (0.0, pad) };
+        let slot = if self.comp.style == EdgeStyle::Legs { 30.0f32 } else { 0.0 };
+        let dx = match (slot > 0.0, char_side(&self.comp.cfg)) {
+            (true, CharSide::Left) => slot / 2.0,
+            (true, _) => -slot / 2.0,
+            _ => 0.0,
+        };
+        [pl, pr, dx]
+    }
+
     /// Ambient frames (the pet breathing, the equaliser, the liquid edge) do not need the display's full rate: on a fast screen they run at
     /// half of it. Any transition or input brings the full rate back at once and keeps it for `CALM_AFTER_MS` after the last movement.
     fn pace_ambient(&mut self, v: &ShellView, cx: &mut Cx, now: f64, busy: bool) {
@@ -1051,13 +1053,7 @@ impl IslandView {
             || v.panel.visible
             || self.panel_a != 0.0
             || self.pending_measure.is_some()
-            || self.gpu.gliding()
-            || self.live_a != (if v.live.visible { 1.0 } else { 0.0 })
-            || self.flare_a != (if v.body.flare_visible { 1.0 } else { 0.0 })
-            || v.live.swap_age_ms < 400.0
-            || v.live.ghost.is_some()
-            || !v.live.rolls.is_empty()
-            || matches!(v.live.content, LiveContent::Card(_));
+            || self.gpu.gliding();
         if moving {
             self.busy_at = now;
         }
@@ -1100,7 +1096,6 @@ impl IslandView {
                 Elem::Spinner { .. } => true,
                 Elem::Dot { pulse_ms, .. } => pulse_ms.is_some(),
                 Elem::Ring { value, .. } => value.is_none(),
-                Elem::Check { .. } => true,
                 Elem::Group(g) => g.iter().any(looping),
                 _ => false,
             }
@@ -1148,6 +1143,17 @@ impl IslandView {
     }
     pub fn dbg_views_rect(&self) -> Rect {
         self.chrome.views
+    }
+    /// Window px of the middle of the header tab `id` (as last laid out).
+    pub fn dbg_tab_center(&self, id: &str) -> Option<(f32, f32)> {
+        let (ox, oy, s) = self.panel_origin;
+        self.chrome.tabs.iter().find(|t| t.id == id).map(|t| (ox + t.rect.cx() * s, oy + t.rect.cy() * s))
+    }
+    pub fn dbg_hover_of(&self, id: &str) -> f32 {
+        self.hdr.hover_of(id)
+    }
+    pub fn dbg_frames_wanted(&self) -> bool {
+        self.fx.moving() || self.hdr.moving()
     }
     pub fn dbg_panel_origin(&self) -> (f32, f32, f32) {
         self.panel_origin
