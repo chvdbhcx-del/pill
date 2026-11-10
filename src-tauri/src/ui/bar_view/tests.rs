@@ -394,6 +394,41 @@ fn the_wave_keeps_frames_coming_while_the_bar_is_open() {
     assert!(busy, "the liquid outline runs for as long as the bar is shown (never throttled)");
 }
 
+#[test]
+fn the_selection_highlight_glides_like_a_drop_and_lands_exactly() {
+    let _g = motion_lock();
+    glasskit::ease::force_reduced(Some(false));
+    let mut d = D::dark();
+    d.fakes.api.reply("cmd_query", Ok(rows()));
+    d.show();
+    d.type_text("fire");
+    d.frames(400);
+    let from = d.v.ind.at();
+    assert_eq!(from, d.v.row_top(0), "the first layout lands at once, it does not glide from nowhere");
+    d.key(KeyCode::Down, Modifiers::NONE);
+    d.key(KeyCode::Down, Modifiers::NONE);
+    let target = d.v.row_top(2);
+    assert!(target > from);
+    d.frames(1);
+    let first = d.v.ind.at();
+    assert!(first > from && first < from + (target - from) * 0.2, "it starts softly: {first}");
+    let (mut peak, mut last_off) = (first, 0);
+    for i in 0..200 {
+        d.frames(1);
+        let y = d.v.ind.at();
+        peak = peak.max(y);
+        if (y - target).abs() > (target - from) * 0.05 {
+            last_off = i;
+        }
+    }
+    assert!(peak < target + (target - from) * 0.25, "a soft overshoot at most: {peak} vs {target}");
+    assert!((last_off as f32) * 1000.0 / 240.0 < 360.0 * 1.5, "arrived after {last_off} frames");
+    d.frames(300);
+    assert_eq!(d.v.ind.at(), target, "lands exactly");
+    assert!(!d.v.ind.moving());
+    glasskit::ease::force_reduced(None);
+}
+
 // ---- snapshots ----
 
 fn dark() -> Theme {

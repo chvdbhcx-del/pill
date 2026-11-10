@@ -13,6 +13,7 @@
 pub mod flatten;
 pub mod icons;
 pub mod io;
+mod motion;
 mod paint;
 pub mod tools;
 pub mod windows;
@@ -21,7 +22,7 @@ pub mod windows;
 mod tests;
 
 use crate::ui::view::{Cx, CursorShape, Msg, View};
-use glasskit::ease::{curves, Tween};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::input::{InputEvent, KeyCode, Modifiers, MouseButton, Response};
 use glasskit::lang::Lang as GkLang;
@@ -34,9 +35,6 @@ use pill_ui_core::i18n::Lang as UiLang;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// The dim over the frozen frame fades in over this long (the screen "settles" instead of snapping); the hint follows.
-pub const DIM_RAMP_MS: f64 = 140.0;
-pub const HINT_IN_MS: f64 = 200.0;
 /// Tooltips of the toolbar wait this long after the pointer rests on a button.
 pub const TIP_DELAY_MS: f64 = 480.0;
 /// A toast stays this long (plus its fades).
@@ -54,28 +52,35 @@ enum SelfMsg {
     Stuck(u64),
 }
 
-/// Hover / press animation state of one toolbar item (CSS `transition`s of `#bar button`).
+/// Hover / press feedback of one toolbar item (the CSS `transition`s of `#bar button`, as springs): the hover fades, the press dips quickly
+/// and comes back with a soft rebound.
 struct ItemFx {
-    hover: Tween<f32>,
-    press: Tween<f32>,
+    hover: Flow,
+    press: Flow,
 }
 
 impl ItemFx {
     fn new() -> ItemFx {
-        ItemFx { hover: Tween::at_rest(0.0), press: Tween::at_rest(1.0) }
+        ItemFx { hover: Flow::new(0.0, Feel::FADE.within(160.0)), press: Flow::new(1.0, Feel::SNAP) }
     }
-    fn retarget(&mut self, hover: bool, pressed: bool) {
-        self.hover.retarget(if hover { 1.0 } else { 0.0 }, 0.12, curves::EASE_OUT);
-        if pressed {
-            self.press.retarget(0.92, 0.08, curves::EASE_OUT);
-        } else {
-            self.press.retarget(1.0, 0.38, curves::SPRING_POP);
+    fn retarget(&mut self, hover: bool, pressed: bool, reduce: bool) {
+        let (h, p) = (if hover { 1.0 } else { 0.0 }, if pressed { 0.92 } else { 1.0 });
+        if reduce {
+            self.hover.jump(h);
+            self.press.jump(p);
+            return;
         }
+        self.hover.to(h);
+        self.press.set_feel(if pressed { Feel::SNAP } else { Feel::POP.within(300.0) });
+        self.press.to(p);
     }
     fn step(&mut self, dt: f32) -> bool {
-        let a = self.hover.step(dt);
-        let b = self.press.step(dt);
-        a || b
+        self.hover.step(dt as f64 * 1000.0);
+        self.press.step(dt as f64 * 1000.0);
+        self.moving()
+    }
+    fn moving(&self) -> bool {
+        self.hover.moving() || self.press.moving()
     }
 }
 
@@ -98,6 +103,8 @@ pub struct CaptureView {
     frame_rgba: Option<Arc<Vec<u8>>>,
     frame_dirty: bool,
     fx: HashMap<String, ItemFx>,
+    /// the springs behind every visible movement (selection, handles, toolbar, lens, fades)
+    motion: motion::Motion,
     armed_ms: f64,
     hover_id: Option<String>,
     hover_since: f64,
@@ -144,6 +151,7 @@ impl CaptureView {
             frame_rgba: None,
             frame_dirty: false,
             fx: HashMap::new(),
+            motion: motion::Motion::new(),
             armed_ms: 0.0,
             hover_id: None,
             hover_since: 0.0,
@@ -174,6 +182,7 @@ impl CaptureView {
             self.ending = None;
             self.toast = None;
             self.fx.clear();
+            self.motion.arm(cx.now_ms, self.reduce(cx));
             self.hover_id = None;
             cx.show_self();
             if self.io.focus {
@@ -224,13 +233,14 @@ impl CaptureView {
     /// Re-derives the view-model and the per-item animation targets.
     pub(crate) fn refresh(&mut self, cx: &mut Cx) {
         self.vm = self.model.view(&self.lang);
+        let reduce = self.reduce(cx);
         let bar = self.vm.toolbar.as_ref().or(self.vm.ghost.as_ref().and_then(|g| g.toolbar.as_ref())).cloned();
         if let Some(tb) = bar {
             for it in &tb.items {
                 if it.id == "sep" {
                     continue;
                 }
-                self.fx.entry(it.id.clone()).or_insert_with(ItemFx::new).retarget(it.hover, it.pressed);
+                self.fx.entry(it.id.clone()).or_insert_with(ItemFx::new).retarget(it.hover, it.pressed, reduce);
             }
             let h = tb.items.iter().find(|i| i.hover).map(|i| i.id.clone());
             if h != self.hover_id {
@@ -249,6 +259,8 @@ impl CaptureView {
 
     pub(crate) fn toast(&mut self, cx: &mut Cx, text: &str) {
         self.toast = Some(Toast { text: text.to_string(), since: cx.now_ms });
+        let reduce = self.reduce(cx);
+        self.motion.toast_in(reduce);
         cx.request_frame();
     }
 
@@ -273,10 +285,28 @@ impl CaptureView {
 
     /// True while the overlay still has something to animate (frames keep coming at the display rate), false = idle.
     fn busy(&self, now: f64) -> bool {
-        let ramp = !self.opts.reduce_motion && now - self.armed_ms < DIM_RAMP_MS.max(HINT_IN_MS) + 60.0;
         let tip_wait = self.hover_id.is_some() && now - self.hover_since < TIP_DELAY_MS + 160.0;
-        let toast = self.toast.as_ref().is_some_and(|t| now - t.since < TOAST_MS + 400.0);
-        self.model.animating() || ramp || tip_wait || toast || self.text_open() || self.fx.values().any(|f| !f.hover.finished() || !f.press.finished())
+        // the hint pill follows the dim by 60 ms: frames must come until it has been released
+        let hint_wait = !self.reduce_opt() && now - self.armed_ms < 60.0 + 16.0;
+        self.model.animating() || hint_wait || tip_wait || self.toast.is_some() || self.text_open() || self.motion.moving() || self.fx.values().any(ItemFx::moving)
+    }
+
+    fn reduce_opt(&self) -> bool {
+        self.opts.reduce_motion
+    }
+
+    /// Reduced motion by the app's setting or the OS: springs land at once.
+    pub(crate) fn reduce(&self, cx: &Cx) -> bool {
+        cx.reduced_motion || self.opts.reduce_motion
+    }
+
+    /// Hands the model's animations, selection, lens and hint to the springs (idempotent: paint and step both call it).
+    pub(crate) fn sync_motion(&mut self, now: f64, reduce: bool) {
+        let sel = self.vm.selection.as_ref().map(|s| [s.rect.x as f32, s.rect.y as f32, s.rect.w as f32, s.rect.h as f32]);
+        let loupe = self.vm.loupe.as_ref().map(|l| (l.box_pos.x as f32, l.box_pos.y as f32));
+        let hint = self.vm.hint.as_ref().is_some_and(|h| h.visible);
+        let dragging = self.model.phase() == Phase::Dragging;
+        self.motion.sync(&self.vm.anims, sel, dragging, loupe, hint, now, reduce);
     }
 }
 
@@ -404,7 +434,7 @@ impl View for CaptureView {
                 "capture:end" => {
                     self.input(Input::End, cx);
                     // let the exit animations (copy flash, toolbar fade, a toast) finish, then close
-                    if self.model.animating() || self.toast.is_some() {
+                    if self.model.animating() || self.toast.is_some() || self.motion.moving() {
                         self.ending = Some(cx.now_ms);
                         cx.request_frame();
                     } else {
@@ -458,19 +488,31 @@ impl View for CaptureView {
     fn step(&mut self, dt_ms: f64, cx: &mut Cx) -> bool {
         self.sync_now(cx);
         let now = cx.now_ms;
+        let reduce = self.reduce(cx);
         let mut busy = self.model.tick(now as u64);
         let dt = (dt_ms / 1000.0) as f32;
         for f in self.fx.values_mut() {
             busy |= f.step(dt);
         }
+        self.vm = self.model.view(&self.lang);
+        self.sync_motion(now, reduce);
+        self.motion.step(dt_ms);
+        self.motion.sweep(&self.vm.anims);
+        // the toast fades away once its time is up, then it is gone
         if let Some(t) = &self.toast {
-            if now - t.since > TOAST_MS + 400.0 {
+            let over = now - t.since > TOAST_MS;
+            if over {
+                self.motion.toast_out(reduce);
+            }
+            if over && !self.motion.toast.moving() || now - t.since > TOAST_MS + 700.0 {
                 self.toast = None;
             }
         }
-        self.vm = self.model.view(&self.lang);
+        // the tooltip of the item the pointer has rested on
+        let rested = self.hover_id.as_deref().filter(|_| now - self.hover_since >= TIP_DELAY_MS);
+        self.motion.tip_to(rested, reduce);
         if let Some(e) = self.ending {
-            if !self.model.animating() && self.toast.is_none() || now - e > LINGER_MS.max(TOAST_MS) {
+            if !self.model.animating() && self.toast.is_none() && !self.motion.moving() || now - e > LINGER_MS.max(TOAST_MS) {
                 self.ending = None;
                 self.close_overlay(cx);
                 return false;

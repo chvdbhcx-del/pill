@@ -8,7 +8,6 @@ use glasskit::markdown;
 use glasskit::richtext::MarkdownLabels;
 use glasskit::svgpath::{build_geometry, Affine, Path, Seg};
 use glasskit::text::Style;
-use pill_ui_core::bar::model::MicState;
 use pill_ui_core::bar::query::Seg as Piece;
 use pill_ui_core::bar::results::RowView;
 use pill_ui_core::bar::wave;
@@ -311,22 +310,18 @@ impl BarView {
         // microphone
         let mk = Tgt::Mic.key();
         let hov = self.fx.hov(mk);
-        let rec = self.vm.mic.state == MicState::Recording;
-        let busy = self.vm.mic.state == MicState::Transcribing;
+        // recording / transcribing are springs too: the red disc, the icon colour and the pulsing dot flow in and out instead of switching
+        let (rk, wait) = (self.mic_fx[0].at01(), self.mic_fx[1].at01());
         let press = self.fx.prs(mk);
         cv.with_scale_about(mic.center(), 1.0 - 0.04 * press, |cv| {
-            if rec {
-                cv.fill_circle(mic.center(), 14.0, th.red_bg);
-            } else {
-                cv.fill_circle(mic.center(), 14.0, th.raised.fade(hov));
-            }
-            let col = if rec { th.red } else { th.dim.mix(th.text, hov) };
-            cv.with_opacity(if busy { 0.6 } else { 1.0 }, |cv| self.icons.draw(cv, "mic", 1.7, mic.centered(18.0, 18.0), if busy { th.text } else { col }));
-            if rec {
+            cv.fill_circle(mic.center(), 14.0, th.raised.fade(hov * (1.0 - rk)).mix(th.red_bg, rk));
+            let col = th.dim.mix(th.text, hov).mix(th.red, rk).mix(th.text, wait);
+            cv.with_opacity(1.0 - 0.4 * wait, |cv| self.icons.draw(cv, "mic", 1.7, mic.centered(18.0, 18.0), col));
+            if rk > 0.01 {
                 let p = if self.reduced { 0.0 } else { ((cx.now_ms % 1100.0) / 1100.0) as f32 };
                 let k = 0.5 - 0.5 * (p * std::f32::consts::TAU).cos(); // ease-in-out between 1 and .35 / 1 and 1.35
                 let dot = (mic.right() - 2.0 - 3.5, mic.y + 2.0 + 3.5);
-                cv.with_opacity(1.0 - 0.65 * k, |cv| cv.fill_circle(dot, 3.5 * (1.0 + 0.35 * k), th.red));
+                cv.with_opacity(rk * (1.0 - 0.65 * k), |cv| cv.fill_circle(dot, 3.5 * (1.0 + 0.35 * k), th.red));
             }
         });
         self.hits.push((mic, Tgt::Mic));
@@ -375,7 +370,7 @@ impl BarView {
         cv.with_clip(v, |cv| {
             // the highlight glides under the rows
             if !self.vm.rows.is_empty() && !sel_confirm && sel < self.vm.rows.len() {
-                let y = v.y + self.ind.value() - off;
+                let y = v.y + self.ind.at() - off;
                 cv.fill_rr(Rect::new(v.x, y, v.w, L::ROW_H), L::ROW_RADIUS, th.raised);
             }
             for ei in vis {
@@ -414,7 +409,7 @@ impl BarView {
     fn paint_row(&self, cv: &Canvas, th: &Theme, row: &RowView, rect: Rect) -> Vec<(Rect, Tgt)> {
         let i = row.index;
         let look = self.anim.look(&AnimTarget::Row(i));
-        let off = self.row_off.get(&i).map_or(0.0, |t| t.value());
+        let off = self.row_off.get(&i).map_or(0.0, |t| t.at());
         let press = self.fx.prs(Tgt::Row(i).key());
         let mut hits = Vec::new();
         let sel = row.selected;
@@ -430,7 +425,7 @@ impl BarView {
                     cv.fill_rr(r, L::ROW_RADIUS, th.accent_soft.fade(look.flash));
                 }
                 let uninstall = row.kind == pill_ui_core::bar::protocol::Kind::Uninstall;
-                let k = if sel && uninstall { curves::EASE_OUT.at((self.sel_age / 0.38).min(1.0)) } else { 0.0 };
+                let k = if sel && uninstall { self.sel.tint.at01() } else { 0.0 };
                 // icon column
                 let ix = r.x + L::ROW_PAD.0;
                 let ico = Rect::new(ix, cy - 9.0, L::ROW_ICON, L::ROW_ICON);
@@ -453,7 +448,7 @@ impl BarView {
                     cv.text(Rect::new(act_left, cy - 10.0, lab_w + 2.0, 20.0), &t, lab_st, if sel && uninstall && !row.confirm { th.dim.mix(th.red, k) } else { lab_col });
                 }
                 if sel {
-                    let a = curves::EASE_OUT.at((self.sel_age / 0.12).min(1.0));
+                    let a = self.sel.enter.at01();
                     self.icons.draw(cv, "enter", 1.7, enter, th.dim.fade(a));
                 }
                 let mut text_right = act_left - 12.0;
@@ -465,8 +460,7 @@ impl BarView {
                     for (b, a) in row.buttons.iter().enumerate() {
                         let br = Rect::new(bx + b as f32 * 28.0, cy - 13.0, 26.0, 26.0);
                         hits.push((br, Tgt::RowBtn(i, a.mode)));
-                        let t = self.sel_age - 0.024 * b as f32;
-                        let (alpha, pop) = if t <= 0.0 { (0.0, 0.5) } else { (curves::EASE_OUT.at((t / 0.22).min(1.0)), lerp(0.5, 1.0, curves::SPRING_POP.at((t / 0.4).min(1.0)))) };
+                        let (alpha, pop) = self.sel.button(b);
                         let key = Tgt::RowBtn(i, a.mode).key();
                         let hov = self.fx.hov(key);
                         let pr = self.fx.prs(key);

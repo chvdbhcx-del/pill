@@ -328,6 +328,33 @@ fn dragging_draws_the_cutout_and_the_size_badge() {
 }
 
 #[test]
+fn the_painted_selection_trails_the_pointer_but_the_commit_uses_the_exact_rectangle() {
+    let _m = motion_lock();
+    glasskit::ease::force_reduced(Some(false));
+    let mut r = rig("area");
+    r.send(mv(200.0, 120.0));
+    r.send(down(200.0, 120.0));
+    r.sim.send(&mv(520.0, 380.0));
+    r.sim.step_frame();
+    let model_w = r.model().selection().unwrap().w;
+    let painted = r.view().motion.sel_rect().unwrap();
+    assert_eq!(model_w, 320.0);
+    assert!(painted[2] < 320.0 * 0.5 && painted[2] > 0.0, "the painted box is still catching up: {painted:?}");
+    r.sim.run(2000);
+    assert_eq!(r.view().motion.sel_rect(), Some([200.0, 120.0, 320.0, 260.0]), "it catches up with the pointer and idles");
+    // a fast move, then release while it is behind: the painted box lands exactly on the model's, and the commit carries the model's
+    r.sim.send(&mv(700.0, 500.0));
+    r.sim.step_frame();
+    assert!(r.view().motion.sel_rect().unwrap()[2] < 500.0 - 1.0);
+    r.sim.send(&up(700.0, 500.0));
+    r.sim.step_frame();
+    assert_eq!(r.view().motion.sel_rect(), Some([200.0, 120.0, 500.0, 380.0]));
+    r.send(key(KeyCode::Enter, Modifiers::NONE));
+    assert_eq!(r.commit_args().unwrap()["rect"], json!([200.0, 120.0, 500.0, 380.0]), "never the eased value");
+    glasskit::ease::force_reduced(None);
+}
+
+#[test]
 fn releasing_shows_handles_the_toolbar_and_pops_the_handles() {
     let _m = motion_lock();
     glasskit::ease::force_reduced(Some(false));
@@ -484,6 +511,7 @@ fn toolbar_hover_press_active_and_disabled_states_render_differently() {
     // the tip appears after the delay
     r.sim.now_ms += 700.0;
     r.sim.step_frame();
+    r.sim.run(2000); // the tooltip fades in
     let tipped = r.shot("04c-toolbar-tip");
     assert!(hovered.diff(&tipped, 8) > 300, "a tooltip is drawn under the bar");
     // press: scale .92 while held
@@ -771,7 +799,9 @@ fn copy_flashes_the_selection_and_the_overlay_closes_after_the_backend_ends_the_
     r.sim.run(2000);
     let calm = r.shot("06a-before-copy");
     r.sim.send(&key(KeyCode::Char('C'), Modifiers::CTRL));
-    r.sim.step_frame();
+    for _ in 0..10 {
+        r.sim.step_frame(); // the flash rises over a few frames instead of blinking on
+    }
     let flash = r.shot("06-copy-flash");
     let p = flash.at(490.0, 300.0);
     let q = calm.at(490.0, 300.0);
@@ -993,7 +1023,7 @@ fn reduced_motion_settles_without_frames_and_nothing_animates() {
     r.sim.run(600);
     let hovered = r.sim.render((960.0, 540.0), &Theme::pill_dark());
     assert!(lum(hovered.at(c.0 - 13.0, c.1 - 13.0)) > lum(a.at(c.0 - 13.0, c.1 - 13.0)), "the hover state is applied at once");
-    assert!(r.view().fx.values().all(|f| f.hover.finished()));
+    assert!(r.view().fx.values().all(|f| !f.moving()));
 }
 
 #[test]

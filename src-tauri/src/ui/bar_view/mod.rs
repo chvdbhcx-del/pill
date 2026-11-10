@@ -16,6 +16,7 @@ pub mod icons;
 pub mod keys;
 mod native;
 mod paint;
+mod selfx;
 mod panel;
 #[cfg(test)]
 mod tests;
@@ -28,13 +29,14 @@ use self::icons::{IconSet, ShellIcons};
 use crate::ui::view::{Cx, Msg, Ticket, View};
 use glasskit::canvas::Canvas;
 use glasskit::edit::{EditEvent, TextInput};
-use glasskit::ease::{curves, Tween};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{Buttons, Cursor, InputEvent, KeyCode, Modifiers, MouseButton, Response};
 use glasskit::richtext::{Hit, MarkdownView};
 use glasskit::scroll::{Align, Axis, RowSource, RowState, ScrollList, ScrollState, Scrollbar};
 use glasskit::theme::Theme;
 use pill_ui_core::bar::anim::Target as AnimTarget;
+use pill_ui_core::bar::model::MicState;
 use pill_ui_core::bar::keys::{KeyEvent, RunMode};
 use pill_ui_core::bar::layout as L;
 use pill_ui_core::bar::uninstall::view::{Control, PanelView};
@@ -108,11 +110,11 @@ pub(crate) fn control_id(c: Control) -> u64 {
     }
 }
 
-/// Hover and press tweens by target key: they ease in on entering, back out on leaving (the web's `transition: background / transform`).
+/// Hover and press feedback by target key: hover fades in and out with inertia, a press is a quick springy dip (never a fixed-time tween).
 #[derive(Default)]
 pub(crate) struct Fx {
-    hover: HashMap<u64, Tween<f32>>,
-    press: HashMap<u64, Tween<f32>>,
+    hover: HashMap<u64, Flow>,
+    press: HashMap<u64, Flow>,
     hot: Option<u64>,
     down: Option<u64>,
 }
@@ -122,14 +124,11 @@ impl Fx {
         if self.hot == k {
             return false;
         }
-        if let Some(o) = self.hot {
-            if let Some(t) = self.hover.get_mut(&o) {
-                t.retarget(0.0, 0.22, curves::EASE_OUT);
-            }
+        if let Some(t) = self.hot.and_then(|o| self.hover.get_mut(&o)) {
+            t.to(0.0);
         }
         if let Some(n) = k {
-            let t = self.hover.entry(n).or_insert_with(|| Tween::at_rest(0.0));
-            t.retarget(1.0, 0.12, curves::EASE_OUT);
+            self.hover.entry(n).or_insert_with(|| Flow::new(0.0, Feel::FADE)).to(1.0);
         }
         self.hot = k;
         true
@@ -138,22 +137,20 @@ impl Fx {
         if self.down == k {
             return;
         }
-        if let Some(o) = self.down {
-            if let Some(t) = self.press.get_mut(&o) {
-                t.retarget(0.0, 0.38, curves::SPRING_POP);
-            }
+        if let Some(t) = self.down.and_then(|o| self.press.get_mut(&o)) {
+            t.to(0.0);
         }
         if let Some(n) = k {
-            let t = self.press.entry(n).or_insert_with(|| Tween::at_rest(0.0));
-            t.retarget(1.0, 0.08, curves::EASE_OUT);
+            self.press.entry(n).or_insert_with(|| Flow::new(0.0, Feel::SNAP)).to(1.0);
         }
         self.down = k;
     }
     pub fn hov(&self, k: u64) -> f32 {
-        self.hover.get(&k).map_or(0.0, |t| t.value())
+        self.hover.get(&k).map_or(0.0, |t| t.at01())
     }
+    /// The press depth; the spring may swing a little past 0 on release (a soft rebound), callers use it as a scale.
     pub fn prs(&self, k: u64) -> f32 {
-        self.press.get(&k).map_or(0.0, |t| t.value())
+        self.press.get(&k).map_or(0.0, |t| t.at())
     }
     pub fn hot(&self) -> Option<u64> {
         self.hot
@@ -161,10 +158,11 @@ impl Fx {
     pub fn step(&mut self, dt: f32) -> bool {
         let mut busy = false;
         for t in self.hover.values_mut().chain(self.press.values_mut()) {
-            busy |= t.step(dt);
+            t.step(dt as f64 * 1000.0);
+            busy |= t.moving();
         }
         if self.hover.len() > 256 {
-            self.hover.retain(|k, t| Some(*k) == self.hot || !t.finished() || t.value() > 0.0);
+            self.hover.retain(|k, t| Some(*k) == self.hot || t.moving() || t.at() > 0.0);
         }
         busy
     }
@@ -314,12 +312,14 @@ pub struct BarView {
     pub(crate) now: f64,
     busy_until: f64,
     /// the highlight under the rows: its top in list content coordinates
-    pub(crate) ind: Tween<f32>,
+    pub(crate) ind: Flow,
     ind_row: usize,
     /// seconds since the selected row changed (the row's buttons and enter icon come in one after another)
-    pub(crate) sel_age: f32,
+    pub(crate) sel: selfx::SelFx,
+    /// the microphone button: [recording, transcribing], each 0..1
+    pub(crate) mic_fx: [Flow; 2],
     sel_seen: usize,
-    pub(crate) row_off: HashMap<usize, Tween<f32>>,
+    pub(crate) row_off: HashMap<usize, Flow>,
     prev_ids: Vec<String>,
     last_text: String,
     last_sel: (usize, usize),
@@ -335,7 +335,7 @@ pub struct BarView {
     /// the keyboard focus ring of a panel control shows only after Tab / arrows (the web's :focus-visible)
     pub(crate) ring: bool,
     pub(crate) panel_frame: Option<panel::PanelFrame>,
-    pub(crate) chev: HashMap<usize, Tween<f32>>,
+    pub(crate) chev: HashMap<usize, Flow>,
 }
 
 impl BarView {
@@ -376,9 +376,10 @@ impl BarView {
             hits: Vec::new(),
             now: 0.0,
             busy_until: 0.0,
-            ind: Tween::at_rest(0.0),
+            ind: Flow::px(0.0, Feel::FLOW),
             ind_row: 0,
-            sel_age: 10.0,
+            sel: selfx::SelFx::new(),
+            mic_fx: [Flow::new(0.0, Feel::FADE); 2],
             sel_seen: 0,
             row_off: HashMap::new(),
             prev_ids: Vec::new(),
@@ -491,10 +492,21 @@ impl BarView {
         if ids != self.prev_ids {
             // survivors that moved slide from their old place (FLIP); new rows come in through the model's own Enter cues
             let d = pill_ui_core::bar::results::diff(&self.prev_ids, &ids);
+            let prev = std::mem::take(&mut self.row_off);
             if !self.reduced {
+                // a row that is still sliding from an earlier change carries its position and speed into the new slide
                 for (new, old) in d.moved {
-                    let from = (old as f32 - new as f32) * L::ROW_H;
-                    self.row_off.insert(new, Tween::new(from, 0.0, 0.4, curves::SPRING_SETTLE));
+                    let p = prev.get(&old);
+                    let from = (old as f32 - new as f32) * L::ROW_H + p.map_or(0.0, |f| f.at());
+                    let mut f = Flow::px(from, Feel::FLOW);
+                    f.nudge(p.map_or(0.0, |f| f.velocity()));
+                    f.to(0.0);
+                    self.row_off.insert(new, f);
+                }
+                for (k, f) in prev {
+                    if !self.row_off.contains_key(&k) && f.moving() && ids.get(k).is_some() && ids.get(k) == self.prev_ids.get(k) {
+                        self.row_off.insert(k, f);
+                    }
                 }
             }
             self.list.invalidate_all();
@@ -522,12 +534,14 @@ impl BarView {
         let target = self.row_top(sel);
         if sel != self.sel_seen {
             self.sel_seen = sel;
-            self.sel_age = 0.0;
+            if !self.reduced {
+                self.sel.restart();
+            }
         }
         if sel != self.ind_row || self.ind.target() != target {
             let glide = self.vm.selection_from.is_some() && !self.reduced && sel != self.ind_row;
             if glide {
-                self.ind.retarget(target, 0.38, curves::SPRING_SETTLE);
+                self.ind.to(target);
             } else {
                 self.ind.jump(target);
             }
@@ -702,16 +716,24 @@ impl View for BarView {
         let mut busy = had || self.bar.animating() || self.vm.uninstall.animating;
         busy |= self.anim.step(dt);
         busy |= self.fx.step(dt);
-        busy |= self.ind.step(dt);
+        self.ind.step(dt_ms);
+        busy |= self.ind.moving();
         for t in self.chev.values_mut() {
-            busy |= t.step(dt);
+            t.step(dt_ms);
+            busy |= t.moving();
         }
-        self.sel_age += dt;
-        busy |= self.sel_age < 0.6 && !self.reduced;
+        busy |= self.sel.step(dt_ms);
+        let mic = self.vm.mic.state;
+        for (f, on) in self.mic_fx.iter_mut().zip([mic == MicState::Recording, mic == MicState::Transcribing]) {
+            f.to(if on { 1.0 } else { 0.0 });
+            f.step(dt_ms);
+            busy |= f.moving();
+        }
         for t in self.row_off.values_mut() {
-            busy |= t.step(dt);
+            t.step(dt_ms);
+            busy |= t.moving();
         }
-        self.row_off.retain(|_, t| !t.finished());
+        self.row_off.retain(|_, t| t.moving());
         busy |= self.input.step(dt);
         let entries = std::mem::take(&mut self.entries);
         if let Some(view) = self.lay.list {
