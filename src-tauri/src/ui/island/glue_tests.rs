@@ -351,3 +351,111 @@ fn every_motion_settles_so_the_flows_stop_asking_for_frames() {
     g.sim.run(300);
     assert!(!g.v.borrow().dbg_frames_wanted());
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// The phone notification card (phonecard.rs): the folded island grows on hover, Hide / Mark read / Reply work, the island settles.
+// ---------------------------------------------------------------------------------------------------------------------------------------
+
+fn phone_notif(key: &str) -> Value {
+    json!({ "kind": "posted", "notif": { "key": key, "pkg": "org.telegram.messenger", "app": "Telegram", "title": "Вадим", "text": "привет, как дела?", "ongoing": false, "replay": false, "fresh": true, "canReply": true, "avatar": null, "icon": null } })
+}
+
+fn move_to(g: &mut G, p: (f32, f32)) {
+    g.sim.send(&InputEvent::MouseMove { pos: p, mods: Modifiers::default(), buttons: glasskit::input::Buttons::NONE });
+    for _ in 0..3 {
+        let _ = g.draw();
+        g.settle(30);
+    }
+}
+
+fn click_at(g: &mut G, p: (f32, f32)) {
+    g.sim.send(&InputEvent::MouseDown { pos: p, button: glasskit::input::MouseButton::Left, mods: Modifiers::default(), clicks: 1 });
+    g.sim.send(&InputEvent::MouseUp { pos: p, button: glasskit::input::MouseButton::Left, mods: Modifiers::default() });
+    let _ = g.draw();
+    g.settle(30);
+}
+
+/// Moves the simulated clock on and lets the island notice (its own timers run on the sim clock).
+fn advance(g: &mut G, ms: f64) {
+    g.sim.now_ms += ms;
+    g.sim.frame.request();
+    g.settle(6);
+}
+
+fn card_title(g: &G) -> Option<String> {
+    g.v.borrow().core.shell.card_view().map(|c| c.spec.title)
+}
+
+fn with_phone_card() -> G {
+    let mut g = G::new();
+    g.emit("phone:notif", phone_notif("k1"));
+    for _ in 0..3 {
+        let _ = g.draw();
+        g.settle(40);
+    }
+    g
+}
+
+#[test]
+fn a_phone_message_is_a_card_that_grows_on_hover_and_answers() {
+    let _m = crate::ui::host::testing::motion_on();
+    let mut g = with_phone_card();
+    assert_eq!(card_title(&g).as_deref(), Some("Вадим · Telegram"), "the Telegram-style card is up");
+    let h0 = g.v.borrow().dbg_body_h();
+    let pts = g.v.borrow().dbg_phone_points().expect("the card was laid out");
+    move_to(&mut g, pts[4]);
+    let h1 = g.v.borrow().dbg_body_h();
+    assert!(h1 > h0 + 30.0, "the island grew to show the buttons and the field: {h0} -> {h1}");
+    let pts = g.v.borrow().dbg_phone_points().unwrap();
+    // Mark read runs the card's action and the card goes
+    click_at(&mut g, pts[1]);
+    let acts = g.calls("phone_notif_action");
+    assert_eq!(acts, vec![json!({ "key": "k1", "action": "read" })]);
+}
+
+#[test]
+fn typing_a_reply_sends_it_and_the_result_card_replaces_the_message() {
+    let _m = crate::ui::host::testing::motion_on();
+    let mut g = with_phone_card();
+    let pts = g.v.borrow().dbg_phone_points().unwrap();
+    move_to(&mut g, pts[4]);
+    let pts = g.v.borrow().dbg_phone_points().unwrap();
+    let _ = g.sim.take_fx();
+    click_at(&mut g, pts[2]); // the field
+    assert_eq!(g.sim.take_fx().focus, Some(true), "the keyboard was taken");
+    for ch in "ок".chars() {
+        g.sim.send(&InputEvent::Char(ch));
+        let _ = g.draw();
+        g.settle(4);
+    }
+    g.sim.send(&InputEvent::Key { code: KeyCode::Enter, mods: Modifiers::default(), down: true, repeat: false });
+    for _ in 0..3 {
+        let _ = g.draw();
+        g.settle(30);
+    }
+    assert_eq!(g.calls("phone_notif_action"), vec![json!({ "key": "k1", "action": "reply", "text": "ок" })]);
+    // the phone confirms: the same card id now says "Reply sent", then the clock returns
+    g.emit("phone:notif", json!({ "kind": "reply", "key": "k1", "ok": true }));
+    assert_eq!(card_title(&g).as_deref(), Some("Reply sent"));
+    assert_eq!(g.sim.take_fx().focus, Some(false), "the keyboard went back");
+}
+
+#[test]
+fn the_phone_card_stays_while_hovered_and_the_island_goes_quiet_afterwards() {
+    let _m = crate::ui::host::testing::motion_on();
+    let mut g = with_phone_card();
+    let pts = g.v.borrow().dbg_phone_points().unwrap();
+    move_to(&mut g, pts[4]);
+    // a hover holds the card well past its 7 s
+    advance(&mut g, 20_000.0);
+    assert!(card_title(&g).is_some(), "still there while the pointer rests on it");
+    g.sim.send(&InputEvent::MouseLeave);
+    g.settle(10);
+    advance(&mut g, 3_500.0);
+    for _ in 0..4 {
+        let _ = g.draw();
+        g.settle(40);
+    }
+    assert!(card_title(&g).is_none(), "gone a few seconds after the pointer left");
+    assert!(!g.v.borrow().dbg_frames_wanted(), "nothing keeps asking for frames");
+}

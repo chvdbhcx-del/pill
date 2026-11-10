@@ -43,6 +43,8 @@ pub struct CardPaint<'a> {
     pub check: f32,
     /// 0..1 hover amount per action button
     pub hover: &'a [f32],
+    /// a phone card is on screen and its second row (buttons, reply field) is part of it (phonecard.rs)
+    pub phone_open: bool,
 }
 
 /// Per-frame numbers of the content's own motions, resolved from the flows of `fx.rs`: digits rolling (progress), clock side items popping in
@@ -59,7 +61,7 @@ pub struct Fx<'a> {
 
 impl Fx<'static> {
     /// Everything at rest (measuring, tests).
-    pub const REST: Fx<'static> = Fx { rolls: &[], entering: &[], row: (1.0, 0.0, 1.0), card: CardPaint { alpha: 1.0, scale: 1.0, check: 1.0, hover: &[] }, ring: (0.0, 0.0) };
+    pub const REST: Fx<'static> = Fx { rolls: &[], entering: &[], row: (1.0, 0.0, 1.0), card: CardPaint { alpha: 1.0, scale: 1.0, check: 1.0, hover: &[], phone_open: false }, ring: (0.0, 0.0) };
 }
 
 /// The download ring next to the clock (css px).
@@ -222,11 +224,21 @@ pub struct CardLayout {
 }
 
 pub fn layout_card(c: &lm::CardSpec, m: &dyn Meter) -> CardLayout {
+    layout_card_open(c, m, false)
+}
+
+/// `open`: only a phone card has one, its second row (hover / typing) is part of the card.
+pub fn layout_card_open(c: &lm::CardSpec, m: &dyn Meter, open: bool) -> CardLayout {
+    if let CardBody::Phone(p) = &c.body {
+        let l = super::phonecard::layout(p, m, open);
+        return CardLayout { w: l.w, h: l.h, icon: l.avatar, text: l.text, buttons: l.buttons.to_vec() };
+    }
     let (pad_x, pad_y, gap) = (20.0, 8.0, 12.0);
     let btn_ws: Vec<f32> = c.actions.iter().map(|a| (m.w(&a.label, BTN) + 32.0).max(32.0)).collect();
     let actions_w = if btn_ws.is_empty() { 0.0 } else { btn_ws.iter().sum::<f32>() + 8.0 * (btn_ws.len() - 1) as f32 + 8.0 };
     let icon_w = match (&c.icon, &c.body) {
         (_, CardBody::Notification { .. }) => 32.0,
+        (_, CardBody::Phone(_)) => 0.0,
         (None, CardBody::Color { .. }) => 40.0,
         (None, _) => 0.0,
         _ => 40.0,
@@ -243,6 +255,7 @@ pub fn layout_card(c: &lm::CardSpec, m: &dyn Meter) -> CardLayout {
             let _ = max_title_lines;
             (tw.max(bw), 18.0 + if body.is_some() { 4.0 + 16.0 * body_lines as f32 } else { 0.0 })
         }
+        CardBody::Phone(_) => (0.0, 0.0),
         CardBody::Color { hex, rgb, history, .. } => (m.w(rgb, SUB).max(m.w(hex, TITLE)).max(history.len() as f32 * 20.0), 18.0 + 4.0 + 16.0 + if history.is_empty() { 0.0 } else { 24.0 }),
     };
     let w = (pad_x * 2.0 + icon_w + if icon_w > 0.0 { gap } else { 0.0 } + tw + if actions_w > 0.0 { gap + actions_w - 8.0 } else { 0.0 }).clamp(160.0, MAX_W);
@@ -277,6 +290,7 @@ pub fn paint_card(cv: &Canvas, th: &Theme, gpu: &mut Gpu, c: &lm::CardSpec, lay:
     let (tone, tone_bg) = tone_colors(c.tone, th);
     let ir = lay.icon.offset(x0, y0);
     match (&c.icon, &c.body) {
+        (_, CardBody::Phone(_)) => {}
         (_, CardBody::Notification { app, .. }) => {
             cv.fill_circle(ir.center(), 16.0, th.raised);
             let letter: String = app.chars().next().map(|ch| ch.to_uppercase().collect()).unwrap_or_default();
@@ -322,6 +336,7 @@ pub fn paint_card(cv: &Canvas, th: &Theme, gpu: &mut Gpu, c: &lm::CardSpec, lay:
                 cv.text(Rect::new(tr.x, tr.y + 22.0, tr.w, tr.h - 22.0), b, Style::new(12.0, 400).wrap(), th.dim);
             }
         }
+        CardBody::Phone(_) => {}
         CardBody::Color { hex, rgb, copied, history } => {
             cv.text(Rect::new(tr.x, tr.y, tr.w, 18.0), hex, TITLE, th.text);
             cv.text(Rect::new(tr.x, tr.y + 22.0, tr.w, 16.0), &format!("{rgb} · {copied}"), SUB, th.dim);
@@ -362,7 +377,7 @@ pub fn measure(content: &LiveContent, ctx: &Ctx, m: &dyn Meter, th: &Theme) -> O
             (l.w, l.h)
         }),
         LiveContent::Card(cv) => cv.spec.id.as_ref().and_then(|id| ctx.cards.get(id)).map(|c| {
-            let l = layout_card(c, m);
+            let l = layout_card_open(c, m, ctx.fx.card.phone_open);
             (l.w, l.h)
         }),
     }
@@ -375,6 +390,8 @@ pub struct Painted {
     pub row_id: Option<String>,
     pub card_buttons: Vec<Rect>,
     pub card_rect: Option<Rect>,
+    /// a phone card is the content: the island paints it itself (phonecard.rs) at this rect, with this opacity and scale
+    pub phone: Option<(Rect, f32, f32)>,
 }
 
 /// Paints `content` centred in `area` (local css px at 100 %), with `alpha`; its own entry motions come from `ctx.fx`, `age_ms` is how long
@@ -417,9 +434,17 @@ pub fn paint_content(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, content:
 fn paint_card_view(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, view: &CardView, area: Rect, alpha: f32, out: &mut Painted) {
     let Some(card) = view.spec.id.as_ref().and_then(|id| ctx.cards.get(id)) else { return };
     let m = CvMeter(cv);
-    let lay = layout_card(card, &m);
-    let (x0, y0) = (area.cx() - lay.w / 2.0, area.cy() - lay.h / 2.0);
+    let lay = layout_card_open(card, &m, ctx.fx.card.phone_open);
     let k = ctx.fx.card;
+    if matches!(card.body, CardBody::Phone(_)) {
+        // anchored at the top: the second row is revealed by the growing body instead of sliding the first row
+        let (x0, y0) = (area.cx() - lay.w / 2.0, area.y);
+        let r = Rect::new(x0, y0, lay.w, lay.h);
+        out.card_rect = Some(r);
+        out.phone = Some((r, alpha * k.alpha, k.scale));
+        return;
+    }
+    let (x0, y0) = (area.cx() - lay.w / 2.0, area.cy() - lay.h / 2.0);
     out.card_rect = Some(Rect::new(x0, y0, lay.w, lay.h));
     cv.with_opacity(alpha * k.alpha, |cv| {
         cv.with_scale_about((area.cx(), y0), k.scale, |cv| {

@@ -23,6 +23,7 @@ use super::events::{CopyLive, KbdLive};
 use super::ext::{NotificationLive, ObsLive, SteamLive, UninstallLive};
 use super::media::MediaLive;
 use super::model::{LiveCmd, Query};
+use super::phone::PhoneLive;
 use super::plus::{BatteryLive, CalendarLive, FileDoneLive, MailLive, UsbLive};
 use super::powertimer::PowerTimerLive;
 use super::shelf::ShelfLive;
@@ -93,6 +94,7 @@ impl Hub {
             Box::new(PowerTimerLive::default()),
             Box::new(VpnLive::default()),
             Box::new(ShelfLive::default()),
+            Box::new(PhoneLive::default()),
         ])
     }
 

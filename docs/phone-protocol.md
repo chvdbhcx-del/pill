@@ -67,3 +67,20 @@ Limits: file size cap setting (default 4 GiB), at most 2 transfers at a time, a 
 ## App design notes (shared look)
 
 Dark by default (follows system light/dark), background `#0B0B0F`, surface glass `#15151C` with 1 px `#FFFFFF14` border, text `#F2F2F7` / `#9A9AA8`, accent = Pill violet `#8E7BFF` with a softer `#B9AEFF` highlight; large radii (24 dp cards, pill-shaped buttons), generous spacing, one typeface (system, weights 500/600/700), spring animations with soft overshoot (the same feel as Pill's liquid motion), a droplet/pill logo mark. Russian + English strings.
+
+## Changes by the PC side
+
+Clarifications and details the PC implements; none breaks the text above (the app should rely on them).
+
+* **One request per connection.** Every HTTP response carries `Connection: close`; open a new TCP connection per request (the WebSocket is the only long-lived one).
+* **Silence limit.** The PC drops a WebSocket that sent nothing for 90 s (the 20 s ping keeps it alive). A single message may be at most 1 MiB; client frames must be masked, as RFC 6455 requires.
+* **WebSocket close codes.** `4001` = this phone was revoked (stop reconnecting, show "unpaired"); `4000` = a newer socket of the same phone replaced this one (do not reconnect from this one); `1001` = the PC is turning the link off or quitting (reconnect with the usual back-off).
+* **`file.offer` from the phone.** The PC answers `file.accept {"id"}`, or `file.reject {"id","reason"}` with reason `too_big` (over the size cap), `bad_id` (the id must match `[A-Za-z0-9_-]{1,64}`) or `declined` (the user said no). When "auto-accept" is off the answer can take as long as the user needs: the app keeps waiting (it may show "waiting for the PC"). The PC sanitises the name; the final name comes back in the `PUT` answer (`path`).
+* **Upload errors.** `PUT /api/up/<id>`: `404 {"error":"unknown_file"}` (not announced, not accepted, someone else's id, or already used), `411` without `Content-Length`, `413 {"error":"too_large"}` when `Content-Length` is larger than the announced size, `400 {"error":"size_mismatch"}` when it differs, `503 {"error":"busy"}` with `Retry-After: 2` when two transfers already run (retry), `400 {"error":"interrupted"}` when the body ended early. An accepted offer can be uploaded once; after an error the app sends a new `file.offer` with a new id.
+* **Downloads.** `GET /api/down/<id>` answers `200`/`206` with `Accept-Ranges: bytes`, `Content-Range` for `206`, `416` for an impossible range, `404 {"error":"unknown_file"}` for another phone's or unknown id, `503 busy` as above. Send `file.done {"id","ok"}` afterwards. The PC offer id is 32 hex digits.
+* **Muted apps and replays.** `notif.posted` of a muted app is dropped without an answer; a `replay:true` notification is listed on the PC but never pops up. A repeat of the same title/text under the same `key` is stored once (progress ticks are cheap).
+* **`notif.read` / `notif.dismiss`** remove the notification from the PC list at once; the phone's own `notif.removed` that follows is harmless.
+* **`reply.result`** with `ok:true` takes the notification off the PC list; `error` is shown to the user as "expired" / "no_action" / anything else.
+* **Pairing page.** `GET /p?c=<code>` also works without a code (only the download button is shown). The deep link carries the PC's LAN address, port, code and name, URL-encoded.
+* **Rate limit.** The 20-per-minute counter counts bad bearer tokens and wrong pairing codes together, per source address; while it is over the limit even correct requests from that address get `429`.
+* **Binding.** The PC listens on its private LAN address (first free port from 41717 up, remembered); if it has none the link stays off with "no private network".

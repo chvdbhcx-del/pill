@@ -94,6 +94,8 @@ pub enum Event {
     TabClicked(String),
     /// a card action button was pressed (index into the showing card's actions)
     CardAction(usize),
+    /// The card on screen now lives this many ms from now (a card the user is working with: hovered, being answered). Ignored while it folds.
+    CardTtl(f64),
     /// the chips beside the time (left column, right column): keyboard layout, virtual desktop; empty = none
     ClockChips(Vec<String>, Vec<String>),
     /// renderer facts

@@ -92,6 +92,7 @@ pub mod hub;
 pub mod lyrics;
 pub mod media;
 pub mod model;
+pub mod phone;
 pub mod plus;
 pub mod powertimer;
 pub mod shelf;

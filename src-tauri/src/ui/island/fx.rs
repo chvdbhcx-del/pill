@@ -331,7 +331,7 @@ impl LiveFx {
     }
 
     fn card(&self) -> CardPaint<'_> {
-        CardPaint { alpha: self.card_a.at01(), scale: self.card_s.at(), check: self.card_check.at01(), hover: &self.out_hov }
+        CardPaint { alpha: self.card_a.at01(), scale: self.card_s.at(), check: self.card_check.at01(), hover: &self.out_hov, phone_open: false }
     }
 
     /// Presence of the microphone (0) and camera (1) dot, with a little overshoot: they pop.

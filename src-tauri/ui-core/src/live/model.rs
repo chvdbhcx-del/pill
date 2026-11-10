@@ -477,11 +477,32 @@ pub struct Swatch {
     pub action: Action,
 }
 
+/// A mirrored phone notification (`live::phone`): avatar, "<sender> . <app>", the text, "now". Hovering the card on the island grows it to
+/// show the card's actions (Hide / Mark read) and, when `can_reply`, a reply field (src/ui/island/phonecard.rs).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PhoneCard {
+    /// notification key on the phone (what `phone_notif_action` takes)
+    pub key: String,
+    pub sender: String,
+    pub app: String,
+    pub text: String,
+    /// "now" / "сейчас"
+    pub when: String,
+    /// base64 PNG of the sender picture or the app icon
+    pub avatar: Option<String>,
+    pub can_reply: bool,
+    pub hide: String,
+    pub mark_read: String,
+    pub reply_hint: String,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum CardBody {
     Text { title: String, sub: Option<String> },
     /// Windows notification: title <= `max_title_lines`, body <= `max_body_lines` (the renderer drops body lines first, then title lines, when the OS frame is short).
     Notification { title: String, body: Option<String>, app: String, max_title_lines: u8, max_body_lines: u8 },
+    /// A phone notification with its own hover layout (see [`PhoneCard`]).
+    Phone(PhoneCard),
     /// Picked colour: big swatch, `hex`, `rgb(..) · copied`, up to 9 recent colours.
     Color { hex: String, rgb: String, copied: String, history: Vec<Swatch> },
 }

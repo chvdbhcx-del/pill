@@ -101,6 +101,8 @@ enum Pending {
     Answer(&'static str),
     /// the answer of `kbd_state` / `vdesk_state`: handed to the core as this chip event
     Chip(&'static str),
+    /// the reply typed into a phone card (phonecard.rs): an error frees the field and says so
+    PhoneReply,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -170,6 +172,8 @@ pub struct IslandView {
     /// the flows of the live strip (swap, card, digits, dots, pulse, body colour) and of the header (tab highlights, hover, badges)
     fx: LiveFx,
     hdr: HeaderFx,
+    /// the phone notification card: hover growth, reply field (phonecard.rs)
+    phone: super::phonecard::PhoneUi,
 }
 
 /// The panel content fades in on this feel, after a short head start of the body; it leaves a little quicker.
@@ -240,6 +244,7 @@ impl IslandView {
             flare_sp: Flow::new(1.0, Feel::FADE.within(200.0)),
             fx: LiveFx::new(),
             hdr: HeaderFx::new(),
+            phone: super::phonecard::PhoneUi::new(&Theme::pill_dark()),
             now: cx.now_ms,
             started: false,
             device_id: 0,
@@ -389,6 +394,18 @@ impl IslandView {
             }
         }
         self.core.pump_notices();
+    }
+
+    /// What the phone card asked for (phonecard.rs): keep it on screen, take / give back the keyboard, send the reply.
+    fn apply_phone_outs(&mut self, cx: &mut Cx) {
+        use super::phonecard::PhoneOut;
+        for o in self.phone.take_outs() {
+            match o {
+                PhoneOut::Ttl(ms) => self.core.shell_event(Event::CardTtl(ms), cx.now_ms),
+                PhoneOut::Focus(on) => self.core.shell_event(Event::TextFocus(on), cx.now_ms),
+                PhoneOut::Reply { key, text } => self.call(cx, "phone_notif_action", json!({ "key": key, "action": "reply", "text": text }), Pending::PhoneReply),
+            }
+        }
     }
 
     fn run_cmd(&mut self, cx: &mut Cx, cmd: &str, args: Value) {
@@ -674,6 +691,14 @@ impl View for IslandView {
                         self.core.bus_event(ev, &v, cx.now_ms);
                     }
                 }
+                Some(Pending::PhoneReply) => {
+                    if let Err(e) = result {
+                        self.phone.reply_failed();
+                        let ru = self.core.ru();
+                        let (t, tone) = (if ru { "Не удалось ответить" } else { "Reply failed" }, pill_ui_core::live::model::Tone::Amber);
+                        self.core.show_card(pill_ui_core::live::model::CardSpec::text("phone-reply-failed", 4000, t, Some(e)).icon(pill_ui_core::live::model::IconName::Warn).tone(tone));
+                    }
+                }
                 Some(Pending::Fire) | None => {
                     redraw = self.host.other_msg(Msg::Reply { ticket, result }, cx);
                 }
@@ -739,6 +764,11 @@ impl View for IslandView {
         let hdr_busy = self.hdr.step(&v, hover_tab.as_deref(), self.hover.btn, self.hover.pressed, dt_ms);
         let inp = fx::Inputs { rows: Some(&self.core.rows), hover_btn: self.hover_card_btn, privacy: self.core.privacy, pulse: self.core.pulse, pad: self.content_pad() };
         let fx_busy = self.fx.step(&v, inp, dt_ms);
+        let phone_busy = {
+            let cur = self.core.shell.cards().current_id().and_then(|id| self.core.cards.get(id));
+            self.phone.step(cur, dt_ms, now, reduced)
+        };
+        self.apply_phone_outs(cx);
         let (amb_busy, amb_loop) = self.amb.step(v.reduced, dt_ms);
         self.amb_slow = amb_loop;
         // the tab view follows the shell's current tab while the panel is open
@@ -773,16 +803,30 @@ impl View for IslandView {
             ("header", hdr_busy),
             ("rows", rows_busy),
             ("fx", fx_busy),
+            ("phone", phone_busy),
             ("glide", self.gpu.gliding()),
             ("fades", fades),
         ]);
-        self.pace_ambient(&v, cx, now, hdr_busy || host_busy || fx_busy || fades || amb_busy);
-        v.wants_frames || self.pending_measure.is_some() || pets_busy || host_busy || hdr_busy || rows_busy || fx_busy || self.gpu.gliding() || fades || amb_busy || amb_loop
+        self.pace_ambient(&v, cx, now, hdr_busy || host_busy || fx_busy || phone_busy || fades || amb_busy);
+        v.wants_frames || phone_busy || self.pending_measure.is_some() || pets_busy || host_busy || hdr_busy || rows_busy || fx_busy || self.gpu.gliding() || fades || amb_busy || amb_loop
     }
 
     fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
         self.now = cx.now_ms;
         self.wake_full_rate(cx);
+        // a phone card on screen: its reply field and arrow come first, the rest (hover, buttons, dismissal) stays with the shell
+        let pr = if self.phone.active() {
+            let local = ev.pos().map(|p| self.local_live(p));
+            let r = self.phone.event(ev, local);
+            self.apply_phone_outs(cx);
+            if r.consumed {
+                self.exec(cx);
+                return r;
+            }
+            r
+        } else {
+            Response::NONE
+        };
         let mut resp = Response::NONE;
         match ev {
             InputEvent::MouseMove { pos, .. } => {
@@ -802,6 +846,7 @@ impl View for IslandView {
                 }
             }
             InputEvent::MouseLeave => {
+                self.phone.leave();
                 self.pointer = None;
                 self.hover = Hover::default();
                 self.hover_card_btn = None;
@@ -874,7 +919,7 @@ impl View for IslandView {
             _ => resp = self.host.event(ev, cx),
         }
         self.exec(cx);
-        resp
+        pr.merge(resp)
     }
 
     fn on_proximity(&mut self, ev: &ProximityEvent, cx: &mut Cx) -> Response {
@@ -973,7 +1018,7 @@ impl View for IslandView {
         let (rt, rb) = shapes::clamp_radii(body.w, body.h, b.radius_top as f32, b.radius_bottom as f32);
         self.amb.glow.paint(cv, body, rb.max(rt), s);
         shapes::paint_body(cv, b, b.radius_top as f32, b.radius_bottom as f32, self.flare_a, self.fx.shadow(), self.fx.fill());
-        let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq), fx: live::Fx { ring: self.amb.ring.paint(), ..self.fx.fx() } };
+        let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq), fx: { let mut f = live::Fx { ring: self.amb.ring.paint(), ..self.fx.fx() }; f.card.phone_open = self.phone.open_target(); f } };
         // ---- everything inside the body is clipped to its silhouette
         let mut painted = Painted::default();
         cv.with_clip_rr(body, rb.max(rt), |cv| {
@@ -989,6 +1034,14 @@ impl View for IslandView {
                         live::paint_content(cv, &th, &mut self.gpu, &gctx, &g.content, local, alpha * self.fx.ghost(), 1e9, now, &mut Painted::default());
                     }
                     live::paint_content(cv, &th, &mut self.gpu, &ctx, &v.live.content, local, alpha * self.fx.swap(), v.live.swap_age_ms, now, &mut painted);
+                    // the phone card paints itself: avatar, texts, the second row with the reply field
+                    if let (Some((r, a, sc)), LiveContent::Card(cvw)) = (painted.phone, &v.live.content) {
+                        if let Some(pill_ui_core::live::model::CardBody::Phone(p)) = cvw.spec.id.as_ref().and_then(|id| self.core.cards.get(id)).map(|c| &c.body) {
+                            let mut rects = Vec::new();
+                            cv.with_opacity(a, |cv| cv.with_scale_about((r.cx(), r.y), sc, |cv| rects = self.phone.paint(cv, &th, &mut self.gpu, p, (r.x, r.y), now, ctx.fx.card.hover)));
+                            painted.card_buttons = rects;
+                        }
+                    }
                 });
                 // the size the capsule should have (screen px incl. the island size and the legs' eye slot)
                 let m = LiveMeter(cv);
@@ -1205,11 +1258,22 @@ impl IslandView {
         let (ox, oy, s) = self.panel_origin;
         self.chrome.tabs.iter().find(|t| t.id == id).map(|t| (ox + t.rect.cx() * s, oy + t.rect.cy() * s))
     }
+    /// Window px of the phone card's pieces (tests): the two buttons, the reply field and the send arrow; None while no card is laid out.
+    pub fn dbg_phone_points(&self) -> Option<Vec<(f32, f32)>> {
+        let (lay, o) = self.phone.dbg_lay()?;
+        let v = self.core.shell.view();
+        let s = v.scale as f32;
+        let at = |r: Rect| (v.body.left as f32 + (o.0 + r.cx()) * s, v.body.top as f32 + (o.1 + r.cy()) * s);
+        Some(vec![at(lay.buttons[0]), at(lay.buttons[1]), at(lay.field), at(lay.send), at(lay.avatar)])
+    }
+    pub fn dbg_body_h(&self) -> f64 {
+        self.core.shell.view().body.height
+    }
     pub fn dbg_hover_of(&self, id: &str) -> f32 {
         self.hdr.hover_of(id)
     }
     pub fn dbg_frames_wanted(&self) -> bool {
-        self.fx.moving() || self.hdr.moving()
+        self.fx.moving() || self.hdr.moving() || self.phone.moving()
     }
     pub fn dbg_panel_origin(&self) -> (f32, f32, f32) {
         self.panel_origin

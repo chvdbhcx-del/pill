@@ -101,6 +101,7 @@ pub const ISLAND_EVENTS: &[&str] = &[
     "live:volume", "live:privacy", "live:download", "update:available", "live:obs", "live:steam", "live:notification", "uninstall:ready", "live:file-done",
     "live:usb", "live:battery", "live:calendar", "live:mail", "agents:changed", "agents:done", "agents:ask", "agents:ask-gone", "rec:state", "capture:done", "voice:state", "voice:level",
     "sysmon:tick", "media:changed", "lyrics:changed", "timer:tick", "remind:due", "shelf:changed", "timer:done", "remind:changed", "kbd:now", "vdesk:now", "power:timer", "vpn:changed",
+    "phone:notif", "phone:files", "phone:state",
 ];
 
 pub struct Core {
@@ -418,6 +419,7 @@ pub fn shell_card(c: &lm::CardSpec) -> ShellCard {
     let (title, sub) = match &c.body {
         CardBody::Text { title, sub } => (title.clone(), sub.clone().unwrap_or_default()),
         CardBody::Notification { title, body, .. } => (title.clone(), body.clone().unwrap_or_default()),
+        CardBody::Phone(p) => (format!("{} · {}", p.sender, p.app), String::new()),
         CardBody::Color { hex, rgb, .. } => (hex.clone(), rgb.clone()),
     };
     ShellCard {
@@ -437,6 +439,7 @@ pub fn toast_rec(c: &lm::CardSpec) -> pill_ui_core::panel::a::notifs::ToastRec {
     let (title, sub) = match &c.body {
         CardBody::Text { title, sub } => (title.clone(), sub.clone().unwrap_or_default()),
         CardBody::Notification { title, body, .. } => (title.clone(), body.clone().unwrap_or_default()),
+        CardBody::Phone(p) => (format!("{} · {}", p.sender, p.app), String::new()),
         CardBody::Color { hex, rgb, .. } => (hex.clone(), rgb.clone()),
     };
     let icon = match &c.icon {

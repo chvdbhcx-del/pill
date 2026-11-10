@@ -174,6 +174,18 @@ impl Cards {
         true
     }
 
+    /// The showing card (not folding yet) expires `ms` from `now` instead of at its old deadline.
+    pub fn set_ttl_from_now(&mut self, now: f64, ms: f64) {
+        if let Some(c) = self.cards_cur_mut() {
+            if c.out_at.is_none() {
+                c.ttl_deadline = Some(now + ms.max(0.0));
+            }
+        }
+    }
+    fn cards_cur_mut(&mut self) -> Option<&mut Cur> {
+        self.cur.as_mut()
+    }
+
     /// `endCard(curCard)`: remove the showing card immediately (hide, quiet sweep, replace).
     pub fn end_current(&mut self) -> bool {
         self.cur.take().is_some()
@@ -310,6 +322,22 @@ mod tests {
         assert!(c.dismiss(100.0, false));
         assert!(!c.dismiss(120.0, false)); // already out: the first out deadline stands
         assert_eq!(c.next_deadline(), Some(280.0));
+    }
+
+    #[test]
+    fn a_card_being_worked_with_can_be_held_and_released() {
+        let mut c = Cards::new();
+        c.set_ttl_from_now(0.0, 500.0); // nothing showing: ignored
+        c.enqueue(card("a"));
+        c.next(true, 0.0);
+        assert_eq!(c.next_deadline(), Some(DEFAULT_TTL_MS));
+        c.set_ttl_from_now(1000.0, 90_000.0);
+        assert_eq!(c.next_deadline(), Some(91_000.0), "held");
+        c.set_ttl_from_now(5000.0, 2600.0);
+        assert_eq!(c.next_deadline(), Some(7600.0), "released: a short time from the moment of letting go");
+        c.dismiss(6000.0, false);
+        c.set_ttl_from_now(6100.0, 90_000.0);
+        assert_eq!(c.next_deadline(), Some(6000.0 + OUT_MS), "a folding card cannot be revived");
     }
 
     #[test]

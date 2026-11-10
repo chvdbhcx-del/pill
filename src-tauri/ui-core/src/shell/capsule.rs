@@ -1131,6 +1131,9 @@ impl<B: Backend, C: Clock> Shell<B, C> {
                 self.tabs.chosen = true;
                 self.activate(&id, true);
             }
+            Event::CardTtl(ms) => {
+                self.cards.set_ttl_from_now(self.now, ms);
+            }
             Event::CardAction(i) => {
                 let act = self.cards.current_spec().and_then(|c| c.actions.get(i).map(|a| (c.id.clone(), a.id.clone())));
                 if let Some((card_id, action_id)) = act {
