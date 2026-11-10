@@ -219,17 +219,36 @@ pub struct DownloadLive {
     shown: String,
     seq: u64,
     row_until: i64,
+    /// `live.downloadRing`: a small ring next to the clock instead of the chip. The ring last asked for: `None` = off, else the percent
+    /// (0 = size unknown: the ring turns).
+    ring: Option<u32>,
+    ring_mode: bool,
 }
 
 impl DownloadLive {
+    /// Tells the island to show (`Some(percent)`) or hide (`None`) the ring next to the clock; nothing when it already is so.
+    fn set_ring(&mut self, to: Option<u32>) -> Option<LiveCmd> {
+        if self.ring == to {
+            return None;
+        }
+        self.ring = to;
+        let payload = match to {
+            Some(p) => json!({ "on": true, "value": if p > 0 { json!(f64::from(p) / 100.0) } else { Value::Null } }),
+            None => json!({ "on": false }),
+        };
+        Some(LiveCmd::Broadcast { name: "dl:ring".into(), payload })
+    }
+
     fn render(&mut self, env: &dyn Env, now: i64) -> Vec<LiveCmd> {
         self.dls.retain(|d| now - d.t <= DL_STALE_MS);
+        self.ring_mode = env.setting_true("live.downloadRing");
         if self.dls.is_empty() || !env.live_on("downloads") {
-            if self.shown.is_empty() {
-                return Vec::new();
+            let mut out: Vec<LiveCmd> = self.set_ring(None).into_iter().collect();
+            if !self.shown.is_empty() {
+                self.shown.clear();
+                out.push(LiveCmd::clear("download"));
             }
-            self.shown.clear();
-            return vec![LiveCmd::clear("download")];
+            return out;
         }
         let mut cur = &self.dls[0];
         for d in &self.dls {
@@ -238,13 +257,22 @@ impl DownloadLive {
             }
         }
         let cur = cur.clone();
+        let pct = if cur.total > 0.0 { clamp_f(js_round(cur.bytes / cur.total * 100.0), 1.0, 100.0) } else { 0.0 };
+        if self.ring_mode {
+            let mut out: Vec<LiveCmd> = self.set_ring(Some(pct as u32)).into_iter().collect();
+            if !self.shown.is_empty() {
+                self.shown.clear();
+                out.push(LiveCmd::clear("download"));
+            }
+            return out;
+        }
         let more = if self.dls.len() > 1 { format!("+{}", self.dls.len() - 1) } else { String::new() };
         if self.shown != cur.id || now >= self.row_until {
             self.shown = cur.id.clone();
             self.seq += 1;
         }
         self.row_until = now + i64::from(DL_TTL);
-        let pct = if cur.total > 0.0 { clamp_f(js_round(cur.bytes / cur.total * 100.0), 1.0, 100.0) } else { 0.0 };
+        let ring_off = self.set_ring(None);
         let label = if cur.name.is_empty() { env.tr("Загрузка", "Downloading") } else { cut_name(&cur.name, 28) };
         let mut row = RowSpec::new("download", DL_PRIORITY)
             .ttl(DL_TTL)
@@ -256,7 +284,7 @@ impl DownloadLive {
         if !more.is_empty() {
             row = row.with(Elem::text(more, TextStyle::Dim));
         }
-        vec![LiveCmd::set(row)]
+        ring_off.into_iter().chain(std::iter::once(LiveCmd::set(row))).collect()
     }
 
     fn download(&mut self, env: &dyn Env, p: &Value, now: i64) -> Vec<LiveCmd> {
@@ -327,6 +355,8 @@ impl Provider for DownloadLive {
                 self.dls.clear();
                 self.render(env, now)
             }
+            // chip <-> ring switched while a download runs
+            "settings:changed" if !self.dls.is_empty() && env.setting_true("live.downloadRing") != self.ring_mode => self.render(env, now),
             _ => Vec::new(),
         }
     }
@@ -609,6 +639,41 @@ mod tests {
         let mut d = DownloadLive::default();
         let r = row_of(&d.download(&env, &prog("a", "a", 1, json!(1_000_000)), T0)).clone();
         assert_eq!(r.elements[0], Elem::Ring { value: Some(0.01), size: 18.0, glide_ms: 400 });
+    }
+
+    fn ring_msg(on: bool, value: Value) -> LiveCmd {
+        LiveCmd::Broadcast { name: "dl:ring".into(), payload: if on { json!({"on": true, "value": value}) } else { json!({"on": false}) } }
+    }
+
+    #[test]
+    fn download_ring_replaces_the_chip_when_switched_on() {
+        let mut d = DownloadLive::default();
+        let mut env = MemEnv::default();
+        // off by default: the chip, no ring message
+        assert!(row_of_opt(&d.download(&env, &prog("a", "a.zip", 10, Value::Null), T0)).is_some());
+        env.set("live.downloadRing", json!(true));
+        // switched on mid-download: the chip goes, the ring (size unknown = turning) comes
+        let c = d.on_event(&env, "settings:changed", &Value::Null, T0 + 500);
+        assert_eq!(c, vec![ring_msg(true, Value::Null), LiveCmd::clear("download")]);
+        // progress with a known size moves the ring; the same percent is silent
+        let c = d.download(&env, &prog("a", "a.zip", 50, json!(200)), T0 + 1000);
+        assert_eq!(c, vec![ring_msg(true, json!(0.25))]);
+        assert!(d.download(&env, &prog("a", "a.zip", 51, json!(204)), T0 + 1500).is_empty());
+        // finished: the ring leaves, the "Download complete" card still comes
+        let c = d.download(&env, &json!({"state": "done", "id": "a", "name": "a.zip", "bytes": 5, "total": null, "path": "C:\\Downloads\\a.zip"}), T0 + 2000);
+        assert_eq!(c[0], ring_msg(false, Value::Null));
+        assert!(c.iter().any(|x| matches!(x, LiveCmd::Toast(_))));
+        // cancelled
+        d.download(&env, &prog("b", "b.zip", 1, Value::Null), T0 + 3000);
+        assert_eq!(d.download(&env, &json!({"state": "gone", "id": "b"}), T0 + 3100), vec![ring_msg(false, Value::Null)]);
+        // back to the chip
+        env.set("live.downloadRing", json!(false));
+        let c = d.download(&env, &prog("c", "c.zip", 1, Value::Null), T0 + 4000);
+        assert!(row_of_opt(&c).is_some() && !c.contains(&ring_msg(true, Value::Null)));
+    }
+
+    fn row_of_opt(cmds: &[LiveCmd]) -> Option<&RowSpec> {
+        cmds.iter().find_map(|c| if let LiveCmd::SetRow(r) = c { Some(r) } else { None })
     }
 
     #[test]

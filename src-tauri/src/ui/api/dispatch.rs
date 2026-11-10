@@ -125,6 +125,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         "timer_cancel" => ok(timers::timer_cancel()),
         "timer_state" => ok(timers::timer_state()),
         "sound_play" => ok(timers::sound_play(a.opt("tone")?)),
+        "alert_ack" => ok(alert::alert_ack(a.opt("id")?.unwrap_or(0))),
         "kbd_state" => ok(watch::kbd_state()),
         "watch_pause" => ok(watch::watch_pause()),
         "watch_resume" => ok(watch::watch_resume()),

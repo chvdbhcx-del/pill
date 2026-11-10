@@ -11,6 +11,7 @@
 //!   cross-fades and the presets light up. Reduced motion lands every flow on its end state.
 //! * The caret blinks, so a focused field keeps `step` returning true (frames at the display rate, never throttled).
 use super::kit::{Clicks, Cues, Field, Icons, Lit, Swap, GROW};
+use super::timer_wheel::RingWheel;
 use glasskit::canvas::Canvas;
 use crate::ui::liquid::{Feel, Flow};
 use glasskit::edit::EditEvent;
@@ -380,6 +381,10 @@ pub struct TimerCardView {
     custom_k: Lit,
     /// last ring slot seen by `draw`
     empty_hint_len: usize,
+    /// the mouse wheel over the ring (minutes / shift = seconds) and the ring's rect and running state it needs
+    wheel: RingWheel,
+    ring_rect: Rect,
+    running: bool,
 }
 
 impl TimerCardView {
@@ -418,6 +423,9 @@ impl TimerCardView {
             preset_on: std::array::from_fn(|_| Lit::new(Feel::FADE)),
             custom_k: Lit::new(Feel::FADE),
             empty_hint_len: 0,
+            wheel: RingWheel::new(),
+            ring_rect: Rect::default(),
+            running: false,
         }
     }
 
@@ -536,6 +544,21 @@ impl TimerCardView {
         if self.rf.wants(ev) {
             return self.rf.queue(ev);
         }
+        if let InputEvent::Wheel { pos, delta, mods, .. } = ev {
+            if self.ring_rect.contains(pos.0, pos.1) {
+                let n = self.wheel.notches(if delta.1 != 0.0 { delta.1 } else { delta.0 });
+                if n != 0 {
+                    let secs = RingWheel::seconds(n, mods.shift);
+                    self.wheel.kick(n);
+                    if self.running {
+                        self.wheel.hold(secs); // sent once the burst is over (see `step`)
+                    } else {
+                        self.out.push(timer::Action::AdjustTime(secs));
+                    }
+                }
+                return Response { consumed: true, redraw: true, ..Response::NONE };
+            }
+        }
         let in_card = ev.pos().map_or(true, |p: Pt| self.rect.contains(p.0, p.1));
         let mut r = Response::NONE;
         if in_card || matches!(ev, InputEvent::MouseLeave) || matches!(ev, InputEvent::MouseUp { .. }) {
@@ -557,6 +580,11 @@ impl TimerCardView {
         busy |= self.cues.step(dt_ms as f32);
         busy |= self.rows.step(dt);
         busy |= self.ring.step(dt);
+        let (wheel_busy, send) = self.wheel.step(dt_ms);
+        busy |= wheel_busy;
+        if let Some(secs) = send {
+            self.out.push(timer::Action::AdjustTime(secs));
+        }
         busy |= self.sv.step(dt);
         self.msg_t.step(dt_ms);
         self.msg_k.step(dt_ms);
@@ -620,6 +648,7 @@ impl TimerCardView {
         };
         let l = layout(rect, msg_h);
         self.list_rect = l.list;
+        self.ring_rect = l.ring;
         self.cf.rect = l.ctime;
         self.rf.rect = l.input;
         self.clicks.begin();
@@ -647,6 +676,7 @@ impl TimerCardView {
             self.rows.sync(&ids);
         }
         self.ring.set(v.running, v.left as f32);
+        self.running = v.running;
         self.stop_t.set(v.running);
         self.start_face.set(&(v.start_label.clone(), v.running));
         self.custom_k.set(v.custom_editing);
@@ -695,12 +725,15 @@ impl TimerCardView {
         let c = l.ring.center();
         let (arc, run) = self.ring.value();
         let amber = th.amber;
-        cv.stroke_circle(c, 34.0 * k, 5.0 * k, amber.alpha(0.45 + (0.18 - 0.45) * run));
-        if run > 0.01 && arc > 0.0005 {
-            cv.arc(c, 34.0 * k, 5.0 * k, 0.0, 360.0 * arc, amber.fade(run));
-        }
+        let (swell, shift) = self.wheel.paint(); // the wheel's tick
+        cv.with_scale_about(c, swell, |cv| {
+            cv.stroke_circle(c, 34.0 * k, 5.0 * k, amber.alpha(0.45 + (0.18 - 0.45) * run));
+            if run > 0.01 && arc > 0.0005 {
+                cv.arc(c, 34.0 * k, 5.0 * k, 0.0, 360.0 * arc, amber.fade(run));
+            }
+        });
         let size = clock_size(v.clock_len);
-        cv.text(l.ring, &v.clock, Style::new(size, 600).center().mono(), th.text);
+        cv.text(l.ring.offset(0.0, shift), &v.clock, Style::new(size, 600).center().mono(), th.text);
 
         // start / stop
         self.clicks.add(K::Start, l.start);

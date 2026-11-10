@@ -41,24 +41,33 @@ pub(crate) fn mono_ms() -> u64 {
 
 // ================= downloads =================
 
-const TEMP_EXT: &[&str] = &[".crdownload", ".part", ".partial", ".download", ".tmp"];
-
-fn ignorable(name: &str) -> bool {
+fn ignorable(name: &str, extra: &[String]) -> bool {
     let low = name.to_lowercase();
-    name.starts_with('.') || low == "desktop.ini" || low == "thumbs.db" || TEMP_EXT.iter().any(|e| low.ends_with(e))
+    name.starts_with('.') || low == "desktop.ini" || low == "thumbs.db" || crate::dlguard::is_temp(name, extra)
 }
 
 /// Finished-file detector. `step` gets the plain files of the Downloads folder (name, size) and returns the names that became stable.
 #[derive(Default)]
 struct DlWatch {
+    /// the user's extra extensions to ignore (settings `live.dlIgnoreExt`), refreshed every tick
+    extra: Vec<String>,
     primed: bool,
     seen: HashSet<String>,
     pending: HashMap<String, (u64, u64)>, // name -> (size, since_ms the size has been the same)
 }
 
 impl DlWatch {
-    fn step(&mut self, now: u64, listing: &[(String, u64)]) -> Vec<String> {
-        let here: HashSet<&str> = listing.iter().filter(|(n, _)| !ignorable(n)).map(|(n, _)| n.as_str()).collect();
+    /// `held(name)`: the file is still open for writing (a browser waiting in its "Save as" dialog or still saving). A held file keeps
+    /// waiting; it is only asked about once it is otherwise ready. A file whose temp twin (`x.pdf.crdownload`) is still listed waits too.
+    fn step(&mut self, now: u64, listing: &[(String, u64)], held: &dyn Fn(&str) -> bool) -> Vec<String> {
+        let extra = std::mem::take(&mut self.extra);
+        let ready = self.step_inner(now, listing, held, &extra);
+        self.extra = extra;
+        ready
+    }
+
+    fn step_inner(&mut self, now: u64, listing: &[(String, u64)], held: &dyn Fn(&str) -> bool, extra: &[String]) -> Vec<String> {
+        let here: HashSet<&str> = listing.iter().filter(|(n, _)| !ignorable(n, extra)).map(|(n, _)| n.as_str()).collect();
         if !self.primed {
             self.primed = true;
             self.seen = here.iter().map(|s| s.to_string()).collect(); // everything that was there at start is old news
@@ -67,7 +76,7 @@ impl DlWatch {
         self.seen.retain(|n| here.contains(n.as_str())); // a deleted file downloaded again later is news again
         self.pending.retain(|n, _| here.contains(n.as_str()));
         let mut ready = Vec::new();
-        for (name, size) in listing.iter().filter(|(n, _)| !ignorable(n)) {
+        for (name, size) in listing.iter().filter(|(n, _)| !ignorable(n, extra)) {
             if self.seen.contains(name) {
                 continue;
             }
@@ -75,7 +84,7 @@ impl DlWatch {
             if e.0 != *size {
                 *e = (*size, now);
             }
-            if *size > 0 && now.saturating_sub(e.1) >= STABLE_MS {
+            if *size > 0 && now.saturating_sub(e.1) >= STABLE_MS && !crate::dlguard::has_temp_twin(name, listing.iter().map(|(n, _)| n.as_str())) && !held(name) {
                 ready.push(name.clone());
             }
         }
@@ -706,7 +715,8 @@ fn tick(app: &AppHandle, n: u64, dl: &mut DlWatch, usb: &mut UsbWatch, bat: &mut
     if on("live.dlDone", true) {
         let dir = crate::livesys::downloads_dir();
         if let Some(files) = list_files(&dir) {
-            let ready = dl.step(now, &files);
+            dl.extra = crate::dlguard::extra_from_settings();
+            let ready = dl.step(now, &files, &|n| crate::dlguard::open_for_writing(&dir.join(n)));
             if let Some(first) = ready.first() {
                 let path = dir.join(first);
                 let _ = bus::emit("live:file-done", json!({ "name": first, "path": path.to_string_lossy(), "more": ready.len() - 1 }));
@@ -806,26 +816,56 @@ mod tests {
     #[test]
     fn download_old_files_ignored_new_one_needs_stable_size() {
         let mut w = DlWatch::default();
-        assert!(w.step(0, &dl_files(&[("old.zip", 5)])).is_empty()); // existed at start
-        assert!(w.step(2000, &dl_files(&[("old.zip", 5), ("a.pdf", 10)])).is_empty()); // just appeared
-        assert!(w.step(3000, &dl_files(&[("old.zip", 5), ("a.pdf", 10)])).is_empty()); // stable for 1 s only
-        assert!(w.step(3500, &dl_files(&[("old.zip", 5), ("a.pdf", 20)])).is_empty()); // grew: timer restarts
-        assert_eq!(w.step(5500, &dl_files(&[("old.zip", 5), ("a.pdf", 20)])), vec!["a.pdf"]); // stable 2 s
-        assert!(w.step(7500, &dl_files(&[("old.zip", 5), ("a.pdf", 20)])).is_empty()); // announced once
-        assert!(w.step(9500, &dl_files(&[("old.zip", 5), ("a.pdf", 99)])).is_empty()); // later growth is not news
+        assert!(w.step_t(0, &dl_files(&[("old.zip", 5)])).is_empty()); // existed at start
+        assert!(w.step_t(2000, &dl_files(&[("old.zip", 5), ("a.pdf", 10)])).is_empty()); // just appeared
+        assert!(w.step_t(3000, &dl_files(&[("old.zip", 5), ("a.pdf", 10)])).is_empty()); // stable for 1 s only
+        assert!(w.step_t(3500, &dl_files(&[("old.zip", 5), ("a.pdf", 20)])).is_empty()); // grew: timer restarts
+        assert_eq!(w.step_t(5500, &dl_files(&[("old.zip", 5), ("a.pdf", 20)])), vec!["a.pdf"]); // stable 2 s
+        assert!(w.step_t(7500, &dl_files(&[("old.zip", 5), ("a.pdf", 20)])).is_empty()); // announced once
+        assert!(w.step_t(9500, &dl_files(&[("old.zip", 5), ("a.pdf", 99)])).is_empty()); // later growth is not news
+    }
+
+    impl DlWatch {
+        fn step_t(&mut self, now: u64, listing: &[(String, u64)]) -> Vec<String> {
+            self.step(now, listing, &|_| false)
+        }
+    }
+
+    #[test]
+    fn download_waiting_in_save_as_is_not_finished_early() {
+        let mut w = DlWatch::default();
+        w.step_t(0, &[]);
+        // size stable for long, but the browser still has it open for writing: it waits
+        let held = |n: &str| n == "movie.mkv";
+        assert!(w.step(100, &dl_files(&[("movie.mkv", 7)]), &held).is_empty());
+        assert!(w.step(9000, &dl_files(&[("movie.mkv", 7)]), &held).is_empty());
+        // its temp twin is still listed: not finished either
+        assert!(w.step(9500, &dl_files(&[("movie.mkv", 7), ("movie.mkv.crdownload", 7)]), &|_| false).is_empty());
+        // released and the temp name gone: now it counts (the stable timer kept running)
+        assert_eq!(w.step(10_000, &dl_files(&[("movie.mkv", 7)]), &|_| false), vec!["movie.mkv"]);
+    }
+
+    #[test]
+    fn download_extra_ignored_extensions() {
+        let mut w = DlWatch::default();
+        w.step_t(0, &[]);
+        w.extra = crate::dlguard::parse_ext_list("log, bak");
+        assert!(w.step_t(100, &dl_files(&[("app.log", 5), ("old.BAK", 5)])).is_empty());
+        assert!(w.step_t(9000, &dl_files(&[("app.log", 5), ("old.BAK", 5), ("a.pdf", 3)])).is_empty());
+        assert_eq!(w.step_t(11_500, &dl_files(&[("app.log", 5), ("old.BAK", 5), ("a.pdf", 3)])), vec!["a.pdf"]);
     }
 
     #[test]
     fn download_temp_names_zero_size_and_redownload() {
         let mut w = DlWatch::default();
-        w.step(0, &[]);
-        assert!(w.step(100, &dl_files(&[("x.pdf.crdownload", 5), ("y.part", 1), ("z.TMP", 1), ("w.partial", 1), (".hidden", 1)])).is_empty());
-        assert!(w.step(9000, &dl_files(&[("x.pdf.crdownload", 5), ("empty.bin", 0)])).is_empty()); // temp and empty files never fire
-        assert!(w.step(9100, &dl_files(&[("x.pdf", 7)])).is_empty()); // renamed: the final name starts its stable timer
-        assert_eq!(w.step(11_100, &dl_files(&[("x.pdf", 7)])), vec!["x.pdf"]);
-        w.step(12_000, &[]); // deleted
-        assert!(w.step(13_000, &dl_files(&[("x.pdf", 7)])).is_empty());
-        assert_eq!(w.step(15_000, &dl_files(&[("x.pdf", 7)])), vec!["x.pdf"]); // downloaded again: news again
+        w.step_t(0, &[]);
+        assert!(w.step_t(100, &dl_files(&[("x.pdf.crdownload", 5), ("y.part", 1), ("z.TMP", 1), ("w.partial", 1), (".hidden", 1)])).is_empty());
+        assert!(w.step_t(9000, &dl_files(&[("x.pdf.crdownload", 5), ("empty.bin", 0)])).is_empty()); // temp and empty files never fire
+        assert!(w.step_t(9100, &dl_files(&[("x.pdf", 7)])).is_empty()); // renamed: the final name starts its stable timer
+        assert_eq!(w.step_t(11_100, &dl_files(&[("x.pdf", 7)])), vec!["x.pdf"]);
+        w.step_t(12_000, &[]); // deleted
+        assert!(w.step_t(13_000, &dl_files(&[("x.pdf", 7)])).is_empty());
+        assert_eq!(w.step_t(15_000, &dl_files(&[("x.pdf", 7)])), vec!["x.pdf"]); // downloaded again: news again
     }
 
     #[test]

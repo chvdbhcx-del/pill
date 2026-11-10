@@ -201,6 +201,8 @@ pub enum Action {
     ReminderDone(i64),
     ReminderSnooze(i64),
     ReminderDelete(i64),
+    /// the mouse wheel over the ring: add (or take) this many seconds; a running timer restarts from its new remaining time
+    AdjustTime(i64),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -435,6 +437,15 @@ impl TimerCard {
             Action::SetSel(s) => {
                 self.set_sel(s);
                 vec![]
+            }
+            Action::AdjustTime(d) => {
+                if self.timer.active {
+                    let secs = (self.remaining_s().ceil() as i64 + d).clamp(1, 99 * 3600);
+                    vec![self.call("timer_start", json!({ "seconds": secs }), Pend::Start)]
+                } else {
+                    self.set_sel((self.sel_s as i64 + d).max(1) as u64);
+                    vec![]
+                }
             }
             Action::Preset(m) => {
                 self.fx.anim(&format!("preset-{m}"), Anim::Press);
@@ -785,6 +796,25 @@ mod tests {
         assert!(!c.view().running);
         assert_eq!(c.fx.take_effects(), vec![Effect::SetLive { key: "timer".into(), row: None }]);
     }
+    #[test]
+    fn wheel_adjusts_the_selected_time_or_restarts_a_running_timer() {
+        let mut c = card();
+        assert_eq!(c.selected_secs(), 300);
+        assert!(c.on_action(Action::AdjustTime(60)).is_empty());
+        assert_eq!(c.selected_secs(), 360);
+        c.on_action(Action::AdjustTime(-1));
+        assert_eq!(c.selected_secs(), 359, "shift = seconds");
+        c.on_action(Action::AdjustTime(-100_000));
+        assert_eq!(c.selected_secs(), 1, "never below one second");
+        let mut c = card();
+        let on = c.on_action(Action::StartStop);
+        run(&mut c, on, vec![("timer_start", state(true, T0 + 300_000, 300))]);
+        let calls = c.on_action(Action::AdjustTime(60));
+        assert_eq!((calls[0].cmd, calls[0].args.clone()), ("timer_start", json!({ "seconds": 360 })), "5:00 left + 1 min");
+        let calls = c.on_action(Action::AdjustTime(-1000));
+        assert_eq!(calls[0].args, json!({ "seconds": 1 }));
+    }
+
     #[test]
     fn clock_gaining_a_digit_changes_the_live_key() {
         let mut c = card();

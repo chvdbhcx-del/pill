@@ -7,6 +7,8 @@
 //!   a reminder 30 s with Snooze 10 min / Done). Switch: Settings > Live events > Reminders and timers (`live.reminders`).
 //!   Timer and reminder cards are exempt from quiet hours (ids `timer-done`, `remind-<id>`).
 //! * `remind:changed` -> re-read the timer state.
+//! * `alert:wait {on}` (alerts.rs: a timer or reminder went off and nobody has answered yet) -> `Broadcast alert:wait`: the island glows
+//!   softly until it is answered. OK / Done on the cards tell the backend with `alert_ack`; Snooze / Again / the Note tab do it themselves.
 //!
 //! The Note tab owns the ring and the lists; it tells this provider when it is on screen ([`TimerLive::set_visible`]).
 
@@ -139,7 +141,7 @@ impl TimerLive {
                     .icon(IconName::Bell)
                     .actions(vec![
                         CardAction::new(env.tr("Ещё раз", "Again"), ActionKind::Normal, Action::TimerAgain),
-                        CardAction::close(env.tr("Ок", "OK")),
+                        CardAction::new(env.tr("Ок", "OK"), ActionKind::Normal, Action::invoke("alert_ack", json!({ "id": p.get("id").cloned().unwrap_or(Value::Null) }))),
                     ]);
                 out.push(LiveCmd::Toast(card));
             }
@@ -162,7 +164,7 @@ impl TimerLive {
                     ActionKind::Normal,
                     Action::invoke("remind_snooze", json!({ "id": id, "minutes": SNOOZE_MIN })),
                 ),
-                CardAction::new(env.tr("Готово", "Done"), ActionKind::Normal, if repeating { Action::Noop } else { Action::invoke("remind_done", json!({ "id": id })) }),
+                CardAction::new(env.tr("Готово", "Done"), ActionKind::Normal, if repeating { Action::invoke("alert_ack", json!({ "id": id })) } else { Action::invoke("remind_done", json!({ "id": id })) }),
             ]);
             out.push(LiveCmd::Toast(card));
         }
@@ -175,7 +177,7 @@ impl Provider for TimerLive {
         "timer"
     }
     fn events(&self) -> &'static [&'static str] {
-        &["timer:tick", "timer:state", "remind:due", "remind:changed", "pill:hide", "pill:show"]
+        &["timer:tick", "timer:state", "remind:due", "remind:changed", "alert:wait", "pill:hide", "pill:show"]
     }
     fn boot(&self) -> Vec<Query> {
         vec![Query::new("timer_state", "timer:state")]
@@ -202,6 +204,10 @@ impl Provider for TimerLive {
             }
             "remind:changed" => vec![LiveCmd::Query(Query::new("timer_state", "timer:state"))],
             "remind:due" => self.on_due(env, p, now),
+            "alert:wait" => {
+                let on = truthy(p.get("on")) && env.live_on("reminders");
+                vec![LiveCmd::Broadcast { name: "alert:wait".into(), payload: json!({ "on": on }) }]
+            }
             "pill:hide" => {
                 self.hidden = true; // nothing while the pill is hidden
                 Vec::new()
@@ -393,9 +399,23 @@ mod tests {
         assert_eq!(ts(c), ("Таймер закончился".to_string(), None));
         assert_eq!(c.actions[0].action, Action::TimerAgain);
         assert_eq!((c.actions[0].label.as_str(), c.actions[1].label.as_str()), ("Ещё раз", "Ок"));
+        assert_eq!(c.actions[1].action, Action::invoke("alert_ack", json!({"id": 4})), "OK answers the alert");
         let cmds = t.on_event(&MemEnv::en(), "remind:due", &json!({"id": 4, "kind": "timer"}), T0);
         assert_eq!(ts(toast(&cmds)).0, "Timer finished");
         assert_eq!((toast(&cmds).actions[0].label.as_str(), toast(&cmds).actions[1].label.as_str()), ("Again", "OK"));
+    }
+
+    #[test]
+    fn the_wait_glow_follows_the_backend_and_the_reminders_switch() {
+        let mut t = TimerLive::default();
+        let mut env = MemEnv::default();
+        let on = t.on_event(&env, "alert:wait", &json!({"on": true}), T0);
+        assert_eq!(on, vec![LiveCmd::Broadcast { name: "alert:wait".into(), payload: json!({"on": true}) }]);
+        let off = t.on_event(&env, "alert:wait", &json!({"on": false}), T0);
+        assert_eq!(off, vec![LiveCmd::Broadcast { name: "alert:wait".into(), payload: json!({"on": false}) }]);
+        env.set("live.reminders", json!(false));
+        assert_eq!(t.on_event(&env, "alert:wait", &json!({"on": true}), T0), vec![LiveCmd::Broadcast { name: "alert:wait".into(), payload: json!({"on": false}) }]);
+        assert!(t.events().contains(&"alert:wait"));
     }
 
     #[test]
@@ -414,10 +434,10 @@ mod tests {
         let cmds = t.on_event(&MemEnv::en(), "remind:due", &json!({"id": 12, "text": "Call", "kind": "reminder", "late": true, "repeat": "daily"}), T0);
         assert_eq!(ts(toast(&cmds)), ("Call".to_string(), Some("missed".to_string())), "late beats the repeat hint");
         assert_eq!(toast(&cmds).actions[0].label, "Snooze 10 min");
-        // repeating: Done does nothing (the rule re-arms the reminder)
+        // repeating: Done only answers the alert (the rule re-arms the reminder)
         let cmds = t.on_event(&env, "remind:due", &json!({"id": 13, "text": "Зарядка", "kind": "reminder", "late": false, "repeat": "daily"}), T0);
         assert_eq!(ts(toast(&cmds)).1, Some("каждый день".to_string()));
-        assert_eq!(toast(&cmds).actions[1].action, Action::Noop);
+        assert_eq!(toast(&cmds).actions[1].action, Action::invoke("alert_ack", json!({"id": 13})));
         let cmds = t.on_event(&env, "remind:due", &json!({"id": 13, "text": "x", "kind": "reminder", "late": true}), T0);
         assert_eq!(ts(toast(&cmds)).1, Some("пропущено".to_string()));
     }

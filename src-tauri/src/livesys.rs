@@ -72,7 +72,7 @@ struct TempInfo {
     final_name: Option<String>,
 }
 
-const TEMP_EXT: &[&str] = &[".crdownload", ".part", ".partial", ".download", ".tmp"];
+use crate::dlguard::TEMP_EXT;
 
 fn temp_info(name: &str) -> Option<TempInfo> {
     let low = name.to_lowercase();
@@ -342,8 +342,12 @@ impl Dl {
         let Ok(rd) = std::fs::read_dir(&dir) else { return };
         let mut names: HashSet<String> = HashSet::new();
         let mut live_temps: HashMap<String, (u64, Option<String>)> = HashMap::new();
+        let extra = crate::dlguard::extra_from_settings(); // Settings > Live events: extensions that are never downloads
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
+            if extra.iter().any(|x| name.to_lowercase().ends_with(x.as_str())) {
+                continue;
+            }
             match temp_info(&name) {
                 Some(ti) => {
                     if let Ok(m) = e.metadata() {
@@ -387,6 +391,10 @@ impl Dl {
                 names
                     .iter()
                     .filter_map(|n| {
+                        // a file a browser still holds open (its "Save as" dialog is up) or whose temp twin is listed is not the finished one
+                        if crate::dlguard::open_for_writing(&dir.join(n)) || crate::dlguard::has_temp_twin(n, live_temps.keys().map(String::as_str)) {
+                            return None;
+                        }
                         let age = std::fs::metadata(dir.join(n)).ok().filter(|m| m.is_file())?.modified().ok()?;
                         let age_ms = SystemTime::now().duration_since(age).unwrap_or_default().as_millis() as u64;
                         (age_ms <= FRESH_MS).then(|| Cand { name: n.clone(), age_ms, is_new: !self.known.contains(n) })
