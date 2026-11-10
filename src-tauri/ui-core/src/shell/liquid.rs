@@ -422,7 +422,13 @@ impl Liquid {
     fn targets(&mut self, rg: &Range, ctx: &Ctx) {
         let dyn_ = self.inn.abs() > 0.002;
         let expd = ctx.expanded;
-        let sag = if self.eff_react(ctx.reduce) == Preset::Calm { self.sag_depth(expd, ctx.edge_idle && !ctx.reduce) } else { 0.0 };
+        // the liquid has weight in the two long-lived states: at rest (full) and while an agent thinks (a little less, the ball hangs from it)
+        let sag_k = match self.eff_react(ctx.reduce) {
+            Preset::Calm => 1.0,
+            Preset::Thinking => 0.7,
+            _ => 0.0,
+        };
+        let sag = if sag_k > 0.0 { sag_k * self.sag_depth(expd, ctx.edge_idle && !ctx.reduce) } else { 0.0 };
         let sig_w: f64 = (if expd { 50.0 } else { 38.0 }) * if self.drag { 1.45 } else { 1.0 };
         let sig2 = 2.0 * sig_w * sig_w;
         let bands = self.music_on(ctx) && !self.silent && ctx.now_ms - self.last_audio < 1000.0 && self.eff_react(ctx.reduce) == Preset::Music;
