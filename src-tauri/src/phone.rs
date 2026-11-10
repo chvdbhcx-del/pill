@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 
 mod files;
 mod http;
+mod info;
 mod page;
 mod reg;
 mod server;

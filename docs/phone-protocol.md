@@ -98,3 +98,30 @@ No existing field or message was changed; the phone app (v1.0.0) only pins down 
 * The phone sends `file.done {ok:false}` when a PC file download failed, and answers `file.offer` from the PC only through the download itself (it never sends `file.reject`).
 * Close code `4001` or HTTP 401 on the socket makes the phone forget the pairing and show "Pairing was removed".
 * The phone pings with `{"t":"ping"}` every 20 s and treats 50 s without any frame as a dead socket. The PC should answer `pong`.
+
+## Changes by the phone side: richer `status` (v1.1, backward compatible)
+
+The `status` message keeps every field above (`battery`, `charging`, `network`, `ssid`, `dnd`, `time`) and gains OPTIONAL ones. A phone omits what it does not know or may not read; the PC treats an absent field as "unknown" (the tab shows nothing for it), so old apps and old PCs keep working. Every `status` is a full snapshot: the PC replaces what it knew, a field missing from the newest snapshot is gone. Rate limit unchanged: on connect and on change only, at most once per 10 s, no polling timer for values that did not change (storage and RAM are re-read when another field triggers a send, plus a slow 10 min refresh while the link is up).
+
+| Field | Type / values | Meaning |
+|---|---|---|
+| `charge` | `"none"` \| `"charging"` \| `"full"` | charging state (`charging` boolean stays) |
+| `plug` | `"ac"` \| `"usb"` \| `"wireless"` | charger type, only while plugged in |
+| `tempC` | number | battery temperature in degrees Celsius (one decimal) |
+| `health` | `good`, `overheat`, `cold`, `dead`, `over_voltage`, `failure`, `unknown` | battery health word |
+| `fullInMin` | integer minutes | time to full charge; only when the OS reports it (`BatteryManager.computeChargeTimeRemaining`, API 28+) |
+| `storage` | `{"free":<bytes>,"total":<bytes>}` | internal storage |
+| `ram` | `{"free":<MB>,"total":<MB>}` | available / total memory, MB rounded |
+| `net` | `{"type":"wifi\|mobile\|none","mbps":<link speed>,"bars":0..4,"carrier":"Beeline","gen":"2G\|3G\|4G\|5G"}` | details of the connection: `mbps` for Wi-Fi, `carrier` / `gen` for mobile data, `bars` = signal level. `ssid` stays top level and is sent only when the app already holds the location permission (the app never asks for new dangerous permissions for this) |
+| `airplane` | bool | airplane mode |
+| `ringer` | `"sound"` \| `"vibrate"` \| `"silent"` | ringer mode |
+| `screen` | bool | screen is on |
+| `tz` | string | the phone's time zone id (`Europe/Moscow`) |
+| `utcMin` | integer | the phone's current UTC offset in minutes (the PC shows the phone's local clock from it) |
+
+The PC sanitises all of it (whitelisted values, clamped numbers, clipped strings; `free` never exceeds `total`).
+
+### What the PC adds to a device (the `devices[]` of the `phone:state` bus event and `phone_status`)
+
+`info` (the sanitised object above, `{}` for an old app), `ip` (the address the WebSocket came from, kept after the phone left), `connectedAt` (ms, start of the current socket), `statusAt`, plus `model`, `os`, `appVersion`, `firstSeen`, `lastSeen` from pairing, and session counters `stats`: `{"notifs","replies","filesIn","filesOut","bytesIn","bytesOut"}`: new notifications mirrored (replays and repeats excluded), replies the phone confirmed, files and bytes received from / sent to the phone since the PC server started. The island's Phone tab renders all of it; it is in memory only and starts from zero when the link is switched off.
+

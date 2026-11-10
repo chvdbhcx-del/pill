@@ -1,5 +1,6 @@
 // The phone link server: HTTP + WebSocket on a private LAN address, one thread per connection, everything blocks on sockets (no polling).
 // Protocol: docs/phone-protocol.md. PRIVACY: tokens and codes are never logged; notification text lives in memory only and is never logged.
+use super::info::{self, Stats};
 use super::files::{self, Dir, Refused, Status, Transfer, Transfers};
 use super::http::{self, Range, Req};
 use super::reg::{self, Device, Registry};
@@ -54,6 +55,12 @@ struct PhoneStatus {
     ssid: Option<String>,
     dnd: bool,
     at: i64,
+    /// the optional `status` fields (see `info::clean`), `{}` for an older app
+    info: Value,
+    /// the address the PC saw the socket come from; kept after the phone left
+    ip: String,
+    connected_at: i64,
+    stats: Stats,
 }
 
 struct Conn {
@@ -233,7 +240,7 @@ impl Shared {
                 None => Ok(()),
             },
             ("GET", "/ws") => match self.auth(&mut w, &req, ip, true)? {
-                Some(d) => self.ws_session(w, r, &req, d),
+                Some(d) => self.ws_session(w, r, &req, d, ip),
                 None => Ok(()),
             },
             ("PUT", p) if p.starts_with("/api/up/") => match self.auth(&mut w, &req, ip, false)? {
@@ -348,6 +355,10 @@ impl Shared {
             t.path = Some(path.clone());
         });
         if let Some(t) = &t {
+            self.bump(&dev.id, |s| {
+                s.files_in += 1;
+                s.bytes_in += len;
+            });
             self.emit("phone:files", json!({ "kind": "done", "transfer": t.public() }));
         }
         http::json(w, 200, &json!({ "ok": true, "path": path.to_string_lossy() }))
@@ -391,7 +402,7 @@ impl Shared {
 
     // ------------------------------------------------------------------------------------------------ the WebSocket
 
-    fn ws_session(self: &Arc<Self>, mut w: TcpStream, mut r: R, req: &Req, dev: Device) -> std::io::Result<()> {
+    fn ws_session(self: &Arc<Self>, mut w: TcpStream, mut r: R, req: &Req, dev: Device, peer: IpAddr) -> std::io::Result<()> {
         let Some(key) = req.header("sec-websocket-key").filter(|_| req.header("upgrade").is_some_and(|u| u.eq_ignore_ascii_case("websocket"))) else {
             return http::err(&mut w, 400, "bad_request");
         };
@@ -401,7 +412,13 @@ impl Shared {
         self.close_device(&dev.id, 4000); // one socket per phone: a reconnect replaces the stale one
         let conn = Arc::new(Conn { id: self.seq.fetch_add(1, Ordering::SeqCst), device: dev.id.clone(), w: Mutex::new(w.try_clone()?) });
         self.conns.lock().unwrap_or_else(|e| e.into_inner()).push(conn.clone());
-        self.phones.lock().unwrap_or_else(|e| e.into_inner()).entry(dev.id.clone()).or_default().connected = true;
+        {
+            let mut g = self.phones.lock().unwrap_or_else(|e| e.into_inner());
+            let p = g.entry(dev.id.clone()).or_default();
+            p.connected = true;
+            p.ip = peer.to_string();
+            p.connected_at = now_ms();
+        }
         self.reg.touch(&dev.id, now_ms(), false);
         self.send_conn(&conn, &json!({ "t": "hello", "pcName": self.cfg().pc_name, "serverVersion": SERVER_VERSION, "time": now_ms() }));
         self.emit("phone:state", self.status());
@@ -433,6 +450,12 @@ impl Shared {
         }
         let _ = conn.w.lock().map(|s| s.shutdown(Shutdown::Both));
         Ok(())
+    }
+
+    /// Counts something for a phone and tells the UI (the counters travel with `phone:state`).
+    fn bump(&self, device: &str, f: impl FnOnce(&mut Stats)) {
+        f(&mut self.phones.lock().unwrap_or_else(|e| e.into_inner()).entry(device.to_string()).or_default().stats);
+        self.emit("phone:state", self.status());
     }
 
     fn send_conn(&self, c: &Conn, v: &Value) -> bool {
@@ -484,6 +507,7 @@ impl Shared {
                 p.network = clip(&m["network"], 12);
                 p.ssid = m["ssid"].as_str().map(|s| clip(&json!(s), 40));
                 p.dnd = m["dnd"].as_bool().unwrap_or(false);
+                p.info = info::clean(&m);
                 p.at = now_ms();
                 drop(g);
                 self.emit("phone:state", self.status());
@@ -495,6 +519,7 @@ impl Shared {
                     let ok = m["ok"].as_bool().unwrap_or(false);
                     if ok {
                         self.notifs.lock().unwrap_or_else(|e| e.into_inner()).retain(|x| x["key"] != key.as_str());
+                        self.bump(&dev.id, |s| s.replies += 1);
                     }
                     self.emit("phone:notif", json!({ "kind": "reply", "key": key, "ok": ok, "error": m["error"].as_str().map(|s| clip(&json!(s), 40)) }));
                 }
@@ -510,6 +535,12 @@ impl Shared {
                     }
                 });
                 if let Some(t) = t.filter(|t| t.device == dev.id) {
+                    if ok {
+                        self.bump(&dev.id, |s| {
+                            s.files_out += 1;
+                            s.bytes_out += t.size;
+                        });
+                    }
                     self.emit("phone:files", json!({ "kind": if ok { "sent" } else { "failed" }, "transfer": t.public() }));
                 }
             }
@@ -557,6 +588,9 @@ impl Shared {
             !same
         };
         o.insert("fresh".into(), json!(fresh));
+        if fresh && !m["replay"].as_bool().unwrap_or(false) {
+            self.bump(&dev.id, |s| s.notifs += 1);
+        }
         self.emit("phone:notif", json!({ "kind": "posted", "notif": Value::Object(o) }));
     }
 
@@ -694,6 +728,10 @@ impl Shared {
                 v["ssid"] = json!(p.ssid);
                 v["dnd"] = json!(p.dnd);
                 v["statusAt"] = json!(p.at);
+                v["info"] = if p.info.is_object() { p.info.clone() } else { json!({}) };
+                v["ip"] = json!(p.ip);
+                v["connectedAt"] = json!(p.connected_at);
+                v["stats"] = p.stats.json();
                 v
             })
             .collect()

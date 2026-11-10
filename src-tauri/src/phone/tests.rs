@@ -462,6 +462,55 @@ fn the_server_is_gone_after_stop_even_with_open_sockets() {
 }
 
 #[test]
+fn rich_status_ip_uptime_and_session_counters() {
+    let r = Rig::new(true);
+    let tok = r.pair("dev-1");
+    let mut p = Phone::connect(r.addr(), &tok);
+    p.recv_t("hello");
+    // an old app: no extra fields, the device still carries the new keys
+    p.send(json!({ "t": "status", "battery": 50, "charging": false, "network": "wifi", "ssid": "Home", "dnd": false }));
+    let st = r.wait("phone:state", |v| v["devices"][0]["battery"] == 50);
+    let d = &st["devices"][0];
+    assert_eq!((d["info"].clone(), d["ip"].as_str(), d["model"].as_str()), (json!({}), Some("127.0.0.1"), Some("Pixel 8")));
+    assert!(d["connectedAt"].as_i64().unwrap() > 1_600_000_000_000);
+    assert_eq!(d["stats"], json!({ "notifs": 0, "replies": 0, "filesIn": 0, "filesOut": 0, "bytesIn": 0, "bytesOut": 0 }));
+    // a new app
+    p.send(json!({ "t": "status", "battery": 51, "charging": true, "network": "mobile", "dnd": true, "charge": "charging", "plug": "ac", "tempC": 30.04, "fullInMin": 25,
+                   "storage": { "free": 1000, "total": 4000 }, "ram": { "free": 2000, "total": 8000 }, "net": { "type": "mobile", "carrier": "Beeline", "gen": "5G", "bars": 3 },
+                   "airplane": false, "ringer": "silent", "screen": false, "tz": "Europe/Moscow", "utcMin": 180 }));
+    let st = r.wait("phone:state", |v| v["devices"][0]["battery"] == 51);
+    let i = &st["devices"][0]["info"];
+    assert_eq!((i["charge"].as_str(), i["plug"].as_str(), i["tempC"].as_f64(), i["net"]["carrier"].as_str(), i["ringer"].as_str(), i["storage"]["total"].as_i64()), (Some("charging"), Some("ac"), Some(30.0), Some("Beeline"), Some("silent"), Some(4000)));
+    // counters: a new notification, a replay (not counted), a confirmed reply
+    p.send(json!({ "t": "notif.posted", "key": "k1", "pkg": "p", "app": "A", "title": "t", "text": "x", "canReply": true }));
+    r.wait("phone:state", |v| v["devices"][0]["stats"]["notifs"] == 1);
+    p.send(json!({ "t": "notif.posted", "key": "k2", "pkg": "p", "app": "A", "title": "t", "text": "x", "replay": true }));
+    r.wait("phone:notif", |v| v["notif"]["key"] == "k2");
+    r.sh().notif_action("k1", "reply", "ok").unwrap();
+    let rep = p.recv_t("notif.reply");
+    p.send(json!({ "t": "reply.result", "req": rep["req"], "ok": true }));
+    let st = r.wait("phone:state", |v| v["devices"][0]["stats"]["replies"] == 1);
+    assert_eq!(st["devices"][0]["stats"]["notifs"], 1, "replays are not counted");
+    // files both ways
+    p.send(json!({ "t": "file.offer", "id": "f1", "name": "a.bin", "size": 3 }));
+    p.recv_t("file.accept");
+    assert_eq!(http(r.addr(), "PUT", "/api/up/f1", &bearer(&tok), b"abc").0, 200);
+    r.wait("phone:state", |v| v["devices"][0]["stats"]["filesIn"] == 1 && v["devices"][0]["stats"]["bytesIn"] == 3);
+    let f = r.dir.join("out.txt");
+    std::fs::write(&f, b"12345").unwrap();
+    let t = r.sh().send_file(&f, None).unwrap();
+    p.recv_t("file.offer");
+    p.send(json!({ "t": "file.done", "id": t["id"], "ok": true }));
+    let st = r.wait("phone:state", |v| v["devices"][0]["stats"]["filesOut"] == 1);
+    assert_eq!(st["devices"][0]["stats"]["bytesOut"], 5);
+    // the last known values survive a disconnect
+    drop(p);
+    let st = r.wait("phone:state", |v| v["connected"] == 0 && v["devices"][0]["stats"]["filesOut"] == 1);
+    assert_eq!((st["devices"][0]["info"]["ringer"].as_str(), st["devices"][0]["ip"].as_str()), (Some("silent"), Some("127.0.0.1")));
+    r.stop();
+}
+
+#[test]
 fn the_default_apk_url_in_the_settings_is_the_protocol_constant() {
     assert_eq!(crate::settings::defaults()["phone.apkUrl"], super::DEFAULT_APK_URL);
     assert_eq!(super::DEFAULT_APK_URL, "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk");
