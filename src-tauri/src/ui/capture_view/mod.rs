@@ -124,11 +124,13 @@ impl CaptureView {
         CaptureView::with_backend(cx, label, vw, vh, Backend::real(), Self::default_options(cx))
     }
 
-    /// The options the app uses: the web page's behaviour, plus the native extensions when `capture.extras` is on.
+    /// The options the app uses: the web page's behaviour, plus the markup tools (`capture.annotate`) and the native extensions when `capture.extras` is on.
     pub fn default_options(cx: &Cx) -> Options {
         let extras = crate::settings::get_bool("capture.extras", false);
-        let base = if extras { Options { extended_tools: true, ext_actions: true, edit_ops: true, ..Options::default() } } else { Options::web_parity() };
-        Options { reduce_motion: cx.reduced_motion, ..base }
+        // `capture.annotate` (default on): markup tools, colours and undo in the toolbar, with the highlighter / ellipse / numbered steps
+        let annotate = crate::settings::get_bool("capture.annotate", true);
+        let base = if extras { Options { extended_tools: true, ext_actions: true, edit_ops: true, ..Options::default() } } else { Options { extended_tools: annotate, ..Options::web_parity() } };
+        Options { reduce_motion: cx.reduced_motion, annotate, ..base }
     }
 
     pub fn with_backend(cx: &mut Cx, label: &str, vw: f64, vh: f64, be: Backend, opts: Options) -> CaptureView {

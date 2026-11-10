@@ -234,15 +234,15 @@ impl Analyzer {
 // ---------- sample formats ----------
 
 #[derive(Debug, PartialEq)]
-struct Fmt {
-    channels: usize,
-    rate: u32,
-    bits: u16,
-    float: bool,
+pub(crate) struct Fmt {
+    pub(crate) channels: usize,
+    pub(crate) rate: u32,
+    pub(crate) bits: u16,
+    pub(crate) float: bool,
 }
 
 /// Parse a WAVEFORMATEX / WAVEFORMATEXTENSIBLE blob (little-endian bytes).
-fn parse_format(b: &[u8]) -> Option<Fmt> {
+pub(crate) fn parse_format(b: &[u8]) -> Option<Fmt> {
     if b.len() < 18 {
         return None;
     }

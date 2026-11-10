@@ -195,6 +195,8 @@ pub struct Reaction {
 pub struct Options {
     /// Reduce motion: animations are instant.
     pub reduce_motion: bool,
+    /// Markup on the selection (`capture.annotate`): the tools, colours and undo in the toolbar. Off = only the commit buttons.
+    pub annotate: bool,
     /// Highlighter / ellipse / numbered steps in the toolbar, redo button.
     pub extended_tools: bool,
     /// Pin and shelf buttons (they save first, then the host acts on the path).
@@ -213,7 +215,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Options {
-        Options { reduce_motion: false, extended_tools: false, ext_actions: false, edit_ops: false, nudge: true, shift_square: true, snap: None, aspect: None }
+        Options { reduce_motion: false, annotate: true, extended_tools: false, ext_actions: false, edit_ops: false, nudge: true, shift_square: true, snap: None, aspect: None }
     }
 }
 

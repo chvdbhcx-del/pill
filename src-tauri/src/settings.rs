@@ -33,14 +33,16 @@ pub(crate) fn defaults() -> Cfg {
         "live.reminders": true, "live.keyboardLayout": true, "live.copy": true, "live.obs": false, "live.agents": true, "live.steam": true, "live.sysmon": true,
         "live.dlDone": true, "live.shelf": true, "live.usb": true, "live.battery": true, "live.calendar": false, "live.calendar.path": "",
         // screen capture (capture.rs)
-        "capture.format": "mp4", "capture.fps": 30, "capture.encoder": "auto", "capture.shotAction": "both", "capture.revealAfterSave": false,
-        // first-run AI setup wizard (aisetup.rs)
+        "capture.format": "mp4", "capture.fps": 30, "capture.encoder": "auto", "capture.shotAction": "both", "capture.revealAfterSave": false,        // first-run AI setup wizard (aisetup.rs)
         "aiSetupDone": false, "aisetup.whisper.enabled": false, "aisetup.whisper.model": "base", "aisetup.whisper.port": 8179
     }) else { unreachable!() };
     m.extend(more);
     // third literal (recursion limit again): mail notifications (mail.rs), opt-in; the password lives DPAPI-encrypted in mail.passwordEnc, never plain
     let Value::Object(mail) = json!({ "live.mail": false, "mail.host": "", "mail.port": 993, "mail.user": "", "mail.mailbox": "INBOX" }) else { unreachable!() };
     m.extend(mail);
+    // capture.rs: markup on the selection, and the sound of a screen recording (PC sound on, microphone off; both stay on this PC)
+    let Value::Object(cap) = json!({ "capture.annotate": true, "capture.recordSystemAudio": true, "capture.recordMic": false }) else { unreachable!() };
+    m.extend(cap);
     // notification centre (notifhist.rs, tab-notifs.js): history.keep = store what the island showed; history.mail = also keep mail / Windows-notification bodies (off: title only)
     let Value::Object(hist) = json!({ "module.notifs": true, "history.keep": true, "history.mail": false }) else { unreachable!() };
     m.extend(hist);

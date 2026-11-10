@@ -213,18 +213,26 @@ pub struct Toolbar {
 impl Toolbar {
     /// Build the item list: `extended_tools` adds highlighter / ellipse / step and redo, `ext_actions` adds pin and shelf.
     pub fn new(extended_tools: bool, ext_actions: bool) -> Toolbar {
-        let mut ids: Vec<ItemId> = CORE_TOOLS.iter().map(|t| ItemId::Tool(*t)).collect();
-        if extended_tools {
-            ids.extend(EXTRA_TOOLS.iter().map(|t| ItemId::Tool(*t)));
+        Toolbar::with_annotate(extended_tools, ext_actions, true)
+    }
+
+    /// Same, with `annotate` off the markup part (tools, swatches, undo / redo) is left out and only the commit buttons remain.
+    pub fn with_annotate(extended_tools: bool, ext_actions: bool, annotate: bool) -> Toolbar {
+        let mut ids: Vec<ItemId> = Vec::new();
+        if annotate {
+            ids.extend(CORE_TOOLS.iter().map(|t| ItemId::Tool(*t)));
+            if extended_tools {
+                ids.extend(EXTRA_TOOLS.iter().map(|t| ItemId::Tool(*t)));
+            }
+            ids.push(ItemId::Sep);
+            ids.extend((0..COLORS.len()).map(ItemId::Swatch));
+            ids.push(ItemId::Sep);
+            ids.push(ItemId::Undo);
+            if extended_tools {
+                ids.push(ItemId::Redo);
+            }
+            ids.push(ItemId::Sep);
         }
-        ids.push(ItemId::Sep);
-        ids.extend((0..COLORS.len()).map(ItemId::Swatch));
-        ids.push(ItemId::Sep);
-        ids.push(ItemId::Undo);
-        if extended_tools {
-            ids.push(ItemId::Redo);
-        }
-        ids.push(ItemId::Sep);
         ids.push(ItemId::Copy);
         ids.push(ItemId::Save);
         ids.push(ItemId::Record);

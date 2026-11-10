@@ -191,6 +191,26 @@ fn card(env: &dyn Env, ttl: u32, tone: Tone, icon: IconName, title: String, sub:
 }
 
 impl CaptureCards {
+    /// The card of the Translate button: working, the translation with a Copy button, a way to the AI setup, or the error.
+    fn translate_card(&self, env: &dyn Env, p: &Value) -> CardSpec {
+        let tr = |ru: &str, en: &str| env.tr(ru, en);
+        if truthy(p.get("pending")) {
+            return card(env, 90_000, Tone::Accent, IconName::ScanText, tr("Перевожу…", "Translating…"), Some(tr("Через ИИ, настроенный в Pill", "Through the AI set up in Pill")), Vec::new());
+        }
+        match p.get("error").and_then(Value::as_str).unwrap_or("") {
+            "" => {
+                let t = text_or_empty(p.get("text"));
+                let actions = vec![CardAction::new(tr("Копировать", "Copy"), ActionKind::White, act("copy_text", &t))];
+                card(env, 30_000, Tone::Accent, IconName::ScanText, tr("Перевод", "Translation"), Some(cut(&t, 300)), actions)
+            }
+            "net_off" | "no_endpoint" | "no_model" => {
+                let actions = vec![CardAction::new(tr("Настроить ИИ", "Set up AI"), ActionKind::White, act("open_ai_setup", ""))];
+                card(env, 12_000, Tone::Amber, IconName::ScanText, tr("ИИ не настроен", "AI is not set up"), Some(tr("Подключите ИИ, чтобы переводить текст с экрана", "Connect an AI to translate text from the screen")), actions)
+            }
+            _ => card(env, 10_000, Tone::Red, IconName::X, tr("Не удалось перевести", "Could not translate"), Some(cut(&text_or_empty(p.get("message")), 180)), Vec::new()),
+        }
+    }
+
     fn build(&self, env: &dyn Env, p: &Value) -> Vec<LiveCmd> {
         if p.is_null() || !truthy(p.get("kind")) {
             return Vec::new();
@@ -222,7 +242,10 @@ impl CaptureCards {
                 let c = if truthy(p.get("found")) {
                     let body = text_or_empty(p.get("text"));
                     let more = if to_number(p.get("chars")) > 72.0 { format!(" · {}", display(p.get("chars"))) } else { String::new() };
-                    card(env, 6000, Tone::Green, IconName::ScanText, tr("Текст скопирован", "Text copied"), Some(format!("{}{more}", cut(&body, 72))), Vec::new())
+                    // Translate sends the text to the user's configured AI, and only when pressed (the whole text when the backend sent it)
+                    let whole = if truthy(p.get("full")) { text_or_empty(p.get("full")) } else { body.clone() };
+                    let actions = vec![CardAction::new(tr("Перевести", "Translate"), ActionKind::White, act("translate_text", &whole))];
+                    card(env, 9000, Tone::Green, IconName::ScanText, tr("Текст скопирован", "Text copied"), Some(format!("{}{more}", cut(&body, 72))), actions)
                 } else {
                     card(
                         env,
@@ -288,6 +311,7 @@ impl CaptureCards {
                 )));
                 out
             }
+            "translate" => vec![LiveCmd::Toast(self.translate_card(env, p))],
             "error" => vec![LiveCmd::Toast(card(env, 10000, Tone::Red, IconName::X, tr("Не получилось", "Capture failed"), Some(cut(&text_or_empty(p.get("message")), 180)), Vec::new()))],
             _ => Vec::new(),
         }
@@ -501,8 +525,16 @@ mod tests {
     fn screen_text_cards() {
         let env = MemEnv::default();
         let t = toast(&done(&env, json!({"kind": "text", "found": true, "text": "  hello\n  world ", "chars": 11, "copied": true}))).clone();
-        assert_eq!((t.ttl_ms, t.tone, t.icon.clone()), (6000, Tone::Green, Some(CardIcon::Name(IconName::ScanText))));
+        assert_eq!((t.ttl_ms, t.tone, t.icon.clone()), (9000, Tone::Green, Some(CardIcon::Name(IconName::ScanText))));
         assert_eq!(ts(&t), ("Текст скопирован".to_string(), Some("hello world".to_string())));
+        // one Translate button; it carries the whole text when the backend sent it
+        assert_eq!(t.actions.len(), 1);
+        assert_eq!(t.actions[0].label, "Перевести");
+        assert_eq!(t.actions[0].action, Action::invoke("capture_action", json!({"action": "translate_text", "value": "  hello\n  world "})));
+        let t = toast(&done(&MemEnv::en(), json!({"kind": "text", "found": true, "text": "head", "full": "head and the rest", "chars": 17}))).clone();
+        assert_eq!(t.actions[0].label, "Translate");
+        assert_eq!(t.actions[0].action, Action::invoke("capture_action", json!({"action": "translate_text", "value": "head and the rest"})));
+        assert!(toast(&done(&env, json!({"kind": "text", "found": false}))).actions.is_empty());
         let long = "а".repeat(100);
         let t = toast(&done(&env, json!({"kind": "text", "found": true, "text": long, "chars": 100}))).clone();
         assert_eq!(ts(&t).1, Some(format!("{}… · 100", "а".repeat(71))));
@@ -512,6 +544,32 @@ mod tests {
         let t = toast(&done(&MemEnv::en(), json!({"kind": "text", "found": false}))).clone();
         assert_eq!(ts(&t), ("No text found".to_string(), Some("Try a larger area".to_string())));
         assert_eq!(ts(toast(&done(&MemEnv::en(), json!({"kind": "text", "found": true, "text": "x"})))).0, "Text copied");
+    }
+
+    #[test]
+    fn translate_cards() {
+        let env = MemEnv::en();
+        // working: no buttons, replaces the text card (same id)
+        let t = toast(&done(&env, json!({"kind": "translate", "pending": true}))).clone();
+        assert_eq!((t.id.as_str(), t.actions.len()), ("cap", 0));
+        assert_eq!(ts(&t).0, "Translating…");
+        // the result: a Copy button with the whole translation
+        let t = toast(&done(&env, json!({"kind": "translate", "text": "Hello world"}))).clone();
+        assert_eq!(ts(&t), ("Translation".to_string(), Some("Hello world".to_string())));
+        assert_eq!(t.actions.len(), 1);
+        assert_eq!(t.actions[0].action, Action::invoke("capture_action", json!({"action": "copy_text", "value": "Hello world"})));
+        // no AI endpoint: the button leads to the AI setup (all three reasons)
+        for code in ["net_off", "no_endpoint", "no_model"] {
+            let t = toast(&done(&env, json!({"kind": "translate", "error": code}))).clone();
+            assert_eq!(ts(&t).0, "AI is not set up", "{code}");
+            assert_eq!(t.actions[0].label, "Set up AI");
+            assert_eq!(t.actions[0].action, Action::invoke("capture_action", json!({"action": "open_ai_setup", "value": ""})));
+        }
+        let t = toast(&done(&MemEnv::default(), json!({"kind": "translate", "error": "no_endpoint"}))).clone();
+        assert_eq!((ts(&t).0.as_str(), t.actions[0].label.as_str()), ("ИИ не настроен", "Настроить ИИ"));
+        // any other failure shows the reason and no button
+        let t = toast(&done(&env, json!({"kind": "translate", "error": "failed", "message": "timeout"}))).clone();
+        assert_eq!((t.tone, ts(&t), t.actions.len()), (Tone::Red, ("Could not translate".to_string(), Some("timeout".to_string())), 0));
     }
 
     #[test]

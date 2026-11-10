@@ -600,6 +600,8 @@ struct Rec {
     started: i64,
     job: isize,
     err: Arc<Mutex<String>>,
+    /// PC sound / microphone recorders (`capture.recordSystemAudio`, `capture.recordMic`), muxed into the MP4 by finalize()
+    audio: Option<crate::recaudio::Session>,
 }
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
@@ -833,7 +835,9 @@ fn finish_text(app: &AppHandle, w: u32, h: u32, rgba: Vec<u8>) {
         Ok(t) => {
             let copied = clip_text(&t);
             let head: String = t.chars().take(400).collect();
-            emit(app, "capture:done", json!({ "kind": "text", "found": true, "text": head, "chars": t.chars().count(), "copied": copied }));
+            // `full` (capped) is what the card's Translate button sends; nothing is sent unless it is pressed
+            let full: String = t.chars().take(8000).collect();
+            emit(app, "capture:done", json!({ "kind": "text", "found": true, "text": head, "full": full, "chars": t.chars().count(), "copied": copied }));
         }
         Err(e) => fail(app, format!("text recognition failed: {e}")),
     }
@@ -1006,6 +1010,8 @@ fn start_recording(app: &AppHandle, rect: Rect, kind: &str) {
         Ok(c) => c,
         Err(e) => return fail(app, format!("cannot start ffmpeg ({}): {e}", ffmpeg.display())),
     };
+    // sound (MP4 only): the WAVs go to the temp folder and are muxed in when the picture is done
+    let audio = if gif { None } else { crate::recaudio::start(&std::env::temp_dir(), &format!("pill-rec-{}-{}", std::process::id(), now_ms()), settings::get_bool("capture.recordSystemAudio", true), settings::get_bool("capture.recordMic", false)) };
     let err = Arc::new(Mutex::new(String::new()));
     if let Some(mut se) = child.stderr.take() {
         let e2 = err.clone();
@@ -1028,12 +1034,15 @@ fn start_recording(app: &AppHandle, rect: Rect, kind: &str) {
     if let Ok(Some(st)) = child.try_wait() {
         std::thread::sleep(Duration::from_millis(100));
         let tail = err.lock().unwrap_or_else(|e| e.into_inner()).trim().to_string();
+        if let Some(a) = audio {
+            crate::recaudio::remove(&a.finish());
+        }
         return fail(app, format!("ffmpeg stopped right away ({st}): {tail}"));
     }
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let started = now_ms();
     let job = job_for(&child);
-    *rec_slot() = Some(Rec { id, child, ffmpeg: ffmpeg.clone(), gif, path, started, job, err });
+    *rec_slot() = Some(Rec { id, child, ffmpeg: ffmpeg.clone(), gif, path, started, job, err, audio });
     emit(app, "rec:state", json!({ "recording": true, "startedAt": started, "mode": kind, "fps": opts.fps }));
     // Watch for ffmpeg ending by itself (disk full, display change).
     let a = app.clone();
@@ -1087,6 +1096,19 @@ fn mp4_to_gif(ffmpeg: &Path, mp4: &Path) -> Result<PathBuf, String> {
     }
 }
 
+/// Puts the recorded sound under the picture (video stream copied, sound AAC). Any failure keeps the silent MP4; the WAVs are always removed.
+fn mux_sound(ffmpeg: &Path, mp4: &Path, tracks: &[PathBuf]) {
+    let out = mp4.with_extension("av.mp4");
+    let args = crate::recaudio::mux_args(&mp4.display().to_string(), &tracks.iter().map(|t| t.display().to_string()).collect::<Vec<_>>(), &out.display().to_string());
+    let ok = Command::new(ffmpeg).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).creation_flags(NO_WINDOW).status().is_ok_and(|s| s.success());
+    crate::recaudio::remove(tracks);
+    if ok && std::fs::metadata(&out).is_ok_and(|m| m.len() > 1024) && std::fs::rename(&out, mp4).is_ok() {
+        return;
+    }
+    eprintln!("capture: the sound could not be added, the recording stays silent");
+    let _ = std::fs::remove_file(&out);
+}
+
 /// Graceful end: 'q' on ffmpeg's stdin lets it write the MP4 trailer; killed only after 12 s.
 fn finalize(app: &AppHandle, mut r: Rec, graceful: bool) {
     if graceful {
@@ -1110,12 +1132,17 @@ fn finalize(app: &AppHandle, mut r: Rec, graceful: bool) {
         }
     }
     emit(app, "rec:state", json!({ "recording": false, "startedAt": r.started }));
+    let tracks = r.audio.take().map(|a| a.finish()).unwrap_or_default();
     let size = std::fs::metadata(&r.path).map(|m| m.len()).unwrap_or(0);
     if size < 1024 {
+        crate::recaudio::remove(&tracks);
         let tail = r.err.lock().unwrap_or_else(|e| e.into_inner()).trim().to_string();
         return fail(app, format!("the recording is empty{}", if tail.is_empty() { String::new() } else { format!(": {tail}") }));
     }
     let mut path = r.path.clone();
+    if !tracks.is_empty() {
+        mux_sound(&r.ffmpeg, &path, &tracks);
+    }
     if r.gif {
         match mp4_to_gif(&r.ffmpeg, &path) {
             Ok(g) => path = g,
@@ -1238,7 +1265,7 @@ pub(crate) fn capture_commit_impl(app: &AppHandle, args: CommitArgs, png: Option
 }
 
 /// Result-card buttons. Only files inside the capture folders are touched; a URL is opened only on this explicit call.
-pub fn capture_action(action: String, value: String) -> Result<(), String> {
+pub fn capture_action(app: &AppHandle, action: String, value: String) -> Result<(), String> {
     let file = || allowed_path(&value).ok_or_else(|| "that file is outside the capture folders or no longer exists".to_string());
     match action.as_str() {
         "open" => shell_open(&plain(&file()?)).then_some(()).ok_or_else(|| "could not open the file".into()),
@@ -1255,6 +1282,14 @@ pub fn capture_action(action: String, value: String) -> Result<(), String> {
         "copy_file" => clip_file(&plain(&file()?)).then_some(()).ok_or_else(|| "clipboard is busy".into()),
         "copy_path" => clip_text(&plain(&file()?)).then_some(()).ok_or_else(|| "clipboard is busy".into()),
         "copy_text" if value.len() <= 65536 => clip_text(&value).then_some(()).ok_or_else(|| "clipboard is busy".into()),
+        "translate_text" if value.len() <= 65536 => {
+            crate::captranslate::run(value);
+            Ok(())
+        }
+        "open_ai_setup" => {
+            crate::settingswin::open(app, Some("aisetup"));
+            Ok(())
+        }
         "open_url" if is_http_url(&value) => shell_open(value.trim()).then_some(()).ok_or_else(|| "could not open the link".into()),
         _ => Err("unsupported action".into()),
     }

@@ -1322,3 +1322,5 @@ fn recording_capsule_timer_and_start_plan() {
     let p = live::start_plan("record_screen", true);
     assert_eq!((p.collapse_first, p.delay_ms), (false, 0));
 }
+
+mod annotate;

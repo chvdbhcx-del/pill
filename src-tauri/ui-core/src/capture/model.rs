@@ -40,6 +40,9 @@ enum Drag {
     MoveOp { id: u32, last: Pt, moved: bool },
 }
 
+const TEXT_LINE_H: f64 = 20.0;
+const TEXT_MIN_W: f64 = 40.0;
+
 #[derive(Clone, Debug)]
 struct TextEdit {
     pos: Pt,
@@ -100,7 +103,7 @@ fn parse_session(v: &serde_json::Value) -> Option<SessionInfo> {
 impl CaptureModel {
     /// A model for the overlay window `label` whose viewport is `vw x vh` css px.
     pub fn new(label: &str, vw: f64, vh: f64, opts: Options) -> CaptureModel {
-        let toolbar = Toolbar::new(opts.extended_tools, opts.ext_actions);
+        let toolbar = Toolbar::with_annotate(opts.extended_tools, opts.ext_actions, opts.annotate);
         CaptureModel {
             label: label.to_string(),
             opts,
@@ -752,7 +755,12 @@ impl CaptureModel {
         }
     }
 
+    /// The text box opens where the pointer went down, nudged so one line (20 css px) and a few letters (40 px) stay inside the selection.
     fn open_text(&mut self, p: Pt) {
+        let p = match self.sel {
+            Some(s) => Pt::new(p.x.min(s.right() - TEXT_MIN_W).max(s.x), p.y.min(s.bottom() - TEXT_LINE_H).max(s.y)),
+            None => p,
+        };
         self.text = Some(TextEdit { pos: p, color: self.current_color(), text: String::new(), caret: 0 });
     }
 
@@ -827,7 +835,7 @@ impl CaptureModel {
         }
         match a {
             Action::SetTool(t) => {
-                if t.is_core() || self.opts.extended_tools {
+                if (t.is_core() || self.opts.extended_tools) && (self.opts.annotate || t == Tool::Select) {
                     self.tool = t;
                     self.text = None; // switching tools drops an unfinished text, like closeText()
                     self.selected_op = None;
