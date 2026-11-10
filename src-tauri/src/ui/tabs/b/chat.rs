@@ -279,6 +279,7 @@ impl ChatScreen {
             self.comp.ti.set_text(&v.input);
             self.last_pushed = v.input.clone();
         }
+        self.empty_k.set(v.messages.is_empty() && v.empty.is_some());
         self.hist.sync(&v.history, cx.reduced_motion);
         self.set.sync(&v.settings, cx.reduced_motion);
         let target = |on: bool| on as u8 as f32;
@@ -1054,7 +1055,6 @@ impl View for ChatScreen {
 
         self.layout_items(cv, th, &v);
         let chat_has_content = !v.messages.is_empty();
-        self.empty_k.set(!chat_has_content && v.empty.is_some());
         let content_h = if chat_has_content { self.items.last().map_or(0.0, |i| i.y + i.h) + 12.0 } else { 0.0 };
         self.sv.set_content_height(content_h, viewport.h);
         if self.scroll_bottom {

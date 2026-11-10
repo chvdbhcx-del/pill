@@ -612,6 +612,12 @@ impl AiSetupScreen {
                 OllamaBlock::Models { progress, .. } => states.push((Job::OllamaPull, Some(progress))),
             }
         }
+        if let ms::View::Page { voice, .. } = &self.vw {
+            // the selected look of each model chip follows the model (here, on the step path, so the glide gets its frames)
+            for c in &voice.chips {
+                self.chip_on.entry(format!("chip:{}", c.id)).or_insert_with(|| Lit::new(Feel::FADE)).set(c.on);
+            }
+        }
         for job in Job::ALL {
             let pv = states.iter().find(|(j, _)| *j == job).and_then(|(_, p)| *p).filter(|p| p.running);
             let bar = self.bars.entry(job).or_insert_with(LiquidBar::hidden);
@@ -710,11 +716,7 @@ impl AiSetupScreen {
         }
         self.first_layout = false;
         self.seen = now;
-        for it in &self.built.items {
-            if let K::Chip { cue, on, .. } = &it.k {
-                self.chip_on.entry(cue.clone()).or_insert_with(|| Lit::new(Feel::FADE)).set(*on);
-            }
-        }
+
     }
 
     fn content_ev(&self, ev: &InputEvent) -> InputEvent {

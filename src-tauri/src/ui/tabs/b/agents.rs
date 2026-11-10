@@ -263,6 +263,7 @@ impl AgentsScreen {
         }
         let v = self.model.view();
         self.pulse = v.rows.iter().any(|r| r.state == "working" || r.state == "waiting");
+        self.empty_k.set(v.empty_text.is_none());
         self.flip.set(&targets(&v.rows), mode, self.reduced);
     }
 
@@ -359,7 +360,6 @@ impl View for AgentsScreen {
         let v = self.model.view();
         let w = rect.w - RIGHT_PAD;
         self.scroll.set_content_height(self.content_h(), rect.h);
-        self.empty_k.set(v.empty_text.is_none());
         if let Some(text) = &v.empty_text {
             let r = Rect::new(rect.x + ROW_PAD_X, rect.y + TOP_PAD + 20.0, (w - 2.0 * ROW_PAD_X).max(10.0), rect.h);
             let st = Style::new(12.0, 400);

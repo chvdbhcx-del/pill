@@ -611,19 +611,7 @@ impl TimerCardView {
             self.rf.ti.set_text(&v.input);
             self.last_sent = v.input.clone();
         }
-        let ids: Vec<i64> = v.reminders.iter().map(|r| r.id).collect();
-        if ids != self.rows.ids() {
-            self.rows.sync(&ids);
-        }
-        self.ring.set(v.running, v.left as f32);
-        self.stop_t.set(v.running);
-        self.start_face.set(&(v.start_label.clone(), v.running));
-        self.custom_k.set(v.custom_editing);
-        for (i, (_, on)) in v.presets.iter().enumerate().take(5) {
-            self.preset_on[i].set(*on);
-        }
-        self.sync_msg(v);
-        self.empty_hint_len = v.empty_hint.len();
+        self.sync(v);
 
         // ---- layout ----
         let msg_h = match &self.msg {
@@ -649,6 +637,24 @@ impl TimerCardView {
         t2.field = th.raised;
         self.rf.ti.placeholder = v.input_placeholder.clone();
         self.rf.ti.draw(cv, l.input, &t2);
+    }
+
+    /// Follow the model with every flow (rows, ring, Start / Stop, presets, custom field, message line). The owner calls this from its `step`
+    /// (so the frame that starts a motion is not the last one); `draw` calls it again, which changes nothing when nothing changed.
+    pub fn sync(&mut self, v: &TimerView) {
+        let ids: Vec<i64> = v.reminders.iter().map(|r| r.id).collect();
+        if ids != self.rows.ids() {
+            self.rows.sync(&ids);
+        }
+        self.ring.set(v.running, v.left as f32);
+        self.stop_t.set(v.running);
+        self.start_face.set(&(v.start_label.clone(), v.running));
+        self.custom_k.set(v.custom_editing);
+        for (i, (_, on)) in v.presets.iter().enumerate().take(5) {
+            self.preset_on[i].set(*on);
+        }
+        self.sync_msg(v);
+        self.empty_hint_len = v.empty_hint.len();
     }
 
     fn sync_msg(&mut self, v: &TimerView) {

@@ -160,6 +160,29 @@ impl HistPop {
             self.listed = false;
             self.ins.clear();
         }
+        if v.open {
+            // where every row belongs (relative to the panel), a fade-in for rows added while the list is open, the selected look
+            for (i, row) in v.rows.iter().enumerate() {
+                let want = 6.0 + 32.0 + 4.0 + i as f32 * ROW_H;
+                let fresh = !self.ys.contains_key(&row.id);
+                let t = self.ys.entry(row.id).or_insert_with(|| Flow::px(want, Feel::FLOW));
+                if (t.target() - want).abs() > 0.01 {
+                    if reduced {
+                        t.jump(want);
+                    } else {
+                        t.to(want);
+                    }
+                }
+                if fresh && self.listed && !reduced {
+                    // a chat added while the list is open drops in
+                    let mut f = Flow::new(0.0, Feel::FADE);
+                    f.to(1.0);
+                    self.ins.insert(row.id, f);
+                }
+                self.sel.entry(row.id).or_insert_with(|| Lit::new(Feel::FADE)).set(row.selected);
+            }
+            self.listed = true;
+        }
     }
 
     pub fn visible(&self) -> bool {
@@ -236,33 +259,16 @@ impl HistPop {
                             cv.text(Rect::new(inner.x + 12.0, y, inner.w - 24.0, 32.0), e, th.small(400), th.dim);
                         }
                         for g in &self.gone {
-                            self.draw_row(cv, th, ic, clicks, inner, &g.row, g.y - off + 1.0, g.fade.at01(), g.row.selected as u8 as f32, false);
+                            self.draw_row(cv, th, ic, clicks, inner, &g.row, r.y + g.y - off, g.fade.at01(), g.row.selected as u8 as f32, false);
                         }
                         for (i, row) in v.rows.iter().enumerate() {
-                            let want = y - 0.0 + i as f32 * ROW_H + off; // content-space y
-                            let fresh = !self.ys.contains_key(&row.id);
-                            let t = self.ys.entry(row.id).or_insert_with(|| Flow::px(want, Feel::FLOW));
-                            if (t.target() - want).abs() > 0.01 {
-                                if reduced {
-                                    t.jump(want);
-                                } else {
-                                    t.to(want);
-                                }
-                            }
-                            let cy = t.at() - off;
-                            if fresh && self.listed && !reduced {
-                                // a chat added while the list is open drops in
-                                let mut f = Flow::new(0.0, Feel::FADE);
-                                f.to(1.0);
-                                self.ins.insert(row.id, f);
-                            }
+                            let want_rel = 6.0 + 32.0 + 4.0 + i as f32 * ROW_H;
+                            let rel = self.ys.get(&row.id).map_or(want_rel, |t| t.at());
+                            let cy = r.y + rel - off;
                             let a = self.ins.get(&row.id).map_or(1.0, |f| f.at01());
-                            let sel = self.sel.entry(row.id).or_insert_with(|| Lit::new(Feel::FADE));
-                            sel.set(row.selected);
-                            let selk = sel.at();
+                            let selk = self.sel.get(&row.id).map_or(row.selected as u8 as f32, |l| l.at());
                             self.draw_row(cv, th, ic, clicks, inner, row, cy, a, selk, live);
                         }
-                        self.listed = true;
                     });
                     self.scroll.bar.draw(cv, view, &self.scroll.state, th);
                 });
@@ -334,6 +340,9 @@ impl SetPop {
     }
 
     pub fn sync(&mut self, v: &SettingsView, reduced: bool) {
+        for (i, p) in v.presets.iter().enumerate() {
+            self.dots.entry(i).or_insert_with(|| Lit::new(Feel::FADE)).set(p.on);
+        }
         self.pres.sync(v.open, reduced);
         if v.open || self.pres.visible() {
             self.last = Some(v.clone());
@@ -433,9 +442,7 @@ impl SetPop {
                             }
                             let hv = clicks.hover_amt(&K::SPreset(i));
                             let ps = clicks.press_scale(&K::SPreset(i), 0.95);
-                            let on = self.dots.entry(i).or_insert_with(|| Lit::new(Feel::FADE));
-                            on.set(p.on);
-                            let onv = on.at();
+                            let onv = self.dots.get(&i).map_or(p.on as u8 as f32, |l| l.at());
                             cv.with_scale_about(b.center(), ps, |cv| {
                                 cv.fill_rr(b, 8.0, th.raised2.fade(onv));
                                 let fg = th.dim.mix(th.text, onv.max(hv));

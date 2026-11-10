@@ -215,6 +215,11 @@ impl View for AiActionsScreen {
         let dt = (dt_ms / 1000.0) as f32;
         let (out, th_h) = self.out.get();
         self.scroll.set_content_height(th_h, (out.h - 16.0).max(0.0));
+        // the keyboard highlight follows the focus (set here, not in `draw`, so the glide gets its frames)
+        for i in 0..self.sel_lit.len() {
+            let on = self.sel == i && self.is_keyboard();
+            self.sel_lit[i].set(on);
+        }
         let mut busy = self.cues.step(dt_ms as f32);
         busy |= self.clicks.step(dt);
         busy |= self.scroll.step(dt);
@@ -234,10 +239,6 @@ impl View for AiActionsScreen {
             self.last = None;
         }
         let Some(v) = self.last.clone() else { return };
-        for i in 0..self.sel_lit.len() {
-            let on = self.sel == i && self.is_keyboard();
-            self.sel_lit[i].set(on);
-        }
         self.hits.borrow_mut().clear();
         let panel = |cv: &Canvas| self.paint(cv, th, rect, &v, cx);
         let x = self.cues.xf("ai-panel");
