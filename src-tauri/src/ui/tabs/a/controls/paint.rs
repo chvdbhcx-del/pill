@@ -49,6 +49,7 @@ pub fn icon_markup(name: &str) -> Option<(&'static str, &'static str)> {
         "bt" => ("tc-bt", r#"<path d="M7 7.5l10 9-5 4.5V3l5 4.5-10 9"/>"#),
         "btoff" => ("tc-btoff", r#"<path d="M7 7.5l10 9-5 4.5V12M12 3l5 4.5-3 2.7M4 4l16 16"/>"#),
         "theme" => ("tc-theme", r#"<circle cx="12" cy="12" r="9"/><path d="M12 3v18" /><path d="M12 7a5 5 0 0 1 0 10z" fill="currentColor"/>"#),
+        "vpn" => ("tc-vpn", r#"<path d="M12 3l7.5 3v5.5c0 4.6-3.1 8.2-7.5 9.5-4.4-1.3-7.5-4.9-7.5-9.5V6z"/><path d="M9 12l2.2 2.2L15.2 10"/>"#),
         "list" => ("tc-list", r#"<path d="M9 7h11M9 12h11M9 17h11"/><circle cx="5" cy="7" r="0.9" fill="currentColor"/><circle cx="5" cy="12" r="0.9" fill="currentColor"/><circle cx="5" cy="17" r="0.9" fill="currentColor"/>"#),
         "lock" => ("tc-lock", r#"<rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>"#),
         "sleep" => ("tc-sleep", r#"<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>"#),

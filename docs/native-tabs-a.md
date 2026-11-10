@@ -96,6 +96,12 @@ field travels with the enabling `settings_set`. Text fields queue their input an
 Wi-Fi / Ethernet / Bluetooth (+ paired-device popover) / dark-theme tiles and the four power tiles (press twice; the red wash drains over 3 s). The CPU / RAM / GPU
 meters the web shows above the tiles come from `sysmon-live.js`, not from `tab-controls.js` or the panel-A model: they are NOT in this view (the tiles then fill the box).
 
+Native additions (not in the web tab): the Wi-Fi tile has a list button that opens a network card (`a/controls/wifi_ui.rs` over `ui-core panel/a/wifi_list.rs`;
+backend `wifi.rs`, WLAN API): signal bars, a lock, saved / connected state, a click connects (a new secured network opens a password drawer), a Disconnect button on the
+connected row. `wifi_scan` runs when the card opens and every 5 s while it stays open, never otherwise. The card, the drawer and the message line are `Flow`s set in
+`WifiUi::sync`. A fifth tile, VPN, shows when `module.vpn` is on and an own client is set or a VPN is up (`vpn.rs`; the `vpn` object rides on `sys_state`); the same
+state lights the VPN chip in the island header, and a click on either switches the VPN.
+
 ### notifs (`a/notifs.rs`, `a/notifs/tests.rs`)
 History grouped by day (sticky day headers), tone tiles, hover swaps the time for the remove button, removed rows collapse while the rows below slide up, staggered
 enter, clear-all fade, empty state. Scrolling is a glasskit `ScrollView`; its metrics follow the rect of each draw.

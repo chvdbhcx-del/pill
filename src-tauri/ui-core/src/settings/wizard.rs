@@ -84,9 +84,9 @@ pub fn content(step: u8) -> Content {
     }
 }
 
-/// The ids of the module rows step 2 shows (`module.<id>` rows of the Modules page, in order).
+/// The ids of the module rows step 2 shows (`module.<id>` rows of the Modules page, in order; the VPN switch is left for Settings).
 pub fn module_row_ids() -> Vec<&'static str> {
-    schema().page("modules").map(|p| p.rows().filter(|r| r.key.starts_with("module.")).map(|r| r.id).collect()).unwrap_or_default()
+    schema().page("modules").map(|p| p.rows().filter(|r| r.key.starts_with("module.") && r.key != "module.vpn").map(|r| r.id).collect()).unwrap_or_default()
 }
 
 /// The `(action, title, default)` triples step 3 shows.

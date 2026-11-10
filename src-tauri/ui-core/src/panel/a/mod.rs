@@ -26,6 +26,7 @@ pub mod shelf;
 pub mod tabs;
 pub mod util;
 pub mod weather;
+pub mod wifi_list;
 
 use serde_json::{Map, Value};
 

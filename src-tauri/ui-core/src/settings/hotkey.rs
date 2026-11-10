@@ -36,7 +36,7 @@ pub const ACTIONS: [HotkeyAction; 16] = [
     a("pipette", tr("Пипетка", "Colour picker"), Tr::NONE, "Ctrl+Alt+C"),
     a("qr", tr("QR-код с экрана", "QR code from the screen"), Tr::NONE, "Ctrl+Alt+Shift+Q"),
     a("passThrough", tr("Сквозной режим: включить / выключить", "Pass-through mode: on / off"), Tr::NONE, ""),
-    a("vpn", tr("VPN: включить / выключить", "VPN: on / off"), tr("Пока ничего не делает: переключателя VPN в Pill ещё нет, клавиша только запоминается", "Does nothing yet: Pill has no VPN switch, the key is only remembered"), ""),
+    a("vpn", tr("VPN: включить / выключить", "VPN: on / off"), tr("Запускает ваш клиент командой из Настройки > Модули > VPN", "Starts your own client with the command from Settings > Modules > VPN"), ""),
 ];
 
 /// The actions the wizard's third step lists.

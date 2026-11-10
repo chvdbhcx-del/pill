@@ -105,6 +105,8 @@ pub struct ShellSettings {
     pub opacity_col: f64,
     pub opacity_exp: f64,
     pub vpn_country: String,
+    /// `vpnOn`: not a stored setting, vpn.rs sends it in a `settings:changed` event
+    pub vpn_on: bool,
     pub pinned: bool,
     /// Setting `fps` resolved: 0 = auto (no cap) or one of 30 | 60 | 120 | 144 | 240.
     pub fps_cap: u32,
@@ -144,6 +146,7 @@ impl Default for ShellSettings {
             opacity_col: 0.0,
             opacity_exp: 0.0,
             vpn_country: String::new(),
+            vpn_on: false,
             pinned: false,
             fps_cap: 0,
             idle_fps: 30,
@@ -267,6 +270,7 @@ impl ShellSettings {
                 "opacityCol" => self.opacity_col = num_or0(val),
                 "opacityExp" => self.opacity_exp = num_or0(val),
                 "vpnCountry" => self.vpn_country = text(val),
+                "vpnOn" => self.vpn_on = truthy(val),
                 "pinned" => self.pinned = truthy(val),
                 "fps" => {
                     let f = js_round(plus(val));

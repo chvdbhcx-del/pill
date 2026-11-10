@@ -474,6 +474,9 @@ impl IslandView {
                     return Hit::Btn(*b);
                 }
             }
+            if self.chrome.vpn.is_some_and(|r| r.contains(l.0, l.1)) {
+                return Hit::Btn(Btn::Vpn); // the VPN chip switches the VPN
+            }
             if self.chrome.views.contains(l.0, l.1) {
                 return Hit::Views;
             }
@@ -780,6 +783,7 @@ impl View for IslandView {
                         self.call(cx, "settings_set", json!({ "patch": { "pinned": pinned } }), Pending::Fire);
                     }
                     Hit::Btn(Btn::Settings) => self.core.shell_event(Event::SettingsButton, cx.now_ms),
+                    Hit::Btn(Btn::Vpn) => self.call(cx, "vpn_toggle", serde_json::Value::Null, Pending::Fire),
                     Hit::CardBtn(i) => self.core.shell_event(Event::CardAction(i), cx.now_ms),
                     Hit::RowBtn(idx) => {
                         let act = self.painted.row_id.as_ref().and_then(|id| self.core.rows.get(id)).and_then(|r| match r.elements.get(idx) {

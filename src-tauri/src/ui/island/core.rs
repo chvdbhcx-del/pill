@@ -100,7 +100,7 @@ pub const ISLAND_EVENTS: &[&str] = &[
     "settings:changed", "pill:show", "pill:hide", "pill:expand", "pill:collapse", "pill:open-tab", "audio:bands", "weather:current", "kbd:layout", "clip:added",
     "live:volume", "live:privacy", "live:download", "update:available", "live:obs", "live:steam", "live:notification", "uninstall:ready", "live:file-done",
     "live:usb", "live:battery", "live:calendar", "live:mail", "agents:changed", "agents:done", "rec:state", "capture:done", "voice:state", "voice:level",
-    "sysmon:tick", "media:changed", "timer:tick", "remind:due", "shelf:changed", "timer:done", "remind:changed",
+    "sysmon:tick", "media:changed", "timer:tick", "remind:due", "shelf:changed", "timer:done", "remind:changed", "power:timer", "vpn:changed",
 ];
 
 pub struct Core {
@@ -228,6 +228,11 @@ impl Core {
                 }
             }
             "weather:current" => sh(self, Event::WeatherCurrent(payload.clone())),
+            // vpn.rs: the chip of the open island (not a stored setting)
+            "vpn:changed" => {
+                let p = serde_json::json!({ "vpnCountry": payload.get("country").cloned().unwrap_or(Value::Null), "vpnOn": payload.get("on").cloned().unwrap_or(Value::Null) });
+                sh(self, Event::SettingsChanged(p));
+            }
             _ => {}
         }
         // providers also want settings / show / hide (and everything else that is theirs)

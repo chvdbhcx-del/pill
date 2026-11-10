@@ -69,7 +69,7 @@ Press **`Alt+Shift+Space`** (the default; change it in *Settings → Hotkeys*). 
 
 - Type to find **applications, folders and files** with their real icons. File search uses [Everything](https://www.voidtools.com/) when it is installed.
 - **Calculator and unit converter** work offline: `5*8+12`, `5 km in mi`.
-- **System actions** (lock, sleep, restart, shut down; destructive ones ask twice), `> command` runs a shell command, anything else can be searched in your browser.
+- **System actions** (lock, sleep, restart, shut down; destructive ones ask twice), also on a timer: `shut down in 30 minutes`, `restart at 23:00`, `cancel shutdown` (or `выключи компьютер через час`); the island shows a countdown with a cancel button while one is armed. `vpn` switches your own VPN client. `> command` runs a shell command, anything else can be searched in your browser.
 - **Filters:** `c` clipboard, `n` notes, `f` files, `a` apps, `s` settings.
 - **Ask your AI:** start with `? `, `ai ` or `ии `. The answer is formatted (lists, **bold**, code blocks with a copy button), the next line you type continues the conversation (Esc ends it). Needs an AI endpoint in *Settings → AI*.
 - **Dictate** with the microphone button or `F4`.
@@ -96,7 +96,7 @@ Hover the island (or press `Ctrl+Alt+I`) and it expands into a panel. Every tab 
 | **Chat** | AI chat with threads and attachments: local models (Ollama, LM Studio, llama.cpp, FreeLLMAPI) or a cloud provider; answers stream in |
 | **Notes** | Notes, reminders and a timer |
 | **Weather** | Current conditions, hourly slots and a 7-day forecast (MET Norway, off until you switch it on) |
-| **Controls** | Wi-Fi, Ethernet, Bluetooth (with the device list), dark theme, CPU / RAM, and lock / sleep / restart / shut down (press twice) |
+| **Controls** | Wi-Fi (with a network list: connect, password for a new network, disconnect), Ethernet, Bluetooth (with the device list), dark theme, a VPN tile for your own client (Settings → Modules → VPN), CPU / RAM, and lock / sleep / restart / shut down (press twice) |
 
 | Clipboard | Chat | Controls |
 | --- | --- | --- |

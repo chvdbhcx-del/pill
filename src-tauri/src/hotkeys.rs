@@ -1,8 +1,8 @@
 // Global hotkeys of every module in ONE place (GateGuard note: new file of the Pill app; used by main.rs, settings.rs and
 // settingswin.rs; user request: "делай все оставшееся" = rebinding a hotkey on the settings page works at once, no restart).
 // Owner: settings lane. Handled here: toggle, command, clipboard, chat, record, shotArea, shotFull, ocr, pipette, qr, pastePlain,
-// mic, passThrough and every `hotkey.launcher.<id>`. NOT handled here: `voice` (voice.rs follows settings:changed itself),
-// `vpn` (no backend yet), Ctrl+Alt+Q = quit (raw RegisterHotKey thread in pill.rs, fixed on purpose).
+// mic, passThrough, vpn (vpn.rs) and every `hotkey.launcher.<id>`. NOT handled here: `voice` (voice.rs follows settings:changed itself),
+// Ctrl+Alt+Q = quit (raw RegisterHotKey thread in pill.rs, fixed on purpose).
 //
 // How it works
 //  * desired() = the combo of every action from settings.json (defaults from settingswin::ACTIONS), skipping empty combos and the
@@ -56,6 +56,7 @@ fn module_of(action: &str) -> Option<&'static str> {
     match action {
         "clipboard" => Some("module.clipboard"),
         "chat" => Some("module.chat"),
+        "vpn" => Some("module.vpn"),
         a if a.starts_with("launcher.") => Some("module.launcher"),
         _ => None,
     }
@@ -83,6 +84,11 @@ fn run(app: &AppHandle, action: &str) {
         "record" => crate::capture::start(app, "record_screen"),
         "pastePlain" => crate::clipboard::paste_plain(),
         "mic" => crate::system::toggle_mic(),
+        "vpn" => {
+            std::thread::spawn(|| {
+                let _ = crate::vpn::vpn_toggle();
+            });
+        }
         "passThrough" => {
             let mut m = Map::new();
             m.insert("passThrough".into(), json!(!settings::get_bool("passThrough", false)));
@@ -237,8 +243,8 @@ fn desired() -> Vec<(String, String)> {
         }
     };
     for (a, d) in ACTIONS {
-        if matches!(*a, "voice" | "vpn") {
-            continue; // voice.rs registers its own; vpn has no backend
+        if matches!(*a, "voice") {
+            continue; // voice.rs registers its own
         }
         let c = cfg.get(&format!("hotkey.{a}")).and_then(Value::as_str).unwrap_or(d).to_string();
         want(a.to_string(), &c);

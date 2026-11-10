@@ -41,6 +41,74 @@ pub fn modules() -> Page {
                     })
                     .collect(),
             ),
+            group_note(
+                tr("VPN", "VPN"),
+                tr(
+                    "Pill не ставит VPN и ничего не отправляет в сеть: он только запускает ваш клиент командой или ссылкой. Команды не входят в экспорт настроек.",
+                    "Pill does not install a VPN and sends nothing over the network: it only starts your own client with a command or a link. The commands are left out of a settings export.",
+                ),
+                vec![
+                    toggle(
+                        "module.vpn",
+                        tr("VPN", "VPN"),
+                        tr("Значок в раскрытом острове, плитка на вкладке «Управление» и команда vpn. Выключено: всё это исчезает", "The chip in the open island, the tile on the Controls tab and the vpn command. Off: all of it disappears"),
+                        true,
+                    )
+                    .kw(&["vpn", "впн", "tunnel", "туннель", "wireguard", "amnezia"]),
+                    text(
+                        "vpn.own.name",
+                        tr("Свой клиент: название", "Own client: name"),
+                        tr(
+                            "Название клиента или туннеля. VPN считается включённым, пока работает сетевой адаптер с таким именем (или частью имени), чужие туннели и прокси не в счёт",
+                            "The client or tunnel name. The VPN counts as on while a network adapter with this name (or part of it) is up; other tunnels and proxies do not count",
+                        ),
+                        TextKind::Plain,
+                        tr("например, AmneziaWG", "for example AmneziaWG"),
+                        "",
+                    )
+                    .enabled(Cond::On("module.vpn"))
+                    .kw(&["vpn", "впн", "client", "клиент"]),
+                    text(
+                        "vpn.own.connect",
+                        tr("Свой клиент: подключить", "Own client: connect"),
+                        tr(
+                            "Командная строка или ссылка вида client://connect. Для WireGuard и AmneziaWG: полный путь к wireguard.exe, затем /installtunnelservice и полный путь к файлу .conf (нужен режим администратора)",
+                            "A command line or a link such as client://connect. For WireGuard and AmneziaWG: the full path of wireguard.exe, then /installtunnelservice and the full path of the .conf file (needs the administrator switch)",
+                        ),
+                        TextKind::Plain,
+                        tr("команда или ссылка", "command or link"),
+                        "",
+                    )
+                    .enabled(Cond::On("module.vpn"))
+                    .block()
+                    .kw(&["vpn", "впн", "connect", "подключить", "installtunnelservice"]),
+                    text(
+                        "vpn.own.disconnect",
+                        tr("Свой клиент: отключить", "Own client: disconnect"),
+                        tr(
+                            "Команда или ссылка. Пусто: для /installtunnelservice берётся /uninstalltunnelservice с именем туннеля из файла",
+                            "A command or a link. Empty: for /installtunnelservice, /uninstalltunnelservice with the tunnel name from the file is used",
+                        ),
+                        TextKind::Plain,
+                        tr("команда или ссылка", "command or link"),
+                        "",
+                    )
+                    .enabled(Cond::On("module.vpn"))
+                    .block()
+                    .kw(&["vpn", "впн", "disconnect", "отключить", "uninstalltunnelservice"]),
+                    toggle(
+                        "vpn.admin",
+                        tr("Команды от имени администратора", "Commands as administrator"),
+                        tr(
+                            "Команды подключения и отключения запускаются с повышением, Windows каждый раз спрашивает разрешение. Нужно для /installtunnelservice. Ссылки не затрагиваются",
+                            "The connect and disconnect commands run elevated and Windows asks every time. Needed for /installtunnelservice. Links are not affected",
+                        ),
+                        false,
+                    )
+                    .enabled(Cond::On("module.vpn"))
+                    .kw(&["admin", "администратор", "uac", "runas", "elevated"]),
+                ],
+            ),
             group(
                 tr("История уведомлений", "Notification history"),
                 vec![

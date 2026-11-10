@@ -7,6 +7,7 @@
 //! Animation cues of the model drive: `tile:<id>` the busy pulse of the icon circle, `power:<a>` the draining red wash, `bt-pop` the popover.
 mod layout;
 mod paint;
+mod wifi_ui;
 #[cfg(test)]
 mod tests;
 
@@ -41,6 +42,7 @@ struct TileState {
 enum Hit {
     Tile(usize),
     List,
+    WList,
     Power(usize),
     PopButton,
 }
@@ -53,6 +55,9 @@ pub struct ControlsView {
     tiles: Vec<TileState>,
     power: Vec<Touch>,
     list: Touch,
+    /// the list button of the Wi-Fi tile, and the Wi-Fi network list it opens
+    wl: Touch,
+    wui: wifi_ui::WifiUi,
     pbtn: Touch,
     focus: Option<usize>,
     /// the popover as last shown, kept while its exit cue plays
@@ -84,10 +89,12 @@ impl ControlsView {
             model: Controls::new(),
             base: Base::new(),
             ru: false,
-            v: Model { tiles: vec![], power: vec![], popover: None },
+            v: Model { tiles: vec![], power: vec![], popover: None, wifi: None },
             tiles: vec![],
             power: (0..4).map(|_| Touch::new()).collect(),
             list: Touch::new(),
+            wl: Touch::new(),
+            wui: wifi_ui::WifiUi::new(),
             pbtn: Touch::new(),
             focus: None,
             last_pop: None,
@@ -161,6 +168,7 @@ impl ControlsView {
         if let Some(p) = &self.v.popover {
             self.last_pop = Some(p.clone());
         }
+        self.wui.sync(self.v.wifi.as_ref());
     }
 
     fn run(&mut self, cx: &mut Cx, calls: Vec<pill_ui_core::panel::a::BackendCall>) {
@@ -189,6 +197,7 @@ impl ControlsView {
                 }
             }
             Hit::List => self.act(cx, Action::TogglePopover),
+            Hit::WList => self.act(cx, Action::ToggleWifiList),
             Hit::Power(i) => self.act(cx, Action::Power(POWER_ACTIONS[i].into())),
             Hit::PopButton => self.act(cx, Action::OpenBtSettings),
         }
@@ -200,7 +209,11 @@ impl ControlsView {
     }
 
     fn bt_tile(&self) -> Option<usize> {
-        self.v.tiles.iter().position(|t| t.list_button.is_some())
+        self.v.tiles.iter().position(|t| t.id == "bluetooth" && t.list_button.is_some())
+    }
+
+    fn wifi_tile(&self) -> Option<usize> {
+        self.v.tiles.iter().position(|t| t.id == "wifi" && t.list_button.is_some())
     }
 
     fn list_rect(&self, tiles: &[Rect]) -> Option<Rect> {
@@ -208,11 +221,31 @@ impl ControlsView {
         (!self.v.tiles[i].disabled).then(|| layout::list_button(tiles[i]))
     }
 
+    fn wlist_rect(&self, tiles: &[Rect]) -> Option<Rect> {
+        let i = self.wifi_tile()?;
+        (!self.v.tiles[i].disabled).then(|| layout::list_button(tiles[i]))
+    }
+
+    /// Nothing under the Wi-Fi card is hot.
+    fn cool_tiles(&mut self) {
+        for s in &mut self.tiles {
+            s.intr.set_hover(false);
+        }
+        for p in &mut self.power {
+            p.set_hover(false);
+        }
+        self.list.set_hover(false);
+        self.wl.set_hover(false);
+    }
+
     /// Focusable things in Tab order: enabled tiles, the list button, the power tiles.
     fn focus_items(&self) -> Vec<Hit> {
         let mut v: Vec<Hit> = self.v.tiles.iter().enumerate().filter(|(_, t)| !t.disabled).map(|(i, _)| Hit::Tile(i)).collect();
         if self.bt_tile().map_or(false, |i| !self.v.tiles[i].disabled) {
             v.push(Hit::List);
+        }
+        if self.wifi_tile().map_or(false, |i| !self.v.tiles[i].disabled) {
+            v.push(Hit::WList);
         }
         v.extend((0..self.v.power.len()).map(Hit::Power));
         v
@@ -226,6 +259,7 @@ impl ControlsView {
             s.intr.set_focus(cur == Some(Hit::Tile(i)), true);
         }
         self.list.set_focus(cur == Some(Hit::List), true);
+        self.wl.set_focus(cur == Some(Hit::WList), true);
         for (i, p) in self.power.iter_mut().enumerate() {
             p.set_focus(cur == Some(Hit::Power(i)), true);
         }
@@ -291,6 +325,7 @@ impl View for ControlsView {
         self.set_focus(None);
         self.after(cx);
         self.last_pop = None;
+        self.wui = wifi_ui::WifiUi::new(); // no card left half-way when the tab comes back
     }
 
     fn message(&mut self, msg: Msg, cx: &mut Cx) -> Response {
@@ -330,13 +365,28 @@ impl View for ControlsView {
     }
 
     fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
-        if let InputEvent::Key { code, mods, down: true, .. } = ev {
-            return self.key(*code, *mods, cx);
-        }
         let b = self.grid();
         let tiles = layout::tiles(b, self.v.tiles.len());
         let power = layout::power(b);
         let list_r = self.list_rect(&tiles);
+        let wlist_r = self.wlist_rect(&tiles);
+        if self.wui.is_open() {
+            // the Wi-Fi card takes what lands on it (and the typing of its password); an outside press closes it and goes on to the tiles
+            let (r, acts) = self.wui.event(ev, self.bounds(), wlist_r);
+            let any = !acts.is_empty();
+            for a in acts {
+                self.act(cx, a);
+            }
+            if r.consumed {
+                if matches!(ev, InputEvent::MouseMove { .. }) {
+                    self.cool_tiles();
+                }
+                return Response { redraw: r.redraw || any, ..r };
+            }
+        }
+        if let InputEvent::Key { code, mods, down: true, .. } = ev {
+            return self.key(*code, *mods, cx);
+        }
         let pop = self.v.popover.as_ref().and_then(|p| Some(layout::popover(b, p.rows.len())));
         let pos = ev.pos();
         let over_pop = matches!((pos, pop), (Some(p), Some(pl)) if pl.outer.contains(p.0, p.1));
@@ -373,8 +423,19 @@ impl View for ControlsView {
                 hits.push(Hit::List);
             }
         }
+        if let Some(wr) = wlist_r {
+            let (r, p) = self.wl.pointer(tev, |q| wr.contains(q.0, q.1));
+            resp = resp.merge(r);
+            if p.click {
+                hits.push(Hit::WList);
+            }
+        }
         for (i, r) in tiles.iter().enumerate() {
-            let skip = list_r.filter(|_| self.v.tiles[i].list_button.is_some());
+            let skip = match self.v.tiles[i].id.as_str() {
+                "bluetooth" => list_r,
+                "wifi" => wlist_r,
+                _ => None,
+            };
             let (rr, p) = self.tiles[i].intr.pointer(tev, |q| r.contains(q.0, q.1) && !skip.map_or(false, |l| l.contains(q.0, q.1)));
             resp = resp.merge(rr);
             if p.click {
@@ -400,7 +461,7 @@ impl View for ControlsView {
         resp
     }
 
-    fn step(&mut self, dt_ms: f64, _cx: &mut Cx) -> bool {
+    fn step(&mut self, dt_ms: f64, cx: &mut Cx) -> bool {
         let dt = (dt_ms / 1000.0) as f32;
         let mut busy = self.base.player.step(dt_ms);
         for s in &mut self.tiles {
@@ -417,7 +478,12 @@ impl View for ControlsView {
         }
         self.mrow.step(dt_ms);
         busy |= self.mrow.moving();
-        busy |= self.list.step(dt_ms) | self.pbtn.step(dt_ms) | self.scroll.step(dt);
+        busy |= self.list.step(dt_ms) | self.wl.step(dt_ms) | self.pbtn.step(dt_ms) | self.scroll.step(dt);
+        busy |= self.wui.step(dt_ms);
+        for a in self.wui.take_actions() {
+            self.act(cx, a); // Enter / Esc in the password field
+            busy = true;
+        }
         busy
     }
 
@@ -436,12 +502,17 @@ impl View for ControlsView {
                 scale: s.intr.press_scale(0.96),
                 circle_scale: s.intr.press_scale(0.92),
                 circle_alpha: self.base.player.sample(&format!("tile:{}", t.id)).alpha,
-                list_hover: if t.list_button.is_some() { self.list.hover() } else { 0.0 },
+                list_hover: match t.id.as_str() {
+                    "bluetooth" if t.list_button.is_some() => self.list.hover(),
+                    "wifi" if t.list_button.is_some() => self.wl.hover(),
+                    _ => 0.0,
+                },
                 ring: s.intr.ring(),
             };
             paint::tile(cv, th, &k, *r, t, &look);
             if t.list_button.is_some() && !t.disabled {
-                cv.focus_ring(layout::list_button(*r), 12.0, th.accent, self.list.ring());
+                let ring = if t.id == "wifi" { self.wl.ring() } else { self.list.ring() };
+                cv.focus_ring(layout::list_button(*r), 12.0, th.accent, ring);
             }
         }
         for (i, (p, r)) in self.v.power.iter().zip(layout::power(rect)).enumerate() {
@@ -451,6 +522,7 @@ impl View for ControlsView {
             paint::power(cv, th, &k, r, p, &look);
         }
         self.draw_popover(cv, th, &k, rect_all);
+        self.wui.draw(cv, th, &k, rect_all);
     }
 }
 

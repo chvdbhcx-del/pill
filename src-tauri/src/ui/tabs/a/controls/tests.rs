@@ -341,3 +341,157 @@ fn snapshots_of_the_typical_states() {
     });
     glasskit::ease::force_reduced(None);
 }
+
+// ------------------------------------------------------------------------------------------------ Wi-Fi list and the VPN tile
+
+fn networks() -> Value {
+    json!({ "status": "ok", "networks": [
+        { "ssid": "Home-5G", "bars": 4, "secured": true, "supported": true, "connected": true, "known": true },
+        { "ssid": "Cafe", "bars": 2, "secured": true, "supported": true, "connected": false, "known": false },
+        { "ssid": "Free", "bars": 1, "secured": false, "supported": true, "connected": false, "known": false },
+        { "ssid": "Corp", "bars": 3, "secured": true, "supported": false, "connected": false, "known": false }] })
+}
+
+fn wifi_rig() -> Rig {
+    let r = Rig::new();
+    r.f.api.reply("wifi_scan", Ok(networks()));
+    r.f.api.reply("wifi_connect", Ok(json!({ "status": "ok" })));
+    r.f.api.reply("wifi_disconnect", Ok(json!({ "status": "ok" })));
+    r
+}
+
+fn open_wifi(r: &mut Rig) -> Vec<Rect> {
+    let wl = layout::list_button(r.tiles()[0]);
+    r.click(wl.center());
+    r.v.wui.rects(r.v.bounds()).1
+}
+
+#[test]
+fn the_wifi_list_scans_only_while_it_is_open_and_stops_when_it_closes() {
+    let _g = motion_lock();
+    glasskit::ease::force_reduced(Some(false));
+    let mut r = wifi_rig();
+    r.tick(60_000.0);
+    assert!(r.calls_to("wifi_scan").is_empty(), "no scan before the list is opened");
+    open_wifi(&mut r);
+    assert_eq!(r.calls_to("wifi_scan").len(), 1);
+    assert_eq!(r.v.v.wifi.as_ref().unwrap().rows.len(), 4);
+    r.tick(5000.0);
+    assert_eq!(r.calls_to("wifi_scan").len(), 2, "re-scan while open");
+    for _ in 0..60 {
+        r.v.step(16.0, &mut r.cx); // the card has dropped in
+    }
+    let resp = r.ev(key(KeyCode::Escape));
+    assert!(resp.consumed && r.v.v.wifi.is_none());
+    r.tick(60_000.0);
+    assert_eq!(r.calls_to("wifi_scan").len(), 2, "closed: no more scans");
+    // it leaves on a spring and then lets the tab idle
+    assert!(r.v.wui.shown());
+    for _ in 0..120 {
+        r.v.step(16.0, &mut r.cx);
+    }
+    assert!(!r.v.wui.shown() && !r.v.step(16.0, &mut r.cx));
+    glasskit::ease::force_reduced(None);
+}
+
+#[test]
+fn a_saved_or_open_network_connects_with_one_click_and_a_secured_new_one_asks_first() {
+    let _g = motion_lock();
+    glasskit::ease::force_reduced(Some(false));
+    let mut r = wifi_rig();
+    let rows = open_wifi(&mut r);
+    r.click(rows[2].center()); // Free (open)
+    assert_eq!(r.calls_to("wifi_connect"), vec![json!({ "ssid": "Free" })]);
+    assert!(r.names().ends_with(&["wifi_scan".to_string(), "sys_state".to_string()]), "the list and the tile are refreshed after the answer");
+    let rows = r.v.wui.rects(r.v.bounds()).1;
+    r.click(rows[1].center()); // Cafe (secured, unknown): no connect yet, a password drawer opens
+    assert_eq!(r.calls_to("wifi_connect").len(), 1);
+    assert!(r.v.v.wifi.as_ref().unwrap().rows[1].ask.is_some() && r.v.wui.typing());
+    // the password goes out in the one call
+    r.v.act(&mut r.cx, Action::WifiSubmit("hunter2hunter2".into()));
+    r.pump();
+    assert_eq!(r.calls_to("wifi_connect").last().unwrap(), &json!({ "ssid": "Cafe", "password": "hunter2hunter2" }));
+    glasskit::ease::force_reduced(None);
+}
+
+#[test]
+fn the_connected_network_has_a_disconnect_button_and_enterprise_ones_are_refused() {
+    let _g = motion_lock();
+    glasskit::ease::force_reduced(Some(false));
+    let mut r = wifi_rig();
+    let rows = open_wifi(&mut r);
+    // the right end of the first row is the Disconnect button
+    let d = rows[0];
+    r.click((d.right() - 20.0, d.cy()));
+    assert_eq!(r.names().iter().filter(|n| *n == "wifi_disconnect").count(), 1);
+    let rows = r.v.wui.rects(r.v.bounds()).1;
+    r.click(rows[3].center()); // Corp: enterprise
+    assert!(r.calls_to("wifi_connect").is_empty());
+    assert!(r.v.v.wifi.as_ref().unwrap().flash.is_some());
+    glasskit::ease::force_reduced(None);
+}
+
+#[test]
+fn the_wifi_list_button_is_the_tiles_own_and_an_outside_press_closes_the_list() {
+    let _g = motion_lock();
+    glasskit::ease::force_reduced(Some(false));
+    let mut r = wifi_rig();
+    open_wifi(&mut r);
+    assert!(r.calls_to("sys_set").is_empty(), "the list button does not toggle Wi-Fi");
+    let wl = layout::list_button(r.tiles()[0]);
+    r.click(wl.center());
+    assert!(r.v.v.wifi.is_none(), "the list button toggles the list");
+    r.click(wl.center());
+    assert!(r.v.v.wifi.is_some());
+    r.click((630.0, 250.0));
+    assert!(r.v.v.wifi.is_none());
+    glasskit::ease::force_reduced(None);
+}
+
+#[test]
+fn the_vpn_tile_shows_only_with_the_feature_on_and_something_to_switch() {
+    let mut r = Rig::new();
+    let with = |vpn: Value| {
+        let mut s = state(true);
+        s["vpn"] = vpn;
+        s
+    };
+    r.f.bus.emit("sys:changed", with(json!({ "enabled": true, "configured": false, "on": false, "name": "" })));
+    r.pump();
+    assert_eq!(r.v.v.tiles.len(), 4, "nothing to start and nothing up: no tile");
+    r.f.bus.emit("sys:changed", with(json!({ "enabled": false, "configured": true, "on": true, "name": "Amnezia" })));
+    r.pump();
+    assert_eq!(r.v.v.tiles.len(), 4, "the feature is switched off: no tile");
+    r.f.bus.emit("sys:changed", with(json!({ "enabled": true, "configured": true, "on": false, "name": "Amnezia" })));
+    r.pump();
+    let ids: Vec<_> = r.v.v.tiles.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["wifi", "ethernet", "bluetooth", "dark", "vpn"]);
+    assert_eq!(r.v.v.tiles[4].state, "Off");
+    assert_eq!(layout::tiles(r.v.bounds(), 5).len(), 5);
+    r.f.bus.emit("sys:changed", with(json!({ "enabled": true, "configured": true, "on": true, "name": "Amnezia" })));
+    r.pump();
+    assert!(r.v.v.tiles[4].on && r.v.v.tiles[4].state == "Amnezia");
+}
+
+#[test]
+fn a_vpn_tile_click_toggles_and_waits_for_the_adapter() {
+    let _g = motion_lock();
+    glasskit::ease::force_reduced(Some(false));
+    let mut r = Rig::new();
+    r.f.api.reply("vpn_toggle", Ok(json!({ "status": "ok", "on": true })));
+    r.f.api.reply("vpn_state", Ok(json!({ "enabled": true, "configured": true, "on": true, "name": "Amnezia" })));
+    let mut s = state(true);
+    s["vpn"] = json!({ "enabled": true, "configured": true, "on": false, "name": "Amnezia" });
+    r.f.bus.emit("sys:changed", s);
+    r.pump();
+    let c = r.tiles()[4].center();
+    r.click(c);
+    assert_eq!(r.names().iter().filter(|n| *n == "vpn_toggle").count(), 1);
+    assert!(r.v.v.tiles[4].busy, "the tile waits for the adapter");
+    r.click(c);
+    assert_eq!(r.names().iter().filter(|n| *n == "vpn_toggle").count(), 1, "a busy tile ignores a second click");
+    r.tick(1600.0);
+    assert!(r.names().iter().any(|n| n == "vpn_state"), "it looks again until the state shows");
+    assert!(r.v.v.tiles[4].on && !r.v.v.tiles[4].busy);
+    glasskit::ease::force_reduced(None);
+}

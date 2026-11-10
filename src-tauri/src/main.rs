@@ -43,6 +43,8 @@ mod openarg;
 mod uninstall;
 mod ui;
 mod applog;
+mod vpn;
+mod wifi;
 
 fn main() {
     applog::init(); // stderr -> %LOCALAPPDATA%\Pill\logs\pill.log (the release build has no console)
@@ -71,6 +73,7 @@ fn main() {
             shelf::init(app);
             command::init(app);
             system::init(app);
+            vpn::init(app);
             net::init(app);
             chat::init(app);
             notes::init(app);

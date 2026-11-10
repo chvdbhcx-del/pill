@@ -6,7 +6,8 @@
 //! No timers while hidden: the model polls `sys_state` every 5 s only while the tab is visible and the island is shown.
 
 use super::anim::Anim;
-use super::{bool_of, str_of, BackendCall, Cfg, Fx, FxQueue, Tr};
+use super::wifi_list::{WifiList, WifiView};
+use super::{bool_of, str_of, BackendCall, Cfg, EnTr, Fx, FxQueue, RuTr, Tr};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -65,6 +66,15 @@ impl SysState {
     }
 }
 
+/// The answer of `vpn_state` (vpn.rs): the tile shows when the feature is on and there is a client to start or a VPN that is up.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VpnInfo {
+    pub enabled: bool,
+    pub configured: bool,
+    pub on: bool,
+    pub name: String,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     /// A toggle tile by id: `wifi`, `ethernet`, `bluetooth`, `dark`.
@@ -77,6 +87,12 @@ pub enum Action {
     ClosePopover,
     /// "Connect in Windows settings" in the popover.
     OpenBtSettings,
+    /// The list button on the Wi-Fi tile.
+    ToggleWifiList,
+    WifiPick(String),
+    WifiSubmit(String),
+    WifiCancelAsk,
+    WifiDisconnect,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -125,6 +141,8 @@ pub struct View {
     pub tiles: Vec<TileView>,
     pub power: Vec<PowerView>,
     pub popover: Option<Popover>,
+    /// The Wi-Fi network list, while it is open.
+    pub wifi: Option<WifiView>,
 }
 
 const POWER: [(&str, &str, &str, &str); 4] =
@@ -146,6 +164,11 @@ pub struct Controls {
     pop: bool,
     ru: bool,
     fx: FxQueue,
+    wifi: WifiList,
+    vpn: VpnInfo,
+    /// the state a VPN toggle waits for (the tile is busy until `vpn_state` says so, or [`UAC_WAIT_MS`] passed)
+    vpn_want: Option<bool>,
+    vpn_poll: f64,
 }
 
 impl Default for Controls {
@@ -171,6 +194,10 @@ impl Controls {
             pop: false,
             ru: false,
             fx: FxQueue::default(),
+            wifi: WifiList::default(),
+            vpn: VpnInfo::default(),
+            vpn_want: None,
+            vpn_poll: 0.0,
         }
     }
 
@@ -195,7 +222,14 @@ impl Controls {
     }
     /// Esc closes the popover first.
     pub fn wants_escape(&self) -> bool {
-        self.pop
+        self.pop || self.wifi.is_open()
+    }
+    pub fn wifi_open(&self) -> bool {
+        self.wifi.is_open()
+    }
+    /// The ssid whose password drawer is open (the view shows its field).
+    pub fn wifi_asking(&self) -> Option<&str> {
+        self.wifi.asking()
     }
     pub fn armed(&self) -> Option<&str> {
         self.armed.as_deref()
@@ -204,11 +238,27 @@ impl Controls {
         self.cfg.reduce_motion()
     }
 
+    /// `vpn_state` answer, or the `vpn` object of `sys_state`.
+    fn set_vpn(&mut self, v: &Value) {
+        self.vpn = VpnInfo { enabled: bool_of(v, "enabled"), configured: bool_of(v, "configured"), on: bool_of(v, "on"), name: str_of(v, "name").to_string() };
+        if self.vpn_want.is_some_and(|w| w == self.vpn.on) || !self.vpn.enabled {
+            self.vpn_want = None;
+            self.busy.remove("vpn");
+            self.uac_until.remove("vpn");
+        }
+    }
+
     fn apply(&mut self, v: &Value) {
         if let Some(s) = SysState::from_json(v) {
+            if let Some(vpn) = v.get("vpn").filter(|x| x.is_object()) {
+                self.set_vpn(vpn);
+            }
             self.s = Some(s);
             if !self.s.as_ref().map_or(false, |s| s.bt_available) {
                 self.close_pop();
+            }
+            if !self.s.as_ref().is_some_and(|s| s.wifi.available && s.wifi.on) {
+                self.wifi.close();
             }
         }
     }
@@ -239,6 +289,7 @@ impl Controls {
         self.visible = false;
         self.poll = None;
         self.close_pop();
+        self.wifi.close();
         self.armed = None;
         self.arm_until = None;
     }
@@ -290,6 +341,9 @@ impl Controls {
                 vec![]
             }
             Action::ClosePopover => {
+                if self.wifi.is_open() {
+                    self.wifi.close();
+                }
                 self.close_pop();
                 vec![]
             }
@@ -297,10 +351,40 @@ impl Controls {
                 self.close_pop();
                 vec![BackendCall::new("sys_set", json!({ "key": "bluetooth_settings", "value": true }))]
             }
+            Action::ToggleWifiList => {
+                if self.wifi.is_open() {
+                    self.wifi.close();
+                    vec![]
+                } else if self.s.as_ref().is_some_and(|s| s.wifi.available && s.wifi.on) {
+                    self.close_pop();
+                    self.wifi.open()
+                } else {
+                    vec![]
+                }
+            }
+            Action::WifiPick(ssid) => self.wifi.pick(&ssid, if self.ru { &RuTr } else { &EnTr }),
+            Action::WifiSubmit(pw) => self.wifi.submit(pw),
+            Action::WifiCancelAsk => {
+                self.wifi.cancel_ask();
+                vec![]
+            }
+            Action::WifiDisconnect => self.wifi.disconnect(),
         }
     }
 
     fn toggle(&mut self, id: &str) -> Vec<BackendCall> {
+        if id == "vpn" {
+            if self.busy.contains_key(id) || !self.vpn.enabled {
+                return vec![];
+            }
+            // the adapter takes seconds: the tile pulses until vpn_state shows the wanted state (or UAC_WAIT_MS passed)
+            self.vpn_want = Some(!self.vpn.on);
+            self.vpn_poll = 0.0;
+            self.busy.insert(id.to_string(), if self.ru { "Подождите…".into() } else { "Working…".into() });
+            self.uac_until.insert(id.to_string(), self.mono + UAC_WAIT_MS);
+            self.fx.anim(self.reduce(), "tile:vpn", Anim::busy_pulse());
+            return vec![BackendCall::bare("vpn_toggle")];
+        }
         let Some(s) = self.s.as_mut() else { return vec![] };
         if self.busy.contains_key(id) {
             return vec![]; // the tile is disabled while busy
@@ -371,6 +455,33 @@ impl Controls {
                     _ => vec![],
                 }
             }
+            "vpn_state" => {
+                self.set_vpn(res);
+                vec![]
+            }
+            "vpn_toggle" => {
+                if res.get("status").and_then(Value::as_str) != Some("ok") {
+                    self.vpn_want = None;
+                    self.busy.remove("vpn");
+                    self.uac_until.remove("vpn");
+                    let setup = res.get("status").and_then(Value::as_str) == Some("setup");
+                    self.note("vpn", match (setup, self.ru) {
+                        (true, true) => "Настройте в Настройках".into(),
+                        (true, false) => "Set up in Settings".into(),
+                        (false, true) => "Не удалось".into(),
+                        (false, false) => "Failed".into(),
+                    });
+                }
+                vec![]
+            }
+            "wifi_scan" | "wifi_connect" | "wifi_disconnect" => {
+                let tr: &dyn Tr = if self.ru { &RuTr } else { &EnTr };
+                let mut calls = self.wifi.on_result(cmd, args, res, tr);
+                if cmd != "wifi_scan" {
+                    calls.push(BackendCall::bare("sys_state")); // the tile shows the network name
+                }
+                calls
+            }
             "sys_power" => {
                 let a = str_of(args, "action").to_string();
                 if res.get("status").and_then(Value::as_str) == Some("confirm") {
@@ -401,6 +512,9 @@ impl Controls {
         for k in due {
             self.uac_until.remove(&k);
             self.busy.remove(&k);
+            if k == "vpn" {
+                self.vpn_want = None;
+            }
             calls.push(BackendCall::bare("sys_state"));
         }
         if self.arm_until.map_or(false, |at| at <= self.mono) {
@@ -409,6 +523,15 @@ impl Controls {
         }
         let mono = self.mono;
         self.flash.retain(|_, (_, until)| *until > mono);
+        calls.extend(self.wifi.tick(dt_ms));
+        if self.vpn_want.is_some() && self.visible {
+            // a toggle waits for the adapter: look again every 1.5 s until it shows (the poll above runs every 5 s)
+            self.vpn_poll += dt_ms;
+            if self.vpn_poll >= 1500.0 {
+                self.vpn_poll = 0.0;
+                calls.push(BackendCall::bare("vpn_state"));
+            }
+        }
         calls
     }
 
@@ -441,7 +564,7 @@ impl Controls {
     pub fn view(&self, tr: &dyn Tr) -> View {
         let mut tiles = vec![];
         if let Some(s) = &self.s {
-            let mut push = |id: &str, name: String, icon: &'static str, on: bool, disabled: bool, ssid: &Option<String>, fem: bool, list: bool| {
+            let mut push = |id: &str, name: String, icon: &'static str, on: bool, disabled: bool, ssid: &Option<String>, fem: bool, list: u8| {
                 let busy = self.busy.contains_key(id);
                 tiles.push(TileView {
                     id: id.to_string(),
@@ -452,20 +575,46 @@ impl Controls {
                     disabled: disabled || busy,
                     busy,
                     pressed: on,
-                    list_button: if list { Some(tr.t("Подключённые устройства", "Paired devices")) } else { None },
+                    list_button: match list {
+                        1 => Some(tr.t("Подключённые устройства", "Paired devices")),
+                        2 => Some(tr.t("Сети Wi-Fi", "Wi-Fi networks")),
+                        _ => None,
+                    },
                 });
             };
             if s.wifi.available {
-                push("wifi", "Wi-Fi".into(), "wifi", s.wifi.on, !s.wifi.available, &s.wifi.ssid, false, false);
+                push("wifi", "Wi-Fi".into(), "wifi", s.wifi.on, !s.wifi.available, &s.wifi.ssid, false, if s.wifi.on { 2 } else { 0 });
             }
             if s.ethernet.available {
-                push("ethernet", "Ethernet".into(), "eth", s.ethernet.on, !s.ethernet.available, &s.ethernet.ssid, false, false);
+                push("ethernet", "Ethernet".into(), "eth", s.ethernet.on, !s.ethernet.available, &s.ethernet.ssid, false, 0);
             }
             if !s.wifi.available && !s.ethernet.available {
-                push("wifi", "Wi-Fi".into(), "wifi", s.wifi.on, !s.wifi.available, &s.wifi.ssid, false, false);
+                push("wifi", "Wi-Fi".into(), "wifi", s.wifi.on, !s.wifi.available, &s.wifi.ssid, false, 0);
             }
-            push("bluetooth", "Bluetooth".into(), if s.bt_on { "bt" } else { "btoff" }, s.bt_on, !s.bt_available, &None, false, true);
-            push("dark", tr.t("Тёмная тема", "Dark theme"), "theme", s.dark, false, &None, true, false);
+            push("bluetooth", "Bluetooth".into(), if s.bt_on { "bt" } else { "btoff" }, s.bt_on, !s.bt_available, &None, false, 1);
+            push("dark", tr.t("Тёмная тема", "Dark theme"), "theme", s.dark, false, &None, true, 0);
+        }
+        // the VPN tile: only while the feature is on and there is a client to start or a VPN that is up (vpn.rs)
+        if self.s.is_some() && self.vpn.enabled && (self.vpn.configured || self.vpn.on) {
+            let busy = self.busy.contains_key("vpn");
+            let state = match self.flash.get("vpn").filter(|f| f.1 > self.mono) {
+                Some((t, _)) => t.clone(),
+                None if busy => self.busy["vpn"].clone(),
+                None if self.vpn.on && !self.vpn.name.is_empty() => self.vpn.name.clone(),
+                None if self.vpn.on => tr.t("Включён", "On"),
+                None => tr.t("Выключен", "Off"),
+            };
+            tiles.push(TileView {
+                id: "vpn".into(),
+                name: "VPN".into(),
+                icon: "vpn",
+                state,
+                on: self.vpn.on,
+                disabled: busy,
+                busy,
+                pressed: self.vpn.on,
+                list_button: None,
+            });
         }
         let popover = if self.pop {
             self.s.as_ref().map(|s| Popover {
@@ -495,6 +644,7 @@ impl Controls {
                 })
                 .collect(),
             popover,
+            wifi: self.wifi.is_open().then(|| self.wifi.view(tr)),
         }
     }
 }

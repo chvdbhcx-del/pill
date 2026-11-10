@@ -47,6 +47,9 @@ pub(crate) fn defaults() -> Cfg {
     // quiet hours (src/quiet.js, Settings > Behavior): days are strings "0" (Sunday) .. "6"
     let Value::Object(quiet) = json!({ "quiet.on": false, "quiet.from": "22:00", "quiet.to": "07:00", "quiet.days": ["0", "1", "2", "3", "4", "5", "6"] }) else { unreachable!() };
     m.extend(quiet);
+    // VPN (vpn.rs): the whole feature is behind module.vpn; the own client is a name plus a connect and a disconnect command (or client:// link)
+    let Value::Object(vpn) = json!({ "module.vpn": true, "vpn.own.name": "", "vpn.own.connect": "", "vpn.own.disconnect": "", "vpn.admin": false }) else { unreachable!() };
+    m.extend(vpn);
     m
 }
 

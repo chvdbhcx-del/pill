@@ -19,6 +19,7 @@ pub fn tiles(b: Rect, n: usize) -> Vec<Rect> {
     let weights: Vec<f32> = match n {
         3 => vec![9.0, 8.0, 9.0],
         2 => vec![1.0, 1.0],
+        5 => vec![1.0; 5], // the VPN tile makes a fifth
         _ => vec![1.0; 4],
     };
     let cols = weights.len();

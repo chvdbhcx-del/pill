@@ -28,9 +28,9 @@ pub fn is_secret(key: &str) -> bool {
     key.ends_with("Enc") || k.contains(".key.") || k.contains("token") || k.contains("secret") || k.contains("password") || k.contains("apikey")
 }
 
-/// Machine or runtime state that must not travel between PCs.
+/// Machine or runtime state that must not travel between PCs. `vpn.own.*` / `vpn.admin` are commands that Pill would run: never accepted from a file.
 fn is_runtime(key: &str) -> bool {
-    key == "aiSetupDone" || key == "lastSeenVersion" || key.starts_with("aisetup.") || key.starts_with("settingsWin.")
+    key == "aiSetupDone" || key == "lastSeenVersion" || key.starts_with("aisetup.") || key.starts_with("settingsWin.") || key.starts_with("vpn.own.") || key == "vpn.admin"
 }
 
 fn exportable(key: &str) -> bool {
