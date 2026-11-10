@@ -51,6 +51,7 @@ pub fn standard_tabs() -> Vec<TabSpec> {
         t("weather", "Погода", "Weather", 60, "weather", Some(417)),
         t("notifs", "Уведомления", "Notifications", 65, "bell", None),
         t("agents", "Агенты", "Agents", 66, "terminal", None),
+        t("phone", "Телефон", "Phone", 67, "phone", Some(417)),
         t("controls", "Управление", "Controls", 70, "controls", None),
         TabSpec { id: "settings", ru: "Настройки", en: "Settings", order: 900, icon: "settings", hidden: true, height: None },
     ]
@@ -68,6 +69,7 @@ fn module_key(id: &str) -> Option<&'static str> {
         "controls" => "module.controls",
         "notifs" => "module.notifs",
         "agents" => "live.agents",
+        "phone" => "module.phone",
         _ => return None,
     })
 }
@@ -537,7 +539,7 @@ mod tests {
     #[test]
     fn registry_order_and_default_tab() {
         let t = Tabs::new();
-        assert_eq!(ids(&t), ["home", "clipboard", "shelf", "text", "chat", "note", "weather", "notifs", "agents", "controls"]);
+        assert_eq!(ids(&t), ["home", "clipboard", "shelf", "text", "chat", "note", "weather", "notifs", "agents", "phone", "controls"]);
         assert_eq!(t.current(), Some("home"));
         assert!(!ids(&t).contains(&"settings")); // hidden fallback
         let v = t.view(&RuTr);
@@ -558,8 +560,22 @@ mod tests {
         // (settings:changed carries the whole object, so the earlier switches are back on) the open tab went off: first remaining
         assert_eq!(t.current(), Some("clipboard"));
         t.on_event("settings:changed", &json!({}));
-        assert_eq!(ids(&t).len(), 10);
+        assert_eq!(ids(&t).len(), 11);
         assert_eq!(t.current(), Some("clipboard")); // coming back does not steal the tab
+    }
+
+    #[test]
+    fn the_phone_tab_follows_its_module_switch() {
+        let mut t = Tabs::new();
+        assert!(ids(&t).contains(&"phone"));
+        let v = t.view(&EnTr);
+        let b = v.tabs.iter().find(|b| b.id == "phone").unwrap();
+        assert_eq!((b.icon, b.title.as_str()), ("phone", "Phone"));
+        t.on_event("settings:changed", &json!({ "module.phone": false }));
+        assert!(!ids(&t).contains(&"phone"));
+        t.on_event("settings:changed", &json!({}));
+        assert!(ids(&t).contains(&"phone"));
+        assert!(crate::shell::tabs::HIDEABLE.contains(&"phone"));
     }
 
     #[test]
