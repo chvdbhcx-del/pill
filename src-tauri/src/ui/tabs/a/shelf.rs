@@ -20,8 +20,8 @@ use super::play::Sample;
 use crate::ui::view::{Cx, DropEvent, DropPayload, DropPhase, Msg, View};
 use glasskit::canvas::{self, Canvas};
 use glasskit::color::Color;
-use glasskit::controls::Interact;
-use glasskit::ease::{curves, dur, Tween};
+use super::touch::Touch;
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{Cursor, InputEvent, MouseButton, Response};
 use glasskit::lang::Lang;
@@ -61,9 +61,9 @@ pub struct ShelfView {
     v: SV,
     ru: bool,
     sv: ScrollView,
-    chips: HashMap<i64, Interact>,
-    drag_btn: Interact,
-    clear_btn: Interact,
+    chips: HashMap<i64, Touch>,
+    drag_btn: Touch,
+    clear_btn: Touch,
     drag_rect: Rect,
     clear_rect: Rect,
     hover: Option<i64>,
@@ -71,10 +71,19 @@ pub struct ShelfView {
     menu_hover: Option<usize>,
     last_menu: Option<MenuView>,
     press: Press,
-    over_t: Tween<f32>,
+    over_t: Flow,
+    /// 1 while the empty state shows: it cross-fades with the chip list
+    empty_a: Flow,
+    /// the remove button of a hovered chip pops in; it turns red under the pointer
+    xpop: HashMap<i64, Flow>,
+    xred: Flow,
+    /// the context menu highlight slides from item to item: y of the lit item, and how lit
+    mh_y: Flow,
+    mh_a: Flow,
+    /// the fresh highlight of a chip that was just dropped, fading 1 -> 0
+    fresh: HashMap<i64, Flow>,
     last_ms: f64,
     now_ms: f64,
-    fresh_t0: HashMap<i64, f64>,
     flip_from: HashMap<i64, (f32, f32)>,
     last_pos: HashMap<i64, (f32, f32)>,
     flying: HashSet<i64>,
@@ -119,6 +128,7 @@ impl ShelfView {
         base.images = ImageCache::new(6 * 1024 * 1024, 96);
         base.rect = Rect::new(0.0, 0.0, super::W, super::tab_h("shelf").unwrap_or(331.0) - super::CHROME_H);
         let v = model.view(&EnTr, Wall::new(0, 0));
+        let empty0 = v.empty as u8 as f32;
         ShelfView {
             model,
             base,
@@ -126,8 +136,8 @@ impl ShelfView {
             ru: false,
             sv: ScrollView::new(),
             chips: HashMap::new(),
-            drag_btn: Interact::new(),
-            clear_btn: Interact::new(),
+            drag_btn: Touch::new(),
+            clear_btn: Touch::new(),
             drag_rect: Rect::default(),
             clear_rect: Rect::default(),
             hover: None,
@@ -135,10 +145,15 @@ impl ShelfView {
             menu_hover: None,
             last_menu: None,
             press: Press::None,
-            over_t: Tween::at_rest(0.0),
+            over_t: Flow::new(0.0, Feel::FADE),
+            empty_a: Flow::new(empty0, Feel::FADE),
+            xpop: HashMap::new(),
+            xred: Flow::new(0.0, Feel::FADE),
+            mh_y: Flow::px(0.0, Feel::FLOW),
+            mh_a: Flow::new(0.0, Feel::FADE),
+            fresh: HashMap::new(),
             last_ms: 0.0,
             now_ms: 0.0,
-            fresh_t0: HashMap::new(),
             flip_from: HashMap::new(),
             last_pos: HashMap::new(),
             flying: HashSet::new(),
@@ -214,14 +229,19 @@ impl ShelfView {
         self.sync_scroll();
         let ids: HashSet<i64> = self.v.chips.iter().map(|c| c.id).collect();
         self.chips.retain(|id, _| ids.contains(id));
-        self.fresh_t0.retain(|id, _| ids.contains(id));
+        self.fresh.retain(|id, _| ids.contains(id));
+        self.xpop.retain(|id, f| ids.contains(id) && (f.moving() || f.target() > 0.0));
         self.flying.retain(|id| ids.contains(id));
         self.keys.retain(|id, _| ids.contains(id));
         let waker = cx.waker();
         for ch in &self.v.chips {
-            self.chips.entry(ch.id).or_insert_with(Interact::new);
+            self.chips.entry(ch.id).or_insert_with(Touch::new);
             if ch.fresh {
-                self.fresh_t0.entry(ch.id).or_insert(self.now_ms);
+                self.fresh.entry(ch.id).or_insert_with(|| {
+                    let mut f = Flow::new(1.0, Feel::FADE.within(1500.0));
+                    f.to(0.0);
+                    f
+                });
             }
             if let ChipTile::Image(url) = &ch.tile {
                 let key = key_of(ch.id, url);
@@ -248,9 +268,10 @@ impl ShelfView {
         if self.v.menu.is_none() && !self.base.player.is_active("menu") && self.base.player.sample("menu") == Sample::REST {
             self.last_menu = None;
         }
-        if (self.v.over) != (self.over_t.target() > 0.5) {
-            self.over_t.retarget(self.v.over as u8 as f32, dur::MED, curves::EASE_OUT);
+        if self.v.over != (self.over_t.target() > 0.5) {
+            self.over_t.to(self.v.over as u8 as f32);
         }
+        self.empty_a.to(self.v.empty as u8 as f32);
     }
 
     fn advance(&mut self, cx: &mut Cx) -> Vec<BackendCall> {
@@ -330,8 +351,29 @@ impl ShelfView {
         if let Some(new) = id.and_then(|o| self.chips.get_mut(&o)) {
             new.set_hover(true);
         }
+        if let Some(f) = self.hover.and_then(|o| self.xpop.get_mut(&o)) {
+            f.to(0.0);
+        }
+        if let Some(n) = id {
+            self.xpop.entry(n).or_insert_with(|| Flow::new(0.0, Feel::POP)).to(1.0);
+        }
         self.hover = id;
         true
+    }
+
+    /// The context menu's highlight follows the hovered item (it slides, and fades out when the pointer leaves).
+    fn menu_hl(&mut self, item: Option<usize>) {
+        match item {
+            Some(i) => {
+                let y = i as f32 * MENU_ITEM_H;
+                if self.mh_a.target() < 0.5 && !self.mh_a.moving() {
+                    self.mh_y.jump(y);
+                }
+                self.mh_y.to(y);
+                self.mh_a.to(1.0);
+            }
+            None => self.mh_a.to(0.0),
+        }
     }
 
     fn release_all(&mut self) {
@@ -346,7 +388,13 @@ impl ShelfView {
     fn moving(&self, cx: &Cx) -> bool {
         let reduced = cx.reduced_motion || glasskit::ease::reduced();
         let looping = !reduced && (self.v.empty || self.v.over);
-        looping || self.base.player.busy() || self.chips.values().any(|c| c.hover() > 0.0 && c.hover() < 1.0) || self.over_t.progress() < 1.0
+        looping
+            || self.base.player.busy()
+            || self.chips.values().any(|c| c.moving())
+            || self.drag_btn.moving()
+            || self.clear_btn.moving()
+            || [&self.over_t, &self.empty_a, &self.xred, &self.mh_y, &self.mh_a].iter().any(|f| f.moving())
+            || self.xpop.values().chain(self.fresh.values()).any(|f| f.moving())
     }
 
     // ------------------------------------------------------------------------------------------------------------ painting
@@ -355,11 +403,12 @@ impl ShelfView {
         self.base.player.sample(target)
     }
 
-    fn draw_chip(&self, cv: &Canvas, th: &Theme, i: usize, ch: &Chip, pos: (f32, f32), now: f64) {
+    fn draw_chip(&self, cv: &Canvas, th: &Theme, i: usize, ch: &Chip, pos: (f32, f32), _now: f64) {
         let target = format!("chip:{}", ch.id);
         let s = self.sample(&target);
         let ix = self.chips.get(&ch.id);
         let (hov, pressk) = ix.map_or((0.0, 1.0), |x| (x.hover(), x.press_scale(0.97)));
+        let (xpop, xred) = (self.xpop.get(&ch.id).map_or(0.0, |f| f.at()), if self.hover == Some(ch.id) { self.xred.at01() } else { 0.0 });
         let mut alpha = s.alpha.clamp(0.0, 1.0);
         let mut scale = s.scale * pressk;
         if ch.ghost {
@@ -382,7 +431,7 @@ impl ShelfView {
         cv.with_opacity(alpha, |cv| {
             cv.with_transform(m, |cv| {
                 let sel = ch.selected;
-                let fresh = self.fresh_t0.get(&ch.id).map_or(0.0, |t0| 1.0 - curves::EASE_OUT.at(((now - t0) / 1500.0) as f32).clamp(0.0, 1.0));
+                let fresh = self.fresh.get(&ch.id).map_or(0.0, |f| f.at01());
                 if sel {
                     cv.fill_rr(r, 12.0, th.accent_soft);
                     cv.stroke_rr(r, 12.0, 1.0, th.accent);
@@ -428,11 +477,10 @@ impl ShelfView {
                 // the remove button pops in with the hover
                 if hov > 0.0 && !ch.ghost {
                     let xb = x_btn(r);
-                    let red = self.hover == Some(ch.id) && self.hover_x;
                     cv.with_opacity(hov, |cv| {
-                        cv.with_scale_about(xb.center(), 0.5 + 0.5 * hov, |cv| {
-                            cv.fill_circle(xb.center(), 9.0, if red { th.red } else { th.raised2 });
-                            icons::draw(cv, "x", xb.centered(11.0, 11.0), if red { Color::rgb8(255, 255, 255) } else { th.text }, 2.2);
+                        cv.with_scale_about(xb.center(), (0.5 + 0.5 * xpop).max(0.0), |cv| {
+                            cv.fill_circle(xb.center(), 9.0, th.raised2.mix(th.red, xred));
+                            icons::draw(cv, "x", xb.centered(11.0, 11.0), th.text.mix(Color::rgb8(255, 255, 255), xred), 2.2);
                         });
                     });
                 }
@@ -453,7 +501,7 @@ impl ShelfView {
         // Drag all
         let k = self.drag_btn.press_scale(0.96);
         cv.with_scale_about(dr.center(), k, |cv| {
-            cv.fill_rr(dr, 12.0, if self.drag_btn.hovered() { th.card_hover } else { th.card });
+            cv.fill_rr(dr, 12.0, th.card.mix(th.card_hover, self.drag_btn.hover()));
             icons::draw(cv, "grip", Rect::new(dr.x + 12.0, dr.cy() - 7.0, 14.0, 14.0), th.dim, 1.5);
             let tr_ = Rect::new(dr.x + 12.0 + 14.0 + 8.0, dr.y, tw + 2.0, dr.h);
             cv.with_scale_about(tr_.center(), bump.scale, |cv| cv.text(tr_, &drag_txt, Style::new(13.0, 600), th.text));
@@ -495,11 +543,13 @@ impl ShelfView {
                 cv.shadow_rr(r, 12.0, 14.0, 10.0, th.shadow);
                 cv.fill_rr(r, 12.0, th.raised);
                 cv.stroke_rr(r, 12.0, 1.0, th.border);
+                let lit = self.mh_a.at01();
+                if lit > 0.003 {
+                    let y = self.mh_y.at().clamp(0.0, MENU_ITEM_H * (m.entries.len().max(1) - 1) as f32);
+                    cv.fill_rr(Rect::new(r.x + MENU_PAD, r.y + MENU_PAD + y, MENU_W - 2.0 * MENU_PAD, MENU_ITEM_H), 8.0, th.hover.fade(lit));
+                }
                 for (i, e) in m.entries.iter().enumerate() {
                     let ir = Rect::new(r.x + MENU_PAD, r.y + MENU_PAD + i as f32 * MENU_ITEM_H, MENU_W - 2.0 * MENU_PAD, MENU_ITEM_H);
-                    if self.menu_hover == Some(i) && self.v.menu.is_some() {
-                        cv.fill_rr(ir, 8.0, th.hover);
-                    }
                     cv.text(Rect::new(ir.x + 12.0, ir.y, ir.w - 24.0, ir.h), &e.label, Style::new(13.0, 500).ellipsis(), th.text);
                 }
             });
@@ -619,10 +669,12 @@ impl View for ShelfView {
                 let id = hi.and_then(|i| self.v.chips.get(i)).map(|c| c.id);
                 let mut changed = self.hover_to(id);
                 self.hover_x = hi.map_or(false, |i| x_btn(self.chip_rect_vp(i)).contains(p.0, p.1));
+                self.xred.to(self.hover_x as u8 as f32);
                 changed |= was_x != self.hover_x;
                 let mi = self.menu_item_at(p);
                 if mi != self.menu_hover {
                     self.menu_hover = mi;
+                    self.menu_hl(mi);
                     changed = true;
                 }
                 changed |= self.drag_btn.set_hover(self.drag_rect.contains(p.0, p.1) && !self.v.empty);
@@ -647,6 +699,8 @@ impl View for ShelfView {
                 let a = self.hover_to(None);
                 self.hover_x = false;
                 self.menu_hover = None;
+                self.menu_hl(None);
+                self.xred.to(0.0);
                 resp.redraw = a | self.drag_btn.set_hover(false) | self.clear_btn.set_hover(false);
             }
             InputEvent::MouseDown { pos, button: MouseButton::Left, mods, clicks } => {
@@ -743,9 +797,15 @@ impl View for ShelfView {
         let dt = (dt_ms / 1000.0) as f32;
         let mut busy = self.base.player.step(dt_ms);
         for c in self.chips.values_mut() {
-            busy |= c.step(dt);
+            busy |= c.step(dt_ms);
         }
-        busy |= self.drag_btn.step(dt) | self.clear_btn.step(dt) | self.over_t.step(dt) | self.sv.step(dt);
+        if self.v.menu.is_none() {
+            self.mh_a.to(0.0);
+        }
+        for f in [&mut self.over_t, &mut self.empty_a, &mut self.xred, &mut self.mh_y, &mut self.mh_a].into_iter().chain(self.xpop.values_mut()).chain(self.fresh.values_mut()) {
+            f.step(dt_ms);
+        }
+        busy |= self.drag_btn.step(dt_ms) | self.clear_btn.step(dt_ms) | self.sv.step(dt);
         busy | self.moving(cx) | self.model_clock_running()
     }
 
@@ -768,7 +828,7 @@ impl ShelfView {
         let zone = f.zone;
         let reduced = cx.reduced_motion || glasskit::ease::reduced();
         // the zone: transparent border, dashed while empty (breathing) or while a drag is over it (pulsing)
-        let over = self.over_t.value().clamp(0.0, 1.0);
+        let over = self.over_t.at01();
         let ring = self.sample("zone");
         let t_s = (now / 1000.0) as f32;
         if over > 0.0 {
@@ -776,34 +836,17 @@ impl ShelfView {
             let bg = th.accent_soft.fade(1.0).mix(th.accent.alpha(0.26), pulse);
             cv.fill_rr(zone, ZONE_R, bg.fade(over));
             paint::dashed_rr(cv, zone, ZONE_R, th.accent.fade(over));
-        } else if self.v.empty {
+        } else if self.empty_a.at01() > 0.003 {
             let breathe = if reduced { 0.0 } else { 0.5 - 0.5 * (t_s * std::f32::consts::TAU / 3.4).cos() };
-            paint::dashed_rr(cv, zone, ZONE_R, th.text.alpha(0.16 + 0.22 * breathe));
+            paint::dashed_rr(cv, zone, ZONE_R, th.text.alpha((0.16 + 0.22 * breathe) * self.empty_a.at01()));
         }
-        if !self.v.empty {
-            self.draw_head(cv, th, f.head);
-            let chips = std::mem::take(&mut self.v.chips);
-            let c = self.cols();
-            let flip = self.sample("list");
-            let mut new_pos = HashMap::new();
-            self.sv.draw(cv, f.list, th, |cv, _| {
-                for (i, ch) in chips.iter().enumerate() {
-                    let r = chip_rect(i, c);
-                    new_pos.insert(ch.id, (r.x, r.y));
-                    let mut pos = (r.x, r.y);
-                    if flip.active {
-                        if let Some(&(fx, fy)) = self.flip_from.get(&ch.id) {
-                            pos = (fx + (r.x - fx) * flip.p, fy + (r.y - fy) * flip.p);
-                        }
-                    }
-                    // chips are drawn in list content coordinates; `last_pos` / `flip_from` use the same space
-                    self.draw_chip(cv, th, i, ch, pos, now);
-                }
-            });
-            self.last_pos = new_pos;
-            self.v.chips = chips;
-        } else {
-            self.draw_empty(cv, th, zone, cx);
+        // the chip list and the empty state cross-fade
+        let ea = self.empty_a.at01();
+        if ea < 0.997 {
+            cv.with_opacity(1.0 - ea, |cv| self.draw_list_part(cv, th, &f, now));
+        }
+        if ea > 0.003 {
+            cv.with_opacity(ea, |cv| self.draw_empty(cv, th, zone, cx));
         }
         // "landed" ring
         if ring.active && ring.alpha > 0.0 {
@@ -820,6 +863,31 @@ impl ShelfView {
             });
         }
         self.draw_menu(cv, th);
+    }
+
+    /// The head buttons and the chips.
+    fn draw_list_part(&mut self, cv: &Canvas, th: &Theme, f: &Frame, now: f64) {
+        self.draw_head(cv, th, f.head);
+        let chips = std::mem::take(&mut self.v.chips);
+        let c = self.cols();
+        let flip = self.sample("list");
+        let mut new_pos = HashMap::new();
+        self.sv.draw(cv, f.list, th, |cv, _| {
+            for (i, ch) in chips.iter().enumerate() {
+                let r = chip_rect(i, c);
+                new_pos.insert(ch.id, (r.x, r.y));
+                let mut pos = (r.x, r.y);
+                if flip.active {
+                    if let Some(&(fx, fy)) = self.flip_from.get(&ch.id) {
+                        pos = (fx + (r.x - fx) * flip.p, fy + (r.y - fy) * flip.p);
+                    }
+                }
+                // chips are drawn in list content coordinates; `last_pos` / `flip_from` use the same space
+                self.draw_chip(cv, th, i, ch, pos, now);
+            }
+        });
+        self.last_pos = new_pos;
+        self.v.chips = chips;
     }
 }
 

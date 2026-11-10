@@ -20,6 +20,7 @@ pub mod draw;
 pub mod icons;
 mod icons_data;
 pub mod play;
+pub mod touch;
 #[cfg(test)]
 pub mod snap;
 

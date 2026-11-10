@@ -17,7 +17,7 @@ use super::draw::{ImageCache, Source};
 use crate::ui::view::{Cx, Msg, View};
 use base64::Engine;
 use glasskit::canvas::Canvas;
-use glasskit::ease::{curves, dur, Tween};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::edit::{EditEvent, TextInput};
 use glasskit::geom::Rect;
 use glasskit::input::{Cursor, InputEvent, KeyCode, MouseButton, Response};
@@ -70,11 +70,15 @@ pub struct ClipboardView {
     down: Option<Hit>,
     pub(crate) hover: Option<Hit>,
     /// per-row highlight amount (hover / selection), by clip id
-    pub(crate) hl: HashMap<i64, Tween<f32>>,
-    pub(crate) hover_btn: Tween<f32>,
-    pub(crate) press: Tween<f32>,
-    pub(crate) wipe_hover: Tween<f32>,
-    pub(crate) arm: Tween<f32>,
+    pub(crate) hl: HashMap<i64, Flow>,
+    /// hover highlight of every row button that is lit or fading out, by (row index, button)
+    pub(crate) bh: HashMap<(usize, Act), Flow>,
+    /// press squeeze 0..1 (it springs back past 0 a little: the release bounce)
+    pub(crate) press: Flow,
+    /// the pressed target stays squeezed until the press has sprung back
+    released: Option<Hit>,
+    pub(crate) wipe_hover: Flow,
+    pub(crate) arm: Flow,
     /// where each row was drawn last frame (content coordinates), for the FLIP of the next list
     pub(crate) tops: HashMap<i64, f32>,
     /// rows that moved: id -> old top, applied while the `list` cue plays
@@ -125,10 +129,11 @@ impl ClipboardView {
             down: None,
             hover: None,
             hl: HashMap::new(),
-            hover_btn: Tween::at_rest(0.0),
-            press: Tween::at_rest(0.0),
-            wipe_hover: Tween::at_rest(0.0),
-            arm: Tween::at_rest(0.0),
+            bh: HashMap::new(),
+            press: Flow::new(0.0, Feel::SNAP),
+            released: None,
+            wipe_hover: Flow::new(0.0, Feel::FADE),
+            arm: Flow::new(0.0, Feel::FADE),
             tops: HashMap::new(),
             flip_from: HashMap::new(),
             last_ms: None,
@@ -295,8 +300,7 @@ impl ClipboardView {
 
     fn set_hl(&mut self, id: i64, on: bool) {
         let v = if on { 1.0 } else { 0.0 };
-        let t = self.hl.entry(id).or_insert_with(|| Tween::at_rest(0.0));
-        t.retarget(v, dur::FAST, curves::EASE_OUT);
+        self.hl.entry(id).or_insert_with(|| Flow::new(0.0, Feel::FADE)).to(v);
     }
 
     fn select_hl(&mut self) {
@@ -363,7 +367,7 @@ impl ClipboardView {
     // ------------------------------------------------------------------------------------------------------------ input
 
     pub(crate) fn down_is(&self, h: Hit) -> bool {
-        self.down == Some(h)
+        self.down == Some(h) || self.released == Some(h)
     }
 
     fn forward_edit(&mut self, ev: &InputEvent) {
@@ -495,13 +499,21 @@ impl View for ClipboardView {
         self.flush_deferred(cx);
         busy |= self.scroll.step(dt);
         busy |= self.input.busy();
-        for t in self.hl.values_mut() {
-            busy |= t.step(dt);
-        }
-        busy |= self.hover_btn.step(dt) | self.press.step(dt) | self.wipe_hover.step(dt) | self.arm.step(dt);
         let armed = self.vm().wipe_armed;
-        self.arm.retarget(armed as u8 as f32, dur::MED, curves::EASE_OUT);
-        self.hl.retain(|_, t| !t.finished() || t.target() > 0.0);
+        self.arm.to(armed as u8 as f32);
+        for t in self.hl.values_mut().chain(self.bh.values_mut()) {
+            t.step(dt_ms);
+            busy |= t.moving();
+        }
+        for t in [&mut self.press, &mut self.wipe_hover, &mut self.arm] {
+            t.step(dt_ms);
+            busy |= t.moving();
+        }
+        if !self.press.moving() && self.down.is_none() {
+            self.released = None;
+        }
+        self.hl.retain(|_, t| t.moving() || t.target() > 0.0);
+        self.bh.retain(|_, t| t.moving() || t.target() > 0.0);
         if busy {
             cx.request_frame();
         }
@@ -521,13 +533,13 @@ impl View for ClipboardView {
                 if hit != self.hover {
                     self.hover = hit;
                     r.redraw = true;
-                    match hit {
-                        Some(Hit::Btn(..)) => {
-                            self.hover_btn = Tween::new(0.0, 1.0, dur::FAST, curves::EASE_OUT);
-                        }
-                        _ => self.hover_btn = Tween::at_rest(0.0),
+                    for (k, f) in self.bh.iter_mut() {
+                        f.to((hit == Some(Hit::Btn(k.0, k.1))) as u8 as f32);
                     }
-                    self.wipe_hover.retarget((hit == Some(Hit::Wipe)) as u8 as f32, dur::FAST, curves::EASE_OUT);
+                    if let Some(Hit::Btn(i, a)) = hit {
+                        self.bh.entry((i, a)).or_insert_with(|| Flow::new(0.0, Feel::FADE)).to(1.0);
+                    }
+                    self.wipe_hover.to((hit == Some(Hit::Wipe)) as u8 as f32);
                     if let Some(Hit::Row(i) | Hit::Btn(i, _)) = hit {
                         self.act(cx, Action::Hover(i));
                         self.select_hl();
@@ -556,7 +568,7 @@ impl View for ClipboardView {
                     self.focus_search(cx, false);
                 }
                 if hit.is_some() {
-                    self.press = Tween::new(0.0, 1.0, dur::XS, curves::EASE_OUT);
+                    self.press.to(1.0);
                     return Response { consumed: true, redraw: true, capture: true, ..Response::NONE };
                 }
                 Response::redraw()
@@ -569,7 +581,8 @@ impl View for ClipboardView {
                 }
                 let hit = self.hit_at(*pos);
                 let down = self.down.take();
-                self.press = Tween::new(self.press.value(), 0.0, dur::SLOW, curves::SPRING_POP);
+                self.released = down;
+                self.press.to(0.0);
                 if let (Some(h), Some(d)) = (hit, down) {
                     if h == d {
                         self.click(cx, h, mods.shift);
@@ -583,7 +596,10 @@ impl View for ClipboardView {
             }
             InputEvent::MouseLeave => {
                 self.hover = None;
-                self.wipe_hover.retarget(0.0, dur::FAST, curves::EASE_OUT);
+                self.wipe_hover.to(0.0);
+                for f in self.bh.values_mut() {
+                    f.to(0.0);
+                }
                 Response::redraw()
             }
             InputEvent::Wheel { .. } => {
