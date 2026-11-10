@@ -199,7 +199,7 @@ fn conditions_reference_existing_keys_and_rows_stay_reachable() {
 fn custom_widgets_and_actions_are_a_closed_vocabulary() {
     // the renderer must implement exactly these; adding one means adding it here and to the renderer
     let known: BTreeSet<&str> = [
-        "character.reactions", "general.backup", "hotkeys.launcher", "modules.profiles", "search.everything", "ai.providers", "aisetup.intro", "aisetup.whisper", "aisetup.chat",
+        "character.reactions", "general.backup", "hotkeys.launcher", "modules.home", "modules.profiles", "modules.tabs", "search.everything", "ai.providers", "aisetup.intro", "aisetup.whisper", "aisetup.chat",
         "voice.providers", "weather.city", "updates.whatsnew",
     ]
     .into_iter()
@@ -268,7 +268,7 @@ fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
     let expect = [
-        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 19), ("live", 36), ("clipboard", 18), ("search", 4),
+        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 21), ("live", 36), ("clipboard", 18), ("search", 4),
         ("sound", 15), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
     ];
     for (id, n) in expect {
@@ -451,6 +451,17 @@ const NOT_EXPOSED: &[(&str, &str)] = &[
     ("aisetup.whisper.model", "managed by the AI setup page through aisetup_whisper_set"),
     ("aisetup.whisper.port", "managed by aisetup.rs (next free port)"),
     ("module.uninstall", "the uninstall module has no switch in the web settings (always on)"),
+    ("home.recent", "a chip of the Modules page's Home widget (modules.home), not a row"),
+    ("home.volume", "a chip of the Modules page's Home widget (modules.home), not a row"),
+    ("home.tile.area", "a chip of the Modules page's Home widget (modules.home), not a row"),
+    ("home.tile.screen", "a chip of the Modules page's Home widget (modules.home), not a row"),
+    ("home.tile.ocr", "a chip of the Modules page's Home widget (modules.home), not a row"),
+    ("home.tile.qr", "a chip of the Modules page's Home widget (modules.home), not a row"),
+    ("home.tile.picker", "a chip of the Modules page's Home widget (modules.home), not a row"),
+    ("home.tile.plain", "a chip of the Modules page's Home widget (modules.home), not a row"),
+    ("home.tile.record", "a chip of the Modules page's Home widget (modules.home), not a row"),
+    ("home.tile.command", "a chip of the Modules page's Home widget (modules.home), not a row"),
+    ("tabs.hidden", "the chips of the Modules page's tab widget (modules.tabs), a list of tab ids"),
 ];
 
 #[test]

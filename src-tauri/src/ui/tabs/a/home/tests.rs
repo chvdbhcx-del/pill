@@ -420,3 +420,4 @@ fn dark_and_light_differ_and_scale_two_is_twice_as_big() {
 }
 
 mod chip;
+mod parts;

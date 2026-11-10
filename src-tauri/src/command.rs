@@ -1189,7 +1189,8 @@ fn mod_on(key: &str) -> bool {
 
 fn tab_on(id: &str) -> bool {
     match id {
-        "home" => mod_on("module.media") || mod_on("module.launcher"),
+        // Home stays while any of its parts is on; a tab taken off the strip (`tabs.hidden`) is still offered here
+        "home" => pill_ui_core::panel::a::home_mods::PARTS.iter().any(|p| settings::get_bool(p.key, p.default)),
         "clipboard" | "shelf" | "text" | "chat" | "note" | "weather" | "controls" => mod_on(&format!("module.{id}")),
         _ => true,
     }

@@ -50,6 +50,8 @@ pub struct Data {
     pub whatsnew: Flow,
     pub whatsnew_open: bool,
     pub tick: u64,
+    /// the schematic of the Home tab in the Modules page (it relays itself as parts are switched)
+    pub home: crate::ui::tabs::a::home::slots::Slots,
 }
 
 impl Default for Data {
@@ -77,6 +79,7 @@ impl Default for Data {
             whatsnew: Flow::new(0.0, Feel::FLOW),
             whatsnew_open: false,
             tick: 0,
+            home: crate::ui::tabs::a::home::slots::Slots::new(),
         }
     }
 }
@@ -129,6 +132,8 @@ impl SettingsView {
             "updates.whatsnew" => self.w_whatsnew(d, full, paint),
             "hotkeys.launcher" => self.w_launcher(d, r, full, paint),
             "modules.profiles" => self.w_profiles(d, r, full, paint),
+            "modules.home" => self.w_home(d, r, full, paint),
+            "modules.tabs" => self.w_tabs(d, r, full, paint),
             "search.everything" => self.w_everything(d, r, full, paint),
             "aisetup.whisper" => self.w_whisper(d, r, full, paint),
             "aisetup.chat" => self.w_chat(d, r, full, paint),
@@ -167,6 +172,7 @@ impl SettingsView {
             busy |= tick(p, dt);
         }
         self.data.pops.retain(|_, p| p.moving());
+        busy |= self.step_home_preview(dt as f64 * 1000.0);
         busy || self.data.job.is_some()
     }
 

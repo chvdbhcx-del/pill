@@ -72,6 +72,13 @@ pub(crate) fn defaults() -> Cfg {
     // VPN (vpn.rs): the whole feature is behind module.vpn; the own client is a name plus a connect and a disconnect command (or client:// link)
     let Value::Object(vpn) = json!({ "module.vpn": true, "vpn.own.name": "", "vpn.own.connect": "", "vpn.own.disconnect": "", "vpn.admin": false }) else { unreachable!() };
     m.extend(vpn);
+    // Settings > Modules > What is on Home (home.*; the player and the shortcuts are module.media / module.launcher) and Island tabs (tabs.hidden: tabs
+    // taken off the strip that still open by hotkey and command). "Recently copied" shows clipboard text on Home, so it is opt-in.
+    let Value::Object(homes) = json!({
+        "home.recent": false, "home.volume": true, "home.tile.area": true, "home.tile.screen": true, "home.tile.ocr": true, "home.tile.qr": true,
+        "home.tile.picker": true, "home.tile.plain": true, "home.tile.record": true, "home.tile.command": true, "tabs.hidden": []
+    }) else { unreachable!() };
+    m.extend(homes);
     m
 }
 

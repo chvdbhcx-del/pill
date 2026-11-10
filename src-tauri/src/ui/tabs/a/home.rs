@@ -26,6 +26,9 @@ mod layout;
 mod paint;
 mod target;
 mod player;
+mod parts;
+mod recent;
+pub(crate) mod slots;
 #[cfg(test)]
 mod tests;
 
@@ -44,7 +47,11 @@ use glasskit::scroll::{ScrollState, ScrollView};
 use glasskit::theme::Theme;
 use pill_ui_core::panel::a::cover::{downsample, pick_colors, CoverColors};
 use pill_ui_core::panel::a::home::{self as hm, Action, Ctl, Home, VolKey};
+use pill_ui_core::panel::a::home_mods::{self as hmod, tile_part};
+use pill_ui_core::panel::a::home_recent;
 use pill_ui_core::panel::a::launcher::{self as lc, Action as LAction};
+use recent::Recent;
+use slots::Slots;
 use pill_ui_core::panel::a::{BackendCall, EnTr, RuTr, Tr};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -90,6 +97,8 @@ enum Hit {
     Target,
     Dev,
     Tile(usize),
+    /// A chip of the "recently copied" card.
+    Recent(usize),
     Add,
     App(i64),
     AppX(i64),
@@ -152,6 +161,11 @@ pub struct HomeView {
     target: target::Target,
     /// the player card: style geometry, reflections, fill tint, lyrics column (player.rs)
     pl: PlayerFx,
+    /// Settings > Modules > What is on Home: where every part is (animated) and the clipboard chips.
+    slots: Slots,
+    recent: Recent,
+    /// `settings_get` / `settings:changed` has been seen, so the parts that are on are known
+    cfg_seen: bool,
 }
 
 impl HomeView {
@@ -199,6 +213,9 @@ impl HomeView {
             vol_kick: 0,
             target: target::Target::new(),
             pl: PlayerFx::new(),
+            slots: Slots::new(),
+            recent: Recent::new(),
+            cfg_seen: false,
         }
     }
 
@@ -274,6 +291,7 @@ impl HomeView {
         self.sync_cover_tint();
         self.sync_menu();
         self.compute_apps();
+        self.sync_slots(cx);
     }
 
     fn sync_layout(&mut self) {
@@ -443,64 +461,7 @@ impl HomeView {
     }
 
     fn hit(&self, p: Pt) -> Option<Hit> {
-        let (x, y) = p;
-        if self.menu_open {
-            let m = layout::menu(self.v.devices.items.len());
-            if m.contains(x, y) {
-                let i = ((y - m.y - 5.0 + self.menu_scroll.offset()) / layout::MENU_ROW).floor();
-                return (i >= 0.0 && (i as usize) < self.v.devices.items.len() && y >= m.y + 5.0 && y < m.bottom() - 5.0).then_some(Hit::MenuItem(i as usize));
-            }
-        }
-        if layout::STRIP.contains(x, y) || self.apps.iter().any(|a| a.rect.contains(x, y)) {
-            for a in self.apps.iter().rev() {
-                let badge = layout::app_x(a.rect);
-                if self.hover_amount(Hit::App(a.id)) > 0.3 && !self.v.launcher.reordering && badge.contains(x, y) {
-                    return Some(Hit::AppX(a.id));
-                }
-            }
-            for a in self.apps.iter().rev() {
-                if a.rect.contains(x, y) && layout::STRIP.contains(x, y) {
-                    return Some(Hit::App(a.id));
-                }
-            }
-            let add = Rect::new(self.add_x, layout::add(0).y, layout::ADD, layout::ADD);
-            if add.contains(x, y) && layout::STRIP.contains(x, y) {
-                return Some(Hit::Add);
-            }
-        }
-        if self.v.player.none && layout::PLAYER.contains(x, y) {
-            return None;
-        }
-        if !self.v.player.none {
-            if hit_rounded(self.pl.geo.main, 18.0, p) {
-                return Some(Hit::Main);
-            }
-            if hit_rounded(self.pl.geo.prev, 14.0, p) {
-                return Some(Hit::Prev);
-            }
-            if hit_rounded(self.pl.geo.next, 14.0, p) {
-                return Some(Hit::Next);
-            }
-            if self.v.player.source_multi && self.pl.geo.src.contains(x, y) {
-                return Some(Hit::Src);
-            }
-            if self.v.player.seek.enabled && self.pl.geo.seek.contains(x, y) {
-                return Some(Hit::Seek);
-            }
-        }
-        if layout::MUTE.contains(x, y) {
-            return Some(Hit::Mute);
-        }
-        if Rect::new(layout::VOL.x, layout::VOL.y - 4.0, layout::VOL.w, layout::VOL.h + 8.0).contains(x, y) {
-            return Some(Hit::Vol);
-        }
-        if target::rect().contains(x, y) {
-            return Some(Hit::Target);
-        }
-        if layout::DEV.contains(x, y) {
-            return Some(Hit::Dev);
-        }
-        (0..self.v.tiles.len()).find(|&i| layout::tile(i).contains(x, y)).map(Hit::Tile)
+        self.hit_parts(p)
     }
 
     fn hover_amount(&self, h: Hit) -> f32 {
@@ -540,11 +501,15 @@ impl HomeView {
         } else {
             self.mh_a.to(0.0);
         }
+        self.recent.hover(if let Some(Hit::Recent(i)) = h { Some(i) } else { None });
         self.hover = h;
         true
     }
 
     fn set_press(&mut self, h: Option<Hit>, on: bool) {
+        if let Some(Hit::Recent(i)) = h {
+            self.recent.press(i, on);
+        }
         if let Some(h) = h {
             self.hov.entry(h).or_insert_with(Touch::new).set_press(on);
         }
@@ -559,11 +524,11 @@ impl HomeView {
 
     fn seek_value(&self, x: f32) -> f64 {
         let r = self.pl.geo.seek;
-        hm::vol_at(x, r.x, r.w, r.w) as f64 / 100.0 * self.v.player.seek.max_ms as f64
+        hm::vol_at(self.player_x(x), r.x, r.w, r.w) as f64 / 100.0 * self.v.player.seek.max_ms as f64
     }
 
     fn vol_value(&self, x: f32) -> f32 {
-        hm::vol_at(x, layout::VOL.x, layout::VOL.w, layout::VOL.w)
+        hm::vol_at(self.volume_x(x), layout::VOL.x, layout::VOL.w, layout::VOL.w)
     }
 
     /// Advance every spring of the tab (from `step`, after the view-model is fresh); true while one still moves.
@@ -601,7 +566,7 @@ impl HomeView {
             f.step(dt_ms);
             busy |= f.moving();
         }
-        busy | self.target.step(dt_ms)
+        busy | self.target.step(dt_ms) | self.slots.step(dt_ms) | self.recent.step(dt_ms)
     }
 
     fn activate(&mut self, h: Hit, cx: &mut Cx) {
@@ -620,6 +585,12 @@ impl HomeView {
                 if let Some(t) = self.v.tiles.get(i).filter(|t| !t.soon) {
                     let id = t.id.to_string();
                     self.act(cx, Action::Tile(id));
+                }
+            }
+            Hit::Recent(i) => {
+                if let Some(id) = self.recent.id_at(i) {
+                    self.recent.flash(i);
+                    self.run(cx, vec![home_recent::copy_call(id)]);
                 }
             }
             Hit::Add => self.act(cx, Action::Launcher(LAction::AddHint)),
@@ -664,7 +635,7 @@ impl HomeView {
 
     fn on_down(&mut self, p: Pt, button: MouseButton, cx: &mut Cx) -> Response {
         let h = self.hit(p);
-        if self.menu_open && !matches!(h, Some(Hit::MenuItem(_)) | Some(Hit::Dev)) && !layout::menu(self.v.devices.items.len()).contains(p.0, p.1) {
+        if self.menu_open && !matches!(h, Some(Hit::MenuItem(_)) | Some(Hit::Dev)) && !self.menu_rect().contains(p.0, p.1) {
             self.act(cx, Action::DevClose);
         }
         self.vol_focus = h == Some(Hit::Vol);
@@ -742,16 +713,17 @@ impl HomeView {
     }
 
     fn on_wheel(&mut self, p: Pt, delta: Pt, mods: glasskit::input::Modifiers, precise: bool, cx: &mut Cx) -> Response {
-        if self.menu_open && layout::menu(self.v.devices.items.len()).contains(p.0, p.1) {
+        if self.menu_open && self.menu_rect().contains(p.0, p.1) {
             let ev = InputEvent::Wheel { pos: p, delta, mods, precise };
-            let r = self.menu_scroll.event(&ev, layout::menu(self.v.devices.items.len()).inset_xy(0.0, 5.0));
+            let r = self.menu_scroll.event(&ev, self.menu_rect().inset_xy(0.0, 5.0));
             return Response { consumed: true, redraw: true, ..r };
         }
-        if layout::VOL_ROW.contains(p.0, p.1) && delta.1 != 0.0 {
+        let (vp, sp) = (self.slots.to_classic(2, p), self.slots.to_classic(hmod::STRIP, p));
+        if self.slots.live(2) && layout::VOL_ROW.contains(vp.0, vp.1) && delta.1 != 0.0 {
             self.act(cx, Action::VolWheel { delta_y: delta.1, lines: false });
             return Response { consumed: true, redraw: true, ..Response::NONE };
         }
-        if layout::STRIP.contains(p.0, p.1) && self.strip.scrollable() {
+        if self.slots.live(hmod::STRIP) && layout::STRIP.contains(sp.0, sp.1) && self.strip.scrollable() {
             let d = if delta.0 != 0.0 { delta.0 } else if mods.shift { delta.1 } else { 0.0 };
             if d != 0.0 && self.strip.wheel(d, precise) {
                 self.compute_apps();
@@ -803,11 +775,13 @@ fn hit_rounded(r: Rect, rad: f32, p: Pt) -> bool {
 
 impl View for HomeView {
     fn size_hint(&self) -> Option<(f32, f32)> {
-        Some((super::W, super::tab_h("home")? - super::CHROME_H))
+        // as tall as the parts that are on (the classic 260 with everything on)
+        Some((super::W, self.slots.content_h()))
     }
 
     fn on_show(&mut self, cx: &mut Cx) {
-        self.base.show(cx, &["media:changed", "live:volume", "settings:changed", "pill:show", "pill:hide", "launcher:changed", "lyrics:changed"], TICK_MS);
+        self.base.show(cx, &["media:changed", "live:volume", "settings:changed", "pill:show", "pill:hide", "launcher:changed", "lyrics:changed", "clip:added"], TICK_MS);
+        self.recent.mark_stale();
         self.clock = Some(cx.now_ms);
         self.seek_init = false;
         self.vol_seen = false;
@@ -833,8 +807,14 @@ impl View for HomeView {
 
     fn message(&mut self, msg: Msg, cx: &mut Cx) -> Response {
         self.advance(cx);
-        match self.base.classify(msg, cx) {
+        let inc = self.base.classify(msg, cx);
+        if self.recent_message(cx, &inc) {
+            self.after(cx);
+            return Response::redraw();
+        }
+        match inc {
             Incoming::Event { name, payload } => {
+                self.cfg_seen |= name == "settings:changed";
                 let mut calls = if self.target.ignores_event(&name) { vec![] } else { self.model.on_event(&name, &payload) };
                 if (self.target.is_player() && name == "media:changed") // another player: another audio session
                     || (name == "settings:changed" && self.target.load(&payload)) // switched in Settings > Sound
@@ -850,6 +830,7 @@ impl View for HomeView {
                     Err(_) if cmd == "media_volume_set" => Value::Null,
                     Err(_) => return Response::NONE,
                 };
+                self.cfg_seen |= cmd == "settings_get";
                 let mut calls = self.model.on_result(cmd, &args, &value, tr(cx));
                 if cmd == "settings_get" && self.target.load(&value) {
                     calls.push(BackendCall::bare("media_volume_get")); // switched in Settings > Sound
@@ -913,7 +894,7 @@ impl View for HomeView {
 
     fn on_drop(&mut self, ev: &DropEvent, cx: &mut Cx) -> Response {
         self.advance(cx);
-        let p = self.local(ev.pos);
+        let p = self.slots.to_classic(hmod::STRIP, self.local(ev.pos));
         let pos = json!({ "x": p.0, "y": p.1 });
         let calls = match (&ev.phase, &ev.payload) {
             (DropPhase::Enter, _) => self.model.on_event("tauri://drag-enter", &json!({ "position": pos })),

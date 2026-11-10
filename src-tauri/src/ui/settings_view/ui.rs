@@ -39,6 +39,9 @@ pub enum Act {
     // weather
     CityPick(usize),
     CitySearch,
+    // modules: a chip of the Home widget (index into home_mods::PARTS), a chip of the tab widget
+    HomeChip(usize),
+    TabChip(&'static str),
     // profiles
     ProfileSave,
     ProfileApply(String),
