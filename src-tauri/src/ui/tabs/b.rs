@@ -15,6 +15,7 @@ mod note;
 mod note_doc;
 mod text;
 mod timer_card;
+mod timer_wheel;
 
 pub use crate::ui::tabs::fx::take as take_fx;
 pub(crate) use chat::is_picked;

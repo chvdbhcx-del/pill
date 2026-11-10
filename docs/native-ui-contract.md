@@ -159,6 +159,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `timer_cancel` | - | `TimerState` | timers.rs |
 | `timer_state` | - | `TimerState` | timers.rs |
 | `sound_play` | `tone: Option<String>` | `()` | timers.rs |
+| `alert_ack` | `id: Option<i64>` | `()` | alert.rs |
 | `kbd_state` | - | `Option<Value>` | watch.rs |
 | `vdesk_state` | - | `Value` | vdesk.rs |
 | `watch_pause` | - | `()` | watch.rs |

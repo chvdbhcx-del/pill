@@ -438,7 +438,7 @@ fn synth(tone: &str) -> Vec<u8> {
     w
 }
 
-fn play_tone(tone: &str) {
+pub(crate) fn play_tone(tone: &str) {
     let wav = synth(tone);
     // SND_SYNC on its own thread: the buffer must outlive the playback; a newer signal replaces an older one
     std::thread::spawn(move || unsafe {
@@ -451,7 +451,7 @@ fn play_tone(tone: &str) {
 
 /// "Проверить" in Settings > Sound: plays the given signal (or the chosen one) whatever the on/off switch says.
 pub fn sound_play(tone: Option<String>) {
-    play_tone(&tone.unwrap_or_else(|| crate::settings::get_str("sound.reminderTone", "chime")));
+    crate::alert::preview(tone);
 }
 
 fn fire_due(now: i64) {
@@ -460,6 +460,7 @@ fn fire_due(now: i64) {
         let v = st.query_map([now], |r| Ok(Due { id: r.get(0)?, kind: r.get(1)?, text: r.get(2)?, due_at: r.get(3)?, rule: r.get(4)? }))?.collect::<Result<Vec<_>, _>>()?;
         Ok(v)
     }).unwrap_or_default();
+    crate::alert::expire(now);
     for d in rows {
         let next = if d.rule == "none" { None } else { advance(&d.rule, d.due_at, now) };
         store::with(|c| match next {
@@ -468,7 +469,10 @@ fn fire_due(now: i64) {
             None => c.execute("update reminders set fired = 1 where id = ?1", [d.id]),
         });
         if now - d.due_at <= LATE_MS && crate::settings::get_bool("sound.reminders", true) {
-            play_tone(&crate::settings::get_str("sound.reminderTone", "chime"));
+            crate::alert::play_alert(); // settings timer.sound / timer.soundFile, else the Settings > Sound signal
+        }
+        if now - d.due_at <= LATE_MS {
+            crate::alert::arm(d.id, d.kind == "timer", now); // the island glows until it is answered
         }
         emit("remind:due", serde_json::json!({ "id": d.id, "text": d.text, "kind": d.kind, "late": now - d.due_at > LATE_MS, "repeat": d.rule, "due_at": d.due_at }));
         if d.kind == "timer" { emit("timer:done", serde_json::json!({ "id": d.id })); }
@@ -521,9 +525,9 @@ pub fn remind_list() -> Vec<Reminder> {
 }
 
 /// Finish a reminder (a repeating one stops here: its rule ends).
-pub fn remind_done(id: i64) { store::with(|c| c.execute("update reminders set done = 1 where id = ?1", [id])); changed(); }
+pub fn remind_done(id: i64) { store::with(|c| c.execute("update reminders set done = 1 where id = ?1", [id])); crate::alert::answer(id); changed(); }
 
-pub fn remind_delete(id: i64) { store::with(|c| c.execute("delete from reminders where id = ?1", [id])); changed(); }
+pub fn remind_delete(id: i64) { store::with(|c| c.execute("delete from reminders where id = ?1", [id])); crate::alert::answer(id); changed(); }
 
 /// Fire again in `minutes`. A repeating reminder keeps its rule; the snooze is a one-shot copy.
 pub fn remind_snooze(id: i64, minutes: i64) {
@@ -537,6 +541,7 @@ pub fn remind_snooze(id: i64, minutes: i64) {
             c.execute("insert into reminders (kind, text, due_at, repeat_rule, done, created_at) values ('reminder', ?1, ?2, 'none', 0, ?3)", (text, due, now))
         }
     });
+    crate::alert::answer(id);
     changed();
 }
 
@@ -563,12 +568,14 @@ pub fn timer_start(seconds: i64) -> TimerState {
         c.execute("update reminders set done = 1 where kind = 'timer' and done = 0", [])?;
         c.execute("insert into reminders (kind, text, due_at, repeat_rule, done, created_at, total_s) values ('timer', '', ?1, 'none', 0, ?2, ?3)", (now + s * 1000, now, s))
     });
+    crate::alert::answer_timers();
     changed();
     timer_state()
 }
 
 pub fn timer_cancel() -> TimerState {
     store::with(|c| c.execute("update reminders set done = 1 where kind = 'timer' and done = 0", []));
+    crate::alert::answer_timers();
     changed();
     timer_state()
 }

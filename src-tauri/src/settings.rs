@@ -63,6 +63,9 @@ pub(crate) fn defaults() -> Cfg {
     // GPU drawing (off = software rendering, read once at start)
     let Value::Object(win) = json!({ "showInApps": [], "fullscreenPeek": true, "fullscreenPeekEdge": false, "ui.gpu": true }) else { unreachable!() };
     m.extend(win);
+    // timer alert sound (alert.rs) and the download ring / ignored extensions (dlguard.rs, ui-core live system)
+    let Value::Object(alerts) = json!({ "live.downloadRing": false, "live.dlIgnoreExt": "", "timer.sound": "default", "timer.soundFile": "" }) else { unreachable!() };
+    m.extend(alerts);
     m
 }
 

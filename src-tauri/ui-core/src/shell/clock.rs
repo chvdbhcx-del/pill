@@ -143,6 +143,9 @@ pub enum SlotItem {
     Temp(i32),
     Text(String),
     Spec(Value),
+    /// A small progress ring (a running download). Presence only: the island paints its value from its own flow, so a progress
+    /// update never rebuilds the row. It stands next to what the column already shows instead of replacing it.
+    Ring,
 }
 
 /// `Pill.setClockSlots({ left, right })`; `None` = empty column slot.
@@ -229,7 +232,8 @@ pub fn build_row(i: &ClockInputs) -> ClockRow {
         ClockItem::WxIcon { id, glyph, cls }
     };
     let mut left = Vec::new();
-    match &i.slots.left {
+    let (sl_left, sl_right) = (i.slots.left.as_ref().filter(|x| **x != SlotItem::Ring), i.slots.right.as_ref().filter(|x| **x != SlotItem::Ring));
+    match sl_left {
         Some(sl) => left.push(ClockItem::Slot(sl.clone())),
         None if !away_right && show_icon => left.push(icon()),
         None => {}
@@ -238,7 +242,7 @@ pub fn build_row(i: &ClockInputs) -> ClockRow {
         left.push(ClockItem::Date(date_text(&i.local, i.lang)));
     }
     let mut right = Vec::new();
-    if i.slots.right.is_none() && away_right && show_icon {
+    if sl_right.is_none() && away_right && show_icon {
         right.push(icon());
     }
     if let Some(b) = i.battery {
@@ -246,7 +250,7 @@ pub fn build_row(i: &ClockInputs) -> ClockRow {
             right.push(ClockItem::Battery { percent: b.percent, low: b.percent <= 15.0 && !b.charging, charging: b.charging });
         }
     }
-    match &i.slots.right {
+    match sl_right {
         Some(sl) => right.push(ClockItem::Slot(sl.clone())),
         None if show_deg => right.push(ClockItem::Temp(js_round(i.wx.unwrap().temp) as i32)),
         None => {}
@@ -254,6 +258,9 @@ pub fn build_row(i: &ClockInputs) -> ClockRow {
     // chips: the layout hugs the time on the left, the desktop closes the right column
     left.extend(s.chips[0].iter().cloned().map(ClockItem::Tag));
     right.extend(s.chips[1].iter().cloned().map(ClockItem::Tag));
+    if i.slots.right == Some(SlotItem::Ring) {
+        right.push(ClockItem::Slot(SlotItem::Ring));
+    }
     // the legs' eyes normally stand in a 30 px slot after the row; when their own side column is empty they stand in that column
     let eye_col_left = i.char_side == CharSide::Left;
     let eic = i.char_legs && if eye_col_left { left.is_empty() } else { right.is_empty() };
@@ -442,6 +449,25 @@ mod tests {
         assert_eq!(r.right[1], ClockItem::Temp(16));
         let r = row_with(&s, Some(&w), None, &none, CharSide::Left);
         assert!(matches!(r.left[0], ClockItem::WxIcon { .. }));
+    }
+
+    #[test]
+    fn the_download_ring_stands_next_to_the_temperature_instead_of_replacing_it() {
+        let s = settings(json!({}));
+        let w = wx(16.4, "clear-day");
+        let ring = ClockSlots { left: None, right: Some(SlotItem::Ring) };
+        let r = row_with(&s, Some(&w), None, &ring, CharSide::Unset);
+        assert_eq!(r.right, vec![ClockItem::Temp(16), ClockItem::Slot(SlotItem::Ring)]);
+        assert!(matches!(r.left[0], ClockItem::WxIcon { .. }), "the icon stays too");
+        let r = row_with(&s, Some(&w), None, &ring, CharSide::Right);
+        assert!(matches!(r.right[0], ClockItem::WxIcon { .. }), "even when the icon is in the right column");
+        assert_eq!(r.right.last(), Some(&ClockItem::Slot(SlotItem::Ring)));
+        // with no weather the ring is alone in its column
+        let r = row_with(&s, None, None, &ring, CharSide::Unset);
+        assert_eq!(r.right, vec![ClockItem::Slot(SlotItem::Ring)]);
+        // a real slot item still replaces the temperature
+        let t = ClockSlots { left: None, right: Some(SlotItem::Temp(3)) };
+        assert_eq!(row_with(&s, Some(&w), None, &t, CharSide::Unset).right, vec![ClockItem::Slot(SlotItem::Temp(3))]);
     }
 
     #[test]

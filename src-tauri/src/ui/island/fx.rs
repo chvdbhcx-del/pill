@@ -322,12 +322,12 @@ impl LiveFx {
 
     /// The numbers the content being shown is painted with.
     pub fn fx(&self) -> Fx<'_> {
-        Fx { rolls: &self.out_rolls, entering: &self.out_enter, row: (self.row_s.at(), self.row_dy.at(), self.row_a.at01()), card: self.card() }
+        Fx { rolls: &self.out_rolls, entering: &self.out_enter, row: (self.row_s.at(), self.row_dy.at(), self.row_a.at01()), card: self.card(), ring: (0.0, 0.0) }
     }
 
     /// The numbers the content that is leaving is painted with: no entry motion, the card as it last was.
     pub fn ghost_fx(&self) -> Fx<'_> {
-        Fx { rolls: &[], entering: &[], row: (1.0, 0.0, 1.0), card: self.card() }
+        Fx { rolls: &[], entering: &[], row: (1.0, 0.0, 1.0), card: self.card(), ring: (0.0, 0.0) }
     }
 
     fn card(&self) -> CardPaint<'_> {

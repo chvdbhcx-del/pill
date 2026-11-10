@@ -18,6 +18,8 @@ mod net;
 mod chat;
 mod notes;
 mod timers;
+mod alert;
+mod dlguard;
 mod watch;
 mod audio;
 mod player_audio;

@@ -159,6 +159,10 @@ pub struct IslandView {
     cap: Option<u32>,
     /// the display rate seen from the real frame intervals (the rate the host reports can be wrong): the shortest interval so far
     fast_hz: f32,
+    /// the glow while an alert waits and the download ring next to the clock (ambient.rs)
+    amb: super::ambient::Ambient,
+    /// one of them is only breathing / turning: frames may run at a calm rate
+    amb_slow: bool,
     /// springs behind `live_a` / `panel_a` / `flare_a`: they keep their velocity when the target flips half-way
     live_sp: Flow,
     panel_sp: Flow,
@@ -229,6 +233,8 @@ impl IslandView {
             busy_at: cx.now_ms,
             cap: None,
             fast_hz: 0.0,
+            amb: Default::default(),
+            amb_slow: false,
             live_sp: Flow::new(1.0, Feel::FADE.within(mo::LIVE_FADE_MS as f32)),
             panel_sp: Flow::new(0.0, PANEL_OUT),
             flare_sp: Flow::new(1.0, Feel::FADE.within(200.0)),
@@ -434,9 +440,18 @@ impl IslandView {
                     }
                     self.host.hide(&id, cx)
                 }
-                Out::Broadcast { name, payload } => {
-                    self.host.event_msg(&name, &payload, false, cx);
-                }
+                Out::Broadcast { name, payload } => match self.amb.take(&name, &payload) {
+                    super::ambient::Taken::No => {
+                        self.host.event_msg(&name, &payload, false, cx);
+                    }
+                    taken => {
+                        if let super::ambient::Taken::RingSlot(on) = taken {
+                            use pill_ui_core::shell::clock::{ClockSlots, SlotItem};
+                            self.core.shell.set_clock_slots(ClockSlots { left: None, right: on.then_some(SlotItem::Ring) });
+                        }
+                        cx.request_frame();
+                    }
+                },
                 Out::Blur => cx.set_focus(false),
                 Out::Dictate => self.call(cx, "voice_toggle", Value::Null, Pending::Fire),
             }
@@ -721,6 +736,8 @@ impl View for IslandView {
         let hdr_busy = self.hdr.step(&v, hover_tab.as_deref(), self.hover.btn, self.hover.pressed, dt_ms);
         let inp = fx::Inputs { rows: Some(&self.core.rows), hover_btn: self.hover_card_btn, privacy: self.core.privacy, pulse: self.core.pulse, pad: self.content_pad() };
         let fx_busy = self.fx.step(&v, inp, dt_ms);
+        let (amb_busy, amb_loop) = self.amb.step(v.reduced, dt_ms);
+        self.amb_slow = amb_loop;
         // the tab view follows the shell's current tab while the panel is open
         if v.panel.visible {
             if let Some(id) = v.current_tab.clone() {
@@ -756,8 +773,8 @@ impl View for IslandView {
             ("glide", self.gpu.gliding()),
             ("fades", fades),
         ]);
-        self.pace_ambient(&v, cx, now, hdr_busy || host_busy || fx_busy || fades);
-        v.wants_frames || self.pending_measure.is_some() || pets_busy || host_busy || hdr_busy || rows_busy || fx_busy || self.gpu.gliding() || fades
+        self.pace_ambient(&v, cx, now, hdr_busy || host_busy || fx_busy || fades || amb_busy);
+        v.wants_frames || self.pending_measure.is_some() || pets_busy || host_busy || hdr_busy || rows_busy || fx_busy || self.gpu.gliding() || fades || amb_busy || amb_loop
     }
 
     fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
@@ -950,8 +967,9 @@ impl View for IslandView {
         let b = &v.body;
         let body = Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32);
         let (rt, rb) = shapes::clamp_radii(body.w, body.h, b.radius_top as f32, b.radius_bottom as f32);
+        self.amb.glow.paint(cv, body, rb.max(rt), s);
         shapes::paint_body(cv, b, b.radius_top as f32, b.radius_bottom as f32, self.flare_a, self.fx.shadow(), self.fx.fill());
-        let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq), fx: self.fx.fx() };
+        let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq), fx: live::Fx { ring: self.amb.ring.paint(), ..self.fx.fx() } };
         // ---- everything inside the body is clipped to its silhouette
         let mut painted = Painted::default();
         cv.with_clip_rr(body, rb.max(rt), |cv| {
@@ -963,7 +981,7 @@ impl View for IslandView {
                 cv.with_transform(m, |cv| {
                     let alpha = self.live_a;
                     if let Some(g) = &v.live.ghost {
-                        let gctx = live::Ctx { fx: self.fx.ghost_fx(), ..ctx.clone() };
+                        let gctx = live::Ctx { fx: live::Fx { ring: ctx.fx.ring, ..self.fx.ghost_fx() }, ..ctx.clone() };
                         live::paint_content(cv, &th, &mut self.gpu, &gctx, &g.content, local, alpha * self.fx.ghost(), 1e9, now, &mut Painted::default());
                     }
                     live::paint_content(cv, &th, &mut self.gpu, &ctx, &v.live.content, local, alpha * self.fx.swap(), v.live.swap_age_ms, now, &mut painted);
@@ -1085,7 +1103,14 @@ impl IslandView {
             self.busy_at = now;
         }
         let hz = self.fast_hz.max(cx.refresh_hz);
-        let want = if now - self.busy_at > CALM_AFTER_MS && hz > 100.0 { Some((hz / 2.0) as u32) } else { None };
+        // a glow that breathes or a ring that turns is slow by nature: 30 frames a second are plenty, even on a 60 Hz screen
+        let want = if now - self.busy_at > CALM_AFTER_MS && hz > 100.0 {
+            Some((hz / 2.0) as u32)
+        } else if now - self.busy_at > CALM_AFTER_MS && self.amb_slow {
+            Some(30)
+        } else {
+            None
+        };
         crate::ui::host::perf::why(&[
             ("p.springs", springs),
             ("p.moving", moving),

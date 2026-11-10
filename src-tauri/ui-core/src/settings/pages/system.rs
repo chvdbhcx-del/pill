@@ -124,6 +124,20 @@ pub fn live() -> Page {
                 .enabled(Cond::On("live.obs")),
             );
         }
+        if *key == "live.downloads" {
+            rows.push(
+                toggle("live.downloadRing", tr("Загрузка кольцом у часов", "Download as a ring by the clock"), tr("Вместо полной плашки с именем файла рядом с часами крутится маленькое кольцо; готовый файл всё равно приходит карточкой", "Instead of the full chip with the file name, a small ring turns next to the clock; the finished file still arrives as a card"), false)
+                    .kw(&["download", "ring", "progress", "кольцо", "загрузка"])
+                    .enabled(Cond::On("live.downloads")),
+            );
+        }
+        if *key == "live.dlDone" {
+            rows.push(
+                text("live.dlIgnoreExt", tr("Не считать загрузками", "Never count as downloads"), tr("Расширения через запятую, например: log, bak, iso. Временные файлы браузеров (.tmp, .crdownload, .part, .partial) и так не считаются", "Extensions separated by commas, for example: log, bak, iso. Browser temp files (.tmp, .crdownload, .part, .partial) are never counted anyway"), TextKind::Plain, tr("log, bak", "log, bak"), "")
+                    .kw(&["ignore", "extension", "temp", "игнорировать", "расширение"])
+                    .enabled(Cond::Any(vec![Cond::On("live.dlDone"), Cond::On("live.downloads")])),
+            );
+        }
         if *key == "live.notifications" {
             rows.push(button("live.notifications.allow", tr("Доступ к уведомлениям Windows", "Windows notification access"), tr("Pill не убирает исходное уведомление: Windows может показать и своё всплывающее окно, если не включён режим фокусировки. Доступ разрешается один раз: Параметры → Конфиденциальность → Уведомления.", "Pill does not remove the original notification: Windows may still show its own popup unless Focus Assist is on. Access is granted once: Settings → Privacy → Notifications."), tr("Разрешить доступ", "Allow access"), Action::NotifAllow, ButtonStyle::Small).enabled(Cond::On("live.notifications")));
         }
@@ -382,6 +396,26 @@ pub fn sound() -> Page {
                 vec![
                     toggle("sound.reminders", tr("Звук напоминаний", "Sound for reminders"), tr("Короткий сигнал, когда срабатывает напоминание или таймер", "A short signal when a reminder or a timer goes off"), true).kw(&["reminder", "timer", "напоминание", "таймер"]),
                     seg("sound.reminderTone", tr("Сигнал", "Signal"), Tr::NONE, so(&[("chime", tr("Мягкий", "Soft")), ("bell", tr("Звонок", "Bell")), ("beep", tr("Сигнал", "Beep"))]), json!("chime")).enabled(Cond::On("sound.reminders")).kw(&["tone", "chime", "bell", "beep", "мелодия"]),
+                    select(
+                        "timer.sound",
+                        tr("Звук таймера и напоминаний", "Timer and reminder sound"),
+                        tr("Системный звук Windows или свой WAV-файл. «Как выше» — сигнал из строки «Сигнал»", "A Windows system sound or your own WAV file. “As above” plays the signal chosen in the “Signal” row"),
+                        so(&[
+                            ("default", tr("Как выше", "As above")),
+                            ("sys:notify", tr("Windows: уведомление", "Windows: notification")),
+                            ("sys:reminder", tr("Windows: напоминание", "Windows: reminder")),
+                            ("sys:mail", tr("Windows: почта", "Windows: mail")),
+                            ("sys:alarm", tr("Windows: будильник", "Windows: alarm")),
+                            ("sys:asterisk", tr("Windows: звёздочка", "Windows: asterisk")),
+                            ("sys:exclamation", tr("Windows: восклицание", "Windows: exclamation")),
+                            ("file", tr("Свой WAV-файл", "Your own WAV file")),
+                        ]),
+                        json!("default"),
+                    )
+                    .enabled(Cond::On("sound.reminders"))
+                    .kw(&["sound", "wav", "alarm", "звук", "мелодия", "будильник"]),
+                    text("timer.soundFile", tr("Файл звука (WAV)", "Sound file (WAV)"), tr("Полный путь к файлу .wav; если файла нет, играет обычный сигнал", "Full path to a .wav file; if it is missing the usual signal plays"), TextKind::Path, tr("C:/Sounds/ding.wav", "C:/Sounds/ding.wav"), "")
+                        .enabled(Cond::All(vec![Cond::On("sound.reminders"), Cond::Eq("timer.sound", json!("file"))])),
                     button("sound.play", tr("Проверить", "Play"), Tr::NONE, tr("Проверить", "Play"), Action::PlaySignal, ButtonStyle::Small).enabled(Cond::On("sound.reminders")),
                 ],
             ),

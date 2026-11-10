@@ -53,12 +53,17 @@ pub struct Fx<'a> {
     pub entering: &'a [(bool, usize, f32, f32)],
     pub row: (f32, f32, f32),
     pub card: CardPaint<'a>,
+    /// the download ring next to the clock: (progress 0..1, or -1 while the size is unknown; angle of the turning arc in degrees)
+    pub ring: (f32, f32),
 }
 
 impl Fx<'static> {
     /// Everything at rest (measuring, tests).
-    pub const REST: Fx<'static> = Fx { rolls: &[], entering: &[], row: (1.0, 0.0, 1.0), card: CardPaint { alpha: 1.0, scale: 1.0, check: 1.0, hover: &[] } };
+    pub const REST: Fx<'static> = Fx { rolls: &[], entering: &[], row: (1.0, 0.0, 1.0), card: CardPaint { alpha: 1.0, scale: 1.0, check: 1.0, hover: &[] }, ring: (0.0, 0.0) };
 }
+
+/// The download ring next to the clock (css px).
+const RING_SIZE: f32 = 16.0;
 
 fn item_w(it: &ClockItem, m: &dyn Meter) -> f32 {
     match it {
@@ -71,6 +76,7 @@ fn item_w(it: &ClockItem, m: &dyn Meter) -> f32 {
         ClockItem::Slot(SlotItem::Temp(t)) => m.w(&format!("{t}°"), TEMP_STYLE),
         ClockItem::Slot(SlotItem::Text(t)) => m.w(t, TEMP_STYLE),
         ClockItem::Slot(SlotItem::Spec(_)) => 0.0,
+        ClockItem::Slot(SlotItem::Ring) => RING_SIZE,
     }
 }
 
@@ -109,7 +115,7 @@ pub fn layout_clock(row: &ClockRow, time: Option<&str>, m: &dyn Meter) -> ClockL
 }
 
 /// The clock row; `x0` = left edge, `cy` = vertical centre.
-pub fn paint_clock(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &ClockRow, time: Option<&str>, rolls: &[(DigitRoll, f32)], entering: &[(bool, usize, f32, f32)], lay: &ClockLayout, x0: f32, cy: f32) {
+pub fn paint_clock(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &ClockRow, time: Option<&str>, rolls: &[(DigitRoll, f32)], entering: &[(bool, usize, f32, f32)], lay: &ClockLayout, ring: (f32, f32), x0: f32, cy: f32) {
     let pop = |right: bool, i: usize| -> (f32, f32) { entering.iter().find(|e| e.0 == right && e.1 == i).map_or((1.0, 1.0), |e| (e.2, e.3)) };
     // left column: right aligned against the time
     let mut x = x0 + 16.0 + lay.left_w;
@@ -117,7 +123,7 @@ pub fn paint_clock(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &ClockRow, time:
         let w = it_w_cached(it, cv);
         x -= w;
         let (s, a) = pop(false, i);
-        paint_item(cv, th, gpu, it, Rect::new(x, cy - 10.0, w, 20.0), s, a);
+        paint_item(cv, th, gpu, it, Rect::new(x, cy - 10.0, w, 20.0), s, a, ring);
         x -= SIDE_GAP;
     }
     // right column: left aligned against the time
@@ -125,7 +131,7 @@ pub fn paint_clock(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &ClockRow, time:
     for (i, it) in row.right.iter().enumerate() {
         let w = it_w_cached(it, cv);
         let (s, a) = pop(true, i);
-        paint_item(cv, th, gpu, it, Rect::new(x, cy - 10.0, w, 20.0), s, a);
+        paint_item(cv, th, gpu, it, Rect::new(x, cy - 10.0, w, 20.0), s, a, ring);
         x += w + SIDE_GAP;
     }
     if let (true, Some(t)) = (row.show_time, time) {
@@ -165,7 +171,7 @@ fn paint_time(cv: &Canvas, th: &Theme, time: &str, rolls: &[(DigitRoll, f32)], r
     }
 }
 
-fn paint_item(cv: &Canvas, th: &Theme, gpu: &mut Gpu, it: &ClockItem, r: Rect, scale: f32, alpha: f32) {
+fn paint_item(cv: &Canvas, th: &Theme, gpu: &mut Gpu, it: &ClockItem, r: Rect, scale: f32, alpha: f32, ring: (f32, f32)) {
     cv.with_opacity(alpha, |cv| {
         cv.with_scale_about(r.center(), scale, |cv| match it {
             ClockItem::WxIcon { id, .. } | ClockItem::Slot(SlotItem::WxIcon(id)) => gpu.wx_icon(cv, id, r),
@@ -177,6 +183,16 @@ fn paint_item(cv: &Canvas, th: &Theme, gpu: &mut Gpu, it: &ClockItem, r: Rect, s
                 cv.text(Rect::new(r.x + TAG_PAD, r.cy() - 8.0, r.w, 16.0), t, TAG_STYLE, th.text.fade(0.85));
             }
             ClockItem::Slot(SlotItem::Spec(_)) => {}
+            ClockItem::Slot(SlotItem::Ring) => {
+                // same look as the ring of the download chip: a track and an accent arc (a known percent, or a short arc that turns)
+                let (c, rr) = (r.center(), RING_SIZE / 2.0 - 1.25);
+                cv.stroke_circle(c, rr, 2.5, th.raised2);
+                if ring.0 < 0.0 {
+                    cv.arc(c, rr, 2.5, ring.1, 100.0, th.accent);
+                } else {
+                    cv.arc(c, rr, 2.5, 0.0, 360.0 * ring.0.clamp(0.0, 1.0), th.accent);
+                }
+            }
             ClockItem::Battery { percent, low, charging } => {
                 let c = if *low { th.red } else { th.text };
                 cv.stroke_rr(Rect::new(r.x, r.cy() - 5.5, 18.0, 11.0), 3.5, 1.5, c);
@@ -375,7 +391,7 @@ pub fn paint_content(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, content:
             let m = CvMeter(cv);
             let lay = layout_clock(row, time.as_deref(), &m);
             let x0 = area.cx() - lay.w / 2.0;
-            cv.with_opacity(alpha, |cv| paint_clock(cv, th, gpu, row, time.as_deref(), ctx.fx.rolls, ctx.fx.entering, &lay, x0, cy));
+            cv.with_opacity(alpha, |cv| paint_clock(cv, th, gpu, row, time.as_deref(), ctx.fx.rolls, ctx.fx.entering, &lay, ctx.fx.ring, x0, cy));
         }
         LiveContent::Slot { id, .. } => {
             let Some(row) = ctx.rows.get(id) else { return };
