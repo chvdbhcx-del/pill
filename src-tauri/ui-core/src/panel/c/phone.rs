@@ -9,6 +9,7 @@
 //! view can dim them. A row that goes away (Hide, Mark read, removed on the phone, a sent reply) is not deleted at once: it gets `leaving` and the
 //! view calls [`PhoneModel::reap`] when its exit motion has finished. A row that is being replied to (`Sending` / `Sent`) ignores a removal until
 //! the "Sent" confirmation has been shown ([`SENT_HOLD_MS`]).
+use super::phone_info::{Info, Stats};
 use crate::panel::b::{BackendCall, Lang, Reply, Tr};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -99,6 +100,18 @@ pub struct Device {
     pub network: String,
     pub ssid: Option<String>,
     pub dnd: bool,
+    /// from pairing
+    pub model: String,
+    pub os: String,
+    pub app_version: String,
+    pub first_seen: i64,
+    pub last_seen: i64,
+    /// the address the PC saw the phone at (kept after it left), start of the current connection (ms, 0 = never)
+    pub ip: String,
+    pub connected_at: i64,
+    /// the optional rich status and the session counters (`phone_info`)
+    pub info: Info,
+    pub stats: Stats,
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -341,6 +354,15 @@ impl PhoneModel {
                         network: s(d, "network"),
                         ssid: opt_s(d, "ssid"),
                         dnd: b(d, "dnd"),
+                        model: s(d, "model"),
+                        os: s(d, "os"),
+                        app_version: s(d, "appVersion"),
+                        first_seen: d.get("firstSeen").and_then(Value::as_i64).unwrap_or(0),
+                        last_seen: d.get("lastSeen").and_then(Value::as_i64).unwrap_or(0),
+                        ip: s(d, "ip"),
+                        connected_at: d.get("connectedAt").and_then(Value::as_i64).unwrap_or(0),
+                        info: Info::parse(d.get("info").unwrap_or(&Value::Null)),
+                        stats: Stats::parse(d.get("stats").unwrap_or(&Value::Null)),
                     })
                     .collect()
             })
@@ -691,6 +713,20 @@ mod tests {
         assert_eq!(calls.len(), 1, "the used code is replaced: {calls:?}");
         assert!(m.code().is_none());
         assert_eq!(m.link().phone().unwrap().battery, Some(80));
+    }
+
+    #[test]
+    fn a_device_carries_its_identity_info_and_counters() {
+        let mut m = PhoneModel::new(Lang::En);
+        m.on_event("phone:state", &json!({ "running": true, "devices": [{ "name": "Pixel", "connected": true, "battery": 80, "model": "Pixel 8", "os": "Android 15", "appVersion": "1.1.0",
+            "firstSeen": 5, "lastSeen": 9, "ip": "192.168.1.7", "connectedAt": 7, "info": { "charge": "full", "ringer": "silent" }, "stats": { "notifs": 4, "filesOut": 1, "bytesOut": 9 } }] }));
+        let d = m.link().phone().unwrap();
+        assert_eq!((d.model.as_str(), d.os.as_str(), d.app_version.as_str(), d.first_seen, d.last_seen, d.ip.as_str(), d.connected_at), ("Pixel 8", "Android 15", "1.1.0", 5, 9, "192.168.1.7", 7));
+        assert_eq!((d.info.charge, d.stats.notifs, d.stats.files_out, d.stats.bytes_out), (Some(crate::panel::c::phone_info::Charge::Full), 4, 1, 9));
+        // an old PC / phone: none of it, still fine
+        m.on_event("phone:state", &json!({ "running": true, "devices": [{ "name": "Old", "connected": false }] }));
+        let d = m.link().phone().unwrap();
+        assert_eq!((d.info.clone(), d.stats, d.ip.as_str()), (Info::default(), Stats::default(), ""));
     }
 
     #[test]
