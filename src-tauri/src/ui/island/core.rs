@@ -585,7 +585,7 @@ mod tests {
         for line in contract.lines().filter(|l| l.starts_with("| `") && l.contains("| pill |")) {
             let name = line.split('`').nth(1).unwrap();
             let handled = ISLAND_EVENTS.contains(&name);
-            let tab_only = ["chat:delta", "chat:done", "chat:focus", "clip:open", "launcher:changed", "remind:changed", "pill:cursor", "pill:gaze", "pill:display", "pill:hover", "pill:leave", "sys:changed", "kbd:state"];
+            let tab_only = ["chat:delta", "chat:done", "chat:focus", "clip:open", "launcher:changed", "remind:changed", "pill:cursor", "pill:gaze", "pill:display", "pill:hover", "pill:leave", "sys:changed", "kbd:state", "phone:state", "phone:notif", "phone:files"];
             assert!(handled || tab_only.contains(&name), "{name} is neither subscribed by the island nor listed as tab/native-only");
         }
     }

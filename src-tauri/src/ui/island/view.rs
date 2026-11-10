@@ -906,7 +906,7 @@ impl View for IslandView {
         let files = matches!(ev.payload, Some(DropPayload::Files(_)));
         let open = self.core.shell.view().panel.visible;
         // panel open on Home / Shelf: the tab decides (Home: launcher strip first, Shelf: the whole tab); what it does not take falls through
-        if open && self.panel_a > 0.05 && matches!(self.host.cur.as_deref(), Some("home") | Some("shelf")) && (files || ev.phase == DropPhase::Leave) {
+        if open && self.panel_a > 0.05 && matches!(self.host.cur.as_deref(), Some("home") | Some("shelf") | Some("phone")) && (files || ev.phase == DropPhase::Leave) {
             let (ox, oy, s) = self.panel_origin;
             let v = self.chrome.views;
             let mut local = ev.clone();

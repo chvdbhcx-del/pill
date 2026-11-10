@@ -12,7 +12,7 @@ use crate::ui::tabs::fx::{emit, TabFx};
 use crate::ui::view::{Cx, Ticket};
 use glasskit::canvas::Canvas;
 use crate::ui::liquid::{Feel, Flow};
-pub use super::flowkit::{Lit, Swap, GROW};
+pub use super::flowkit::{FlowSwitch, Lit, Swap, GROW};
 use glasskit::edit::{EditEvent, TextInput};
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{Cursor, InputEvent, KeyCode, MouseButton, Response};

@@ -3,10 +3,11 @@
 use crate::ui::view::View;
 pub mod a;
 pub mod b;
+pub mod c;
 pub mod fx;
 
 /// A fresh view for the tab `id` (ids as in pill-ui-core panel::a::tabs), or None while it is not ported yet.
 #[allow(dead_code)] // used once the island view lands
 pub fn create(id: &str) -> Option<Box<dyn View>> {
-    a::create(id).or_else(|| b::create(id))
+    a::create(id).or_else(|| b::create(id)).or_else(|| c::create(id))
 }

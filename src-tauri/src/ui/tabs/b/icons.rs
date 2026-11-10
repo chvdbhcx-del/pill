@@ -50,6 +50,7 @@ pub fn markup(name: &str) -> Option<&'static str> {
         "calc" => r##"<rect x="5" y="3" width="14" height="18" rx="2.500"/><path d="M8.500 7.500h7M9 12h.01M12 12h.01M15 12h.01M9 16h.01M12 16h.01M15 16h.01"/>"##,
         "convert" => r##"<path d="M4 9h13l-3-3M20 15H7l3 3"/>"##,
         "terminal" => r##"<path d="M5 7l5 5-5 5M12 18h7"/>"##,
+        "phone" => r##"<rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18.5h2"/>"##,
         "apps" => r##"<rect x="4" y="4" width="7" height="7" rx="1.800"/><rect x="13" y="4" width="7" height="7" rx="1.800"/><rect x="4" y="13" width="7" height="7" rx="1.800"/><rect x="13" y="13" width="7" height="7" rx="1.800"/>"##,
         "mic" => r##"<rect x="9" y="2.500" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.500"/>"##,
         "stop" => r##"<rect x="6" y="6" width="12" height="12" rx="2.500" fill="currentColor" stroke="none"/>"##,
