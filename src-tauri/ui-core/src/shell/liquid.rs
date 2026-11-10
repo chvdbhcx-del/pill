@@ -196,6 +196,9 @@ pub struct Liquid {
     pub edge: Rgba,
     pub fill: Rgba,
     rng: Rng,
+    /// calm idle: when the next random poke of the edge is due (`t`, seconds) and its own random stream (the ball keeps `rng` untouched)
+    poke_at: f64,
+    prng: Rng,
 }
 
 impl Liquid {
@@ -242,6 +245,8 @@ impl Liquid {
             edge: Rgba::rgb(0x6e, 0x6e, 0x6e),
             fill: Rgba::rgb(0, 0, 0),
             rng: Rng::new(seed),
+            poke_at: 1.2,
+            prng: Rng::new(seed ^ 0x9E37_79B9_7F4A_7C15),
         }
     }
 
@@ -386,10 +391,38 @@ impl Liquid {
         }
     }
 
+    /// How far the calm edge hangs down in the middle (px at 100 %): a liquid has weight, so at rest its bottom edge sags like a drop under
+    /// its own mass. It breathes slowly (two incommensurate sines) while the idle drift is on; with the drift off (or reduced motion) it is
+    /// one fixed depth, so the loop can stop.
+    fn sag_depth(&self, expd: bool, drifting: bool) -> f64 {
+        let base = if expd { 4.4 } else { 3.2 };
+        if !drifting {
+            return base;
+        }
+        base * (1.0 + 0.22 * (0.37 * self.t + 1.3).sin() + 0.12 * (0.91 * self.t + 4.0).sin())
+    }
+
+    /// A random poke of the calm edge: a Gaussian push of velocity at a random place (mostly downwards, like a drip's weight settling), which the
+    /// wave equation turns into a ripple that spreads and dies out; then the next one is scheduled a random 0.8 .. 3.4 s later.
+    fn poke(&mut self, rg: &Range, expd: bool) {
+        let half = rg.half.max(1.0);
+        let x0 = (self.prng.next_f64() * 2.0 - 1.0) * 0.7 * half;
+        let sign = if self.prng.next_f64() < 0.3 { -1.0 } else { 1.0 };
+        let amp = sign * (30.0 + 42.0 * self.prng.next_f64()) * if expd { 1.4 } else { 1.0 };
+        let sigma = 12.0 + 16.0 * self.prng.next_f64();
+        for i in (rg.i0 + 1)..rg.i1 {
+            let x = (i as f64 - MID as f64) * DX;
+            let env = smooth((rg.half - x.abs()) / 36.0);
+            self.v[i] += amp * (-((x - x0) * (x - x0)) / (2.0 * sigma * sigma)).exp() * env;
+        }
+        self.poke_at = self.t + 0.8 + 2.6 * self.prng.next_f64();
+    }
+
     /// `liqTargets`: target shape = idle / reaction wave (+ the cursor bulge).
     fn targets(&mut self, rg: &Range, ctx: &Ctx) {
         let dyn_ = self.inn.abs() > 0.002;
         let expd = ctx.expanded;
+        let sag = if self.eff_react(ctx.reduce) == Preset::Calm { self.sag_depth(expd, ctx.edge_idle && !ctx.reduce) } else { 0.0 };
         let sig_w: f64 = (if expd { 50.0 } else { 38.0 }) * if self.drag { 1.45 } else { 1.0 };
         let sig2 = 2.0 * sig_w * sig_w;
         let bands = self.music_on(ctx) && !self.silent && ctx.now_ms - self.last_audio < 1000.0 && self.eff_react(ctx.reduce) == Preset::Music;
@@ -397,6 +430,10 @@ impl Liquid {
             let x = (i as f64 - MID as f64) * DX;
             let env = smooth((rg.half - x.abs()) / 36.0);
             let mut v = (if bands { 0.0 } else { self.react_wave(x, rg.half, expd, ctx.reduce) }) * env - 0.6;
+            if sag > 0.0 && !bands {
+                let hh = if rg.half == 0.0 { 1.0 } else { rg.half };
+                v += sag * (1.0 - (x / hh).powi(2)).max(0.0) * env; // the belly of the drop
+            }
             if dyn_ {
                 let dx = x - self.cxs;
                 v += self.b_amp * self.inn * (-(dx * dx) / sig2).exp() * env; // smooth bell under the cursor (lags it like a spring)
@@ -742,6 +779,9 @@ impl Liquid {
         let rg = self.range(ctx);
         let (i0, i1) = (rg.i0, rg.i1);
         self.targets(&rg, ctx);
+        if ctx.edge_idle && self.eff_react(ctx.reduce) == Preset::Calm && !self.music_on(ctx) && self.want == 0.0 && self.t >= self.poke_at {
+            self.poke(&rg, ctx.expanded); // the calm edge is never quite still: random pokes ripple through it
+        }
         let n = ((dt * 120.0).ceil() as i64).max(1);
         let sd = dt / n as f64;
         let df = (-DAMP * sd).exp();
@@ -1131,6 +1171,59 @@ mod tests {
     }
 
     #[test]
+    fn the_calm_edge_hangs_down_in_the_middle_and_is_poked_at_random() {
+        let mut l = Liquid::new(1);
+        let mut c = ctx();
+        l.render_static(&c);
+        let pts = l.edge_view(&c).points;
+        let mid = pts.len() / 2;
+        assert!(pts[mid].1 > 2.0, "the belly hangs below the straight edge: {}", pts[mid].1);
+        assert!(pts[mid].1 > pts[3].1 + 1.5 && pts[mid].1 > pts[pts.len() - 4].1 + 1.5, "the ends stay up: it hangs from them");
+        // while idle it is poked now and then: the middle third keeps moving by more than the slow breathing alone does
+        let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+        for k in 0..60 * 20 {
+            c.now_ms += 1000.0 / 60.0;
+            l.step(1.0 / 60.0, &c);
+            if k > 120 {
+                let p = l.edge_view(&c).points;
+                let m = p[p.len() / 2].1;
+                lo = lo.min(m);
+                hi = hi.max(m);
+            }
+        }
+        assert!(hi - lo > 0.8, "the belly keeps moving: {lo}..{hi}");
+        // the pokes themselves: random places, both directions, scheduled 0.8 .. 3.4 s apart
+        let rg = l.range(&c);
+        let (mut places, mut signs, mut gaps) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new(), Vec::new());
+        let mut p = Liquid::new(7);
+        for _ in 0..40 {
+            p.v.fill(0.0);
+            let t0 = p.t;
+            p.poke(&rg, false);
+            let (i, v) = p.v.iter().enumerate().max_by(|a, b| a.1.abs().total_cmp(&b.1.abs())).map(|(i, v)| (i, *v)).unwrap();
+            places.insert((i - rg.i0) / 4);
+            signs.insert(v > 0.0);
+            gaps.push(p.poke_at - t0);
+            p.t = p.poke_at;
+        }
+        assert!(places.len() >= 4, "random places: {places:?}");
+        assert_eq!(signs.len(), 2, "mostly down, sometimes up");
+        assert!(gaps.iter().all(|g| (0.8..=3.4).contains(g)), "{gaps:?}");
+        // the sag also holds for a still edge (idle drift off): the loop can stop, the belly stays
+        let mut s = Liquid::new(1);
+        let mut c2 = Ctx { edge_idle: false, ..ctx() };
+        s.render_static(&c2);
+        for _ in 0..300 {
+            c2.now_ms += 20.0;
+            if !s.step(1.0 / 50.0, &c2) {
+                break;
+            }
+        }
+        let p = s.edge_view(&c2).points;
+        assert!(p[p.len() / 2].1 > 2.0, "{}", p[p.len() / 2].1);
+    }
+
+    #[test]
     fn calm_goes_still_when_edge_idle_is_off() {
         let mut l = Liquid::new(1);
         let mut c = Ctx { edge_idle: false, ..ctx() };
@@ -1361,7 +1454,9 @@ mod tests {
         let att = sample(Preset::Attention);
         let sleep = sample(Preset::Sleep);
         let amp = |v: &EdgeView| v.points.iter().map(|p| p.1).fold(0.0, f64::max) - v.points.iter().map(|p| p.1).fold(f64::MAX, f64::min);
-        assert!(amp(&att) > amp(&calm) * 0.5);
+        // attention is a visible wave; calm is a hanging belly (the sag), not a flat line
+        assert!(amp(&att) > 1.0, "attention {}", amp(&att));
+        assert!(amp(&calm) > 2.0 && calm.points[calm.points.len() / 2].1 > calm.points[3].1 + 1.0, "calm {}", amp(&calm));
         // sleep: a bowl, no halo, dark hairline, 1.2 px
         let st = sleep.stroke.unwrap();
         assert_eq!(st.rgb, (30, 30, 30));
