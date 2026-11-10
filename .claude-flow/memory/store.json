@@ -422,6 +422,15 @@
       "lastAccessed": "2026-11-10T19:07:51.446Z",
       "accessCount": 0,
       "expiresAt": "2026-12-10T19:07:51.446Z"
+    },
+    "cmd-1794337684233": {
+      "key": "cmd-1794337684233",
+      "value": "{\"command\":\"cd\",\"exitCode\":0,\"success\":true}",
+      "namespace": "commands",
+      "storedAt": "2026-11-10T19:08:04.233Z",
+      "lastAccessed": "2026-11-10T19:08:04.233Z",
+      "accessCount": 0,
+      "expiresAt": "2026-12-10T19:08:04.233Z"
     }
   },
   "version": "3.0.0"
