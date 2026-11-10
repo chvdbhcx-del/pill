@@ -26,6 +26,8 @@ pub enum BackendCall {
     HotkeySet { action: String, combo: String },
     LauncherList,
     PillMonitors,
+    /// `key` = "hideInApps" | "showInApps"
+    PillAddActiveApp { key: String },
     MediaDevices,
     MediaCaptureDevices,
     OpenLink { url: String },
@@ -116,6 +118,7 @@ impl BackendCall {
             HotkeySet { .. } => "hotkey_set",
             LauncherList => "launcher_list",
             PillMonitors => "pill_monitors",
+            PillAddActiveApp { .. } => "pill_add_active_app",
             MediaDevices => "media_devices",
             MediaCaptureDevices => "media_capture_devices",
             OpenLink { .. } => "chat_open_link",
@@ -178,6 +181,7 @@ impl BackendCall {
             SettingsOpen { page } => json!({ "page": page }),
             AutostartSet { on } => json!({ "on": on }),
             HotkeySet { action, combo } => json!({ "action": action, "combo": combo }),
+            PillAddActiveApp { key } => json!({ "key": key }),
             OpenLink { url } => json!({ "url": url }),
             SoundPlay { tone } => json!({ "tone": tone }),
             ClipPause { paused } => json!({ "paused": paused }),
@@ -229,6 +233,8 @@ pub fn action_call(action: Action) -> Option<BackendCall> {
         Action::VoiceTestService => C::VoiceTestService,
         Action::MailTest => C::MailTest,
         Action::NotifAllow => C::NotifRequest,
+        Action::HideAddActive => C::PillAddActiveApp { key: "hideInApps".into() },
+        Action::ShowAddActive => C::PillAddActiveApp { key: "showInApps".into() },
         Action::WeatherSearch | Action::AiSetKey | Action::VoiceSetKey | Action::VoiceRemoveKey | Action::ObsSetPassword | Action::MailSetPassword | Action::ProfileSave => return None,
     })
 }
@@ -264,6 +270,8 @@ mod tests {
         assert_eq!(action_call(Action::EverythingDownload), Some(BackendCall::EverythingDownload));
         assert_eq!(action_call(Action::OpenPage("ai")), Some(BackendCall::UiShowPage { page: "ai".into() }));
         assert_eq!(action_call(Action::AiRemoveKey), Some(BackendCall::AiSetKey { key: String::new() }));
+        assert_eq!(action_call(Action::ShowAddActive), Some(BackendCall::PillAddActiveApp { key: "showInApps".into() }));
+        assert_eq!(BackendCall::PillAddActiveApp { key: "hideInApps".into() }.args(), json!({"key": "hideInApps"}));
         assert_eq!(action_call(Action::UpdateCheck), None);
         assert_eq!(action_call(Action::ClipWipe), None);
     }

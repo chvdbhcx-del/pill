@@ -576,6 +576,23 @@ fn auto_hide_keep_desktop_asks_the_backend_first() {
 }
 
 #[test]
+fn a_keep_visible_program_stops_the_slide_away_through_the_same_backend_question() {
+    let mut h = H::with(json!({"autoHide": true, "showInApps": ["code.exe"]}));
+    h.run(1600.0);
+    assert_eq!(h.calls("pill_desktop_fg"), 1, "the list alone makes the shell ask");
+    h.ev(Event::DesktopFg(true)); // a listed program in front: stay
+    assert!(!h.sh.is_away());
+    h.run(1600.0); // asks again later; now the listed program is gone
+    assert_eq!(h.calls("pill_desktop_fg"), 2);
+    h.ev(Event::DesktopFg(false));
+    assert!(h.sh.is_away());
+    let mut none = H::with(json!({"autoHide": true, "showInApps": []}));
+    none.run(1600.0);
+    assert_eq!(none.calls("pill_desktop_fg"), 0, "an empty list costs no question");
+    assert!(none.sh.is_away());
+}
+
+#[test]
 fn expanding_cancels_a_pending_auto_hide_and_collapse_rearms_it() {
     let mut h = H::with(json!({"autoHide": true}));
     h.run(1000.0);

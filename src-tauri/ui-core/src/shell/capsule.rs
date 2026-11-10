@@ -1245,7 +1245,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
                     }
                 }
                 TimerKey::Away => {
-                    if self.s.auto_hide_keep_desktop {
+                    if self.s.auto_hide_keep_desktop || self.s.auto_hide_keep_apps {
                         self.pending_fg = true; // 'Do not hide on the desktop': stay while the desktop is in front
                         self.invoke("pill_desktop_fg", json!({}));
                     } else {

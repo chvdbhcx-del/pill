@@ -59,7 +59,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `voice:state` | all windows | `p` | voice.rs |
 | `weather:current` | pill | `v` | net.rs |
 
-## Commands (175)
+## Commands (176)
 
 | Command | Args | Returns | Producer |
 |---|---|---|---|
@@ -72,6 +72,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `pill_set_gaze` | `on: bool` | `()` | pill.rs |
 | `pill_cards` | `on: bool` | `()` | pill.rs |
 | `pill_desktop_fg` | - | `bool` | guard.rs |
+| `pill_add_active_app` | `key: String` | `Cfg` | guard.rs |
 | `update_check` | - | `Value` | updater.rs |
 | `update_install` | - | `Value` | updater.rs |
 | `whatsnew_check` | - | `Value` | whatsnew.rs |

@@ -47,6 +47,10 @@ pub(crate) fn defaults() -> Cfg {
     // quiet hours (src/quiet.js, Settings > Behavior): days are strings "0" (Sunday) .. "6"
     let Value::Object(quiet) = json!({ "quiet.on": false, "quiet.from": "22:00", "quiet.to": "07:00", "quiet.days": ["0", "1", "2", "3", "4", "5", "6"] }) else { unreachable!() };
     m.extend(quiet);
+    // window behaviour (guard.rs / fspeek.rs / win32.rs): programs where the pill always stays, the pill over fullscreen apps (hotkey, top edge),
+    // GPU drawing (off = software rendering, read once at start)
+    let Value::Object(win) = json!({ "showInApps": [], "fullscreenPeek": true, "fullscreenPeekEdge": false, "ui.gpu": true }) else { unreachable!() };
+    m.extend(win);
     m
 }
 

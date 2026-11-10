@@ -31,7 +31,7 @@ fn tail_lines(text: &str, n: usize) -> String {
 
 /// Settings that name a person or a place (mail account, city, AI endpoints, app names) stay out of the report.
 fn personal(key: &str) -> bool {
-    ["mail.", "weather.", "ai."].iter().any(|p| key.starts_with(p)) || key == "hideInApps"
+    ["mail.", "weather.", "ai."].iter().any(|p| key.starts_with(p)) || key == "hideInApps" || key == "showInApps"
 }
 
 /// Ids of the keys `<prefix>x` that are switched on, sorted.
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn personal_keys_and_enabled_ids() {
-        assert!(personal("mail.user") && personal("weather.city") && personal("ai.baseUrl") && personal("hideInApps"));
+        assert!(personal("mail.user") && personal("weather.city") && personal("ai.baseUrl") && personal("hideInApps") && personal("showInApps"));
         assert!(!personal("module.media") && !personal("theme"));
         let Value::Object(m) = json!({ "module.b": true, "module.a": true, "module.c": false, "live.usb": true, "size": 100 }) else { unreachable!() };
         assert_eq!(enabled_ids(&m, "module."), ["a", "b"]);

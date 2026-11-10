@@ -254,8 +254,11 @@ fn icons_and_nav_cover_every_page() {
 
 #[test]
 fn no_row_needs_a_restart() {
-    // the backend applies every patch at once; the field exists for the native shell, nothing sets it today
-    assert!(schema().all_rows().all(|(_, r)| !r.restart_needed));
+    // the backend applies every patch at once; the only exception is the GPU switch (the renderer is chosen once, at start)
+    let restart: Vec<&str> = schema().all_rows().filter(|(_, r)| r.restart_needed).map(|(_, r)| r.id).collect();
+    assert_eq!(restart, ["ui.gpu"]);
+    let hint = schema().row("ui.gpu").unwrap().hint;
+    assert!(hint.get(Lang::En).contains("restarts") && hint.get(Lang::Ru).contains("перезапуска"), "the hint tells when it applies");
 }
 
 // ------------------------------------------------------------------------------------------------ rows per page
@@ -265,7 +268,7 @@ fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
     let expect = [
-        ("character", 5), ("general", 4), ("appearance", 18), ("behavior", 11), ("hotkeys", 17), ("modules", 14), ("live", 30), ("clipboard", 15), ("search", 2),
+        ("character", 5), ("general", 4), ("appearance", 19), ("behavior", 16), ("hotkeys", 17), ("modules", 14), ("live", 30), ("clipboard", 15), ("search", 2),
         ("sound", 7), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
     ];
     for (id, n) in expect {

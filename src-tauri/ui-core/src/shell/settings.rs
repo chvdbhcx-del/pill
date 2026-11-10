@@ -88,6 +88,8 @@ pub struct ShellSettings {
     pub clock24: bool,
     pub auto_hide: bool,
     pub auto_hide_keep_desktop: bool,
+    /// `showInApps` is not empty: ask the backend before sliding away (a listed program in front keeps the pill)
+    pub auto_hide_keep_apps: bool,
     pub reduce_motion: bool,
     pub language: LangSetting,
     pub shape: Shape,
@@ -129,6 +131,7 @@ impl Default for ShellSettings {
             clock24: true,
             auto_hide: false,
             auto_hide_keep_desktop: false,
+            auto_hide_keep_apps: false,
             reduce_motion: false,
             language: LangSetting::Auto,
             shape: Shape::Capsule,
@@ -246,6 +249,7 @@ impl ShellSettings {
                 "clock24" => self.clock24 = truthy(val),
                 "autoHide" => self.auto_hide = truthy(val),
                 "autoHideKeepDesktop" => self.auto_hide_keep_desktop = truthy(val),
+                "showInApps" => self.auto_hide_keep_apps = val.as_array().is_some_and(|a| !a.is_empty()),
                 "reduceMotion" => self.reduce_motion = truthy(val),
                 "language" => {
                     self.language = match val.as_str() {
