@@ -1421,6 +1421,28 @@ impl Host {
         best
     }
 
+    /// `PILL_HOST_TRACE=1`: which window's timers make the loop wake (ms from now; negative = overdue).
+    fn deadline_debug(&self) -> String {
+        let now = self.now_ms();
+        self.wins
+            .values()
+            .map(|w| {
+                format!(
+                    "[{} vis={} poll={:.0} geo={:?} watch={:.0} frame={} retry={:.0} wait={:?}]",
+                    w.spec.label,
+                    w.visible,
+                    w.poll_at - now,
+                    w.geo_at.map(|t| t - now),
+                    w.watch_at - now,
+                    w.frame.wants_frame(),
+                    w.retry_at - now,
+                    w.frame.wait_ms(now)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
     fn frame_handles(&self) -> Vec<HANDLE> {
         let now = self.now_ms();
         self.wins
@@ -1851,7 +1873,8 @@ fn run_loop() {
             set.extend(handles);
             let timeout = if timer.is_invalid() { deadline_in.map_or(INFINITE, |ms| ms.ceil() as u32) } else { INFINITE };
             if trace() {
-                eprintln!("ui host: sleeping on {} handle(s), timeout {} ms", set.len(), if timeout == INFINITE { -1 } else { timeout as i64 });
+                eprintln!("ui host: sleeping on {} handle(s), timeout {} ms, deadline_in {:?}", set.len(), if timeout == INFINITE { -1 } else { timeout as i64 }, deadline_in);
+                eprintln!("ui host:   {:?}", with_host(|h| h.deadline_debug()));
             }
             let r = MsgWaitForMultipleObjectsEx(Some(&set), timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
             perf::wake();

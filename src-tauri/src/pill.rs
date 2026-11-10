@@ -259,8 +259,8 @@ pub fn edge_geometry() -> Option<([i32; 4], (i32, i32))> {
 
 /// Guard poll: if another program hid, minimised or un-topmosted the island, or it ended up off every monitor, put it back.
 pub fn keep_alive(app: &AppHandle) {
-    if st().hidden & (HIDE_USER | HIDE_GUARD) != 0 {
-        return; // hidden on purpose
+    if st().hidden != 0 {
+        return; // hidden on purpose (tray, fullscreen guard, hide list, AUTO-HIDE...): never fight whatever hid it, or the two undo each other in a loop
     }
     on_main(app, |a| {
         if crate::keepalive::repair(me(), &monitor_rects()) {
