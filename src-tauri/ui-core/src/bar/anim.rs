@@ -313,65 +313,74 @@ impl Anims {
     }
 }
 
-/// A number that glides to its new value in 380 ms on a cubic ease-out (`glide()` in uninstall-ui.js). `value(now)` is what to draw.
-/// Instant under reduced motion or when the target does not change.
+/// A number that glides to its new value like a mass on a critically damped spring (`glide()` in uninstall-ui.js counted up on a cubic ease):
+/// it starts softly, never overshoots on its own, and a retarget half-way keeps its speed instead of restarting. `value(now)` is what to
+/// draw. Instant under reduced motion or when the target does not change.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Glide {
-    from: f64,
+    x: f64,
+    v: f64,
     to: f64,
-    t0: f64,
-    /// last value handed out (so a retarget in the middle starts from where the eye is)
-    shown: f64,
+    /// the clock (ms) the spring has been advanced to
+    last: f64,
 }
 
+/// About when a glide has arrived (95 %).
 pub const GLIDE_MS: f64 = 380.0;
 
 impl Default for Glide {
     fn default() -> Glide {
-        Glide { from: 0.0, to: 0.0, t0: 0.0, shown: 0.0 }
+        Glide::new(0.0)
     }
 }
 
 impl Glide {
     pub fn new(v: f64) -> Glide {
-        Glide { from: v, to: v, t0: 0.0, shown: v }
+        Glide { x: v, v: 0.0, to: v, last: 0.0 }
     }
-    /// Aim at `to`. The JS restarts from the previous *target* (`node.dataset.v`), not from the half-way text; the same here.
-    pub fn set(&mut self, to: f64, now_ms: f64, reduce: bool) {
-        let from = self.to;
-        self.to = to;
-        if reduce || from == to {
-            self.from = to;
-            self.shown = to;
+    /// Advance the spring to `now_ms` (closed form, exact for any step).
+    fn advance(&mut self, now_ms: f64) {
+        if !self.running() {
+            self.last = now_ms;
             return;
         }
-        self.from = from;
-        self.t0 = now_ms;
-        self.shown = from;
+        let dt = ((now_ms - self.last).max(0.0) / 1000.0).min(3.0);
+        self.last = now_ms;
+        let w = 4.74 / (GLIDE_MS / 1000.0);
+        let d = self.x - self.to;
+        let e = (-w * dt).exp();
+        let k = self.v + w * d;
+        self.x = self.to + (d + k * dt) * e;
+        self.v = (self.v - w * k * dt) * e;
+        // below what a rounded number can show
+        if (self.x - self.to).abs() < 0.3 && self.v.abs() < 6.0 {
+            self.x = self.to;
+            self.v = 0.0;
+        }
+    }
+    /// Aim at `to`, carrying on from where the number is now (and how fast it is going).
+    pub fn set(&mut self, to: f64, now_ms: f64, reduce: bool) {
+        self.advance(now_ms);
+        if reduce || to == self.to && !self.running() {
+            self.x = to;
+            self.v = 0.0;
+        }
+        self.to = to;
+        self.last = now_ms;
     }
     pub fn value(&mut self, now_ms: f64) -> f64 {
-        if self.from == self.to {
-            self.shown = self.to;
-            return self.to;
-        }
-        let k = ((now_ms - self.t0) / GLIDE_MS).clamp(0.0, 1.0);
-        let e = 1.0 - (1.0 - k).powi(3);
-        self.shown = self.from + (self.to - self.from) * e;
-        if k >= 1.0 {
-            self.from = self.to;
-            self.shown = self.to;
-        }
-        self.shown
+        self.advance(now_ms);
+        self.x
     }
     /// Read without advancing the clock (the last drawn value).
     pub fn shown(&self) -> f64 {
-        self.shown
+        self.x
     }
     pub fn target(&self) -> f64 {
         self.to
     }
     pub fn running(&self) -> bool {
-        self.from != self.to
+        self.x != self.to
     }
 }
 
@@ -410,27 +419,44 @@ mod tests {
     }
 
     #[test]
-    fn glide_eases_out_and_lands() {
+    fn glide_starts_softly_never_overshoots_and_lands_within_its_time() {
         let mut g = Glide::new(0.0);
         g.set(100.0, 1000.0, false);
         assert_eq!(g.value(1000.0), 0.0);
-        let mid = g.value(1190.0);
-        assert!(mid > 50.0 && mid < 100.0, "ease-out is past half-way at half time: {mid}");
-        assert_eq!(g.value(1380.0), 100.0);
-        assert!(!g.running());
+        let first = g.value(1016.0);
+        assert!(first > 0.0 && first < 5.0, "inertia: it does not start at speed: {first}");
+        let (mut prev, mut last_off) = (first, 0.0);
+        let mut t = 1016.0;
+        while t < 4000.0 {
+            t += 16.0;
+            let x = g.value(t);
+            assert!(x >= prev && x <= 100.0, "monotone, no overshoot: {x}");
+            prev = x;
+            if (x - 100.0).abs() > 5.0 {
+                last_off = t - 1000.0;
+            }
+        }
+        assert!(last_off > GLIDE_MS * 0.4 && last_off < GLIDE_MS * 1.5, "95 % at {last_off} ms");
+        assert_eq!(g.value(4000.0), 100.0, "lands exactly");
+        assert!(!g.running(), "idle once it has landed");
         // reduced motion and unchanged targets are instant
-        g.set(7.0, 2000.0, true);
-        assert_eq!(g.value(2000.0), 7.0);
-        g.set(7.0, 2100.0, false);
+        g.set(7.0, 5000.0, true);
+        assert_eq!(g.value(5000.0), 7.0);
+        g.set(7.0, 5100.0, false);
         assert!(!g.running());
     }
 
     #[test]
-    fn glide_retarget_restarts_from_previous_target() {
+    fn glide_retarget_keeps_the_position_and_the_speed() {
         let mut g = Glide::new(0.0);
-        g.set(10.0, 0.0, false);
-        g.set(20.0, 100.0, false);
-        assert_eq!(g.value(100.0), 10.0, "like node.dataset.v: restart from the last target");
-        assert_eq!(g.value(480.0), 20.0);
+        g.set(100.0, 0.0, false);
+        let before = g.value(150.0);
+        let v = g.v;
+        assert!(before > 5.0 && before < 95.0 && v > 0.0);
+        g.set(0.0, 150.0, false);
+        assert_eq!(g.shown(), before, "no jump back to the old target");
+        let after = g.value(166.0);
+        assert!(after > before - 1.0, "it carries on a little before turning around: {after} vs {before}");
+        assert!(g.value(3000.0) == 0.0 && !g.running());
     }
 }

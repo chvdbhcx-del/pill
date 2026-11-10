@@ -6,6 +6,7 @@ use super::anim::Look;
 use super::paint::{fit_text, with_look};
 use super::*;
 use glasskit::color::Color;
+use glasskit::ease::curves;
 use glasskit::text::{Align, Style};
 use pill_ui_core::bar::uninstall::view::{Button, ButtonStyle, GroupView, ItemRowView, Part, ProgressKind, StripIcon, StripTone, StripView};
 
@@ -245,9 +246,10 @@ impl BarView {
     }
 
     fn chev_target(&mut self, g: usize, open: bool) -> f32 {
-        let t = self.chev.entry(g).or_insert_with(|| Tween::at_rest(if open { 1.0 } else { 0.0 }));
-        t.retarget(if open { 1.0 } else { 0.0 }, 0.38, curves::SPRING_POP);
-        t.value()
+        let goal = if open { 1.0 } else { 0.0 };
+        let t = self.chev.entry(g).or_insert_with(|| Flow::new(goal, Feel::POP));
+        t.to(goal);
+        t.at()
     }
 
     // ---- painting ----
@@ -491,7 +493,7 @@ impl BarView {
         let key = Tgt::Ctl(Control::ToggleGroup(g.index)).key();
         let hov = self.fx.hov(key);
         cv.fill_rr(r, 8.0, th.raised2.fade(hov));
-        let open = self.chev.get(&g.index).map_or(if g.open { 1.0 } else { 0.0 }, |t| t.value());
+        let open = self.chev.get(&g.index).map_or(if g.open { 1.0 } else { 0.0 }, |t| t.at());
         let ci = Rect::new(r.x + 2.0, r.cy() - 7.0, 14.0, 14.0);
         cv.with_transform(super::paint::rot_scale_about(ci.center(), 1.0, -90.0 * (1.0 - open)), |cv| self.icons.draw16(cv, "chev", "<path d=\"M5 6l3 3 3-3\"/>", 1.6, ci, th.dim));
         let tx = r.x + 2.0 + 14.0 + 6.0;

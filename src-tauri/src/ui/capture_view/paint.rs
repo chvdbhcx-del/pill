@@ -3,7 +3,7 @@
 //! marker, loupe, copy flash, toast.
 use super::icons::IconSet;
 use super::tools::{self, rgba_to_bgra, FrameSrc, Tools};
-use super::{CaptureView, DIM_RAMP_MS, HINT_IN_MS, TIP_DELAY_MS, TOAST_MS};
+use super::CaptureView;
 use glasskit::canvas::scale_about;
 use glasskit::color::Color;
 use glasskit::geom::Rect;
@@ -12,7 +12,7 @@ use glasskit::text::Style;
 use glasskit::theme::Theme;
 use glasskit::Canvas;
 use pill_ui_core::capture as cap;
-use pill_ui_core::capture::{AnimKind, AnimTarget, Anim, DrawCmd};
+use pill_ui_core::capture::{AnimKind, AnimTarget, DrawCmd};
 use windows::Win32::Graphics::Direct2D::*;
 
 /// Per-device GPU state of one overlay.
@@ -31,16 +31,10 @@ fn gr(r: &cap::Rect) -> Rect {
     Rect::new(r.x as f32, r.y as f32, r.w as f32, r.h as f32)
 }
 
-fn ease_out(t: f64) -> f32 {
-    glasskit::ease::curves::EASE_OUT.at(t.clamp(0.0, 1.0) as f32)
-}
-
-fn find<'a>(anims: &'a [Anim], kind: AnimKind, target: &AnimTarget) -> Option<&'a Anim> {
-    anims.iter().find(|a| a.spec.kind == kind && &a.target == target)
-}
-
-fn find_kind(anims: &[Anim], kind: AnimKind) -> Option<&Anim> {
-    anims.iter().find(|a| a.spec.kind == kind)
+/// The model's handle position `at` inside its rectangle `m`, carried over to the rectangle as painted `d` (the same place, proportionally).
+fn on_painted(at: (f32, f32), m: Rect, d: Rect) -> (f32, f32) {
+    let u = |a: f32, o: f32, len: f32| if len > 0.001 { (a - o) / len } else { 0.0 };
+    (d.x + u(at.0, m.x, m.w) * d.w, d.y + u(at.1, m.y, m.h) * d.h)
 }
 
 pub(crate) fn paint(v: &mut CaptureView, cv: &Canvas, theme: &Theme, rect: Rect, cx: &crate::ui::view::Cx) {
@@ -71,12 +65,15 @@ pub(crate) fn paint(v: &mut CaptureView, cv: &Canvas, theme: &Theme, rect: Rect,
             v.frame_dirty = false;
         }
     }
+    let reduce = cx.reduced_motion || v.opts.reduce_motion;
+    v.sync_motion(now, reduce); // an animation the model has just announced starts from its first frame, not from rest
     let Some(gpu) = v.gpu.as_ref() else { return };
     let vm = &v.vm;
-    let reduce = cx.reduced_motion || v.opts.reduce_motion;
-    let ramp = |from: f64, dur: f64| if reduce { 1.0 } else { ease_out((now - from) / dur) };
-    let dim_k = ramp(v.armed_ms, DIM_RAMP_MS);
+    let mo = &v.motion;
+    let dim_k = mo.dim_k();
     let (w, h) = (rect.w, rect.h);
+    // the selection as painted (it trails the pointer a little while dragging); the model's rectangle is what is committed and cropped
+    let painted_sel = mo.sel_rect().map(|r| Rect::new(r[0], r[1], r[2], r[3]));
 
     // ---- 1. the frozen frame ----
     if let Some(bmp) = &gpu.frame {
@@ -89,14 +86,10 @@ pub(crate) fn paint(v: &mut CaptureView, cv: &Canvas, theme: &Theme, rect: Rect,
     }
     let ghost_sel = vm.ghost.as_ref().map(|g| g.selection).filter(|s| s.w > 0.0 && s.h > 0.0);
     let cut = match (&vm.selection, ghost_sel) {
-        (Some(s), _) => Some((gr(&s.rect), 0.46 * dim_k)),
+        (Some(s), _) => Some((painted_sel.unwrap_or_else(|| gr(&s.rect)), 0.46 * dim_k)),
         (None, Some(g)) => {
             // exit: the dim around the confirmed area fades out with the flash instead of snapping off
-            let k = find_kind(&vm.anims, AnimKind::CopyFlash).or_else(|| find_kind(&vm.anims, AnimKind::ToolbarLeave)).map_or(0.0, |a| {
-                let f = a.frame(nowu);
-                (f.opacity / a.spec.opacity_from.max(0.01)) as f32
-            });
-            Some((gr(&g), 0.46 * k))
+            Some((gr(&g), 0.46 * mo.leave_k()))
         }
         _ => None,
     };
@@ -113,11 +106,12 @@ pub(crate) fn paint(v: &mut CaptureView, cv: &Canvas, theme: &Theme, rect: Rect,
 
     // ---- 3. handles and the size badge ----
     if let Some(sel) = &vm.selection {
-        let s = gr(&sel.rect);
-        let pop = find(&vm.anims, AnimKind::HandlesPop, &AnimTarget::Handles).map(|a| a.frame(nowu));
+        let model_rect = gr(&sel.rect);
+        let s = painted_sel.unwrap_or(model_rect);
+        let pop = mo.frame(AnimKind::HandlesPop, &AnimTarget::Handles);
         for hd in &sel.handles {
-            let (k, o) = pop.map_or((1.0, 1.0), |f| (f.progress as f32, f.opacity as f32));
-            let c = (hd.at.x as f32, hd.at.y as f32);
+            let (k, o) = pop.map_or((1.0, 1.0), |f| (f.progress, f.opacity));
+            let c = on_painted((hd.at.x as f32, hd.at.y as f32), model_rect, s);
             cv.with_opacity(o, |cv| {
                 cv.fill_circle(c, 4.5 * k.max(0.0), theme.accent);
                 cv.fill_circle(c, 3.0 * k.max(0.0), WHITE);
@@ -142,9 +136,9 @@ pub(crate) fn paint(v: &mut CaptureView, cv: &Canvas, theme: &Theme, rect: Rect,
         cv.with_clip(s, |cv| {
             cv.with_transform(scale_about((0.0, 0.0), 1.0 / rx, 1.0 / ry), |cv| {
                 for op in vm.ops.iter().chain(vm.draft.iter()) {
-                    let ins = find(&vm.anims, AnimKind::OpInsert, &AnimTarget::Op(op.id)).map(|a| a.frame(nowu));
-                    let k = ins.map_or(1.0, |f| f.opacity as f32);
-                    let sc = ins.map_or(1.0, |f| f.scale as f32);
+                    let ins = mo.frame(AnimKind::OpInsert, &AnimTarget::Op(op.id));
+                    let k = ins.map_or(1.0, |f| f.opacity);
+                    let sc = ins.map_or(1.0, |f| f.scale);
                     let center = op_center(gpu, cv, &op.cmds);
                     let draw = |cv: &Canvas| {
                         for c in &op.cmds {
@@ -187,11 +181,7 @@ pub(crate) fn paint(v: &mut CaptureView, cv: &Canvas, theme: &Theme, rect: Rect,
 
     // ---- 6. the hint pill ----
     if let Some(hint) = &vm.hint {
-        let a = if hint.visible {
-            ramp(v.armed_ms + 60.0, HINT_IN_MS)
-        } else {
-            find(&vm.anims, AnimKind::HintFade, &AnimTarget::Hint).map_or(0.0, |a| a.frame(nowu).opacity as f32)
-        };
+        let a = mo.hint_k();
         if a > 0.0 && !hint.text.is_empty() {
             let st = Style::new(12.0, 600);
             let tw = cv.text_width(&hint.text, st);
@@ -207,13 +197,12 @@ pub(crate) fn paint(v: &mut CaptureView, cv: &Canvas, theme: &Theme, rect: Rect,
 
     // ---- 7. toolbar (and its exit ghost), tip ----
     if let Some(tb) = &vm.toolbar {
-        let en = find(&vm.anims, AnimKind::ToolbarEnter, &AnimTarget::Toolbar).map(|a| a.frame(nowu));
-        draw_bar(v, gpu, cv, tb, en.map_or(1.0, |f| f.opacity as f32), en.map_or(0.0, |f| f.dy as f32));
-        draw_tip(v, cv, theme, tb, rect, now, reduce);
+        let en = mo.frame(AnimKind::ToolbarEnter, &AnimTarget::Toolbar);
+        draw_bar(v, gpu, cv, tb, en.map_or(1.0, |f| f.opacity), en.map_or(0.0, |f| f.dy));
+        draw_tip(v, cv, theme, tb, rect);
     } else if let Some(tb) = vm.ghost.as_ref().and_then(|g| g.toolbar.as_ref()) {
-        let lv = find(&vm.anims, AnimKind::ToolbarLeave, &AnimTarget::Toolbar).map(|a| a.frame(nowu));
-        if let Some(f) = lv {
-            draw_bar(v, gpu, cv, tb, f.opacity as f32, 0.0);
+        if let Some(f) = mo.frame(AnimKind::ToolbarLeave, &AnimTarget::Toolbar) {
+            draw_bar(v, gpu, cv, tb, f.opacity, 0.0);
         }
     }
 
@@ -223,13 +212,9 @@ pub(crate) fn paint(v: &mut CaptureView, cv: &Canvas, theme: &Theme, rect: Rect,
         cv.stroke_rr(m.inset(-1.0), 4.0, 1.0, BLACK);
         cv.stroke_rr(m, 3.0, 1.5, WHITE);
         cv.stroke_rr(m.inset(1.5), 2.0, 1.0, BLACK);
-        let show = find(&vm.anims, AnimKind::LoupeShow, &AnimTarget::Loupe).map(|a| a.frame(nowu));
-        let mut pos = (l.box_pos.x as f32, l.box_pos.y as f32);
-        if let (Some(from), Some(a)) = (vm.loupe_from, find(&vm.anims, AnimKind::LoupeFollow, &AnimTarget::Loupe)) {
-            let p = a.frame(nowu).progress as f32;
-            pos = (from.x as f32 + (pos.0 - from.x as f32) * p, from.y as f32 + (pos.1 - from.y as f32) * p);
-        }
-        let (o, sc) = show.map_or((1.0, 1.0), |f| (f.opacity as f32, f.scale as f32));
+        let show = mo.frame(AnimKind::LoupeShow, &AnimTarget::Loupe);
+        let pos = mo.loupe_pos(); // the lens box follows the pointer on its own light spring
+        let (o, sc) = show.map_or((1.0, 1.0), |f| (f.opacity, f.scale));
         // the browser snaps the lens box to whole device px: the 1 px grid lines stay crisp
         let k = cx.scale.max(0.25);
         let pos = ((pos.0 * k).round() / k, (pos.1 * k).round() / k);
@@ -238,26 +223,21 @@ pub(crate) fn paint(v: &mut CaptureView, cv: &Canvas, theme: &Theme, rect: Rect,
     }
 
     // ---- 9. copy flash ----
-    if let Some(a) = find_kind(&vm.anims, AnimKind::CopyFlash) {
+    if let Some(f) = mo.frame(AnimKind::CopyFlash, &AnimTarget::Selection) {
         let r = vm.selection.as_ref().map(|s| gr(&s.rect)).or(ghost_sel.as_ref().map(gr));
-        if let Some(r) = r {
-            cv.fill_rect(r, WHITE.alpha(a.frame(nowu).opacity as f32));
+        if let (Some(r), true) = (r, f.opacity > 0.001) {
+            cv.fill_rect(r, WHITE.alpha(f.opacity));
         }
     }
 
     // ---- 10. toast ----
     if let Some(t) = &v.toast {
-        let el = now - t.since;
-        let a = if reduce {
-            if el < TOAST_MS { 1.0 } else { 0.0 }
-        } else {
-            (ease_out(el / 160.0) * (1.0 - ease_out((el - TOAST_MS) / 240.0))).clamp(0.0, 1.0)
-        };
+        let a = mo.toast.at01();
         if a > 0.0 {
             let st = Style::new(13.0, 600);
             let tw = cv.text_width(&t.text, st);
             let (pw, ph) = (tw + 36.0, 36.0);
-            let rise = if reduce { 0.0 } else { (1.0 - ease_out(el / 200.0)) * 8.0 };
+            let rise = mo.toast_rise.at();
             let r = Rect::new((w - pw) / 2.0, h - 72.0 + rise, pw, ph);
             cv.with_opacity(a, |cv| {
                 cv.shadow_rr(r, 18.0, 16.0, 4.0, BLACK.alpha(0.4));
@@ -311,13 +291,13 @@ fn draw_bar(v: &CaptureView, gpu: &Gpu, cv: &Canvas, tb: &cap::toolbar::ToolbarV
             for it in &tb.items {
                 let ir = Rect::new(r.x + it.rect.x as f32, r.y + it.rect.y as f32, it.rect.w as f32, it.rect.h as f32);
                 let fx = v.fx.get(&it.id);
-                let hover = fx.map_or(0.0, |f| f.hover.value()).clamp(0.0, 1.0);
-                let press = fx.map_or(1.0, |f| f.press.value());
+                let hover = fx.map_or(0.0, |f| f.hover.at01());
+                let press = fx.map_or(1.0, |f| f.press.at());
                 match it.variant {
                     Variant::Separator => cv.fill_rect(ir, WHITE.alpha(0.14)),
                     Variant::Swatch => {
                         let c = ir.center();
-                        let pop = find(&v.vm.anims, AnimKind::SwatchPop, &AnimTarget::ToolbarItem(it.color.clone())).map(|a| a.frame(v.now as u64).scale as f32);
+                        let pop = v.motion.frame(AnimKind::SwatchPop, &AnimTarget::ToolbarItem(it.color.clone())).map(|f| f.scale);
                         let k = (1.0 + 0.15 * hover).max(pop.unwrap_or(1.0)) * press.min(1.0).max(0.92);
                         cv.with_scale_about(c, k, |cv| {
                             let col = tools::parse_color(&it.color);
@@ -350,14 +330,13 @@ fn draw_bar(v: &CaptureView, gpu: &Gpu, cv: &Canvas, tb: &cap::toolbar::ToolbarV
 }
 
 /// The tooltip of the hovered toolbar item (the web page used the browser's `title`).
-fn draw_tip(v: &CaptureView, cv: &Canvas, theme: &Theme, tb: &cap::toolbar::ToolbarVm, rect: Rect, now: f64, reduce: bool) {
-    let Some(id) = &v.hover_id else { return };
+fn draw_tip(v: &CaptureView, cv: &Canvas, theme: &Theme, tb: &cap::toolbar::ToolbarVm, rect: Rect) {
+    let Some(id) = &v.motion.tip_id else { return };
     let Some(it) = tb.items.iter().find(|i| &i.id == id) else { return };
-    let el = now - v.hover_since - TIP_DELAY_MS;
-    if el < 0.0 || it.tip.is_empty() {
+    let a = v.motion.tip.at01();
+    if a < 0.003 || it.tip.is_empty() {
         return;
     }
-    let a = if reduce { 1.0 } else { ease_out(el / 120.0) };
     let st = Style::new(12.0, 500);
     let tw = cv.text_width(&it.tip, st);
     let (pw, ph) = (tw + 20.0, 26.0);
@@ -367,7 +346,7 @@ fn draw_tip(v: &CaptureView, cv: &Canvas, theme: &Theme, tb: &cap::toolbar::Tool
     let below = bar.bottom() + 8.0 + ph <= rect.h - 4.0;
     let y = if below { bar.bottom() + 8.0 } else { bar.y - 8.0 - ph };
     let r = Rect::new(x, y, pw, ph);
-    let rise = if reduce { 0.0 } else { (1.0 - a) * if below { -3.0 } else { 3.0 } };
+    let rise = (1.0 - v.motion.tip_slide.at()) * if below { -3.0 } else { 3.0 };
     cv.with_opacity(a, |cv| {
         cv.with_offset(0.0, rise, |cv| {
             cv.shadow_rr(r, 8.0, 10.0, 3.0, BLACK.alpha(0.4));
