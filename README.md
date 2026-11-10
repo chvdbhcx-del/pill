@@ -59,6 +59,7 @@ Chips and cards available today:
 | Mail | "New mail: sender - subject" over IMAP, headers only (off by default) |
 | OBS | A red REC / LIVE chip with a timer and a card with the saved recording (off by default; needs OBS's WebSocket server) |
 | Windows notifications | Shown as cards instead of toasts |
+| Pill Phone | Your Android phone's notifications as cards (avatar, sender, text; hover to Hide, Mark read or Reply from the island) and files both ways; off until you switch *Settings → Phone → Phone link* on |
 | Screen recording, microphone and camera use, volume, keyboard layout, copy, GPU/CPU too hot | Small chips and reactions of the edge |
 
 <div align="center">
@@ -142,6 +143,8 @@ Network features are **off by default**. Nothing is sent anywhere until you swit
 **The one exception is the update check, which is on by default:** about 20 seconds after launch Pill asks GitHub whether a newer release exists. It only checks; installing is always your click, and every update is signed and verified. Turn it off in *Settings → Updates → Check on start*.
 
 The AI setup wizard downloads Ollama or Whisper only when you press its buttons. The microphone is used only while you dictate. Clipboard history stays on your machine and skips password managers and secret-looking text by default. There is no telemetry.
+
+**Pill Phone** (Android) talks to the PC over your local network only, and only while *Settings → Phone → Phone link* is on. The link has **no encryption (no TLS)**: it is meant for a home or office network you trust, each phone is paired by a one-time QR code (valid 5 minutes) and gets its own secret token (the PC keeps only a hash of it); peers outside private address ranges are refused, wrong tokens are rate-limited, a phone can be revoked at any time, file names from the phone are sanitised and programs are never started by a click. Message texts stay in memory and are never logged or written to disk. The protocol is in `docs/phone-protocol.md`.
 
 ## Install
 
