@@ -7,6 +7,7 @@ mod ai_actions;
 mod ai_setup;
 mod chat;
 mod chat_pop;
+mod flowkit;
 mod editor;
 mod icons;
 pub mod kit;

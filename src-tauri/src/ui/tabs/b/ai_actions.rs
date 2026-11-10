@@ -7,7 +7,8 @@
 //! open/closed itself). Keyboard: Up/Down/Left/Right + Enter or 1-4 pick an action, Esc closes.
 //! Not ported: selecting the result text with the mouse (the web used `user-select: text`); Copy puts all of it on the clipboard.
 use crate::ui::tabs::fx::{emit, TabFx};
-use super::kit::{self, lang_of, ms_of, route_effects, Bk, Calls, Clicks, Cues, Icons};
+use super::kit::{self, lang_of, ms_of, route_effects, Bk, Calls, Clicks, Cues, Icons, Lit};
+use crate::ui::liquid::Feel;
 use crate::ui::view::{Cx, Msg, View};
 use glasskit::canvas::Canvas;
 use glasskit::geom::Rect;
@@ -48,6 +49,8 @@ pub struct AiActionsScreen {
     sel: usize,
     /// the arrow keys were used: the focused option is drawn lit (and ringed)
     kbd: bool,
+    /// how lit each option is by the keyboard focus (flows, so the highlight glides from one option to the next)
+    sel_lit: [Lit; 4],
     carry: f64,
     announced_close: bool,
 }
@@ -67,6 +70,7 @@ impl AiActionsScreen {
             last: None,
             sel: 0,
             kbd: false,
+            sel_lit: std::array::from_fn(|_| Lit::new(Feel::FADE)),
             carry: 0.0,
             announced_close: false,
         }
@@ -214,6 +218,9 @@ impl View for AiActionsScreen {
         let mut busy = self.cues.step(dt_ms as f32);
         busy |= self.clicks.step(dt);
         busy |= self.scroll.step(dt);
+        for l in &mut self.sel_lit {
+            busy |= l.step(dt_ms);
+        }
         // the spinner turns while a request runs
         busy | (matches!(self.last.as_ref().and_then(|v| v.screen.as_ref()), Some(Screen::Working { .. })) && !cx.reduced_motion)
     }
@@ -227,6 +234,10 @@ impl View for AiActionsScreen {
             self.last = None;
         }
         let Some(v) = self.last.clone() else { return };
+        for i in 0..self.sel_lit.len() {
+            let on = self.sel == i && self.is_keyboard();
+            self.sel_lit[i].set(on);
+        }
         self.hits.borrow_mut().clear();
         let panel = |cv: &Canvas| self.paint(cv, th, rect, &v, cx);
         let x = self.cues.xf("ai-panel");
@@ -275,7 +286,8 @@ impl AiActionsScreen {
             let r = Rect::new(grid.x + (i % 2) as f32 * (grid.w / 2.0 + 4.0), grid.y + (i / 2) as f32 * 60.0, grid.w / 2.0 - 4.0, 52.0);
             let k = K::Opt(i);
             self.hits.borrow_mut().push((k.clone(), r));
-            let h = self.clicks.hover_amt(&k).max(if self.sel == i && self.is_keyboard() { 1.0 } else { 0.0 });
+            let lit = self.sel_lit.get(i).map_or(0.0, |l| l.at());
+            let h = self.clicks.hover_amt(&k).max(lit);
             cv.with_scale_about(r.center(), self.clicks.press_scale(&k, 0.98), |cv| {
                 cv.fill_rr(r, 12.0, th.card.mix(th.raised, h));
                 let ib = Rect::new(r.x + 12.0, r.cy() - 16.0, 32.0, 32.0);
@@ -284,8 +296,8 @@ impl AiActionsScreen {
                 let tx = Rect::new(ib.right() + 12.0, r.y, r.right() - ib.right() - 24.0, r.h);
                 cv.text(Rect::new(tx.x, r.cy() - 19.0, tx.w, 18.0), &it.label, th.body().ellipsis(), th.text);
                 cv.text(Rect::new(tx.x, r.cy() + 1.0, tx.w, 14.0), &it.sub, th.caption().ellipsis(), th.dim);
-                if h > 0.0 && self.sel == i && self.is_keyboard() {
-                    cv.focus_ring(r, 12.0, th.accent, 1.0);
+                if lit > 0.0 {
+                    cv.with_opacity(lit, |cv| cv.focus_ring(r, 12.0, th.accent, 1.0));
                 }
             });
         }

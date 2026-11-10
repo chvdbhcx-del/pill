@@ -12,6 +12,7 @@ use crate::ui::tabs::fx::{emit, TabFx};
 use crate::ui::view::{Cx, Ticket};
 use glasskit::canvas::Canvas;
 use crate::ui::liquid::{Feel, Flow};
+pub use super::flowkit::{Lit, Swap, GROW};
 use glasskit::edit::{EditEvent, TextInput};
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{Cursor, InputEvent, KeyCode, MouseButton, Response};
@@ -384,114 +385,6 @@ impl Cues {
 /// Phase 0..1 of a looping animation of period `period_ms` from the host clock (typing dots, caret, spinner sweep).
 pub fn phase(now_ms: f64, period_ms: f64) -> f32 {
     ((now_ms % period_ms) / period_ms) as f32
-}
-
-// ---------------------------------------------------------------------------------------------------------------------------------------
-// Small stateful flows shared by the views
-// ---------------------------------------------------------------------------------------------------------------------------------------
-
-/// Heights that grow from / shrink to nothing: the [`Feel::FLOW`] time without its bounce (a height cannot dip below zero).
-pub const GROW: Feel = Feel::FADE.within(Feel::FLOW.settle_ms);
-
-/// A yes / no state shown as a flow 0..1 (a highlight, a selected look, a mix of two colours). The first `set` lands at once, so a freshly
-/// built view never animates from a wrong start; later changes glide and can turn around mid-way.
-pub struct Lit {
-    f: Flow,
-    seen: bool,
-}
-
-impl Lit {
-    pub fn new(feel: Feel) -> Lit {
-        Lit { f: Flow::new(0.0, feel), seen: false }
-    }
-
-    pub fn set(&mut self, on: bool) {
-        self.set_to(on as u8 as f32);
-    }
-
-    /// Like [`Lit::set`] for a target other than 0 / 1.
-    pub fn set_to(&mut self, t: f32) {
-        if !self.seen {
-            self.seen = true;
-            self.f.jump(t);
-        }
-        self.f.to(t);
-    }
-
-    /// Held inside 0..1 (for colour mixes and opacities).
-    pub fn at(&self) -> f32 {
-        self.f.at01()
-    }
-
-    /// As it is, bounce included (for scales and offsets).
-    pub fn raw(&self) -> f32 {
-        self.f.at()
-    }
-
-    pub fn moving(&self) -> bool {
-        self.f.moving()
-    }
-
-    pub fn step(&mut self, dt_ms: f64) -> bool {
-        self.f.step(dt_ms);
-        self.f.moving()
-    }
-}
-
-/// A value that is swapped (a label, an icon name): the old one fades out while the new one fades in. Paint both with [`Swap::paint`].
-pub struct Swap<T> {
-    cur: Option<T>,
-    prev: Option<T>,
-    k: Flow,
-}
-
-impl<T: Clone + PartialEq> Default for Swap<T> {
-    fn default() -> Self {
-        Swap { cur: None, prev: None, k: Flow::new(1.0, Feel::FADE) }
-    }
-}
-
-impl<T: Clone + PartialEq> Swap<T> {
-    pub fn new() -> Swap<T> {
-        Swap::default()
-    }
-
-    /// Show `v`: the first value is there at once, a different one cross-fades in.
-    pub fn set(&mut self, v: &T) {
-        match &self.cur {
-            None => self.cur = Some(v.clone()),
-            Some(c) if c == v => {}
-            Some(c) => {
-                self.prev = Some(c.clone());
-                self.cur = Some(v.clone());
-                self.k.jump(0.0);
-                self.k.to(1.0);
-            }
-        }
-    }
-
-    pub fn step(&mut self, dt_ms: f64) -> bool {
-        self.k.step(dt_ms);
-        if !self.k.moving() {
-            self.prev = None;
-        }
-        self.k.moving()
-    }
-
-    pub fn moving(&self) -> bool {
-        self.k.moving()
-    }
-
-    /// Calls `f(value, opacity)` for the outgoing value (if any) and the current one.
-    pub fn paint(&self, mut f: impl FnMut(&T, f32)) {
-        let k = self.k.at01();
-        if let Some(p) = &self.prev {
-            f(p, 1.0 - k);
-        }
-        if let Some(c) = &self.cur {
-            f(c, if self.prev.is_some() { k } else { 1.0 });
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------
