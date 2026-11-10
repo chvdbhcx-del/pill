@@ -58,9 +58,10 @@ impl SettingsView {
         self.ui.begin();
         let wizard = self.wiz.active() || self.page.wizard;
         let parts = parts(rect, self.maximized, !wizard);
-        let win_k = self.win_t.value().clamp(0.0, 1.0);
+        let win_k = self.win_t.at01();
+        let win_y = (1.0 - self.win_t.at()) * 14.0;
         cv.with_opacity(win_k, |cv| {
-            cv.with_offset(0.0, (1.0 - win_k) * 14.0, |cv| {
+            cv.with_offset(0.0, win_y, |cv| {
                 let d = Dc { cv, th: d.th, p: d.p, lang: d.lang, now_ms: d.now_ms, reduced: d.reduced };
                 if self.loaded {
                     self.pump_fields(cv);

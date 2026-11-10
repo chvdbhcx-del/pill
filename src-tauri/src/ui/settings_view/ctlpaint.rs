@@ -88,7 +88,7 @@ impl SettingsView {
                     let k = key(&format!("day:{id}"));
                     self.ui.add(k, rc, Act::Day(id.to_string()), true, false, enabled);
                     let (hv, pr) = (self.ui.hover_of(k), self.ui.press_of(k));
-                    let scale = (1.0 - 0.07 * pr.max(0.0)) * w.pop[i].value();
+                    let scale = (1.0 - 0.07 * pr.max(0.0)) * w.pop[i].at();
                     let bg = if on { p.accent_bg } else { mix(p.ctl, p.ctl_hover, hv) };
                     cv.with_scale_about(rc.center(), scale, |cv| {
                         cv.fill_rr(rc, 8.0, bg);

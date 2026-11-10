@@ -177,7 +177,7 @@ fn reduced_motion_switches_pages_at_once() {
     t.sim.pump();
     assert!(t.v.borrow().leaving.is_none(), "no exit slide under reduced motion");
     assert_eq!(t.current(), "appearance");
-    assert!(t.v.borrow().enter_t.finished());
+    assert!(!t.v.borrow().enter_t.moving(), "the page is in place at once");
 }
 
 #[test]

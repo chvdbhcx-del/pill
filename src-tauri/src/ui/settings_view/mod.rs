@@ -14,6 +14,7 @@ mod ctlpaint;
 mod custom;
 mod events;
 mod fields;
+mod flow;
 mod icons;
 mod keys;
 mod nav;
@@ -46,7 +47,7 @@ pub use pal::settings_light;
 
 use crate::ui::view::{Cx, Msg, Ticket, View};
 use glasskit::canvas::Canvas;
-use glasskit::ease::Tween;
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::input::{FocusChain, InputEvent, Response};
 use glasskit::theme::Theme;
@@ -110,9 +111,12 @@ pub struct SettingsView {
     reduced: bool,
     page: Page,
     leaving: Option<Page>,
-    leave_t: Tween<f32>,
-    enter_t: Tween<f32>,
-    win_t: Tween<f32>,
+    /// the old page sliding out (0 = in place, 1 = gone)
+    leave_t: Flow,
+    /// the new page rising in (1 = in place)
+    enter_t: Flow,
+    /// the window fading in after it is shown
+    win_t: Flow,
     /// page requested while the old one slides out
     want_page: Option<String>,
     ui: Ui,
@@ -122,12 +126,12 @@ pub struct SettingsView {
     fid_next: u32,
     pend: HashMap<u64, Pend>,
     rec_live: Vec<&'static str>,
-    rec_t: Tween<f32>,
+    rec_t: Flow,
     side: chrome::Side,
     search: chrome::SearchUi,
     grab: Option<Grab>,
     goto: Option<Goto>,
-    hl_card: Option<(String, f32)>,
+    hl_card: Option<(String, flow::Pulse)>,
     wiz: wizard::WizState,
     open_select: Option<u32>,
     ticker: Option<open::Ticker>,
@@ -156,9 +160,9 @@ impl SettingsView {
             reduced: false,
             page: Page::empty(),
             leaving: None,
-            leave_t: Tween::at_rest(1.0),
-            enter_t: Tween::at_rest(1.0),
-            win_t: Tween::at_rest(1.0),
+            leave_t: Flow::new(0.0, Feel::FADE.within(150.0)),
+            enter_t: Flow::new(1.0, Feel::FLOW),
+            win_t: Flow::new(1.0, Feel::FLOW),
             want_page: None,
             ui: Ui::default(),
             dy: Dyn::default(),
@@ -167,7 +171,7 @@ impl SettingsView {
             fid_next: 100,
             pend: HashMap::new(),
             rec_live: Vec::new(),
-            rec_t: Tween::at_rest(0.0),
+            rec_t: Flow::new(0.0, Feel::FADE),
             side: chrome::Side::new(),
             search: chrome::SearchUi::new(&th),
             grab: None,
@@ -248,7 +252,8 @@ impl View for SettingsView {
     }
 
     fn on_show(&mut self, cx: &mut Cx) {
-        self.win_t = Tween::new(0.0, 1.0, 0.14, glasskit::ease::curves::EASE_OUT);
+        let reduce = self.reduce();
+        flow::from_to(&mut self.win_t, 0.0, 1.0, reduce);
         cx.request_frame();
     }
 
@@ -265,3 +270,5 @@ impl View for SettingsView {
 
 #[cfg(test)]
 mod tests2;
+#[cfg(test)]
+mod tests_motion;

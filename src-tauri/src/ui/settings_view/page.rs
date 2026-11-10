@@ -2,7 +2,8 @@
 //! schema, with one retained glasskit control per row. Building is cheap; the view builds a page on every switch.
 use super::fields::TextField;
 use glasskit::controls::{Segmented, Select, Slider, Toggle};
-use glasskit::ease::Tween;
+use super::flow::Pulse;
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::scroll::{Axis, ScrollState, Scrollbar};
 use glasskit::theme::Theme;
@@ -29,7 +30,7 @@ pub struct FieldCtl {
 
 /// The seven chips of Quiet hours: pop animation per chip.
 pub struct Week {
-    pub pop: [Tween<f32>; 7],
+    pub pop: [Flow; 7],
     pub cur: usize,
 }
 
@@ -53,21 +54,41 @@ pub struct RowRt {
     pub row: &'static Row,
     pub ctl: Ctl,
     /// 0..1 how open the row is (expand / collapse)
-    pub vis: Tween<f32>,
+    pub vis: Flow,
     pub vis_on: bool,
     /// 1 enabled .. 0.5 disabled
-    pub en: Tween<f32>,
+    pub en: Flow,
     pub en_on: bool,
-    pub msg: Option<(Msg, Tween<f32>)>,
+    /// the message under the hint and how far it has faded in; a target of 0 = it is leaving (dropped once it has gone)
+    pub msg: Option<(Msg, Flow)>,
     pub status: Option<Msg>,
-    /// seconds since the search highlight started, None = no highlight
-    pub hl: Option<f32>,
+    /// the height (px) the message and status lines take: flows to what the text needs, so the rows below glide instead of jumping
+    pub mh: Flow,
+    /// false until the first paint has put `mh` where the text already is (a fresh row must not grow from 0)
+    pub mh_seen: bool,
+    /// frames left in which a content change may animate `mh` (the paint sets the target, a step must follow it)
+    pub kick: u8,
+    /// the search highlight wash, None = none
+    pub hl: Option<Pulse>,
     /// laid out at the last draw: the row body (content space, un-collapsed height) and its control
     pub rect: Rect,
     pub ctl_rect: Rect,
     pub fid: u32,
     /// labels / values of a segmented control or select, parallel
     pub opts: Vec<(String, Value)>,
+}
+
+impl RowRt {
+    /// 0..1 how much of the message / status height has opened: what a status line fades by while its room grows.
+    pub fn grow(&self) -> f32 {
+        let need = self.mh.target();
+        if need < 0.5 { 1.0 } else { (self.mh.at() / need).clamp(0.0, 1.0) }
+    }
+
+    /// The message under the hint unless it is on its way out.
+    pub fn live_msg(&self) -> Option<&Msg> {
+        self.msg.as_ref().filter(|(_, f)| f.target() > 0.0).map(|(m, _)| m)
+    }
 }
 
 pub enum Block {
@@ -246,7 +267,7 @@ pub fn make_ctl(row: &'static Row, m: &SettingsModel, th: &Theme, dy: &Dyn, lang
             tf.set_text(&field_text(row, m));
             Ctl::Field(Box::new(FieldCtl { tf, kind }))
         }
-        Control::Weekdays => Ctl::Week(Week { pop: std::array::from_fn(|_| Tween::at_rest(1.0)), cur: 0 }),
+        Control::Weekdays => Ctl::Week(Week { pop: std::array::from_fn(|_| Flow::new(1.0, Feel::POP)), cur: 0 }),
         Control::Button { .. } => Ctl::Button,
         Control::Custom(name) => Ctl::Custom(name),
         Control::PetsPicker | Control::CharacterPicker | Control::Color => Ctl::None,
@@ -260,12 +281,15 @@ pub fn new_row(row: &'static Row, m: &SettingsModel, th: &Theme, dy: &Dyn, lang:
     RowRt {
         row,
         ctl,
-        vis: Tween::at_rest(st.visible as u8 as f32),
+        vis: Flow::new(st.visible as u8 as f32, Feel::FLOW),
         vis_on: st.visible,
-        en: Tween::at_rest(if st.enabled { 1.0 } else { 0.5 }),
+        en: Flow::new(if st.enabled { 1.0 } else { 0.5 }, Feel::FADE),
         en_on: st.enabled,
         msg: None,
         status: None,
+        mh: Flow::px(0.0, Feel::FLOW),
+        mh_seen: false,
+        kick: 0,
         hl: None,
         rect: Rect::default(),
         ctl_rect: Rect::default(),

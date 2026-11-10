@@ -8,7 +8,8 @@ use super::SettingsView;
 use crate::ui::view::Cx;
 use glasskit::canvas::Canvas;
 use glasskit::controls::{Toggle, Widget};
-use glasskit::ease::{curves, Tween};
+use super::flow::tick;
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use pill_ui_core::settings::flows::{Confirm, EverythingView, Msg as FMsg, Progress};
 use pill_ui_core::settings::hotkey::LauncherShortcut;
@@ -44,8 +45,9 @@ pub struct Data {
     pub wtoggle: Toggle,
     pub cities: Vec<City>,
     pub fields: HashMap<&'static str, TextField>,
-    pub pops: Vec<(u64, f64)>,
-    pub whatsnew: Tween<f32>,
+    /// chips that were just switched on, by hit key: scale flowing from .88 to 1 (dropped once settled)
+    pub pops: HashMap<u64, Flow>,
+    pub whatsnew: Flow,
     pub whatsnew_open: bool,
     pub tick: u64,
 }
@@ -71,8 +73,8 @@ impl Default for Data {
             wtoggle: Toggle::new(false).spring(0.45),
             cities: Vec::new(),
             fields: HashMap::new(),
-            pops: Vec::new(),
-            whatsnew: Tween::at_rest(0.0),
+            pops: HashMap::new(),
+            whatsnew: Flow::new(0.0, Feel::FLOW),
             whatsnew_open: false,
             tick: 0,
         }
@@ -97,12 +99,12 @@ impl SettingsView {
         let title_h = txt::wrapped_h(d.cv, title, st_title(), inner_w, 18.0).max(18.0);
         let hint_h = if hint.is_empty() { 0.0 } else { 2.0 + txt::wrapped_h(d.cv, hint, st_hint(), inner_w, 16.0) };
         let mut msg_h = 0.0;
-        for m in [r.msg.as_ref().map(|x| &x.0), r.status.as_ref()].into_iter().flatten() {
+        for m in [r.live_msg(), r.status.as_ref()].into_iter().flatten() {
             if !m.text.is_empty() {
                 msg_h += 2.0 + txt::wrapped_h(d.cv, &m.text, st_hint(), inner_w, 16.0);
             }
         }
-        RowM { nh: (11.0 + title_h + hint_h + msg_h + 11.0).max(56.0), cw: 0.0, ch: 0.0, block: false, title_h, hint_h, msg_h, label_w: inner_w, top: 11.0 }
+        RowM { nh: (11.0 + title_h + hint_h + msg_h + 11.0).max(56.0), cw: 0.0, ch: 0.0, block: false, title_h, hint_h, msg_h, msg_need: msg_h, label_w: inner_w, top: 11.0 }
     }
 
     pub(super) fn custom_h(&mut self, d: &Dc, r: &RowRt, name: &str, w: f32) -> f32 {
@@ -157,13 +159,15 @@ impl SettingsView {
 
     pub(super) fn step_custom(&mut self, dt: f32) -> bool {
         let mut busy = self.data.wtoggle.step(dt);
-        busy |= self.data.whatsnew.step(dt);
+        busy |= tick(&mut self.data.whatsnew, dt);
         for f in self.data.fields.values_mut() {
             busy |= f.step(dt);
         }
-        let now = self.now_ms;
-        self.data.pops.retain(|p| now - p.1 < 450.0);
-        busy || !self.data.pops.is_empty() || self.data.job.is_some()
+        for p in self.data.pops.values_mut() {
+            busy |= tick(p, dt);
+        }
+        self.data.pops.retain(|_, p| p.moving());
+        busy || self.data.job.is_some()
     }
 
     pub(super) fn custom_key(&mut self, n: &'static str, ev: &glasskit::input::InputEvent, activate: bool, cx: &mut Cx) -> glasskit::input::Response {
@@ -192,5 +196,5 @@ impl SettingsView {
 }
 
 fn clone_shell(r: &RowRt) -> RowRt {
-    RowRt { row: r.row, ctl: Ctl::None, vis: Tween::at_rest(1.0), vis_on: true, en: Tween::at_rest(1.0), en_on: true, msg: None, status: None, hl: None, rect: Rect::default(), ctl_rect: Rect::default(), fid: r.fid, opts: Vec::new() }
+    RowRt { row: r.row, ctl: Ctl::None, vis: Flow::new(1.0, Feel::FLOW), vis_on: true, en: Flow::new(1.0, Feel::FADE), en_on: true, msg: None, status: None, mh: Flow::px(0.0, Feel::FLOW), mh_seen: true, kick: 0, hl: None, rect: Rect::default(), ctl_rect: Rect::default(), fid: r.fid, opts: Vec::new() }
 }

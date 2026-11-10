@@ -6,7 +6,8 @@ use super::txt;
 use super::ui::{key, Act};
 use super::SettingsView;
 use glasskit::color::Color;
-use glasskit::ease::{curves, Tween};
+use super::flow::{from_to, go, tick};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::scroll::{Axis, ScrollState, Scrollbar};
 use glasskit::text::Style;
@@ -32,7 +33,7 @@ pub fn cap_label(c: &str) -> &str {
 }
 
 pub struct Side {
-    pub ind_y: Tween<f32>,
+    pub ind_y: Flow,
     pub cur: &'static str,
     pub scroll: ScrollState,
     pub bar: Scrollbar,
@@ -43,7 +44,7 @@ pub struct Side {
 
 impl Side {
     pub fn new() -> Side {
-        Side { ind_y: Tween::at_rest(0.0), cur: "", scroll: ScrollState::new(), bar: Scrollbar::new(Axis::Vertical), ready: false, rect: Rect::default(), list: Rect::default() }
+        Side { ind_y: Flow::px(0.0, Feel::FLOW), cur: "", scroll: ScrollState::new(), bar: Scrollbar::new(Axis::Vertical), ready: false, rect: Rect::default(), list: Rect::default() }
     }
 
     /// y of the item of page `id` inside the list (content space).
@@ -77,18 +78,18 @@ impl Side {
 
     pub fn snap_to(&mut self, id: &'static str) {
         self.cur = id;
-        self.ind_y = Tween::at_rest(Side::item_y(id));
+        self.ind_y.jump(Side::item_y(id));
         self.ready = true;
     }
 
     pub fn move_to(&mut self, id: &'static str, reduce: bool) {
         let to = Side::item_y(id);
         self.cur = id;
-        if !self.ready || reduce {
-            self.ind_y = Tween::at_rest(to);
+        if !self.ready {
+            self.ind_y.jump(to);
             self.ready = true;
         } else {
-            self.ind_y.retarget(to, 0.4, curves::SPRING_POP);
+            go(&mut self.ind_y, to, reduce);
         }
     }
 
@@ -113,12 +114,19 @@ pub struct ResRow {
     pub ranges: Vec<Range<usize>>,
 }
 
+/// Seconds between two results coming in.
+const STAGGER: f32 = 0.026;
+
 pub struct SearchUi {
     pub field: TextField,
+    /// the rows on show; they stay while the popup flows shut, so it can close instead of vanishing
     pub rows: Vec<ResRow>,
-    /// seconds into the stagger
-    pub stag: Tween<f32>,
-    pub pop: Tween<f32>,
+    /// per row: seconds still to wait, and how far it has come in (0..1)
+    pub row_a: Vec<(f32, Flow)>,
+    /// the popup: 0 = shut, 1 = open
+    pub pop: Flow,
+    /// its height in px
+    pub hgt: Flow,
     pub rect: Rect,
 }
 
@@ -127,11 +135,47 @@ impl SearchUi {
         let mut field = TextField::new(false, th);
         field.input.style = Style::new(12.0, 400);
         field.input.placeholder = search::PLACEHOLDER.get(Lang::Ru).to_string();
-        SearchUi { field, rows: Vec::new(), stag: Tween::at_rest(10.0), pop: Tween::at_rest(1.0), rect: Rect::default() }
+        SearchUi { field, rows: Vec::new(), row_a: Vec::new(), pop: Flow::new(0.0, Feel::POP), hgt: Flow::px(38.0, Feel::FLOW), rect: Rect::default() }
     }
 
     pub fn refresh_lang(&mut self, lang: Lang) {
         self.field.input.placeholder = search::PLACEHOLDER.get(lang).to_string();
+    }
+
+    /// The popup flows shut; its rows stay until it has gone.
+    pub fn close(&mut self, reduce: bool) {
+        go(&mut self.pop, 0.0, reduce);
+        if reduce {
+            self.rows.clear();
+            self.row_a.clear();
+        }
+    }
+
+    /// The popup is on screen or on its way in / out.
+    pub fn shown(&self, open: bool) -> bool {
+        open || self.pop.at() > 0.01 || self.pop.moving()
+    }
+
+    /// Advances the popup, its height and the staggered rows; true while any moves.
+    pub fn step(&mut self, dt: f32, open: bool) -> bool {
+        let mut busy = tick(&mut self.pop, dt);
+        busy |= tick(&mut self.hgt, dt);
+        for (wait, f) in self.row_a.iter_mut() {
+            if *wait > 0.0 {
+                *wait -= dt;
+                busy = true;
+                if *wait <= 0.0 {
+                    f.to(1.0);
+                }
+            } else {
+                busy |= tick(f, dt);
+            }
+        }
+        if !open && self.pop.target() == 0.0 && !self.pop.moving() && !self.rows.is_empty() {
+            self.rows.clear();
+            self.row_a.clear();
+        }
+        busy
     }
 }
 
@@ -186,7 +230,7 @@ impl SettingsView {
             let oy = list.y - off;
             let iw = w - 20.0;
             if self.side.ready {
-                let ir = Rect::new(ox, oy + self.side.ind_y.value(), iw, ITEM_H);
+                let ir = Rect::new(ox, oy + self.side.ind_y.at(), iw, ITEM_H);
                 cv.fill_rr(ir, 10.0, p.item_on);
             }
             let mut y = 4.0;
@@ -255,13 +299,11 @@ impl SettingsView {
         }
         let (cv, p) = (d.cv, d.p);
         let sr = self.search.rect;
-        let n = self.search.rows.len().max(1);
+        let open = self.model.search.open;
         let item_h = 42.0;
-        let h = if self.search.rows.is_empty() { 4.0 + 30.0 + 4.0 } else { (4.0 + n as f32 * item_h + 4.0).min(320.0) };
-        let r = Rect::new(sr.x, sr.bottom() + 4.0, sr.w, h);
-        let pop = self.search.pop.value().clamp(0.0, 1.2);
-        let seconds = self.search.stag.value();
-        cv.with_opacity(pop.min(1.0), |cv| {
+        let r = Rect::new(sr.x, sr.bottom() + 4.0, sr.w, self.search.hgt.at().max(8.0));
+        let pop = self.search.pop.at();
+        cv.with_opacity(self.search.pop.at01(), |cv| {
             cv.with_scale_about((r.cx(), r.y), 0.97 + 0.03 * pop, |cv| {
                 cv.with_offset(0.0, (1.0 - pop) * -6.0, |cv| {
                     cv.shadow_rr(r, 10.0, 30.0, 10.0, p.shadow);
@@ -274,11 +316,12 @@ impl SettingsView {
                     let active = self.model.search.active;
                     cv.with_clip(r, |cv| {
                         for (i, row) in self.search.rows.clone().iter().enumerate() {
-                            let k = (seconds - i as f32 * 0.026) / 0.3;
-                            let k = curves::EASE_OUT.at(k.clamp(0.0, 1.0));
-                            let ir = Rect::new(r.x + 4.0, r.y + 4.0 + i as f32 * item_h + (1.0 - k) * 6.0, r.w - 8.0, item_h);
+                            let (k, rise) = self.search.row_a.get(i).map_or((1.0, 0.0), |(_, f)| (f.at01(), (1.0 - f.at()) * 6.0));
+                            let ir = Rect::new(r.x + 4.0, r.y + 4.0 + i as f32 * item_h + rise, r.w - 8.0, item_h);
                             let kk = key(&format!("sres:{i}"));
-                            self.ui.add(kk, ir, Act::SearchPick(i), false, false, true);
+                            if open {
+                                self.ui.add(kk, ir, Act::SearchPick(i), false, false, true);
+                            }
                             let hv = self.ui.hover_of(kk);
                             cv.with_opacity(k, |cv| {
                                 let on = active == Some(i) || hv > 0.0;
@@ -297,7 +340,13 @@ impl SettingsView {
 
     pub(super) fn search_close_silently(&mut self) {
         let _ = self.model.search.close(false);
-        self.search.rows.clear();
+        self.search_shut();
+    }
+
+    /// The results popup flows shut (its rows stay until it is gone).
+    pub(super) fn search_shut(&mut self) {
+        let reduce = self.reduce();
+        self.search.close(reduce);
     }
 
     /// Copies the model's hits into display rows (title, tag, highlight ranges).
@@ -310,10 +359,32 @@ impl SettingsView {
             .iter()
             .filter_map(|h| entries.get(h.index).map(|e| ResRow { title: e.title.clone(), tag: SearchBox::result_tag(e, lang), ranges: search::highlight_ranges(&e.title, &query) }))
             .collect();
-        if fresh {
-            let total = self.search.rows.len() as f32 * 0.026 + 0.3;
-            self.search.stag = if self.reduce() { Tween::at_rest(total + 1.0) } else { Tween::new(0.0, total + 1.0, total + 1.0, glasskit::ease::Ease::Linear) };
-            self.search.pop = Tween::new(0.0, 1.0, if self.reduce() { 0.0 } else { 0.3 }, curves::SPRING_POP);
+        if !self.model.search.open {
+            return;
+        }
+        let reduce = self.reduce();
+        let n = self.search.rows.len();
+        let h = if n == 0 { 4.0 + 30.0 + 4.0 } else { (4.0 + n as f32 * 42.0 + 4.0).min(320.0) };
+        let from_shut = !self.search.pop.moving() && self.search.pop.at() < 0.01;
+        if from_shut {
+            // opening: every result comes in one after the other, the popup pops out of the field
+            self.search.row_a.clear();
+            self.search.hgt.jump(h);
+            self.search.pop.jump(0.0);
+        } else {
+            go(&mut self.search.hgt, h, reduce);
+        }
+        go(&mut self.search.pop, 1.0, reduce);
+        // typing on: rows that were already there stay, only the new ones stagger in
+        let have = self.search.row_a.len().min(n);
+        self.search.row_a.truncate(n);
+        for i in have..n {
+            let mut f = Flow::new(0.0, Feel::FLOW);
+            let wait = if reduce { 0.0 } else { (i - have) as f32 * STAGGER };
+            if wait <= 0.0 {
+                from_to(&mut f, 0.0, 1.0, reduce);
+            }
+            self.search.row_a.push((wait, f));
         }
     }
 }

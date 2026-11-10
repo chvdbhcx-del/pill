@@ -1,7 +1,8 @@
 //! What a click does, how a changed control reaches the model, and what the backend's answers change on screen.
 use super::events::Change;
 use super::page::*;
-use super::rows::new_msg_tween;
+use super::flow::from_to;
+use super::rows::new_msg_flow;
 use super::ui::Act;
 use super::{Local, Pend, SettingsView};
 use crate::ui::view::{Cx, Msg, WindowCmd};
@@ -73,7 +74,7 @@ impl SettingsView {
             for r in self.page.rows_mut() {
                 if let Ctl::Week(w) = &mut r.ctl {
                     w.cur = i;
-                    w.pop[i] = if reduce { glasskit::ease::Tween::at_rest(1.0) } else { glasskit::ease::Tween::new(0.88, 1.0, 0.4, glasskit::ease::curves::SPRING_POP) };
+                    from_to(&mut w.pop[i], 0.88, 1.0, reduce);
                 }
             }
         }
@@ -101,7 +102,14 @@ impl SettingsView {
         for r in self.page.rows_mut() {
             let hit = r.row.id == id_or_action || matches!(&r.row.control, Control::Hotkey { action } if *action == id_or_action);
             if hit {
-                r.msg = if m.text.is_empty() { None } else { Some((m.clone(), if reduce { glasskit::ease::Tween::at_rest(1.0) } else { new_msg_tween() })) };
+                r.kick = 4;
+                if !m.text.is_empty() {
+                    r.msg = Some((m.clone(), new_msg_flow(reduce)));
+                } else if reduce {
+                    r.msg = None;
+                } else if let Some((_, f)) = &mut r.msg {
+                    f.to(0.0); // fades out, its height closes with it, then the step drops it
+                }
             }
         }
     }
@@ -111,14 +119,14 @@ impl SettingsView {
             SearchStep::None => {}
             SearchStep::Paint { fresh } => self.refresh_search_rows(fresh),
             SearchStep::Close { clear } => {
-                self.search.rows.clear();
+                self.search_shut();
                 if clear {
                     self.search.field.set_text("");
                 }
             }
             SearchStep::Blur => self.set_focus_id(None, false),
             SearchStep::Go(t) => {
-                self.search.rows.clear();
+                self.search_shut();
                 self.search.field.set_text("");
                 if t.page != self.model.current || self.wiz.active() {
                     self.show_page(&t.page, cx);
