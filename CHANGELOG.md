@@ -2,6 +2,24 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.8.0] - 2026-11-10
+
+### Highlights
+- Pill Phone: pair an Android phone by QR over your home network (Settings, Phone). Its notifications show on the island (Hide, Mark read, Reply) and files go both ways. Off by default, no encryption, local network only.
+- Liquid motion everywhere: every movement springs with inertia, the edge sags and ripples at rest, and the island idles at half the frame rate on fast displays.
+- Song lyrics (off by default), new Home player styles, choose what is on Home and which tabs show, weather tiles.
+- Answer Claude Code from the island (off by default), opencode, tables in AI answers.
+- Screenshot markup, recordings with sound, translate screen text, timed shutdown commands, Wi-Fi list, own VPN client, the island over fullscreen apps.
+
+### Also
+- Music: the equaliser bars follow the real spectrum; the dance listens to the player's own sound (works behind Sonar and Voicemeeter); AIMP and Winamp are players; the Home volume bar controls the computer or the player.
+- Look: island colour (9 presets or any hex), keyboard layout chip and virtual desktop chip, hotkeys for the island theme and the music view, card duration, search engine for the command bar, big XL pet, the liquid edge under tail and legs.
+- Timers: the island glows until a finished timer is answered, own alert sound, mouse wheel on the ring, download ring by the clock, temp files ignored, no early "finished" for a Save-as dialog.
+- Window: the hotkey opens the island over fullscreen apps, it returns by itself if another program hides it (auto-hide excepted), tray "Open island", a list where it stays visible, GPU acceleration switch, a watchdog that restarts a frozen island.
+- Home "Recently copied" card (off by default); Settings, Modules chips; hidden tabs still open by hotkey and command.
+- Fixes: the chat answer card cleared in the right order; the window self-heal no longer fights auto-hide.
+- PILL_PERF=1 logs frame cost and why the island asked for frames.
+
 ## [0.7.6] - 2026-11-09
 
 ### Added

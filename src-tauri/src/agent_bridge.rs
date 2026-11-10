@@ -321,6 +321,7 @@ fn handle(bridge: &Bridge, token: &str, notify: &Notify, wait: Duration, mut s: 
     let out = match wait_for(&rx, &s, wait) {
         Waited::Choice(c) => decide(&req, &c),
         Waited::Gone => {
+            bridge.close(&id); // first forget the request, then tell the island: an answer that races the event must find nothing
             notify("agents:ask-gone", json!({ "id": id }));
             None
         }
