@@ -60,6 +60,7 @@ mod ui;
 mod applog;
 mod vpn;
 mod wifi;
+mod phone;
 
 fn main() {
     watchdog::wait_for_predecessor(); // restarted by the watchdog: the hung instance must be gone before the single-instance check
@@ -112,6 +113,7 @@ fn main() {
             liveplus::init(app);
             mail::init(app);
             notifhist::init(app);
+            phone::init(app);
             hotkeys::init(app); // last: every module's init() has run, so the actions it triggers exist
             Ok(())
         })

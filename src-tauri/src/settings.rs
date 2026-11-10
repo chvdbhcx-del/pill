@@ -79,6 +79,14 @@ pub(crate) fn defaults() -> Cfg {
         "home.tile.picker": true, "home.tile.plain": true, "home.tile.record": true, "home.tile.command": true, "tabs.hidden": []
     }) else { unreachable!() };
     m.extend(homes);
+    // Pill Phone link (phone.rs, docs/phone-protocol.md): the server runs only while phone.enabled is on. phone.port = where it listens (the first free one
+    // from 41717 up is remembered), phone.downloadDir "" = Downloads\Pill, phone.maxFileMB = size cap per file, phone.mutedApps = package names whose
+    // notifications are ignored, module.phone / live.phone = the island tab and the cards on the folded island.
+    let Value::Object(phone) = json!({
+        "phone.enabled": false, "phone.port": 41717, "phone.downloadDir": "", "phone.maxFileMB": 4096, "phone.autoAccept": true,
+        "phone.apkUrl": crate::phone::DEFAULT_APK_URL, "phone.mutedApps": [], "module.phone": true, "live.phone": true
+    }) else { unreachable!() };
+    m.extend(phone);
     m
 }
 

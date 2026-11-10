@@ -226,6 +226,17 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         "notif_history_clear" => ok(notifhist::notif_history_clear()),
         "notif_history_mark_read" => ok(notifhist::notif_history_mark_read(a.opt("ids")?)),
         "notif_history_remove" => ok(notifhist::notif_history_remove(a.req("id")?)),
+        "phone_status" => ok(phone::phone_status()),
+        "phone_pair_code" => res(phone::phone_pair_code(a.opt("renew")?)),
+        "phone_devices" => ok(phone::phone_devices()),
+        "phone_revoke" => ok(phone::phone_revoke(a.req("id")?)),
+        "phone_notifs" => ok(phone::phone_notifs()),
+        "phone_notif_action" => res(phone::phone_notif_action(a.req("key")?, a.req("action")?, a.opt("text")?)),
+        "phone_files" => ok(phone::phone_files()),
+        "phone_send_file" => res(phone::phone_send_file(a.req("path")?, a.opt("device")?)),
+        "phone_file_decide" => res(phone::phone_file_decide(a.req("id")?, a.req("accept")?)),
+        "phone_apps" => ok(phone::phone_apps()),
+        "phone_open_file" => ok(phone::phone_open_file(a.req("id")?, a.opt("reveal")?)),
         _ => Err(format!("command {cmd} not found")),
     }
 }

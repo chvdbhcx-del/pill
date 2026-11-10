@@ -46,6 +46,9 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `pill:hide` | pill | `json!({ "reason": reason })` | pill.rs |
 | `pill:open-tab` | pill | `p` | command.rs |
 | `pill:show` | pill | `json!({ "reason": reason })` | pill.rs |
+| `phone:files` | pill | `json!({ "kind": "offer"\|"start"\|"progress"\|"done"\|"sent"\|"failed"\|"offered"\|"accepted"\|"rejected", "transfer": { "id", "device", "dir": "in"\|"out", "name", "size", "mime", "status", "path", "bytes", "at" } })` | phone/server.rs via phone.rs |
+| `phone:notif` | pill | `json!({ "kind": "posted", "notif": { "key", "device", "pkg", "app", "title", "text", "sub", "when", "category", "ongoing", "progress", "icon", "avatar", "canReply", "actions", "group", "replay", "received", "fresh" } })`<br>`json!({ "kind": "removed"\|"read", "key" })`<br>`json!({ "kind": "reply", "key", "ok", "error" })` | phone/server.rs via phone.rs |
+| `phone:state` | pill | `json!({ "running", "ip", "port", "pcName", "devices": [{ "id", "name", "model", "os", "appVersion", "firstSeen", "lastSeen", "connected", "battery", "charging", "network", "ssid", "dnd", "statusAt" }], "connected", "enabled", "error" })` | phone/server.rs via phone.rs |
 | `power:timer` | pill | `p.clone()` | command/power_timer.rs |
 | `rec:state` | pill | `json!({ "recording": true, "startedAt": started, "mode": kind, "fps": opts.fps })`<br>`json!({ "recording": false, "startedAt": r.started })` | capture.rs, capture.rs |
 | `remind:changed` | pill | `serde_json::Value::Null` | timers.rs, timers.rs |
@@ -256,5 +259,16 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `notif_history_list` | - | `Vec<Entry>` | notifhist.rs |
 | `notif_history_clear` | - | `()` | notifhist.rs |
 | `notif_history_mark_read` | `ids: Option<Vec<i64>>` | `usize` | notifhist.rs |
+| `phone_status` | - | `Value` | phone.rs |
+| `phone_pair_code` | `renew: Option<bool>` | `Result<Value, String>` | phone.rs |
+| `phone_devices` | - | `Vec<Value>` | phone.rs |
+| `phone_revoke` | `id: String` | `bool` | phone.rs |
+| `phone_notifs` | - | `Vec<Value>` | phone.rs |
+| `phone_notif_action` | `key: String, action: String, text: Option<String>` | `Result<Value, String>` | phone.rs |
+| `phone_files` | - | `Vec<Value>` | phone.rs |
+| `phone_send_file` | `path: String, device: Option<String>` | `Result<Value, String>` | phone.rs |
+| `phone_file_decide` | `id: String, accept: bool` | `Result<Value, String>` | phone.rs |
+| `phone_apps` | - | `Value` | phone.rs |
+| `phone_open_file` | `id: String, reveal: Option<bool>` | `bool` | phone.rs |
 | `notif_history_remove` | `id: i64` | `()` | notifhist.rs |
 
