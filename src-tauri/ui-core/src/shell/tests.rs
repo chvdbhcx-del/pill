@@ -1551,3 +1551,36 @@ fn hidden_shell_ignores_the_hover_open_and_keeps_zero_work() {
     assert_eq!(h.calls("battery_state"), 0);
     assert_eq!(h.calls("weather_get"), 0);
 }
+
+#[test]
+fn a_tab_taken_off_the_strip_still_opens_by_its_hotkey_and_command() {
+    let mut h = H::new();
+    h.sh.register_tab(tab("home", 10));
+    h.sh.register_tab(tab("weather", 60));
+    h.ev(Event::SettingsChanged(json!({"tabs.hidden": ["weather"]})));
+    let v = h.sh.view();
+    let w = v.tabs.iter().find(|t| t.id == "weather").unwrap();
+    assert!(w.stripped && !w.off, "off the strip, not switched off");
+    assert!(!v.tabs.iter().find(|t| t.id == "home").unwrap().stripped);
+    // the hotkey / command bar open it all the same
+    h.ev(Event::Expand { tab: Some("weather".into()), section: None });
+    assert_eq!(h.sh.tabs().cur.as_deref(), Some("weather"));
+    // and the module switch is still the one that really removes a tab
+    h.ev(Event::SettingsChanged(json!({"tabs.hidden": ["weather"], "module.weather": false})));
+    assert!(h.sh.view().tabs.iter().any(|t| t.id == "weather" && t.off));
+}
+
+#[test]
+fn the_home_tab_is_as_tall_as_the_parts_that_are_on() {
+    let mut h = H::new();
+    h.sh.register_tab(tab("home", 10));
+    h.expand();
+    h.settle();
+    assert_eq!(h.sh.view().body.height, 331.0, "the classic Home");
+    h.ev(Event::SettingsChanged(json!({"home.recent": true})));
+    h.settle();
+    assert_eq!(h.sh.view().body.height, 401.0, "the recently-copied card makes room");
+    h.ev(Event::SettingsChanged(json!({"home.recent": true, "module.launcher": false, "home.volume": false})));
+    h.settle();
+    assert_eq!(h.sh.view().body.height, 154.0 + 62.0 + 8.0 + 71.0);
+}

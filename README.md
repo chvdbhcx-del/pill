@@ -85,7 +85,7 @@ Press **`Alt+Shift+Space`** (the default; change it in *Settings → Hotkeys*). 
 
 ## The panel
 
-Hover the island (or press `Ctrl+Alt+I`) and it expands into a panel. Every tab is a module that can be switched off in *Settings → Modules*.
+Hover the island (or press `Ctrl+Alt+I`) and it expands into a panel. Every tab is a module that can be switched off in *Settings → Modules*, where you also choose what is on Home (player, recently copied, volume, each tile, shortcuts: Home lays itself out for what is left) and which tabs leave the tab strip (a hidden tab still opens by its hotkey and from the command bar).
 
 | Tab | What it does |
 | --- | --- |
@@ -95,7 +95,7 @@ Hover the island (or press `Ctrl+Alt+I`) and it expands into a panel. Every tab 
 | **Text** | Text tools (case, RU/EN layout fix, transliteration, JSON, Base64, URL, sort, dedupe, word count, QR) and, with an AI endpoint, translate / fix errors / shorten / summarise / formal or friendly tone; dictation |
 | **Chat** | AI chat with threads and attachments: local models (Ollama, LM Studio, llama.cpp, FreeLLMAPI) or a cloud provider; answers stream in |
 | **Notes** | Notes, reminders and a timer |
-| **Weather** | Current conditions, hourly slots and a 7-day forecast (MET Norway, off until you switch it on) |
+| **Weather** | Current conditions, hourly slots, a 7-day forecast and tiles for wind, humidity, pressure, sun, precipitation and UV index with a one-sentence summary (MET Norway, off until you switch it on) |
 | **Controls** | Wi-Fi, Ethernet, Bluetooth (with the device list), dark theme, CPU / RAM, and lock / sleep / restart / shut down (press twice) |
 
 | Clipboard | Chat | Controls |

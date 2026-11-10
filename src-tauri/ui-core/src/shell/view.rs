@@ -83,7 +83,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             .tabs
             .list
             .iter()
-            .map(|t| TabView { id: t.spec.id.clone(), title: t.spec.title.clone(), order: t.spec.order, hidden: t.spec.hidden, off: t.off, active: self.tabs.cur.as_deref() == Some(&t.spec.id), badge: t.badge })
+            .map(|t| TabView { id: t.spec.id.clone(), title: t.spec.title.clone(), order: t.spec.order, hidden: t.spec.hidden, off: t.off, stripped: crate::shell::tabs::strip_hidden(&t.spec.id, &self.s), active: self.tabs.cur.as_deref() == Some(&t.spec.id), badge: t.badge })
             .collect();
         let wave_color = if self.wave_c.is_empty() { None } else { crate::shell::color::parse_css(&self.wave_c, &pal) };
         View {

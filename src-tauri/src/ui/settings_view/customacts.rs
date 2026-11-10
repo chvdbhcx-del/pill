@@ -22,6 +22,8 @@ impl SettingsView {
                 }
                 self.sync_page();
             }
+            Act::HomeChip(i) => self.home_chip(i, cx),
+            Act::TabChip(id) => self.tab_chip(id, cx),
             Act::OpenLink(url) => {
                 self.call(cx, C::OpenLink { url }, "");
             }

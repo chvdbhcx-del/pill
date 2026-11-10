@@ -26,7 +26,7 @@ pub mod snap;
 
 mod clipboard;
 mod controls;
-mod home;
+pub(crate) mod home;
 mod notifs;
 mod shelf;
 mod weather;

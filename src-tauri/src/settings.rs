@@ -47,6 +47,13 @@ pub(crate) fn defaults() -> Cfg {
     // quiet hours (src/quiet.js, Settings > Behavior): days are strings "0" (Sunday) .. "6"
     let Value::Object(quiet) = json!({ "quiet.on": false, "quiet.from": "22:00", "quiet.to": "07:00", "quiet.days": ["0", "1", "2", "3", "4", "5", "6"] }) else { unreachable!() };
     m.extend(quiet);
+    // Settings > Modules > What is on Home (home.*; the player and the shortcuts are module.media / module.launcher) and Island tabs (tabs.hidden: tabs
+    // taken off the strip that still open by hotkey and command). "Recently copied" shows clipboard text on Home, so it is opt-in.
+    let Value::Object(homes) = json!({
+        "home.recent": false, "home.volume": true, "home.tile.area": true, "home.tile.screen": true, "home.tile.ocr": true, "home.tile.qr": true,
+        "home.tile.picker": true, "home.tile.plain": true, "home.tile.record": true, "home.tile.command": true, "tabs.hidden": []
+    }) else { unreachable!() };
+    m.extend(homes);
     m
 }
 

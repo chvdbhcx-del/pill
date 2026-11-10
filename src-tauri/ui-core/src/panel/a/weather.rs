@@ -34,6 +34,11 @@ pub struct Now {
     pub precip: f64,
     pub min: f64,
     pub max: f64,
+    /// hPa at sea level, 0 = the forecast has none
+    pub pressure: f64,
+    /// Clear-sky UV index now and its peak today, `None` = the forecast has none
+    pub uv: Option<f64>,
+    pub uv_max: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -92,6 +97,9 @@ impl Forecast {
                 precip: f(n, "precip"),
                 min: f(n, "min"),
                 max: f(n, "max"),
+                pressure: f(n, "pressure"),
+                uv: n.get("uv").and_then(Value::as_f64),
+                uv_max: n.get("uv_max").and_then(Value::as_f64),
             },
             hourly: v
                 .get("hourly")
@@ -274,6 +282,9 @@ pub struct OkView {
     pub metric: bool,
     pub source: String,
     pub tooltip: String,
+    /// The tiles under the daily list (wind, humidity, pressure, sun, precipitation, UV) and the one-sentence summary above them.
+    pub tiles: Vec<super::weather_tiles::WxTile>,
+    pub summary: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -714,6 +725,22 @@ impl Weather {
             }
             s => text = Some(if s.as_ref().map_or(false, |s| s.state == "polar_day") { tr.t("Полярный день", "Midnight sun") } else { tr.t("Полярная ночь", "Polar night") }),
         }
+        let temp = |c: f64| self.temp(c);
+        let tenv = super::weather_tiles::Env {
+            tr,
+            metric: self.metric(),
+            temp: &temp,
+            wind: self.wind_text(tr, n.wind),
+            dir: dir.to_string(),
+            rise: d.sun.as_ref().and_then(|s| Some((s.rise?, self.hm(s.rise?)))),
+            set: d.sun.as_ref().and_then(|s| Some((s.set?, self.hm(s.set?)))),
+            now_ms: d.hourly.first().map(|h| h.t),
+            sun_text: text.clone(),
+            today_mm: d.daily.first().map(|x| self.mm(tr, x.precip)).unwrap_or_default(),
+            hour_mm: precip.clone(),
+        };
+        let tiles = super::weather_tiles::tiles(n, d.daily.first(), &tenv);
+        let summary = super::weather_tiles::summary(n, &condition(tr, &n.symbol), &tenv);
         let warn = if d.stale { tr.t("Нет сети, показан сохранённый прогноз · ", "Offline, showing the saved forecast · ") } else { String::new() };
         OkView {
             gradient: n.icon.clone(),
@@ -765,6 +792,8 @@ impl Weather {
             metric: self.metric(),
             source: format!("{}{}", warn, tr.t("Данные: MET Norway", "Data: MET Norway")),
             tooltip: d.warning.clone(),
+            tiles,
+            summary,
         }
     }
 }

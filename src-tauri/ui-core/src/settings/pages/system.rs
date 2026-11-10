@@ -41,6 +41,34 @@ pub fn modules() -> Page {
                     })
                     .collect(),
             ),
+            group_note(
+                tr("Что на главной", "What is on Home"),
+                tr(
+                    "«Плеер» и «Ярлыки» это те же переключатели, что «Медиаплеер» и «Лаунчер» выше. «Недавно скопировано» показывает последние записи истории буфера прямо на главной (нужна «История буфера»): текст виден всем, кто смотрит на экран, поэтому по умолчанию выключено. Ничего не уходит с компьютера.",
+                    "“Player” and “Shortcuts” are the same switches as “Media player” and “Launcher” above. “Recently copied” shows the latest clipboard history entries right on Home (needs “Clipboard history”): anyone looking at the screen can read that text, so it is off by default. Nothing leaves the computer.",
+                ),
+                vec![custom(
+                    "modules.home",
+                    tr("Что на главной", "What is on Home"),
+                    tr("Нажми на плашку, чтобы включить или выключить часть. Главная перестраивается под то, что осталось, а ниже видно, как она будет выглядеть", "Click a chip to switch a part on or off. Home lays itself out for what is left, and the sketch below shows how it will look"),
+                    "modules.home",
+                )
+                .kw(&["home", "layout", "player", "tiles", "shortcuts", "recently copied", "volume", "главная", "плитки", "ярлыки", "громкость", "недавно", "скопировано", "раскладка"])],
+            ),
+            group_note(
+                tr("Вкладки острова", "Island tabs"),
+                tr(
+                    "Скрытая вкладка исчезает из полосы вкладок, но по-прежнему открывается своей горячей клавишей и командой. Это только про полосу: чтобы функция перестала работать, выключи её модуль выше.",
+                    "A hidden tab leaves the tab strip but still opens with its hotkey and from the command bar. This only concerns the strip: to stop a feature from working, switch its module off above.",
+                ),
+                vec![custom(
+                    "modules.tabs",
+                    tr("Вкладки острова", "Island tabs"),
+                    tr("Подсвеченные вкладки видны в полосе, остальные скрыты", "Lit tabs are shown in the strip, the others are hidden"),
+                    "modules.tabs",
+                )
+                .kw(&["tabs", "hide", "strip", "вкладки", "скрыть", "полоса"])],
+            ),
             group(
                 tr("История уведомлений", "Notification history"),
                 vec![

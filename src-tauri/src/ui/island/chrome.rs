@@ -37,6 +37,8 @@ pub struct TabBox {
     /// the count shown in the badge and how present the badge is (0..1, a little over while it pops)
     pub badge: u32,
     pub bk: f32,
+    /// 0..1: how present the tab is in the strip (a tab that is taken off folds up and fades instead of vanishing)
+    pub pres: f32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -61,21 +63,35 @@ pub fn tab_title(id: &str, ru: bool) -> String {
 /// `ks`: open fraction per tab id (missing = 0 / 1 by `active`). `panel_h` = the panel's height in css px at 100 %.
 pub fn layout(v: &ShellView, ru: bool, panel_h: f32, ks: &dyn Fn(&str, bool) -> f32, m: &dyn Meter) -> ChromeLayout {
     let bk = |t: &TabView| (if t.active && t.badge > 0 { 1.0 } else { 0.0 }, t.badge);
-    layout_with(v, ru, panel_h, ks, &bk, (&v.chrome.vpn, if v.chrome.vpn.is_empty() { 0.0 } else { 1.0 }), m)
+    layout_with(v, ru, panel_h, ks, &bk, &|t| strip_target(t), (&v.chrome.vpn, if v.chrome.vpn.is_empty() { 0.0 } else { 1.0 }), m)
+}
+
+/// Whether a tab belongs in the strip: not the hidden settings tab, not switched off by its module, not taken off by the user.
+fn strip_target(t: &TabView) -> f32 {
+    if t.hidden || t.off || t.stripped {
+        0.0
+    } else {
+        1.0
+    }
 }
 
 /// [`layout`] with the eased parts: `bk` = (presence, count) of a tab's badge, `vpn` = (text, presence) of the VPN chip.
-pub fn layout_with(v: &ShellView, ru: bool, panel_h: f32, ks: &dyn Fn(&str, bool) -> f32, bk: &dyn Fn(&TabView) -> (f32, u32), vpn: (&str, f32), m: &dyn Meter) -> ChromeLayout {
+/// `pr` = how present a tab is in the strip (0..1); a tab with 0 is skipped, one in between is folded up and fading.
+pub fn layout_with(v: &ShellView, ru: bool, panel_h: f32, ks: &dyn Fn(&str, bool) -> f32, bk: &dyn Fn(&TabView) -> (f32, u32), pr: &dyn Fn(&TabView) -> f32, vpn: (&str, f32), m: &dyn Meter) -> ChromeLayout {
     let mut x = 16.0;
     let mut tabs = Vec::new();
-    for t in v.tabs.iter().filter(|t| !t.hidden && !t.off) {
+    for t in v.tabs.iter().filter(|t| !t.hidden) {
+        let pres = pr(t).clamp(0.0, 1.0);
+        if pres < 0.003 {
+            continue;
+        }
         let tw = (m.w(&tab_title(&t.id, ru), TAB_LABEL) + 0.5).ceil();
         let k = ks(&t.id, t.active).clamp(0.0, 1.0);
         let (bp, count) = bk(t);
         let badge_w = if count > 0 { (8.0 + (m.w(&count.to_string(), BADGE) + 10.0).max(18.0)) * bp.max(0.0) } else { 0.0 };
-        let w = 38.0 + k * (10.0 + tw + badge_w);
-        tabs.push(TabBox { id: t.id.clone(), rect: Rect::new(x, 14.0, w, 32.0), icon: tab_icon(&t.id), tw, k, badge: count, bk: bp });
-        x += w + 4.0;
+        let w = (38.0 + k * (10.0 + tw + badge_w)) * pres;
+        tabs.push(TabBox { id: t.id.clone(), rect: Rect::new(x, 14.0, w, 32.0), icon: tab_icon(&t.id), tw, k, badge: count, bk: bp, pres });
+        x += w + 4.0 * pres;
     }
     let tabs_end = x - 4.0;
     let mut bx = PANEL_W - 16.0;
@@ -118,6 +134,8 @@ pub struct HeaderFx {
 }
 
 struct TabFlow {
+    /// 1 while the tab is in the strip, 0 once it was taken off or switched off
+    shown: Flow,
     open: Flow,
     hover: Flow,
     press: Flow,
@@ -157,7 +175,9 @@ impl HeaderFx {
             let open = if t.active { 1.0 } else { 0.0 };
             let (bt, count) = (if t.active && t.badge > 0 { 1.0 } else { 0.0 }, t.badge);
             // a tab seen for the first time starts at rest, not from nothing
+            let shown = strip_target(t);
             let e = self.tabs.entry(t.id.clone()).or_insert_with(|| TabFlow {
+                shown: Flow::new(shown, Feel::DRAG),
                 open: Flow::new(open, Feel::FADE.within(220.0)),
                 hover: Flow::new(0.0, HOVER),
                 press: Flow::new(0.0, Feel::SNAP),
@@ -165,6 +185,7 @@ impl HeaderFx {
                 count,
             });
             let h = hover_tab == Some(t.id.as_str());
+            e.shown.to(shown);
             e.open.to(open);
             e.hover.to(if h { 1.0 } else { 0.0 });
             e.press.to(if h && pressed { 1.0 } else { 0.0 });
@@ -190,6 +211,7 @@ impl HeaderFx {
             busy |= f.moving();
         };
         for e in self.tabs.values_mut() {
+            each(&mut e.shown);
             each(&mut e.open);
             each(&mut e.hover);
             each(&mut e.press);
@@ -223,7 +245,8 @@ impl HeaderFx {
     /// The layout of the header with every eased part applied.
     pub fn layout(&self, v: &ShellView, ru: bool, panel_h: f32, m: &dyn Meter) -> ChromeLayout {
         let bk = |t: &TabView| self.tabs.get(&t.id).map_or((if t.active && t.badge > 0 { 1.0 } else { 0.0 }, t.badge), |e| (e.badge.at(), e.count));
-        layout_with(v, ru, panel_h, &|id, active| self.open(id, active), &bk, (&self.vpn_text, self.vpn.at().max(0.0)), m)
+        let pres = |t: &TabView| self.tabs.get(&t.id).map_or_else(|| strip_target(t), |e| e.shown.at());
+        layout_with(v, ru, panel_h, &|id, active| self.open(id, active), &bk, &pres, (&self.vpn_text, self.vpn.at().max(0.0)), m)
     }
 }
 
@@ -231,32 +254,40 @@ impl HeaderFx {
 pub fn paint(cv: &Canvas, th: &Theme, gpu: &mut Gpu, lay: &ChromeLayout, fx: &HeaderFx, ru: bool) {
     for t in lay.tabs.iter() {
         let r = t.rect;
-        let (hov, press) = fx.tab(&t.id);
-        let lit = t.k.max(hov);
-        cv.with_scale_about(r.center(), 1.0 - 0.04 * press, |cv| {
-            if t.k > 0.0 {
-                cv.fill_rr(r, 16.0, th.raised.fade(t.k));
-            }
-            if hov > 0.0 && t.k < 1.0 {
-                cv.fill_rr(r, 16.0, th.hover.fade(hov * (1.0 - t.k)));
-            }
-            let col = th.icon.mix(th.text, lit);
-            gpu.icon(cv, t.icon, Rect::new(r.x + 10.0, r.cy() - 9.0, 18.0, 18.0), col, 1.6 + (2.0 * t.k).round() / 10.0);
-            if t.k > 0.01 {
-                let lr = Rect::new(r.x + 10.0 + 18.0 + 8.0, r.cy() - 8.0, t.tw, 16.0);
-                cv.with_clip(Rect::new(lr.x, r.y, (lr.w * t.k).max(0.0), r.h), |cv| cv.text(lr, &tab_title(&t.id, ru), TAB_LABEL, th.text.fade(t.k)));
-                if t.badge > 0 && t.bk > 0.01 {
-                    let bw = (cv.text_width(&t.badge.to_string(), BADGE) + 10.0).max(18.0);
-                    let br = Rect::new(lr.right() + 8.0, r.cy() - 9.0, bw, 18.0);
-                    let a = t.k * t.bk.clamp(0.0, 1.0);
-                    // the badge pops: it grows with its presence, which swings a little past 1
-                    cv.with_scale_about(br.center(), (0.7 + 0.3 * t.bk).max(0.0), |cv| {
-                        cv.fill_rr(br, 9.0, th.raised2.fade(a));
-                        cv.text(br, &t.badge.to_string(), BADGE.center(), th.text.fade(a));
-                    });
+        // a tab that is being taken off folds up: clipped to its shrinking box and fading
+        let mut tab = |cv: &Canvas| {
+            let (hov, press) = fx.tab(&t.id);
+            let lit = t.k.max(hov);
+            cv.with_scale_about(r.center(), 1.0 - 0.04 * press, |cv| {
+                if t.k > 0.0 {
+                    cv.fill_rr(r, 16.0, th.raised.fade(t.k));
                 }
-            }
-        });
+                if hov > 0.0 && t.k < 1.0 {
+                    cv.fill_rr(r, 16.0, th.hover.fade(hov * (1.0 - t.k)));
+                }
+                let col = th.icon.mix(th.text, lit);
+                gpu.icon(cv, t.icon, Rect::new(r.x + 10.0, r.cy() - 9.0, 18.0, 18.0), col, 1.6 + (2.0 * t.k).round() / 10.0);
+                if t.k > 0.01 {
+                    let lr = Rect::new(r.x + 10.0 + 18.0 + 8.0, r.cy() - 8.0, t.tw, 16.0);
+                    cv.with_clip(Rect::new(lr.x, r.y, (lr.w * t.k).max(0.0), r.h), |cv| cv.text(lr, &tab_title(&t.id, ru), TAB_LABEL, th.text.fade(t.k)));
+                    if t.badge > 0 && t.bk > 0.01 {
+                        let bw = (cv.text_width(&t.badge.to_string(), BADGE) + 10.0).max(18.0);
+                        let br = Rect::new(lr.right() + 8.0, r.cy() - 9.0, bw, 18.0);
+                        let a = t.k * t.bk.clamp(0.0, 1.0);
+                        // the badge pops: it grows with its presence, which swings a little past 1
+                        cv.with_scale_about(br.center(), (0.7 + 0.3 * t.bk).max(0.0), |cv| {
+                            cv.fill_rr(br, 9.0, th.raised2.fade(a));
+                            cv.text(br, &t.badge.to_string(), BADGE.center(), th.text.fade(a));
+                        });
+                    }
+                }
+            });
+        };
+        if t.pres < 0.999 {
+            cv.with_clip(r, |cv| cv.with_opacity(t.pres, tab));
+        } else {
+            tab(cv);
+        }
     }
     if let Some(r) = lay.vpn {
         let k = fx.vpn.at();
@@ -297,7 +328,7 @@ mod tests {
     fn view(active: &str, vpn: &str) -> ShellView {
         // only the fields the layout reads
         let mut v = crate::ui::island::tests_support::blank_view();
-        v.tabs = ["home", "clipboard", "shelf", "controls"].iter().enumerate().map(|(i, id)| TabView { id: id.to_string(), title: id.to_string(), order: i as i32, hidden: false, off: false, active: *id == active, badge: 0 }).collect();
+        v.tabs = ["home", "clipboard", "shelf", "controls"].iter().enumerate().map(|(i, id)| TabView { id: id.to_string(), title: id.to_string(), order: i as i32, hidden: false, off: false, stripped: false, active: *id == active, badge: 0 }).collect();
         v.chrome = ChromeView { vpn: vpn.into(), pinned: false, settings_current: false };
         v
     }

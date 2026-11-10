@@ -54,14 +54,7 @@ fn thumb(cv: &Canvas, r: Rect, pct: f32, alpha: f32, scale: f32) {
 
 impl HomeView {
     pub(super) fn paint(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
-        let o = |r: Rect| r.offset(ox, oy);
-        self.paint_player(cv, th, ox, oy);
-        self.paint_volume(cv, th, ox, oy);
-        for (i, t) in self.v.tiles.iter().enumerate() {
-            self.paint_tile(cv, th, o(L::tile(i)), Hit::Tile(i), t);
-        }
-        self.paint_launcher(cv, th, ox, oy);
-        self.paint_menu(cv, th, ox, oy);
+        self.paint_parts(cv, th, ox, oy);
     }
 
     fn hov(&self, h: Hit) -> f32 {
@@ -78,7 +71,7 @@ impl HomeView {
 
     // ------------------------------------------------------------------------------------------------------------------ player
 
-    fn paint_player(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
+    pub(super) fn paint_player(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
         let o = |r: Rect| r.offset(ox, oy);
         let card = o(L::PLAYER);
         let p = &self.v.player;
@@ -156,7 +149,7 @@ impl HomeView {
 
     // ------------------------------------------------------------------------------------------------------------------ volume row
 
-    fn paint_volume(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
+    pub(super) fn paint_volume(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
         let o = |r: Rect| r.offset(ox, oy);
         let row = o(L::VOL_ROW);
         cv.fill_rr(row, th.m.radius, th.card);
@@ -196,7 +189,7 @@ impl HomeView {
 
     // ------------------------------------------------------------------------------------------------------------------ tiles
 
-    fn paint_tile(&self, cv: &Canvas, th: &Theme, r: Rect, h: Hit, t: &pill_ui_core::panel::a::home::TileView) {
+    pub(super) fn paint_tile(&self, cv: &Canvas, th: &Theme, r: Rect, h: Hit, t: &pill_ui_core::panel::a::home::TileView) {
         let k = if t.soon { 0.0 } else { self.hov(h) };
         let kb = self.hov(h);
         cv.with_scale_about(r.center(), if t.soon { 1.0 } else { self.press(h, 0.96) }, |cv| {
@@ -216,7 +209,7 @@ impl HomeView {
 
     // ------------------------------------------------------------------------------------------------------------------ launcher
 
-    fn paint_launcher(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
+    pub(super) fn paint_launcher(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
         let o = |r: Rect| r.offset(ox, oy);
         let strip = o(L::STRIP);
         let lv = &self.v.launcher;
@@ -295,7 +288,7 @@ impl HomeView {
 
     // ------------------------------------------------------------------------------------------------------------------ device list
 
-    fn paint_menu(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
+    pub(super) fn paint_menu(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
         let a = self.menu_a.at01();
         if a <= 0.005 {
             return;

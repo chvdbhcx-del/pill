@@ -20,12 +20,15 @@ pub mod clipboard;
 pub mod controls;
 pub mod cover;
 pub mod home;
+pub mod home_mods;
+pub mod home_recent;
 pub mod launcher;
 pub mod notifs;
 pub mod shelf;
 pub mod tabs;
 pub mod util;
 pub mod weather;
+pub mod weather_tiles;
 
 use serde_json::{Map, Value};
 

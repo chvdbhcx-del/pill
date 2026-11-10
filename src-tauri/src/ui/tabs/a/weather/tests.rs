@@ -247,3 +247,5 @@ fn snapshots_of_the_typical_states() {
         shoot(&mut v, &cx, &th, 1.0, "weather", &format!("loading-{tn}-x1"));
     }
 }
+
+mod tile_scroll;

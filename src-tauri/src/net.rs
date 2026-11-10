@@ -741,6 +741,8 @@ struct Entry {
     dir: f64,
     rh: f64,
     cloud: f64,
+    pres: Option<f64>, // hPa at sea level
+    uv: Option<f64>,   // clear-sky UV index
     sym: Option<String>,  // best available symbol code (1h, else 6h, else 12h)
     sym6: Option<String>, // 6h symbol (used for the day icon)
     p1: Option<f64>,
@@ -763,6 +765,8 @@ fn parse_met(body: &str) -> Result<(Vec<Entry>, Option<i64>), String> {
             dir: g("wind_from_direction").unwrap_or(0.0),
             rh: g("relative_humidity").unwrap_or(50.0),
             cloud: g("cloud_area_fraction").unwrap_or(0.0),
+            pres: g("air_pressure_at_sea_level"),
+            uv: g("ultraviolet_index_clear_sky"),
             sym: sc(e, "next_1_hours").or_else(|| sc(e, "next_6_hours")).or_else(|| sc(e, "next_12_hours")),
             sym6: sc(e, "next_6_hours").or_else(|| sc(e, "next_12_hours")).or_else(|| sc(e, "next_1_hours")),
             p1: pr(e, "next_1_hours"),
@@ -865,10 +869,13 @@ pub fn build_weather(body: &str, lat: f64, lon: f64, now_ms: i64, tz_min: i64) -
 
     let sym = c.sym.clone().unwrap_or_else(|| "cloudy".into());
     let today_d = days.get(&today);
+    // the UV peak of the local day (the entries before "now" count too: the sun was up earlier)
+    let uv_max = es.iter().filter(|e| day_of(e.t) == today).filter_map(|e| e.uv).fold(None, |m: Option<f64>, u| Some(m.map_or(u, |m| m.max(u))));
     let now = json!({
         "temp": r1(c.temp), "feels": r1(feels_like(c.temp, c.wind, c.rh)), "symbol": base_code(&sym), "icon": icon_for(&sym),
         "wind": r1(c.wind), "dir": c.dir.round(), "humidity": c.rh.round(), "cloud": c.cloud.round(),
         "precip": r1(c.p1.unwrap_or(0.0)), "min": r1(today_d.map_or(c.temp, |d| d.min)), "max": r1(today_d.map_or(c.temp, |d| d.max)),
+        "pressure": c.pres.map(|p| p.round()), "uv": c.uv.map(r1), "uv_max": uv_max.map(r1),
     });
 
     // Sun: the location's own solar date (UTC now shifted by longitude), shown in the PC's time zone by the page.
@@ -1355,7 +1362,7 @@ mod tests {
             let night = ((t % 86400) / 3600) as i64 >= 16 || ((t % 86400) / 3600) as i64 <= 4;
             let sfx = if night { "night" } else { "day" };
             let mut data = json!({
-                "instant": { "details": { "air_temperature": 10.0 + ((t / 3600) % 24) as f64 / 2.0, "wind_speed": 3.0, "wind_from_direction": 200.0, "relative_humidity": 85.0, "cloud_area_fraction": 90.0 } },
+                "instant": { "details": { "air_temperature": 10.0 + ((t / 3600) % 24) as f64 / 2.0, "wind_speed": 3.0, "wind_from_direction": 200.0, "relative_humidity": 85.0, "cloud_area_fraction": 90.0, "air_pressure_at_sea_level": 1008.4, "ultraviolet_index_clear_sky": if night { 0.0 } else { 2.6 } } },
                 "next_6_hours": { "summary": { "symbol_code": if rain { "rain".to_string() } else { format!("partlycloudy_{sfx}") } }, "details": { "precipitation_amount": if rain { 1.0 } else { 0.0 } } },
             });
             if hourly {
@@ -1393,12 +1400,28 @@ mod tests {
         assert_eq!(days[1]["icon"].as_str().unwrap().is_empty(), false);
         assert_eq!(v["now"]["icon"], "cloud");
         assert_eq!(v["now"]["humidity"], 85.0);
+        assert_eq!(v["now"]["pressure"], 1008.0);
+        assert_eq!(v["now"]["uv"], 0.0, "18:20Z is night in the fixture");
         assert_eq!(v["sun"]["state"], "normal");
         let rise = v["sun"]["rise"].as_i64().unwrap();
         let set = v["sun"]["set"].as_i64().unwrap();
         assert!(rise < set && (set - rise) > 8 * 3600_000 && (set - rise) < 12 * 3600_000);
         assert!(build_weather("{}", 0.0, 0.0, now, 0).is_err());
         assert!(build_weather("not json", 0.0, 0.0, now, 0).is_err());
+    }
+
+    #[test]
+    fn net_weather_tiles_data_pressure_and_uv_peak() {
+        // 12:20 local (+3): the sun is up in the fixture; the peak is that of the local day, the entries before "now" included
+        let now = (parse_iso("2026-10-24T09:20:00Z").unwrap()) * 1000;
+        let v = build_weather(&fixture(), 50.45, 30.52, now, 180).unwrap();
+        assert_eq!(v["now"]["pressure"], 1008.0);
+        assert_eq!(v["now"]["uv"], 2.6);
+        assert_eq!(v["now"]["uv_max"], 2.6);
+        // a forecast without the optional fields still builds, the tiles just have no data
+        let bare = fixture().replace("air_pressure_at_sea_level", "x_a").replace("ultraviolet_index_clear_sky", "x_b");
+        let w = build_weather(&bare, 50.45, 30.52, now, 180).unwrap();
+        assert!(w["now"]["pressure"].is_null() && w["now"]["uv"].is_null() && w["now"]["uv_max"].is_null());
     }
 
     #[test]

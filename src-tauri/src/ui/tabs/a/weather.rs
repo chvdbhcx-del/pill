@@ -9,6 +9,7 @@
 mod field;
 #[cfg(test)]
 mod tests;
+mod tiles;
 mod wxicons;
 
 use super::core::{Base, Incoming};
@@ -26,6 +27,7 @@ use glasskit::geom::{Pt, Rect};
 use glasskit::input::{Cursor, InputEvent, Response};
 use glasskit::lang::Lang;
 use glasskit::scroll::ScrollView;
+use tiles::Tiles;
 use glasskit::text::Style;
 use glasskit::theme::Theme;
 use pill_ui_core::panel::a::weather::{Action, DayView, HourView, OkView, Weather, View as Vw};
@@ -88,6 +90,9 @@ pub struct WeatherView {
     unit_ok: bool,
     res_it: Vec<Touch>,
     res_scroll: ScrollView,
+    /// the right column (hours, days, summary, tiles) scrolls when the tiles do not fit under the daily list
+    scroll: ScrollView,
+    tiles: Tiles,
     /// keyboard focus was requested from the host (so it is given back)
     kbd: bool,
 }
@@ -119,6 +124,12 @@ impl WeatherView {
             unit_ok: false,
             res_it: Vec::new(),
             res_scroll: ScrollView::new(),
+            scroll: {
+                let mut s = ScrollView::new();
+                s.keys = false;
+                s
+            },
+            tiles: Tiles::new(),
             kbd: false,
         };
         v.contact.input.style = v.contact.input.style.center(); // .wx-contact { text-align: center }
@@ -148,6 +159,9 @@ impl WeatherView {
 
     fn sync(&mut self, cx: &mut Cx) {
         self.vw = self.model.view(self.tr());
+        if let Vw::Ok(v) = &self.vw {
+            self.tiles.sync(&v.tiles);
+        }
         let fx = self.model.take_fx();
         self.base.route_fx(cx, fx);
         self.labels();
@@ -307,6 +321,18 @@ impl WeatherView {
         let x = d.x + 10.0 + if i == 0 { 0.0 } else { 26.0 + 2.0 };
         Rect::new(x, d.bottom() - 6.0 - 20.0, 26.0, 20.0)
     }
+    /// The scrolling right column: where the hours, the days, the summary and the tiles live.
+    fn right_rect(&self) -> Rect {
+        let o = self.o();
+        Rect::new(o.x + LEFT_W + GAP, o.y, o.w - LEFT_W - GAP, o.h)
+    }
+    /// Content height of the right column for the tiles on show (the daily list ends at the tab's bottom).
+    fn right_content_h(&self) -> f32 {
+        match &self.vw {
+            Vw::Ok(v) if !v.tiles.is_empty() => tiles::layout(self.o().h, v.tiles.len()).2,
+            _ => self.o().h,
+        }
+    }
     fn res_view(&self, list: Rect) -> Rect {
         list
     }
@@ -444,6 +470,9 @@ impl WeatherView {
             _ => {}
         }
 
+        // the right column scrolls: hours, days, then the summary and the tiles
+        let right = self.right_rect();
+        cv.with_clip(right, |cv| cv.with_offset(0.0, -self.scroll.offset(), |cv| {
         // hourly strip
         let hours = Rect::new(o.x + LEFT_W + GAP, o.y, o.w - LEFT_W - GAP, 94.0);
         cv.fill_rr(hours, 16.0, th.card);
@@ -472,6 +501,14 @@ impl WeatherView {
         }
         let src = Rect::new(days.x + 120.0, days.bottom() - 26.0, days.w - 136.0, 20.0);
         txt(cv, src, &v.source, Style::new(11.0, 400).right().ellipsis(), th.dim);
+        if !v.tiles.is_empty() {
+            let (sum_y, grid_y, _) = tiles::layout(o.h, v.tiles.len());
+            self.tiles.paint_summary(cv, th, Rect::new(days.x, o.y + sum_y, days.w, tiles::SUMMARY_H), &v.summary);
+            self.tiles.paint(cv, th, Rect::new(days.x, o.y + grid_y, days.w, o.h), &v.tiles, self.ru);
+        }
+        }));
+        self.scroll.bar.draw(cv, right, &self.scroll.state, th);
+        self.draw_more_hint(cv, th, right, !v.tiles.is_empty());
     }
 
     fn draw_hour(&self, cv: &Canvas, th: &Theme, card: Rect, i: usize, h: &HourView) {
@@ -627,6 +664,8 @@ impl View for WeatherView {
         self.model.set_language_ru(self.ru);
         self.model.set_os_reduce_motion(cx.reduced_motion);
         self.base.show(cx, &["settings:changed"], 250);
+        self.tiles.rewind();
+        self.scroll.state.scroll_to(0.0, false);
         let calls = self.model.on_show();
         self.pump(cx, calls);
     }
@@ -685,9 +724,13 @@ impl View for WeatherView {
                 if p.click {
                     acts.push(Action::Refresh);
                 }
+                let right = self.right_rect();
+                self.scroll.set_content_height(self.right_content_h(), right.h);
+                r = r.merge(self.scroll.event(ev, right));
+                let off = self.scroll.offset();
                 for i in 0..2 {
-                    let ur = self.unit_rect(i);
-                    let (a, p) = self.unit_it[i].pointer(ev, |q| ur.contains(q.0, q.1));
+                    let ur = self.unit_rect(i).offset(0.0, -off);
+                    let (a, p) = self.unit_it[i].pointer(ev, |q| ur.contains(q.0, q.1) && right.contains(q.0, q.1));
                     r = r.merge(a);
                     if p.click {
                         acts.push(Action::SetUnits(if i == 0 { "metric" } else { "imperial" }));
@@ -783,6 +826,7 @@ impl View for WeatherView {
             busy |= b.step(dt);
         }
         busy |= self.res_scroll.step(dt);
+        busy |= self.step_tiles(dt_ms);
         busy |= self.contact.input.step(dt) & self.contact.focused();
         busy |= self.city.input.step(dt) & self.city.focused();
         // typed input is applied in `draw`; its events (Enter = search) are read here, on the frame after
