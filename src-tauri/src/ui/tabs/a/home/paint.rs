@@ -112,7 +112,7 @@ impl HomeView {
             // seek
             let seek = o(L::SEEK);
             let track_c = if th.dark { Color::rgb8(0x35, 0x35, 0x35) } else { Color::rgb8(0xc9, 0xc9, 0xc9) };
-            track(cv, seek, p.seek.fill_pct as f32 / 100.0, self.acc(), track_c);
+            track(cv, seek, self.seek_f.at(), self.acc(), track_c);
             let small = Style::new(11.0, 400).mono();
             cv.text(o(L::T0), &p.seek.elapsed, small, th.dim);
             cv.text(o(L::T1), &p.seek.remaining, small.right(), th.dim);
@@ -163,26 +163,34 @@ impl HomeView {
         let v = &self.v.volume;
         let mute = o(L::MUTE);
         let km = self.hov(Hit::Mute);
-        cv.with_scale_about(mute.center(), self.press(Hit::Mute, 0.94), |cv| icons::draw(cv, v.glyph, mute.centered(18.0, 18.0), th.dim.mix(th.text, km), 1.6));
+        cv.with_scale_about(mute.center(), self.press(Hit::Mute, 0.94), |cv| {
+            // the speaker glyph cross-fades when it changes (muted, quiet, loud)
+            let (ir, ic, gf) = (mute.centered(18.0, 18.0), th.dim.mix(th.text, km), self.glyph_f.at01());
+            if gf < 0.999 && !self.glyph.0.is_empty() && self.glyph.0 != v.glyph {
+                cv.with_opacity(1.0 - gf, |cv| icons::draw(cv, self.glyph.0, ir, ic, 1.6));
+            }
+            cv.with_opacity(if self.glyph.0 == v.glyph { 1.0 } else { gf }, |cv| icons::draw(cv, v.glyph, ir, ic, 1.6));
+        });
         // slider: white fill (ink on the light card), thumb grows in on hover / drag
         let s = o(L::VOL);
         let (fill, tr) = if th.dark { (Color::rgb8(255, 255, 255), th.track) } else { (Color::rgb8(0x15, 0x15, 0x15), th.track) };
-        let pct = (v.shown / 100.0) as f32;
+        let pct = self.vol_f.at();
         track(cv, s, pct, fill, tr);
-        let hv = self.hov(Hit::Vol).max(if self.vol_drag { 1.0 } else { 0.0 });
-        let sc = if self.vol_drag { 1.18 } else { 0.7 + 0.4 * hv };
+        let grab = self.vol_grab.at01();
+        let hv = self.hov(Hit::Vol).max(grab);
+        let sc = 0.7 + 0.4 * hv + 0.08 * self.vol_grab.at();
         thumb(cv, s, pct, hv, sc);
         cv.text(o(L::VOL_NUM), &v.number.to_string(), Style::new(12.0, 400).mono().right(), th.dim);
         // device chip
         let d = o(L::DEV);
-        let hd = self.hov(Hit::Dev).max(self.menu_p.value().clamp(0.0, 1.0));
+        let hd = self.hov(Hit::Dev).max(self.menu_p.at01());
         let (c0, c1) = if th.dark { (Color::rgb8(0x1d, 0x1d, 0x1d), Color::rgb8(0x26, 0x26, 0x26)) } else { (Color::rgb8(0xd6, 0xd6, 0xd6), Color::rgb8(0xd6, 0xd6, 0xd6)) };
         cv.with_scale_about(d.center(), self.press(Hit::Dev, 0.96), |cv| {
             cv.fill_rr(d, 10.0, c0.mix(c1, hd));
             icons::draw(cv, "device", Rect::new(d.x + 8.0, d.cy() - 8.0, 16.0, 16.0), th.dim, 1.6);
             cv.text(Rect::new(d.x + 32.0, d.cy() - 9.0, d.w - 32.0 - 30.0, 18.0), &self.v.devices.button_text, Style::new(12.0, 500).ellipsis(), th.text2);
             let chev = Rect::new(d.right() - 8.0 - 14.0, d.cy() - 7.0, 14.0, 14.0);
-            cv.with_transform(rotation(chev.center(), 180.0 * self.menu_p.value().clamp(0.0, 1.0)), |cv| icons::draw(cv, "chevron", chev, th.dim, 1.8));
+            cv.with_transform(rotation(chev.center(), 180.0 * self.menu_p.at01()), |cv| icons::draw(cv, "chevron", chev, th.dim, 1.8));
         });
     }
 
@@ -288,13 +296,13 @@ impl HomeView {
     // ------------------------------------------------------------------------------------------------------------------ device list
 
     fn paint_menu(&self, cv: &Canvas, th: &Theme, ox: f32, oy: f32) {
-        let a = self.menu_a.value().clamp(0.0, 1.0);
+        let a = self.menu_a.at01();
         if a <= 0.005 {
             return;
         }
         let items = &self.v.devices.items;
         let r = L::menu(items.len()).offset(ox, oy);
-        let p = self.menu_p.value();
+        let p = self.menu_p.at();
         let (bg, hover, text) = if th.dark { (Color::rgb8(0x17, 0x17, 0x17), Color::rgb8(0x22, 0x22, 0x22), Color::rgb8(0xe8, 0xe8, 0xe8)) } else { (th.raised, th.raised2, th.text) };
         // grows out of the chip below it: scale .98 -> 1 about the bottom-right corner, 4 px rise
         let m = glasskit::canvas::mul(&glasskit::canvas::scale_about((r.right(), r.bottom()), 0.98 + 0.02 * p, 0.98 + 0.02 * p), &glasskit::canvas::translation(0.0, 4.0 * (1.0 - p)));
@@ -306,12 +314,13 @@ impl HomeView {
                 let sv = &self.menu_scroll;
                 cv.with_clip_rr(r, 14.0, |cv| {
                     sv.draw(cv, view, th, |cv, content| {
+                        // the highlight slides from row to row and fades out with the pointer
+                        let lit = self.mh_a.at01();
+                        if lit > 0.003 {
+                            cv.fill_rect(Rect::new(0.0, self.mh_y.at().clamp(0.0, L::MENU_ROW * items.len().saturating_sub(1) as f32), content.w, L::MENU_ROW), hover.fade(lit));
+                        }
                         for (i, d) in items.iter().enumerate() {
                             let row = Rect::new(0.0, i as f32 * L::MENU_ROW, content.w, L::MENU_ROW);
-                            let hov = self.hover == Some(Hit::MenuItem(i));
-                            if hov {
-                                cv.fill_rect(row, hover);
-                            }
                             if d.current {
                                 icons::draw(cv, "check", Rect::new(row.x + 12.0, row.cy() - 7.0, 14.0, 14.0), Color::rgb8(0x8f, 0x8f, 0xff), 2.2);
                             }

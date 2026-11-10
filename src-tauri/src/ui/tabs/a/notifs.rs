@@ -15,8 +15,8 @@ use super::icons;
 use crate::ui::view::{Cx, Msg, View};
 use glasskit::canvas::Canvas;
 use glasskit::color::Color;
-use glasskit::controls::Interact;
-use glasskit::ease::{curves, dur, Tween};
+use super::touch::Touch;
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::input::{Cursor, InputEvent, MouseButton, Response};
 use glasskit::lang::Lang;
@@ -121,11 +121,15 @@ pub struct NotifsView {
     items: Vec<DItem>,
     nview: Option<NView>,
     scroll: ScrollView,
-    clear_it: Interact,
+    clear_it: Touch,
+    /// the clear button fades with its visibility; the label it shows while it leaves
+    clear_a: Flow,
+    clear_last: (String, bool),
     /// Row hover amounts (0..1), settled ones are dropped.
-    hov: HashMap<i64, Tween<f32>>,
+    hov: HashMap<i64, Flow>,
     hovered: Option<i64>,
-    xh: Option<(i64, Tween<f32>)>,
+    xh: HashMap<i64, Flow>,
+    xhov: Option<i64>,
     press_x: Option<i64>,
     /// Rows removed by the user: collapse (height shrinks); other ghosts only fade.
     collapsing: HashSet<i64>,
@@ -146,10 +150,13 @@ impl NotifsView {
             items: vec![],
             nview: None,
             scroll: ScrollView::new(),
-            clear_it: Interact::new(),
+            clear_it: Touch::new(),
+            clear_a: Flow::new(0.0, Feel::FADE),
+            clear_last: (String::new(), false),
             hov: HashMap::new(),
             hovered: None,
-            xh: None,
+            xh: HashMap::new(),
+            xhov: None,
             press_x: None,
             collapsing: HashSet::new(),
             flip: HashMap::new(),
@@ -380,10 +387,7 @@ impl NotifsView {
     }
 
     fn retarget_hov(&mut self, id: i64, to: f32) {
-        let cur = self.hov.get(&id).map_or(0.0, |t| t.value());
-        let mut t = Tween::at_rest(cur);
-        t.retarget(to, dur::FAST, curves::EASE_OUT);
-        self.hov.insert(id, t);
+        self.hov.entry(id).or_insert_with(|| Flow::new(0.0, Feel::FADE)).to(to);
     }
 
     fn set_hover(&mut self, id: Option<i64>) -> bool {
@@ -401,26 +405,24 @@ impl NotifsView {
     }
 
     fn hover_amount(&self, id: i64) -> f32 {
-        self.hov.get(&id).map_or(0.0, |t| t.value().clamp(0.0, 1.0))
+        self.hov.get(&id).map_or(0.0, |t| t.at01())
     }
 
+    /// The hover of the row's remove button: the old one fades out while the new one fades in.
     fn set_xh(&mut self, id: Option<i64>) -> bool {
-        let cur = self.xh.as_ref().map(|(i, t)| (*i, t.value()));
-        match (cur, id) {
-            (Some((i, _)), Some(n)) if i == n => false,
-            (None, None) => false,
-            (c, n) => {
-                let from = if c.map(|x| x.0) == n { c.map_or(0.0, |x| x.1) } else { 0.0 };
-                if let Some(n) = n {
-                    let mut t = Tween::at_rest(from);
-                    t.retarget(1.0, dur::FAST, curves::EASE_OUT);
-                    self.xh = Some((n, t));
-                } else {
-                    self.xh = None;
-                }
-                true
+        if self.xhov == id {
+            return false;
+        }
+        if let Some(old) = self.xhov {
+            if let Some(t) = self.xh.get_mut(&old) {
+                t.to(0.0);
             }
         }
+        if let Some(n) = id {
+            self.xh.entry(n).or_insert_with(|| Flow::new(0.0, Feel::FADE)).to(1.0);
+        }
+        self.xhov = id;
+        true
     }
 
     fn pointer_move(&mut self, p: (f32, f32)) -> bool {
@@ -520,7 +522,7 @@ impl View for NotifsView {
                 if self.pointer_move(*pos) {
                     r.redraw = true;
                 }
-                if self.xh.is_some() {
+                if self.xhov.is_some() {
                     r.cursor = Some(Cursor::Hand);
                 }
             }
@@ -550,7 +552,7 @@ impl View for NotifsView {
             }
             _ => {}
         }
-        if self.base.player.busy() || self.hov.values().any(|t| !t.finished()) {
+        if self.base.player.busy() || self.hov.values().chain(self.xh.values()).any(|t| t.moving()) {
             cx.request_frame();
         }
         r
@@ -561,15 +563,21 @@ impl View for NotifsView {
         self.base.reduced = cx.reduced_motion;
         let mut busy = self.base.player.step(dt_ms);
         busy |= self.scroll.step(dt);
-        busy |= self.clear_it.step(dt);
-        for t in self.hov.values_mut() {
-            busy |= t.step(dt);
+        busy |= self.clear_it.step(dt_ms);
+        for t in self.hov.values_mut().chain(self.xh.values_mut()) {
+            t.step(dt_ms);
+            busy |= t.moving();
         }
         let hv = self.hovered;
-        self.hov.retain(|id, t| !t.finished() || t.target() > 0.0 || Some(*id) == hv);
-        if let Some((_, t)) = &mut self.xh {
-            busy |= t.step(dt);
+        self.hov.retain(|id, t| t.moving() || t.target() > 0.0 || Some(*id) == hv);
+        self.xh.retain(|_, t| t.moving() || t.target() > 0.0);
+        let clear_vis = self.nview.as_ref().is_some_and(|v| v.clear_visible);
+        if let Some(v) = self.nview.as_ref().filter(|v| v.clear_visible) {
+            self.clear_last = (v.clear_label.clone(), v.clear_armed);
         }
+        self.clear_a.to(clear_vis as u8 as f32);
+        self.clear_a.step(dt_ms);
+        busy |= self.clear_a.moving();
         if self.reap() {
             busy = true;
         }
@@ -597,7 +605,11 @@ impl View for NotifsView {
         let count_col = if v.off { th.amber } else { th.dim };
         cv.text(Rect::new(rect.x + 12.0, rect.y, rect.w - 160.0, HEAD_H), &v.count.to_uppercase(), th.label_caps(), count_col);
         if v.clear_visible {
-            self.draw_clear(cv, th, &v);
+            self.clear_last = (v.clear_label.clone(), v.clear_armed);
+        }
+        let ca = self.clear_a.at01();
+        if ca > 0.003 {
+            cv.with_opacity(ca, |cv| self.draw_clear(cv, th));
         }
         // ---- list or empty state
         if v.empty {
@@ -612,14 +624,15 @@ impl View for NotifsView {
 }
 
 impl NotifsView {
-    fn draw_clear(&self, cv: &Canvas, th: &Theme, v: &NView) {
+    fn draw_clear(&self, cv: &Canvas, th: &Theme) {
+        let (label, armed) = (&self.clear_last.0, self.clear_last.1);
         let r = self.clear_rect(Some(cv));
         let h = self.clear_it.hover();
-        let (bg, fg) = if v.clear_armed { (th.red_bg, th.red) } else { (th.hover.fade(h), th.dim.mix(th.text, h)) };
+        let (bg, fg) = if armed { (th.red_bg, th.red) } else { (th.hover.fade(h), th.dim.mix(th.text, h)) };
         cv.with_scale_about(r.center(), self.clear_it.press_scale(0.96), |cv| {
             cv.fill_rr(r, 10.0, bg);
             glyph(cv, "trash", Rect::new(r.x + 8.0, r.cy() - 7.5, 15.0, 15.0), fg, 1.7);
-            cv.text(Rect::new(r.x + 31.0, r.y, r.w - 31.0, r.h), &v.clear_label, Style::new(12.0, 600), fg);
+            cv.text(Rect::new(r.x + 31.0, r.y, r.w - 31.0, r.h), label, Style::new(12.0, 600), fg);
         });
     }
 
@@ -699,7 +712,7 @@ impl NotifsView {
 
     fn draw_row(&self, cv: &Canvas, th: &Theme, row: &Row, rr: Rect, ghost: bool) {
         let hv = if ghost { 0.0 } else { self.hover_amount(row.id) };
-        let xh = self.xh.as_ref().filter(|(i, _)| *i == row.id).map_or(0.0, |(_, t)| t.value().clamp(0.0, 1.0));
+        let xh = self.xh.get(&row.id).map_or(0.0, |t| t.at01());
         cv.fill_rr(rr, ROW_R, th.raised.fade(hv));
         let cy = rr.cy();
         if row.unread {

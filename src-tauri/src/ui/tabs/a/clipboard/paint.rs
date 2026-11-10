@@ -146,9 +146,9 @@ pub(crate) fn draw(v: &mut ClipboardView, cv: &Canvas, t: &Theme, rect: Rect) {
 }
 
 fn draw_wipe(v: &ClipboardView, cv: &Canvas, t: &Theme, r: Rect) {
-    let hv = v.wipe_hover.value().clamp(0.0, 1.0);
-    let arm = v.arm.value().clamp(0.0, 1.0);
-    let pressed = if v.down_is(Hit::Wipe) { 1.0 - 0.06 * v.press.value() } else { 1.0 };
+    let hv = v.wipe_hover.at01();
+    let arm = v.arm.at01();
+    let pressed = if v.down_is(Hit::Wipe) { 1.0 - 0.06 * v.press.at() } else { 1.0 };
     cv.with_scale_about(r.center(), pressed, |cv| {
         cv.fill_rr(r, 12.0, t.card.mix(t.card_hover, hv));
         if arm > 0.003 {
@@ -178,7 +178,7 @@ fn tile_icon(cv: &Canvas, t: &Theme, row: &Row, r: Rect) {
 
 fn draw_row(v: &ClipboardView, cv: &Canvas, t: &Theme, row: &Row, r0: Rect, h: f32, _cw: f32) {
     let s = v.base.player.sample(&format!("row:{}", row.id));
-    let hl = v.hl.get(&row.id).map_or(0.0, |x| x.value().clamp(0.0, 1.0));
+    let hl = v.hl.get(&row.id).map_or(0.0, |x| x.at01());
     let (mut alpha, mut dy) = (s.alpha, s.dy - hl);
     if let Some(&old) = v.flip_from.get(&row.id) {
         let lp = v.base.player.sample("list").p;
@@ -262,9 +262,8 @@ const PIN_FILLED: &str = r#"<path d="M12 17v5"/><path fill="currentColor" d="M9 
 
 fn draw_btn(v: &ClipboardView, cv: &Canvas, t: &Theme, row: &Row, a: Act, r: Rect) {
     let idx = row.index;
-    let over = v.hover == Some(Hit::Btn(idx, a));
-    let hv = if over { v.hover_btn.value().clamp(0.0, 1.0) } else { 0.0 };
-    let sc = if v.down_is(Hit::Btn(idx, a)) { 1.0 - 0.1 * v.press.value() } else { 1.0 };
+    let hv = v.bh.get(&(idx, a)).map_or(0.0, |f| f.at01());
+    let sc = if v.down_is(Hit::Btn(idx, a)) { 1.0 - 0.1 * v.press.at() } else { 1.0 };
     cv.with_scale_about(r.center(), sc, |cv| {
         if hv > 0.003 {
             cv.fill_rr(r, 8.0, t.raised2.fade(hv));

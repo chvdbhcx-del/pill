@@ -168,6 +168,18 @@ fn volume_click_wheel_and_mute_reach_the_backend() {
 }
 
 #[test]
+fn the_volume_knob_glides_with_inertia_over_many_frames_and_the_tab_then_idles() {
+    let _m = motion(false);
+    let mut r = Rig::playing();
+    r.settle();
+    let v = layout::VOL;
+    r.sim.send(&InputEvent::Wheel { pos: ctr(v), delta: (0.0, -100.0), mods: Modifiers::NONE, precise: false });
+    let frames = r.sim.run(3000);
+    assert!(frames > 25 && frames < 3000, "a spring over many frames, then rest: {frames}");
+    assert!(!r.sim.frame.wants_frame(), "idle once the knob arrived");
+}
+
+#[test]
 fn the_device_chip_opens_the_list_and_picking_sets_the_default() {
     let mut r = Rig::playing();
     r.click(ctr(layout::DEV));

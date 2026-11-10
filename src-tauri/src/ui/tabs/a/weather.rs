@@ -18,7 +18,9 @@ use crate::ui::view::{Cx, Msg, View};
 use field::Field;
 use glasskit::canvas::Canvas;
 use glasskit::color::Color;
-use glasskit::controls::{Button, ButtonKind, Interact, Widget};
+use super::touch::Touch;
+use crate::ui::liquid::{Feel, Flow};
+use glasskit::controls::{Button, ButtonKind, Widget};
 use glasskit::edit::EditEvent;
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{Cursor, InputEvent, Response};
@@ -78,10 +80,13 @@ pub struct WeatherView {
     btn: [Button; 6],
     bw: Cell<[f32; 6]>,
     text_h: Cell<f32>,
-    city_it: Interact,
-    rf_it: Interact,
-    unit_it: [Interact; 2],
-    res_it: Vec<Interact>,
+    city_it: Touch,
+    rf_it: Touch,
+    unit_it: [Touch; 2],
+    /// the °C / °F selection pill slides between the two (0 = °C, 1 = °F)
+    unit_on: Flow,
+    unit_ok: bool,
+    res_it: Vec<Touch>,
     res_scroll: ScrollView,
     /// keyboard focus was requested from the host (so it is given back)
     kbd: bool,
@@ -107,9 +112,11 @@ impl WeatherView {
             btn: [mk("", ButtonKind::Primary), mk("", ButtonKind::Primary), mk("", ButtonKind::Ghost), mk("", ButtonKind::Normal), mk("", ButtonKind::Ghost), mk("", ButtonKind::Ghost)],
             bw: Cell::new([110.0, 70.0, 70.0, 90.0, 100.0, 90.0]),
             text_h: Cell::new(36.0),
-            city_it: Interact::new(),
-            rf_it: Interact::new(),
-            unit_it: [Interact::new(), Interact::new()],
+            city_it: Touch::new(),
+            rf_it: Touch::new(),
+            unit_it: [Touch::new(), Touch::new()],
+            unit_on: Flow::new(0.0, Feel::FLOW),
+            unit_ok: false,
             res_it: Vec::new(),
             res_scroll: ScrollView::new(),
             kbd: false,
@@ -151,7 +158,7 @@ impl WeatherView {
         if let Vw::City(c) = &self.vw {
             if c.results.len() != self.nres {
                 self.nres = c.results.len();
-                self.res_it = (0..self.nres).map(|_| Interact::new()).collect();
+                self.res_it = (0..self.nres).map(|_| Touch::new()).collect();
                 for i in 0..self.nres {
                     self.base.player.play(&format!("res:{i}"), Anim::row_stagger(i), self.base.reduced);
                 }
@@ -450,14 +457,17 @@ impl WeatherView {
             let r = Rect::new(days.x + 16.0, days.y + 8.0 + i as f32 * 29.0, days.w - 32.0, 29.0);
             animated(cv, self.base.player.sample(&format!("day:{i}")), r.center(), |cv| self.draw_day(cv, th, r, d));
         }
-        for (i, (label, on)) in [("°C", v.metric), ("°F", !v.metric)].into_iter().enumerate() {
+        // the selection pill glides from one unit to the other
+        let u = self.unit_on.at();
+        let (r0, r1) = (self.unit_rect(0), self.unit_rect(1));
+        let pill = Rect::new(r0.x + (r1.x - r0.x) * u, r0.cy() - 8.5, r0.w, 17.0);
+        cv.fill_rr(pill, 6.0, th.raised);
+        for (i, label) in ["°C", "°F"].into_iter().enumerate() {
             let r = self.unit_rect(i);
             let hv = self.unit_it[i].hover();
             let b = Rect::new(r.x, r.cy() - 8.5, r.w, 17.0);
-            if on {
-                cv.fill_rr(b, 6.0, th.raised);
-            }
-            let c = if on { th.text2 } else { th.faint.mix(th.text, hv) };
+            let on = if i == 0 { 1.0 - u } else { u }.clamp(0.0, 1.0);
+            let c = th.faint.mix(th.text, hv).mix(th.text2, on);
             cv.with_scale_about(b.center(), self.unit_it[i].press_scale(0.94), |cv| txt(cv, b, label, Style::new(11.0, 400).center(), c));
         }
         let src = Rect::new(days.x + 120.0, days.bottom() - 26.0, days.w - 136.0, 20.0);
@@ -755,9 +765,19 @@ impl View for WeatherView {
     fn step(&mut self, dt_ms: f64, cx: &mut Cx) -> bool {
         let dt = (dt_ms / 1000.0) as f32;
         let mut busy = self.base.player.step(dt_ms);
-        busy |= self.city_it.step(dt) | self.rf_it.step(dt) | self.unit_it[0].step(dt) | self.unit_it[1].step(dt);
+        busy |= self.city_it.step(dt_ms) | self.rf_it.step(dt_ms) | self.unit_it[0].step(dt_ms) | self.unit_it[1].step(dt_ms);
+        if let Vw::Ok(v) = &self.vw {
+            let want = (!v.metric) as u8 as f32;
+            if !self.unit_ok {
+                self.unit_on.jump(want);
+            }
+            self.unit_on.to(want);
+        }
+        self.unit_ok = matches!(self.vw, Vw::Ok(_));
+        self.unit_on.step(dt_ms);
+        busy |= self.unit_on.moving();
         for it in &mut self.res_it {
-            busy |= it.step(dt);
+            busy |= it.step(dt_ms);
         }
         for b in &mut self.btn {
             busy |= b.step(dt);

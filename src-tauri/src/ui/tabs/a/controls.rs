@@ -13,8 +13,8 @@ mod tests;
 use super::core::{Base, Incoming};
 use crate::ui::view::{Cx, Msg, View};
 use glasskit::canvas::{mul, scale_about, translation, Canvas};
-use glasskit::controls::Interact;
-use glasskit::ease::{curves, dur, Tween};
+use super::touch::Touch;
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::input::{Buttons, Cursor, InputEvent, KeyCode, Modifiers, MouseButton, Response};
 use glasskit::lang::Lang;
@@ -32,8 +32,8 @@ const POWER_ACTIONS: [&str; 4] = ["lock", "sleep", "restart", "shutdown"];
 
 struct TileState {
     id: String,
-    intr: Interact,
-    on: Tween<f32>,
+    intr: Touch,
+    on: Flow,
 }
 
 /// What a click landed on.
@@ -51,9 +51,9 @@ pub struct ControlsView {
     ru: bool,
     v: Model,
     tiles: Vec<TileState>,
-    power: Vec<Interact>,
-    list: Interact,
-    pbtn: Interact,
+    power: Vec<Touch>,
+    list: Touch,
+    pbtn: Touch,
     focus: Option<usize>,
     /// the popover as last shown, kept while its exit cue plays
     last_pop: Option<Popover>,
@@ -61,7 +61,9 @@ pub struct ControlsView {
     size: (f32, f32),
     /// the system monitor's meters (CPU / RAM / GPU) over the tiles, fed by the island (`Meters`); `None` = no row
     meters: Option<pill_ui_core::live::sysmon::MetersView>,
-    meter_w: Vec<(String, Tween<f32>)>,
+    meter_w: Vec<(String, Flow)>,
+    /// height the meter row takes over the tiles right now (0 or `METER_ROW`): the tiles slide down when it appears
+    mrow: Flow,
 }
 
 /// The island hands the Controls tab the latest meter sample (`LiveCmd::SysMeters`) as `Msg::Custom(Box<Meters>)`.
@@ -84,15 +86,16 @@ impl ControlsView {
             ru: false,
             v: Model { tiles: vec![], power: vec![], popover: None },
             tiles: vec![],
-            power: (0..4).map(|_| Interact::new()).collect(),
-            list: Interact::new(),
-            pbtn: Interact::new(),
+            power: (0..4).map(|_| Touch::new()).collect(),
+            list: Touch::new(),
+            pbtn: Touch::new(),
             focus: None,
             last_pop: None,
             scroll: ScrollView::new(),
             size: (super::W, super::tab_h("controls").unwrap_or(331.0) - super::CHROME_H),
             meters: None,
             meter_w: vec![],
+            mrow: Flow::px(0.0, Feel::FLOW),
         };
         c.sync();
         c
@@ -109,21 +112,23 @@ impl ControlsView {
     /// The box of the tiles and the power row: the content box, shortened by the meter row while it is shown.
     fn grid(&self) -> Rect {
         let b = self.bounds();
-        if self.meters.as_ref().is_some_and(|m| m.visible && !m.rows.is_empty()) {
-            Rect::new(b.x, b.y + METER_ROW, b.w, (b.h - METER_ROW).max(0.0))
-        } else {
-            b
-        }
+        let h = self.mrow.at().max(0.0);
+        Rect::new(b.x, b.y + h, b.w, (b.h - h).max(0.0))
+    }
+
+    fn meters_shown(&self) -> bool {
+        self.meters.as_ref().is_some_and(|m| m.visible && !m.rows.is_empty())
     }
 
     fn set_meters(&mut self, m: pill_ui_core::live::sysmon::MetersView) {
         for r in &m.rows {
             match self.meter_w.iter_mut().find(|(k, _)| *k == r.key) {
-                Some((_, t)) => t.retarget(r.pct / 100.0, dur::SLOW, curves::EASE_OUT),
-                None => self.meter_w.push((r.key.clone(), Tween::at_rest(r.pct / 100.0))),
+                Some((_, t)) => t.to(r.pct / 100.0),
+                None => self.meter_w.push((r.key.clone(), Flow::new(r.pct / 100.0, Feel::DRAG))),
             }
         }
         self.meters = Some(m);
+        self.mrow.to(if self.meters_shown() { METER_ROW } else { 0.0 });
     }
 
     fn bounds(&self) -> Rect {
@@ -138,12 +143,12 @@ impl ControlsView {
     fn sync(&mut self) {
         self.v = self.model.view(self.tr());
         if self.tiles.len() != self.v.tiles.len() || self.tiles.iter().zip(&self.v.tiles).any(|(s, t)| s.id != t.id) {
-            self.tiles = self.v.tiles.iter().map(|t| TileState { id: t.id.clone(), intr: Interact::new(), on: Tween::at_rest(t.on as u8 as f32) }).collect();
+            self.tiles = self.v.tiles.iter().map(|t| TileState { id: t.id.clone(), intr: Touch::new(), on: Flow::new(t.on as u8 as f32, Feel::FADE) }).collect();
             self.focus = None;
         }
         for (s, t) in self.tiles.iter_mut().zip(&self.v.tiles) {
             s.intr.set_enabled(!t.disabled);
-            s.on.retarget(t.on as u8 as f32, dur::MED, curves::EASE_OUT);
+            s.on.to(t.on as u8 as f32);
             if !t.busy {
                 self.base.player.release(&format!("tile:{}", t.id));
             }
@@ -399,16 +404,20 @@ impl View for ControlsView {
         let dt = (dt_ms / 1000.0) as f32;
         let mut busy = self.base.player.step(dt_ms);
         for s in &mut self.tiles {
-            busy |= s.intr.step(dt);
-            busy |= s.on.step(dt);
+            busy |= s.intr.step(dt_ms);
+            s.on.step(dt_ms);
+            busy |= s.on.moving();
         }
         for p in &mut self.power {
-            busy |= p.step(dt);
+            busy |= p.step(dt_ms);
         }
         for (_, t) in &mut self.meter_w {
-            busy |= t.step(dt);
+            t.step(dt_ms);
+            busy |= t.moving();
         }
-        busy |= self.list.step(dt) | self.pbtn.step(dt) | self.scroll.step(dt);
+        self.mrow.step(dt_ms);
+        busy |= self.mrow.moving();
+        busy |= self.list.step(dt_ms) | self.pbtn.step(dt_ms) | self.scroll.step(dt);
         busy
     }
 
@@ -422,7 +431,7 @@ impl View for ControlsView {
         for (i, (t, r)) in self.v.tiles.iter().zip(&tiles).enumerate() {
             let s = &self.tiles[i];
             let look = paint::TileLook {
-                on: s.on.value().clamp(0.0, 1.0),
+                on: s.on.at01(),
                 hover: s.intr.hover(),
                 scale: s.intr.press_scale(0.96),
                 circle_scale: s.intr.press_scale(0.92),
@@ -448,8 +457,15 @@ impl View for ControlsView {
 impl ControlsView {
     /// `.sm-row` of `sysmon-live.css`: equal columns, 44 px high, a label + value line and a 4 px bar (the bar width eases like the web's .5 s transition).
     fn draw_meters(&self, cv: &Canvas, k: &Tok, rect: Rect) {
+        // the row fades and rises with the room the tiles make for it (it keeps drawing while it leaves)
+        let a = (self.mrow.at() / METER_ROW).clamp(0.0, 1.0);
+        let Some(m) = self.meters.as_ref().filter(|m| !m.rows.is_empty()).filter(|_| a > 0.003) else { return };
+        let off = (a - 1.0) * 10.0;
+        cv.with_opacity(a, |cv| cv.with_offset(0.0, off, |cv| self.draw_meter_row(cv, k, rect, m)));
+    }
+
+    fn draw_meter_row(&self, cv: &Canvas, k: &Tok, rect: Rect, m: &pill_ui_core::live::sysmon::MetersView) {
         use glasskit::text::Style;
-        let Some(m) = self.meters.as_ref().filter(|m| m.visible && !m.rows.is_empty()) else { return };
         let n = m.rows.len() as f32;
         let w = (rect.w - 12.0 * (n - 1.0)) / n;
         for (i, r) in m.rows.iter().enumerate() {
@@ -459,7 +475,7 @@ impl ControlsView {
             cv.text(Rect::new(b.x + 12.0, b.y + 8.0, w - 24.0, 16.0), &r.value, Style::new(12.0, 600).top().right().mono().ellipsis(), if r.hot { k.warn } else { k.fg });
             let track = Rect::new(b.x + 12.0, b.bottom() - 8.0 - 4.0, w - 24.0, 4.0);
             cv.fill_rr(track, 2.0, k.raised);
-            let f = self.meter_w.iter().find(|(key, _)| *key == r.key).map_or(r.pct / 100.0, |(_, t)| t.value()).clamp(0.0, 1.0);
+            let f = self.meter_w.iter().find(|(key, _)| *key == r.key).map_or(r.pct / 100.0, |(_, t)| t.at()).clamp(0.0, 1.0);
             if f > 0.0 {
                 cv.fill_rr(Rect::new(track.x, track.y, (track.w * f).max(4.0), 4.0), 2.0, if r.hot { k.warn } else { k.accent });
             }

@@ -345,6 +345,31 @@ fn snapshots_of_the_typical_states() {
 }
 
 #[test]
+fn the_row_hover_and_the_clear_button_fade_without_overshoot_turn_around_and_idle() {
+    let _m = motion(false);
+    let mut r = Rig::open(history());
+    r.settle();
+    // the clear button was faded in by the first frames, then everything idled
+    assert!(r.v.clear_a.at() == 1.0 && !r.v.step(16.0, &mut r.cx));
+    r.mv(ROW0);
+    let mut last = 0.0;
+    for _ in 0..6 {
+        r.v.step(16.0, &mut r.cx);
+        let h = r.v.hover_amount(9);
+        assert!(h >= last && h <= 1.0, "hover {h} after {last}");
+        last = h;
+    }
+    assert!(last > 0.2 && last < 0.95, "mid-way after ~100 ms: {last}");
+    // leaving mid-way carries the momentum on a little, then it returns to 0 and the window idles
+    r.mv((5.0, 200.0));
+    r.v.step(16.0, &mut r.cx);
+    assert!(r.v.hover_amount(9) >= last - 0.01, "no jump back");
+    r.settle();
+    assert_eq!(r.v.hover_amount(9), 0.0);
+    assert!(!r.v.step(16.0, &mut r.cx));
+}
+
+#[test]
 fn enter_cue_starts_rows_hidden_then_settles_visible() {
     let _m = motion(false);
     let mut r = Rig::open(history());
