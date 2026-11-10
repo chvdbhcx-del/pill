@@ -2,13 +2,13 @@
 //! `src/agents-live.js` + `agents-live.css` (`.ag-row`). The model (`panel::b::agents::AgentsModel`) also feeds the live row / card / badge of
 //! the collapsed pill; those leave through `kit::route_effects` as `TabFx`.
 //!
-//! Motion: a freshly opened tab staggers its rows in (28 ms steps), later updates FLIP (a row that moved slides to its new place, a new row
-//! drops in, a gone one fades out), a state change pops the row's dot, and working / waiting dots breathe (1.6 s / 1.3 s). Reduced motion
-//! jumps everything and the dots stay still.
-use super::kit::{lang_of, ms_of, route_effects, Calls, Cues};
+//! Motion (all liquid, see `ui::liquid`): a freshly opened tab staggers its rows in (28 ms steps), later updates FLIP (a row that moved
+//! slides to its new place with its speed kept, a new row drops in, a gone one fades out), a state change pops the row's dot, the empty
+//! text fades in, and working / waiting dots breathe (1.6 s / 1.3 s). Reduced motion lands everything and the dots stay still.
+use super::kit::{lang_of, ms_of, route_effects, Calls, Cues, Lit};
 use crate::ui::view::{Cx, Msg, Ticket, View};
 use glasskit::canvas::Canvas;
-use glasskit::ease::{curves, dur, Tween};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::input::{InputEvent, Response};
 use glasskit::scroll::ScrollView;
@@ -25,6 +25,8 @@ const ROW_H: f32 = 44.0;
 const ROW_H_TITLE: f32 = 46.0;
 const DOT: f32 = 8.0;
 const MAX_STAGGER: usize = 8;
+/// seconds between two rows of a stagger
+const STAGGER: f32 = 0.028;
 
 fn row_h(r: &Row) -> f32 {
     if r.title.is_empty() {
@@ -62,11 +64,21 @@ enum Mode {
 
 struct Slot {
     id: String,
-    y: Tween<f32>,
-    alpha: Tween<f32>,
-    rise: Tween<f32>,
+    y: Flow,
+    alpha: Flow,
+    rise: Flow,
     h: f32,
     leaving: bool,
+    /// seconds before an entering row starts (the stagger)
+    wait: f32,
+}
+
+impl Slot {
+    /// The enter starts: fade in, rise to the row's place.
+    fn go(&mut self) {
+        self.alpha.to(1.0);
+        self.rise.to(0.0);
+    }
 }
 
 /// Where each row is drawn right now. Pure: no canvas, unit-tested below.
@@ -77,18 +89,15 @@ struct Flipper {
 
 impl Flipper {
     fn enter(y: f32, h: f32, id: String, delay: f32) -> Slot {
-        Slot {
-            id,
-            y: Tween::at_rest(y),
-            alpha: Tween::new(0.0, 1.0, dur::MED, curves::EASE_OUT).delayed(delay),
-            rise: Tween::new(6.0, 0.0, dur::SETTLE, curves::SPRING_SETTLE).delayed(delay),
-            h,
-            leaving: false,
+        let mut s = Slot { id, y: Flow::px(y, Feel::FLOW), alpha: Flow::new(0.0, Feel::FADE), rise: Flow::px(6.0, Feel::FLOW), h, leaving: false, wait: delay };
+        if delay <= 0.0 {
+            s.go();
         }
+        s
     }
 
     fn rest(y: f32, h: f32, id: String) -> Slot {
-        Slot { id, y: Tween::at_rest(y), alpha: Tween::at_rest(1.0), rise: Tween::at_rest(0.0), h, leaving: false }
+        Slot { id, y: Flow::px(y, Feel::FLOW), alpha: Flow::new(1.0, Feel::FADE), rise: Flow::px(0.0, Feel::FLOW), h, leaving: false, wait: 0.0 }
     }
 
     fn set(&mut self, t: &[(String, f32, f32)], mode: Mode, reduced: bool) {
@@ -96,7 +105,7 @@ impl Flipper {
         match mode {
             Mode::Jump => self.slots = t.iter().map(|(id, y, h)| Self::rest(*y, *h, id.clone())).collect(),
             Mode::Stagger => {
-                self.slots = t.iter().enumerate().map(|(i, (id, y, h))| Self::enter(*y, *h, id.clone(), i.min(MAX_STAGGER) as f32 * dur::STAGGER)).collect();
+                self.slots = t.iter().enumerate().map(|(i, (id, y, h))| Self::enter(*y, *h, id.clone(), i.min(MAX_STAGGER) as f32 * STAGGER)).collect();
             }
             Mode::Flip => {
                 let mut next: Vec<Slot> = Vec::with_capacity(t.len());
@@ -105,7 +114,7 @@ impl Flipper {
                         Some(i) => {
                             let mut s = self.slots.remove(i);
                             s.h = *h;
-                            s.y.retarget(*y, dur::SETTLE, curves::SPRING_SETTLE);
+                            s.y.to(*y);
                             next.push(s);
                         }
                         None => next.push(Self::enter(*y, *h, id.clone(), 0.0)),
@@ -115,7 +124,7 @@ impl Flipper {
                 for mut s in std::mem::take(&mut self.slots) {
                     if !s.leaving {
                         s.leaving = true;
-                        s.alpha = Tween::new(s.alpha.value(), 0.0, dur::EXIT, curves::EASE_IN);
+                        s.alpha.to(0.0);
                     }
                     next.push(s);
                 }
@@ -125,28 +134,42 @@ impl Flipper {
     }
 
     fn step(&mut self, dt: f32) -> bool {
+        let ms = dt as f64 * 1000.0;
         let mut busy = false;
         for s in &mut self.slots {
-            busy |= s.y.step(dt);
-            busy |= s.alpha.step(dt);
-            busy |= s.rise.step(dt);
+            let mut enter_ms = ms;
+            if s.wait > 0.0 {
+                busy = true;
+                if s.wait > dt {
+                    s.wait -= dt;
+                    enter_ms = 0.0;
+                } else {
+                    enter_ms = (dt - s.wait) as f64 * 1000.0;
+                    s.wait = 0.0;
+                    s.go();
+                }
+            }
+            s.y.step(ms);
+            s.alpha.step(enter_ms);
+            s.rise.step(enter_ms);
+            busy |= s.y.moving() || s.alpha.moving() || s.rise.moving();
         }
-        self.slots.retain(|s| !(s.leaving && s.alpha.finished()));
+        self.slots.retain(|s| !(s.leaving && !s.alpha.moving()));
         busy
     }
 
     /// `(y, alpha, rise)` of a live row.
     fn pos(&self, id: &str) -> Option<(f32, f32, f32)> {
-        self.slots.iter().find(|s| s.id == id && !s.leaving).map(|s| (s.y.value(), s.alpha.value().clamp(0.0, 1.0), s.rise.value()))
+        self.slots.iter().find(|s| s.id == id && !s.leaving).map(|s| (s.y.at(), s.alpha.at01(), s.rise.at()))
     }
 
     /// `(id, y, h, alpha)` of the rows that are fading out.
     fn ghosts(&self) -> impl Iterator<Item = (&str, f32, f32, f32)> {
-        self.slots.iter().filter(|s| s.leaving).map(|s| (s.id.as_str(), s.y.value(), s.h, s.alpha.value().clamp(0.0, 1.0)))
+        self.slots.iter().filter(|s| s.leaving).map(|s| (s.id.as_str(), s.y.at(), s.h, s.alpha.at01()))
     }
 
     fn moving(&self) -> bool {
-        self.slots.iter().any(|s| !s.y.finished() || !s.alpha.finished() || !s.rise.finished())
+        self.slots.iter().any(|s| s.wait > 0.0 || s.y.moving() || s.alpha.moving() || s.rise.moving())
     }
 }
 
@@ -171,6 +194,8 @@ pub struct AgentsScreen {
     /// a settings:changed event waits for the settings read
     after_settings: bool,
     pulse: bool,
+    /// the empty-list text fades in
+    empty_k: Lit,
 }
 
 impl Default for AgentsScreen {
@@ -197,6 +222,7 @@ impl AgentsScreen {
             settings: None,
             after_settings: false,
             pulse: false,
+            empty_k: Lit::new(Feel::FADE),
         }
     }
 
@@ -237,6 +263,7 @@ impl AgentsScreen {
         }
         let v = self.model.view();
         self.pulse = v.rows.iter().any(|r| r.state == "working" || r.state == "waiting");
+        self.empty_k.set(v.empty_text.is_none());
         self.flip.set(&targets(&v.rows), mode, self.reduced);
     }
 
@@ -323,6 +350,7 @@ impl View for AgentsScreen {
         let mut busy = self.flip.step(dt);
         busy |= self.cues.step(dt_ms as f32);
         busy |= self.scroll.step(dt);
+        busy |= self.empty_k.step(dt_ms);
         busy | (self.pulse && !self.reduced && self.shown)
     }
 
@@ -335,7 +363,7 @@ impl View for AgentsScreen {
         if let Some(text) = &v.empty_text {
             let r = Rect::new(rect.x + ROW_PAD_X, rect.y + TOP_PAD + 20.0, (w - 2.0 * ROW_PAD_X).max(10.0), rect.h);
             let st = Style::new(12.0, 400);
-            cv.text(r, text, st.wrap(), th.dim);
+            cv.with_opacity(1.0 - self.empty_k.at(), |cv| cv.text(r, text, st.wrap(), th.dim));
             return;
         }
         let now = cx.now_ms;
@@ -441,6 +469,32 @@ mod tests {
         }
         assert_eq!(f.ghosts().count(), 0);
         assert!(!f.moving());
+    }
+
+    #[test]
+    fn a_row_retargeted_mid_slide_keeps_its_speed_overshoots_a_little_and_settles() {
+        let _g = crate::ui::host::testing::motion_on();
+        let mut f = Flipper::default();
+        f.set(&rows(&["a", "b"]), Mode::Jump, false);
+        f.set(&rows(&["b", "a"]), Mode::Flip, false);
+        for _ in 0..6 {
+            f.step(1.0 / 60.0);
+        }
+        let (y, ..) = f.pos("a").unwrap();
+        assert!(y > TOP_PAD && y < TOP_PAD + 44.0, "on its way down: {y}");
+        f.set(&rows(&["a", "b"]), Mode::Flip, false); // turn around
+        let (y2, ..) = f.pos("a").unwrap();
+        assert_eq!(y, y2, "no jump on retarget");
+        f.step(1.0 / 60.0);
+        assert!(f.pos("a").unwrap().0 >= y - 0.01, "it carries on a little before turning");
+        let (mut peak, mut frames) = (0.0f32, 0);
+        while f.step(1.0 / 60.0) {
+            peak = peak.max(f.pos("b").unwrap().0);
+            frames += 1;
+            assert!(frames < 120, "settles");
+        }
+        assert!(peak < TOP_PAD + 44.0 + 10.0, "bounded overshoot: {peak}");
+        assert_eq!(f.pos("a").unwrap().0, TOP_PAD);
     }
 
     #[test]

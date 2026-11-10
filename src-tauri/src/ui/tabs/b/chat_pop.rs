@@ -4,10 +4,10 @@
 //! flips `open` at once and emits an `Exit` cue, the panel must stay on screen for those 160 ms), the FLIP of history rows, scrolling, and the
 //! settings fields. Click targets go into the owner's `Clicks<K>`; later registrations win, so a popover registers a body target first (it eats
 //! clicks that would fall through to the chat) and its buttons after.
-use super::kit::{self, Bk, Clicks, Cues, Field, Icons};
+use super::kit::{self, Bk, Clicks, Cues, Field, Icons, Lit};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::canvas::Canvas;
 use glasskit::controls::{Select, Widget};
-use glasskit::ease::{curves, dur, Tween};
 use glasskit::geom::Rect;
 use glasskit::input::InputEvent;
 use glasskit::scroll::ScrollView;
@@ -69,36 +69,44 @@ fn frame(cv: &Canvas, th: &Theme, r: Rect) {
     cv.stroke_rr(r, 16.0, 1.0, th.border);
 }
 
-/// Tracks `open` of a model view: while the exit cue plays the panel is still drawn (`left_ms`).
-#[derive(Default)]
+/// Tracks `open` of a model view: while the panel flows out (`k` going to 0) it is still drawn.
 struct Presence {
     was: bool,
-    left_ms: f32,
+    /// 0 = gone, 1 = fully open; the exit transform of the panel follows it
+    k: Flow,
+}
+
+impl Default for Presence {
+    fn default() -> Self {
+        Presence { was: false, k: Flow::new(0.0, Feel::FADE) }
+    }
 }
 
 impl Presence {
-    const EXIT_MS: f32 = 160.0;
-
     fn sync(&mut self, open: bool, reduced: bool) {
-        if self.was && !open && !reduced {
-            self.left_ms = Self::EXIT_MS;
-        }
-        if open {
-            self.left_ms = 0.0;
-        }
         self.was = open;
+        self.k.to(open as u8 as f32);
+        if reduced {
+            self.k.jump(open as u8 as f32);
+        }
     }
 
     fn visible(&self) -> bool {
-        self.was || self.left_ms > 0.0
+        self.was || self.k.moving() || self.k.at() > 0.0
+    }
+
+    /// How present the panel still is while it closes (1 = open).
+    fn exit_k(&self) -> f32 {
+        if self.was {
+            1.0
+        } else {
+            self.k.at01()
+        }
     }
 
     fn step(&mut self, dt_ms: f32) -> bool {
-        if self.left_ms > 0.0 {
-            self.left_ms = (self.left_ms - dt_ms).max(0.0);
-            return true;
-        }
-        false
+        self.k.step(dt_ms as f64);
+        self.k.moving()
     }
 }
 
@@ -109,14 +117,20 @@ impl Presence {
 struct Gone {
     row: HistRow,
     y: f32,
-    fade: Tween<f32>,
+    fade: Flow,
 }
 
 #[derive(Default)]
 pub struct HistPop {
     pres: Presence,
     last: Option<HistView>,
-    ys: HashMap<i64, Tween<f32>>,
+    ys: HashMap<i64, Flow>,
+    /// fade-in of rows that were added while the list was on screen
+    ins: HashMap<i64, Flow>,
+    /// the selected look of each row
+    sel: HashMap<i64, Lit>,
+    /// the list has been drawn since the panel opened (rows seen later are new)
+    listed: bool,
     gone: Vec<Gone>,
     scroll: ScrollView,
     rect: Rect,
@@ -132,9 +146,9 @@ impl HistPop {
         if let Some(old) = &self.last {
             for r in &old.rows {
                 if !v.rows.iter().any(|n| n.id == r.id) && !self.gone.iter().any(|g| g.row.id == r.id) && v.open && !reduced {
-                    let y = self.ys.get(&r.id).map_or(0.0, |t| t.value());
-                    let mut fade = Tween::at_rest(1.0);
-                    fade.retarget(0.0, dur::MED, curves::EASE_IN);
+                    let y = self.ys.get(&r.id).map_or(0.0, |t| t.at());
+                    let mut fade = Flow::new(1.0, Feel::FADE);
+                    fade.to(0.0);
                     self.gone.push(Gone { row: r.clone(), y, fade });
                 }
             }
@@ -142,6 +156,32 @@ impl HistPop {
         self.pres.sync(v.open, reduced);
         if v.open || self.pres.visible() {
             self.last = Some(v.clone());
+        } else {
+            self.listed = false;
+            self.ins.clear();
+        }
+        if v.open {
+            // where every row belongs (relative to the panel), a fade-in for rows added while the list is open, the selected look
+            for (i, row) in v.rows.iter().enumerate() {
+                let want = 6.0 + 32.0 + 4.0 + i as f32 * ROW_H;
+                let fresh = !self.ys.contains_key(&row.id);
+                let t = self.ys.entry(row.id).or_insert_with(|| Flow::px(want, Feel::FLOW));
+                if (t.target() - want).abs() > 0.01 {
+                    if reduced {
+                        t.jump(want);
+                    } else {
+                        t.to(want);
+                    }
+                }
+                if fresh && self.listed && !reduced {
+                    // a chat added while the list is open drops in
+                    let mut f = Flow::new(0.0, Feel::FADE);
+                    f.to(1.0);
+                    self.ins.insert(row.id, f);
+                }
+                self.sel.entry(row.id).or_insert_with(|| Lit::new(Feel::FADE)).set(row.selected);
+            }
+            self.listed = true;
         }
     }
 
@@ -154,16 +194,21 @@ impl HistPop {
     }
 
     pub fn step(&mut self, dt_ms: f32) -> bool {
-        let dt = dt_ms / 1000.0;
+        let ms = dt_ms as f64;
         let mut busy = self.pres.step(dt_ms);
-        for t in self.ys.values_mut() {
-            busy |= t.step(dt);
+        for t in self.ys.values_mut().chain(self.ins.values_mut()) {
+            t.step(ms);
+            busy |= t.moving();
+        }
+        for l in self.sel.values_mut() {
+            busy |= l.step(ms);
         }
         for g in &mut self.gone {
-            busy |= g.fade.step(dt);
+            g.fade.step(ms);
+            busy |= g.fade.moving();
         }
-        self.gone.retain(|g| !g.fade.finished());
-        busy |= self.scroll.step(dt);
+        self.gone.retain(|g| g.fade.moving());
+        busy |= self.scroll.step(dt_ms / 1000.0);
         busy
     }
 
@@ -179,7 +224,7 @@ impl HistPop {
         let r = Rect::new(area.right() - HIST_W, area.y + 32.0, HIST_W, h);
         self.rect = r;
         let x = cues.xf("chat-history");
-        let exit_k = if self.pres.was { 1.0 } else { (self.pres.left_ms / Presence::EXIT_MS).clamp(0.0, 1.0) };
+        let exit_k = self.pres.exit_k();
         let alpha = if self.pres.was { x.alpha } else { exit_k };
         let (dy, sc) = if self.pres.was { (x.dy, x.scale) } else { (-6.0 * (1.0 - exit_k), 0.97 + 0.03 * exit_k) };
         let live = self.pres.was;
@@ -214,20 +259,15 @@ impl HistPop {
                             cv.text(Rect::new(inner.x + 12.0, y, inner.w - 24.0, 32.0), e, th.small(400), th.dim);
                         }
                         for g in &self.gone {
-                            self.draw_row(cv, th, ic, clicks, inner, &g.row, g.y - off + 1.0, g.fade.value(), false);
+                            self.draw_row(cv, th, ic, clicks, inner, &g.row, r.y + g.y - off, g.fade.at01(), g.row.selected as u8 as f32, false);
                         }
                         for (i, row) in v.rows.iter().enumerate() {
-                            let want = y - 0.0 + i as f32 * ROW_H + off; // content-space y
-                            let t = self.ys.entry(row.id).or_insert_with(|| Tween::at_rest(want));
-                            if (t.target() - want).abs() > 0.01 {
-                                if reduced {
-                                    t.jump(want);
-                                } else {
-                                    t.retarget(want, dur::MED, curves::EASE_OUT);
-                                }
-                            }
-                            let cy = t.value() - off;
-                            self.draw_row(cv, th, ic, clicks, inner, row, cy, 1.0, live);
+                            let want_rel = 6.0 + 32.0 + 4.0 + i as f32 * ROW_H;
+                            let rel = self.ys.get(&row.id).map_or(want_rel, |t| t.at());
+                            let cy = r.y + rel - off;
+                            let a = self.ins.get(&row.id).map_or(1.0, |f| f.at01());
+                            let selk = self.sel.get(&row.id).map_or(row.selected as u8 as f32, |l| l.at());
+                            self.draw_row(cv, th, ic, clicks, inner, row, cy, a, selk, live);
                         }
                     });
                     self.scroll.bar.draw(cv, view, &self.scroll.state, th);
@@ -237,7 +277,7 @@ impl HistPop {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn draw_row(&self, cv: &Canvas, th: &Theme, ic: &Icons, clicks: &mut Clicks<K>, inner: Rect, row: &HistRow, y: f32, fade: f32, live: bool) {
+    fn draw_row(&self, cv: &Canvas, th: &Theme, ic: &Icons, clicks: &mut Clicks<K>, inner: Rect, row: &HistRow, y: f32, fade: f32, selk: f32, live: bool) {
         let rr = Rect::new(inner.x, y, inner.w, ROW_H);
         if live {
             clicks.add(K::HRow(row.id), Rect::new(rr.x, rr.y, rr.w - 28.0, rr.h));
@@ -250,11 +290,7 @@ impl HistPop {
         cv.with_opacity(fade, |cv| {
             let ps = clicks.press_scale(&K::HRow(row.id), 0.98);
             cv.with_scale_about(rr.center(), ps, |cv| {
-                if row.selected {
-                    cv.fill_rr(rr, 10.0, th.raised);
-                } else {
-                    cv.fill_rr(rr, 10.0, th.raised.fade(hv));
-                }
+                cv.fill_rr(rr, 10.0, th.raised.fade(hv.max(selk)));
                 cv.text(Rect::new(rr.x + 12.0, rr.y + 6.0, rr.w - 12.0 - 36.0, 16.0), &row.title, Style::new(13.0, 400).ellipsis(), th.text);
                 cv.text(Rect::new(rr.x + 12.0, rr.y + 24.0, rr.w - 12.0 - 36.0, 14.0), &row.date, Style::new(11.0, 400), th.dim);
             });
@@ -280,7 +316,7 @@ pub struct SetPop {
     rect: Rect,
     /// where the model dropdown was drawn (window coordinates), for its events
     pub model_rect: Rect,
-    dots: HashMap<usize, Tween<f32>>,
+    dots: HashMap<usize, Lit>,
 }
 
 impl Default for SetPop {
@@ -304,6 +340,9 @@ impl SetPop {
     }
 
     pub fn sync(&mut self, v: &SettingsView, reduced: bool) {
+        for (i, p) in v.presets.iter().enumerate() {
+            self.dots.entry(i).or_insert_with(|| Lit::new(Feel::FADE)).set(p.on);
+        }
         self.pres.sync(v.open, reduced);
         if v.open || self.pres.visible() {
             self.last = Some(v.clone());
@@ -342,7 +381,7 @@ impl SetPop {
         busy |= self.scroll.step(dt);
         busy |= self.select.step(dt);
         for t in self.dots.values_mut() {
-            busy |= t.step(dt);
+            busy |= t.step(dt_ms as f64);
         }
         busy
     }
@@ -355,7 +394,7 @@ impl SetPop {
         self.rect = r;
         let live = self.pres.was;
         let x = cues.xf("ai-settings");
-        let exit_k = if live { 1.0 } else { (self.pres.left_ms / Presence::EXIT_MS).clamp(0.0, 1.0) };
+        let exit_k = self.pres.exit_k();
         let alpha = if live { x.alpha } else { exit_k };
         let (dy, sc) = if live { (x.dy, x.scale) } else { (-6.0 * (1.0 - exit_k), 0.97 + 0.03 * exit_k) };
         let mut want_focus = None;
@@ -403,16 +442,7 @@ impl SetPop {
                             }
                             let hv = clicks.hover_amt(&K::SPreset(i));
                             let ps = clicks.press_scale(&K::SPreset(i), 0.95);
-                            let on = self.dots.entry(i).or_insert_with(|| Tween::at_rest(p.on as u8 as f32));
-                            let want = p.on as u8 as f32;
-                            if on.target() != want {
-                                if reduced {
-                                    on.jump(want);
-                                } else {
-                                    on.retarget(want, dur::FAST, curves::EASE_OUT);
-                                }
-                            }
-                            let onv = on.value().clamp(0.0, 1.0);
+                            let onv = self.dots.get(&i).map_or(p.on as u8 as f32, |l| l.at());
                             cv.with_scale_about(b.center(), ps, |cv| {
                                 cv.fill_rr(b, 8.0, th.raised2.fade(onv));
                                 let fg = th.dim.mix(th.text, onv.max(hv));
@@ -581,4 +611,41 @@ fn raised_btn(cv: &Canvas, th: &Theme, _ic: &Icons, clicks: &Clicks<K>, k: K, r:
             cv.text(r, label, th.btn_text().center(), th.text);
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::host::testing::motion_on;
+
+    #[test]
+    fn a_closing_popover_flows_out_and_turns_around_when_reopened() {
+        let _m = motion_on();
+        let mut p = Presence::default();
+        assert!(!p.visible());
+        p.sync(true, false);
+        for _ in 0..60 {
+            p.step(16.0);
+        }
+        assert_eq!((p.exit_k(), p.k.at()), (1.0, 1.0));
+        p.sync(false, false);
+        assert!(p.visible(), "still drawn while it flows out");
+        p.step(48.0);
+        let mid = p.exit_k();
+        assert!(mid < 1.0 && mid > 0.0, "{mid}");
+        p.sync(true, false); // reopened half-way: it goes back up from where it is
+        p.step(16.0);
+        assert!((p.k.at() - mid).abs() < 0.2, "no jump, it turns around with its momentum");
+        p.sync(false, false);
+        let mut ms = 0.0;
+        while p.step(8.0) {
+            ms += 8.0;
+            assert!(ms < 800.0, "settles");
+        }
+        assert!(!p.visible());
+        let mut q = Presence::default();
+        q.sync(true, true);
+        q.sync(false, true);
+        assert!(!q.visible(), "reduced motion: gone at once");
+    }
 }

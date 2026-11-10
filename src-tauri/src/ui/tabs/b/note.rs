@@ -8,12 +8,12 @@
 //! The editor reports `EdOut::Changed` ONLY after a user edit, so opening, scrolling, selecting and leaving a note never rewrites it: the
 //! stored HTML stays byte for byte what the web UI saved (`NoteTab` keeps the loaded HTML until an `EditorChanged` arrives).
 use super::editor::{EdOut, Editor};
-use super::kit::{lang_of, ms_of, route_effects, Calls, Clicks, Cues, Icons};
+use super::kit::{lang_of, ms_of, route_effects, Calls, Clicks, Cues, Icons, Lit};
 use super::timer_card::{TimerCardView, CARD_W};
 use crate::ui::tabs::fx::{emit, TabFx};
 use crate::ui::view::{Cx, Msg, Ticket, View};
 use glasskit::canvas::Canvas;
-use glasskit::ease::{curves, Tween};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::geom::Rect;
 use glasskit::input::{InputEvent, MouseButton, Response};
 use glasskit::scroll::ScrollState;
@@ -163,11 +163,15 @@ pub struct NoteScreen {
     /// the island has been told that a field of this tab owns the keyboard
     kb: bool,
     settings_t: Option<Ticket>,
-    toast_t: Tween<f32>,
+    /// the toast rises in and settles (soft overshoot); its opacity is the same flow held inside 0..1
+    toast_t: Flow,
     toast: (String, bool),
-    saved_t: Tween<f32>,
-    saved_prev: SaveState,
-    saved_now: SaveState,
+    /// the weight of each save state in the check mark's colour [Saved, Saving, Error]: a change cross-fades, and turns around when it changes again
+    saved_w: [Lit; 3],
+    /// the selected look of each note chip and each toolbar tool, and the delete button's armed wash
+    chip_on: HashMap<i64, Lit>,
+    tool_on: Vec<Lit>,
+    del_k: Lit,
     dirty_view: bool,
     last_lang: Option<pill_ui_core::panel::b::Lang>,
     /// tests: (unix ms, utc offset min) instead of the system clock
@@ -220,11 +224,12 @@ impl NoteScreen {
             carry: 0.0,
             kb: false,
             settings_t: None,
-            toast_t: Tween::at_rest(0.0),
+            toast_t: Flow::new(0.0, Feel::FLOW),
             toast: (String::new(), false),
-            saved_t: Tween::at_rest(1.0),
-            saved_prev: SaveState::Saved,
-            saved_now: SaveState::Saved,
+            saved_w: std::array::from_fn(|_| Lit::new(Feel::FADE)),
+            chip_on: HashMap::new(),
+            tool_on: Vec::new(),
+            del_k: Lit::new(Feel::FADE),
             dirty_view: true,
             last_lang: None,
             fixed_clock: None,
@@ -247,6 +252,44 @@ impl NoteScreen {
 
     fn touch(&mut self) {
         self.dirty_view = true;
+    }
+
+    /// The view model, rebuilt when something touched the tab (or now and then, for the clocks).
+    fn fresh_view(&mut self) -> NoteView {
+        if self.dirty_view || self.view_age >= VIEW_REFRESH_MS || self.view.is_none() {
+            self.view = Some(self.m.view());
+            self.view_age = 0.0;
+            self.dirty_view = false;
+        }
+        self.view.clone().unwrap_or_else(|| self.m.view())
+    }
+
+    /// Point every flow of the tab at what the model shows now. Idempotent: calling it twice with the same view changes nothing.
+    fn sync_flows(&mut self, v: &NoteView) {
+        if let Some(t) = &v.toast {
+            self.toast = t.clone();
+        }
+        let tgt = v.toast.is_some() as u8 as f32;
+        if (self.toast_t.target() - tgt).abs() > 0.5 {
+            if self.cues.reduced {
+                self.toast_t.jump(tgt);
+            }
+            self.toast_t.to(tgt);
+        }
+        for (i, st) in [SaveState::Saved, SaveState::Saving, SaveState::Error].into_iter().enumerate() {
+            self.saved_w[i].set(v.saved == st);
+        }
+        for c in &v.chips {
+            self.chip_on.entry(c.id).or_insert_with(|| Lit::new(Feel::FADE)).set(c.on);
+        }
+        while self.tool_on.len() < v.tools.len() {
+            self.tool_on.push(Lit::new(Feel::FADE));
+        }
+        for (l, t) in self.tool_on.iter_mut().zip(&v.tools) {
+            l.set(t.on);
+        }
+        self.del_k.set(v.delete_armed);
+        self.card.sync(&v.timer);
     }
 
     fn sync_cx(&mut self, cx: &Cx) {
@@ -475,8 +518,15 @@ impl View for NoteScreen {
         busy |= self.ed.step(dt_ms);
         busy |= self.card.step(dt_ms);
         busy |= self.chip_sv.step(dt);
-        busy |= self.toast_t.step(dt);
-        busy |= self.saved_t.step(dt);
+        // the flows follow the model here, not in `draw`: a motion that starts in a draw would be the last frame of the window
+        let v = self.fresh_view();
+        self.sync_flows(&v);
+        self.toast_t.step(dt_ms);
+        busy |= self.toast_t.moving();
+        for l in self.saved_w.iter_mut().chain(self.tool_on.iter_mut()).chain(self.chip_on.values_mut()) {
+            busy |= l.step(dt_ms);
+        }
+        busy |= self.del_k.step(dt_ms);
         if let Some(r) = self.ed.ime_rect().filter(|_| self.ed.is_focused()) {
             cx.set_ime_rect(r);
         }
@@ -486,12 +536,8 @@ impl View for NoteScreen {
 
     fn draw(&mut self, cv: &Canvas, th: &Theme, rect: Rect, cx: &Cx) {
         self.rect = rect;
-        if self.dirty_view || self.view_age >= VIEW_REFRESH_MS || self.view.is_none() {
-            self.view = Some(self.m.view());
-            self.view_age = 0.0;
-            self.dirty_view = false;
-        }
-        let v = self.view.clone().unwrap_or_else(|| self.m.view());
+        let v = self.fresh_view();
+        self.sync_flows(&v);
         self.clicks.begin();
         let (left, right) = rect.cut_right(CARD_W);
         let left = Rect::new(left.x, left.y, (left.w - GAP).max(100.0), left.h);
@@ -556,10 +602,11 @@ impl NoteScreen {
                 }
                 let hov = self.clicks.hover_amt(&k);
                 let ps = self.clicks.press_scale(&k, 0.96);
+                let lit = self.chip_on.get(id).map_or(*on as u8 as f32, |l| l.at());
                 self.cues.apply(cv, &format!("note-chip:{id}"), cr.center(), |cv| {
                     cv.with_scale_about(cr.center(), ps, |cv| {
-                        cv.fill_rr(cr, 12.0, if *on { th.raised2 } else { th.card.mix(th.raised, hov * 0.0) });
-                        let fg = if *on { th.text } else { th.dim.mix(th.text, hov) };
+                        cv.fill_rr(cr, 12.0, th.card.mix(th.raised2, lit));
+                        let fg = th.dim.mix(th.text, hov).mix(th.text, lit);
                         cv.text(cr.inset_xy(12.0, 0.0), title, st.center().ellipsis(), fg);
                     });
                 });
@@ -578,26 +625,15 @@ impl NoteScreen {
         });
     }
 
-    fn draw_toast(&mut self, cv: &Canvas, th: &Theme, v: &NoteView) {
-        let want = v.toast.is_some();
-        if let Some(t) = &v.toast {
-            self.toast = t.clone();
-        }
-        let tgt = want as u8 as f32;
-        if (self.toast_t.target() - tgt).abs() > 0.5 {
-            if !self.cues.reduced {
-                self.toast_t.retarget(tgt, 0.18, curves::EASE_OUT);
-            } else {
-                self.toast_t.jump(tgt);
-            }
-        }
-        let k = self.toast_t.value().clamp(0.0, 1.0);
+    fn draw_toast(&mut self, cv: &Canvas, th: &Theme, _v: &NoteView) {
+        let k = self.toast_t.at01();
         if k <= 0.01 {
             return;
         }
+        let rise = (1.0 - self.toast_t.at()) * 8.0;
         let st = Style::new(12.0, 600);
         let w = cv.text_width(&self.toast.0, st).ceil() + 24.0;
-        let r = Rect::new(self.ed_rect.cx() - w / 2.0, self.ed_rect.bottom() - 12.0 - 30.0 + (1.0 - k) * 8.0, w, 30.0);
+        let r = Rect::new(self.ed_rect.cx() - w / 2.0, self.ed_rect.bottom() - 12.0 - 30.0 + rise, w, 30.0);
         cv.with_opacity(k, |cv| {
             cv.shadow_rr(r, 12.0, 10.0, 4.0, Color::rgba(0.0, 0.0, 0.0, 0.4));
             let (bg, fg) = if self.toast.1 { (Color::rgb8(0x5a, 0x1f, 0x24), Color::rgb8(0xff, 0xd9, 0xdc)) } else { (th.raised2, th.text) };
@@ -622,8 +658,9 @@ impl NoteScreen {
             self.clicks.add(k.clone(), r);
             let hov = self.clicks.hover_amt(&k);
             let ps = self.clicks.press_scale(&k, 0.94);
-            let bg = if t.on { th.raised } else { th.hover.alpha(th.hover.a * hov) };
-            let fg = if t.on { th.text } else { th.dim.mix(th.text, hov) };
+            let on = self.tool_on.get(i).map_or(t.on as u8 as f32, |l| l.at());
+            let bg = th.hover.alpha(th.hover.a * hov).mix(th.raised, on);
+            let fg = th.dim.mix(th.text, hov).mix(th.text, on);
             cv.with_scale_about(r.center(), ps, |cv| {
                 cv.fill_rr(r, 8.0, bg);
                 self.tool_glyph(cv, th, i, tool(i), r, fg);
@@ -653,35 +690,34 @@ impl NoteScreen {
             cv.text(Rect::new(rem.x + 8.0 + 20.0, rem.y, rem.w - 28.0, rem.h), &v.remind_label, rst, fg);
         });
         // copy
-        self.draw_icon_tool(cv, th, K::Copy, cpy, "n-copy", false);
+        self.draw_icon_tool(cv, th, K::Copy, cpy, "n-copy", 0.0);
         // delete (armed = red wash)
         let dx = self.cues.xf("note-delete");
-        cv.with_scale_about(del.center(), dx.scale, |cv| self.draw_icon_tool(cv, th, K::Del, del, "n-trash", v.delete_armed));
-        // saved check: colour follows the state with a short cross-fade
-        if v.saved != self.saved_now {
-            self.saved_prev = self.saved_now;
-            self.saved_now = v.saved;
-            if self.cues.reduced {
-                self.saved_t.jump(1.0);
-            } else {
-                self.saved_t = Tween::new(0.0, 1.0, 0.18, curves::EASE_OUT);
-            }
-        }
+        let armed = self.del_k.at();
+        cv.with_scale_about(del.center(), dx.scale, |cv| self.draw_icon_tool(cv, th, K::Del, del, "n-trash", armed));
+        // saved check: the colour is the weighted mix of the three states, so a change glides (and can turn around)
         let col = |s: SaveState| match s {
             SaveState::Saved => th.green,
             SaveState::Saving => th.dim.fade(0.6),
             SaveState::Error => th.red,
         };
-        let c = col(self.saved_prev).mix(col(self.saved_now), self.saved_t.value().clamp(0.0, 1.0));
+        let (mut c, mut wsum) = (th.green, 0.0f32);
+        for (i, st) in [SaveState::Saved, SaveState::Saving, SaveState::Error].into_iter().enumerate() {
+            let w = self.saved_w[i].at();
+            if w > 0.0 {
+                wsum += w;
+                c = if wsum == w { col(st) } else { c.mix(col(st), w / wsum) };
+            }
+        }
         self.ic.draw(cv, "n-check", saved.centered(16.0, 16.0), c);
     }
 
-    fn draw_icon_tool(&mut self, cv: &Canvas, th: &Theme, k: K, r: Rect, icon: &str, armed: bool) {
+    fn draw_icon_tool(&mut self, cv: &Canvas, th: &Theme, k: K, r: Rect, icon: &str, armed: f32) {
         self.clicks.add(k.clone(), r);
         let hov = self.clicks.hover_amt(&k);
         let ps = self.clicks.press_scale(&k, 0.94);
         cv.with_scale_about(r.center(), ps, |cv| {
-            let (bg, fg) = if armed { (th.red_bg, th.red) } else { (th.hover.alpha(th.hover.a * hov), th.dim.mix(th.text, hov)) };
+            let (bg, fg) = (th.hover.alpha(th.hover.a * hov).mix(th.red_bg, armed), th.dim.mix(th.text, hov).mix(th.red, armed));
             cv.fill_rr(r, 8.0, bg);
             self.ic.draw(cv, icon, r.centered(16.0, 16.0), fg);
         });
@@ -988,7 +1024,7 @@ mod tests {
         s.run(2000);
         let dt = 1000.0 / 240.0;
         let sc = screen(&mut s);
-        let flags = (sc.clicks.step(0.004), sc.cues.step(dt as f32), sc.ed.step(dt), sc.card.step(dt), sc.chip_sv.step(0.004), sc.toast_t.step(0.004), sc.saved_t.step(0.004));
+        let flags = (sc.clicks.step(0.004), sc.cues.step(dt as f32), sc.ed.step(dt), sc.card.step(dt), sc.chip_sv.step(0.004), { sc.toast_t.step(4.0); sc.toast_t.moving() }, sc.saved_w[0].moving());
         assert!(!s.frame.wants_frame(), "settled: clicks, cues, editor, card, chips, toast, saved = {flags:?}");
     }
 }

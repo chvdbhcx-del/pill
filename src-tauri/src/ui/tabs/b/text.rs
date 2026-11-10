@@ -8,10 +8,10 @@
 //! Input timing: `View::event` has no `Canvas`, so text input is queued in the `Field` and applied at the start of the next `draw`; the step
 //! after that mirrors it into the model. Buttons answer at once (their rectangles come from the last draw).
 //! Caret blink: the view has no timer, so a focused field keeps frames coming (not under reduced motion, where the caret is solid).
-use super::kit::{self, focus_one, lang_of, ms_of, route_effects, Calls, Clicks, Cues, Field, Icons};
+use super::kit::{self, focus_one, lang_of, ms_of, route_effects, Calls, Clicks, Cues, Field, Icons, Lit};
 use crate::ui::view::{Cx, Msg, View};
 use glasskit::canvas::Canvas;
-use glasskit::ease::{curves, dur, Tween};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::edit::EditEvent;
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{InputEvent, KeyCode, Response};
@@ -152,10 +152,15 @@ pub struct TextScreen {
     area: Field,
     ask: Field,
     sv: [ScrollView; 2],
-    mode_t: Tween<f32>,
-    qr_t: Tween<f32>,
+    /// the Tools / AI switch: 0 = Tools, 1 = AI (the thumb slides with a soft overshoot)
+    mode_t: Flow,
+    qr_t: Flow,
     qr_last: Option<QrView>,
-    toast_t: Tween<f32>,
+    toast_t: Flow,
+    /// the AI tiles dim while a request runs; the own-request button pulses while only it runs; each running tile pulses
+    ai_busy_k: Lit,
+    ai_custom_k: Lit,
+    ai_run: Vec<Lit>,
     toast_last: (String, bool),
     carry: f64,
     last_sel: (usize, usize),
@@ -203,10 +208,13 @@ impl TextScreen {
             area,
             ask,
             sv: [ScrollView::new(), ScrollView::new()],
-            mode_t: Tween::at_rest(0.0),
-            qr_t: Tween::at_rest(0.0),
+            mode_t: Flow::new(0.0, Feel::FLOW),
+            qr_t: Flow::new(0.0, Feel::FLOW),
             qr_last: None,
-            toast_t: Tween::at_rest(0.0),
+            toast_t: Flow::new(0.0, Feel::FLOW),
+            ai_busy_k: Lit::new(Feel::FADE),
+            ai_custom_k: Lit::new(Feel::FADE),
+            ai_run: Vec::new(),
             toast_last: (String::new(), false),
             carry: 0.0,
             last_sel: (0, 0),
@@ -259,12 +267,15 @@ impl TextScreen {
         self.dirty = false;
     }
 
-    fn go(&mut self, to: &mut Tween<f32>, v: f32, d: f32) {
-        if self.reduced {
-            to.jump(v);
-        } else {
-            to.retarget(v, d, curves::EASE_OUT);
+    /// Send `f` to `v`; a reduced-motion host lands it at once.
+    fn go(reduced: bool, f: &mut Flow, v: f32) {
+        if f.target() == v {
+            return;
         }
+        if reduced {
+            f.jump(v);
+        }
+        f.to(v);
     }
 
     /// Feed one action to the model and run what it asks for.
@@ -400,33 +411,33 @@ impl View for TextScreen {
             self.model.tick(ms);
         }
         self.drain_model(cx);
-        if self.dirty || self.view.toast.is_some() || self.toast_t.value() > 0.0 {
+        if self.dirty || self.view.toast.is_some() || self.toast_t.at() > 0.0 {
             self.refresh();
         }
         // animation targets follow the model
-        let mode_to = (self.view.mode == Mode::Ai) as u8 as f32;
-        if self.mode_t.target() != mode_to {
-            let mut t = self.mode_t.clone();
-            self.go(&mut t, mode_to, dur::MED);
-            self.mode_t = t;
+        Self::go(self.reduced, &mut self.mode_t, (self.view.mode == Mode::Ai) as u8 as f32);
+        Self::go(self.reduced, &mut self.qr_t, self.view.qr.is_some() as u8 as f32);
+        Self::go(self.reduced, &mut self.toast_t, self.view.toast.is_some() as u8 as f32);
+        let any_running = self.view.ai.iter().any(|b| b.running);
+        self.ai_busy_k.set(self.view.ai_busy);
+        self.ai_custom_k.set(self.view.ai_busy && !any_running);
+        while self.ai_run.len() < self.view.ai.len() {
+            self.ai_run.push(Lit::new(Feel::FADE));
         }
-        let qr_to = self.view.qr.is_some() as u8 as f32;
-        if self.qr_t.target() != qr_to {
-            let mut t = self.qr_t.clone();
-            self.go(&mut t, qr_to, if qr_to > 0.0 { dur::MED } else { dur::EXIT });
-            self.qr_t = t;
-        }
-        let toast_to = self.view.toast.is_some() as u8 as f32;
-        if self.toast_t.target() != toast_to {
-            let mut t = self.toast_t.clone();
-            self.go(&mut t, toast_to, if toast_to > 0.0 { dur::MED } else { dur::EXIT });
-            self.toast_t = t;
+        for (l, b) in self.ai_run.iter_mut().zip(&self.view.ai) {
+            l.set(b.running);
         }
         let mut busy = self.clicks.step(dt);
         busy |= self.cues.step(dt_ms as f32);
-        busy |= self.mode_t.step(dt);
-        busy |= self.qr_t.step(dt);
-        busy |= self.toast_t.step(dt);
+        for f in [&mut self.mode_t, &mut self.qr_t, &mut self.toast_t] {
+            f.step(dt_ms);
+            busy |= f.moving();
+        }
+        busy |= self.ai_busy_k.step(dt_ms);
+        busy |= self.ai_custom_k.step(dt_ms);
+        for l in &mut self.ai_run {
+            busy |= l.step(dt_ms);
+        }
         for v in &mut self.sv {
             busy |= v.step(dt);
         }
@@ -549,21 +560,21 @@ impl TextScreen {
             self.ime = self.area.ime_rect(cv);
         }
         // QR overlay
-        let qt = self.qr_t.value().clamp(0.0, 1.0);
+        let qt = self.qr_t.at01();
         if qt > 0.0 {
             if let Some(q) = self.qr_last.clone() {
                 self.draw_qr(cv, th, lay, &q, qt);
             }
         }
         // toast
-        let tt = self.toast_t.value().clamp(0.0, 1.0);
+        let tt = self.toast_t.at01();
         if tt > 0.0 {
             let (text, bad) = self.toast_last.clone();
             let st = th.small(600);
             let w = (cv.text_width(&text, st) + 24.0).min(lay.area.w * 0.9);
             let r = Rect::new(lay.area.cx() - w / 2.0, lay.area.bottom() - 12.0 - 32.0, w, 32.0);
             cv.with_opacity(tt, |cv| {
-                cv.with_offset(0.0, 8.0 * (1.0 - curves::SPRING_SETTLE.at(tt)), |cv| {
+                cv.with_offset(0.0, 8.0 * (1.0 - self.toast_t.at()), |cv| {
                     cv.shadow_rr(r, 12.0, 10.0, 4.0, th.shadow);
                     let (bg, fg) = if bad { (Color::rgb8(0x5a, 0x1f, 0x24), Color::rgb8(0xff, 0xd9, 0xdc)) } else { (th.raised2, th.text) };
                     cv.fill_rr(r, 12.0, bg);
@@ -601,7 +612,7 @@ impl TextScreen {
             let card = lay.qr_card(total);
             let s = cv.scale;
             let card = Rect::new(snap(card.x, s), snap(card.y, s), total, total);
-            let pop = 0.96 + 0.04 * curves::SPRING_SETTLE.at(t);
+            let pop = 0.96 + 0.04 * self.qr_t.at();
             cv.with_scale_about(card.center(), pop, |cv| {
                 cv.with_clip_rr(card, 12.0, |cv| {
                     cv.fill_rect(card, Color::rgb8(255, 255, 255));
@@ -628,7 +639,7 @@ impl TextScreen {
     fn draw_right(&mut self, cv: &Canvas, th: &Theme, lay: &Lay) {
         // the Tools / AI switch with a sliding thumb
         cv.fill_rr(lay.seg, 12.0, th.card);
-        let mt = self.mode_t.value();
+        let mt = self.mode_t.at();
         let (b0, b1) = (lay.seg_btn(0), lay.seg_btn(1));
         let thumb = Rect::new(b0.x + (b1.x - b0.x) * mt, b0.y, b0.w, b0.h);
         cv.fill_rr(thumb, 8.0, th.raised2);
@@ -669,7 +680,7 @@ impl TextScreen {
             self.clicks.add(k.clone(), Rect::new(x0, y0, x1 - x0, y1 - y0));
         }
         let h = self.clicks.hover_amt(&k);
-        let down = self.clicks.is_down(&k);
+        let pressed = self.clicks.press_amt(&k);
         let mut s = self.clicks.press_scale(&k, 0.96);
         let id = match &k {
             K::Tool(i) => self.view.tools.get(*i).map(|b| b.tool.id()),
@@ -681,7 +692,7 @@ impl TextScreen {
         }
         cv.with_opacity(op, |cv| {
             cv.with_scale_about(r.center(), s, |cv| {
-                let bg = if down { th.raised2 } else { th.card.mix(th.raised, h) };
+                let bg = th.card.mix(th.raised, h).mix(th.raised2, pressed);
                 cv.fill_rr(r, 12.0, bg);
                 cv.text(r.inset_xy(8.0, 0.0), label, th.small(600).center().ellipsis(), th.text);
             });
@@ -715,10 +726,10 @@ impl TextScreen {
         self.sv[1].set_content_height(Lay::ai_content_h(), view.h);
         let off = self.sv[1].offset();
         let active = self.view.mode == Mode::Ai;
-        let busy = self.view.ai_busy;
-        let any_running = self.view.ai.iter().any(|b| b.running);
+        let (busy_k, custom_k) = (self.ai_busy_k.at(), self.ai_custom_k.at());
+        let idle_op = 1.0 - 0.55 * busy_k;
         let pulse = 1.0 - 0.45 * (0.5 - 0.5 * (kit::phase(self.now_ms, 1100.0) * std::f32::consts::TAU).cos());
-        let items: Vec<(String, bool)> = self.view.ai.iter().map(|b| (b.label.clone(), b.running)).collect();
+        let items: Vec<(String, f32)> = self.view.ai.iter().enumerate().map(|(i, b)| (b.label.clone(), self.ai_run.get(i).map_or(b.running as u8 as f32, |l| l.at()))).collect();
         let (ask_r, go_r) = lay.ask_row(off);
         cv.with_opacity(alpha, |cv| {
             cv.with_offset(0.0, dy, |cv| {
@@ -736,25 +747,24 @@ impl TextScreen {
                     }
                     let h = self.clicks.hover_amt(&k);
                     let s = self.clicks.press_scale(&k, 0.96);
-                    let custom_run = busy && !any_running;
-                    let op = if custom_run { pulse } else if busy { 0.45 } else { 1.0 };
+                    let op = idle_op + (pulse - idle_op) * custom_k;
                     cv.with_opacity(op, |cv| {
                         cv.with_scale_about(go_r.center(), s, |cv| {
-                            let bg = if custom_run { th.raised2 } else { th.raised.mix(th.raised2, h) };
+                            let bg = th.raised.mix(th.raised2, h.max(custom_k));
                             cv.fill_rr(go_r, 10.0, bg);
                             self.ic.draw_sw(cv, "t-ai", go_r.centered(14.0, 14.0), th.text, 1.8);
                         });
                     });
-                    for (i, (label, running)) in items.iter().enumerate() {
+                    for (i, (label, run_k)) in items.iter().enumerate() {
                         let r = lay.tile(i, off, TILE_H + TILE_GAP);
                         if r.bottom() < view.y || r.y > view.bottom() {
                             continue;
                         }
-                        let op = if *running { pulse } else if busy { 0.45 } else { 1.0 };
+                        let op = idle_op + (pulse - idle_op) * run_k;
                         self.tile(cv, th, K::Ai(i), r, view, label, op, active);
-                        if *running {
+                        if *run_k > 0.0 {
                             // the running tile keeps the pressed fill
-                            cv.with_opacity(pulse, |cv| cv.fill_rr(r, 12.0, th.raised2.fade(0.5)));
+                            cv.with_opacity(pulse * run_k, |cv| cv.fill_rr(r, 12.0, th.raised2.fade(0.5)));
                         }
                     }
                 });
@@ -896,10 +906,10 @@ mod tests {
         let runs = qr_runs(&q.rows);
         assert_eq!(runs.iter().map(|r| r.2).sum::<usize>(), dark);
         assert!(runs.len() < dark, "runs merge neighbours");
-        assert!(s.qr_t.value() > 0.99);
+        assert!(s.qr_t.at() > 0.99);
         s.click(K::QrClose, &mut cx);
         s.settle(&mut cx);
-        assert!(s.view.qr.is_none() && s.qr_t.value() < 0.01);
+        assert!(s.view.qr.is_none() && s.qr_t.at() < 0.01);
     }
 
     #[test]
@@ -992,7 +1002,7 @@ mod tests {
         cx.reduced_motion = true;
         s.set_mode(Mode::Ai, &mut cx);
         s.step(16.0, &mut cx);
-        assert_eq!(s.mode_t.value(), 1.0, "reduced motion: the switch jumps");
+        assert_eq!(s.mode_t.at(), 1.0, "reduced motion: the switch jumps");
     }
 
     #[test]

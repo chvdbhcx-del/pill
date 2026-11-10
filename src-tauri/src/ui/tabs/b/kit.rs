@@ -11,7 +11,8 @@
 use crate::ui::tabs::fx::{emit, TabFx};
 use crate::ui::view::{Cx, Ticket};
 use glasskit::canvas::Canvas;
-use glasskit::ease::{curves, dur, Ease, Lerp, Tween};
+use crate::ui::liquid::{Feel, Flow};
+pub use super::flowkit::{Lit, Swap, GROW};
 use glasskit::edit::{EditEvent, TextInput};
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{Cursor, InputEvent, KeyCode, MouseButton, Response};
@@ -112,13 +113,14 @@ pub fn ms_of(dt_ms: f64, carry: &mut f64) -> u32 {
 // ---------------------------------------------------------------------------------------------------------------------------------------
 
 /// Retained click targets: the draw registers `(key, rect)`, `event` answers hover / press / click against the rects of the last draw.
-/// Hover mixes colours over 120 ms, a press shrinks to .96 in 80 ms and springs back in 380 ms (`theme.css` tokens); reduced motion jumps.
+/// Hover mixes colours on a [`Feel::FADE`] flow, a press shrinks on a [`Feel::SNAP`] flow and springs back with a small overshoot (both keep
+/// their velocity when the pointer changes its mind half-way); reduced motion lands at once.
 pub struct Clicks<K: Clone + Eq + Hash> {
     rects: Vec<(K, Rect)>,
     hover: Option<K>,
     down: Option<K>,
-    hov: HashMap<K, Tween<f32>>,
-    prs: HashMap<K, Tween<f32>>,
+    hov: HashMap<K, Flow>,
+    prs: HashMap<K, Flow>,
     /// keys whose rect is a text-like area (cursor I-beam instead of the hand)
     pub text_keys: Vec<K>,
     pub reduced: bool,
@@ -163,20 +165,25 @@ impl<K: Clone + Eq + Hash> Clicks<K> {
 
     /// Eased hover amount 0..1 of `k`.
     pub fn hover_amt(&self, k: &K) -> f32 {
-        self.hov.get(k).map_or(0.0, |t| t.value().clamp(0.0, 1.0))
+        self.hov.get(k).map_or(0.0, |t| t.at01())
     }
 
     /// Scale of a pressed target (1 at rest, .96 held, a springy overshoot above 1 on release); `depth` .96 for buttons, .92 for icon buttons.
     pub fn press_scale(&self, k: &K, depth: f32) -> f32 {
-        1.0 - (1.0 - depth) * self.prs.get(k).map_or(0.0, |t| t.value())
+        1.0 - (1.0 - depth) * self.prs.get(k).map_or(0.0, |t| t.at())
     }
 
-    fn retarget(map: &mut HashMap<K, Tween<f32>>, k: &K, to: f32, d: f32, e: Ease, reduced: bool) {
-        let t = map.entry(k.clone()).or_insert_with(|| Tween::at_rest(0.0));
+    /// How far `k` is pressed, 0..1 (for a fill that deepens while held).
+    pub fn press_amt(&self, k: &K) -> f32 {
+        self.prs.get(k).map_or(0.0, |t| t.at01())
+    }
+
+    fn retarget(map: &mut HashMap<K, Flow>, k: &K, to: f32, feel: Feel, reduced: bool) {
+        let t = map.entry(k.clone()).or_insert_with(|| Flow::new(0.0, feel));
         if reduced {
             t.jump(to);
         } else {
-            t.retarget(to, d, e);
+            t.to(to);
         }
     }
 
@@ -185,10 +192,10 @@ impl<K: Clone + Eq + Hash> Clicks<K> {
             return false;
         }
         if let Some(old) = self.hover.take() {
-            Self::retarget(&mut self.hov, &old, 0.0, dur::FAST, curves::EASE_OUT, self.reduced);
+            Self::retarget(&mut self.hov, &old, 0.0, Feel::FADE, self.reduced);
         }
         if let Some(n) = &to {
-            Self::retarget(&mut self.hov, n, 1.0, dur::FAST, curves::EASE_OUT, self.reduced);
+            Self::retarget(&mut self.hov, n, 1.0, Feel::FADE, self.reduced);
         }
         self.hover = to;
         true
@@ -210,21 +217,21 @@ impl<K: Clone + Eq + Hash> Clicks<K> {
                 if let Some(d) = self.down.clone() {
                     r.capture = true;
                     let inside = over.as_ref() == Some(&d);
-                    Self::retarget(&mut self.prs, &d, inside as u8 as f32, dur::XS, curves::EASE_OUT, self.reduced);
+                    Self::retarget(&mut self.prs, &d, inside as u8 as f32, Feel::SNAP, self.reduced);
                     r.redraw = true;
                 }
             }
             InputEvent::MouseDown { pos, button: MouseButton::Left, .. } => {
                 if let Some(k) = self.hit(*pos) {
                     self.set_hover(Some(k.clone()));
-                    Self::retarget(&mut self.prs, &k, 1.0, dur::XS, curves::EASE_OUT, self.reduced);
+                    Self::retarget(&mut self.prs, &k, 1.0, Feel::SNAP, self.reduced);
                     self.down = Some(k);
                     r = Response { consumed: true, redraw: true, capture: true, cursor: Some(Cursor::Hand), ..Response::NONE };
                 }
             }
             InputEvent::MouseUp { pos, button: MouseButton::Left, .. } => {
                 if let Some(d) = self.down.take() {
-                    Self::retarget(&mut self.prs, &d, 0.0, dur::SLOW, curves::SPRING_POP, self.reduced);
+                    Self::retarget(&mut self.prs, &d, 0.0, Feel::SNAP, self.reduced);
                     let over = self.hit(*pos);
                     self.set_hover(over.clone());
                     if over.as_ref() == Some(&d) {
@@ -247,12 +254,13 @@ impl<K: Clone + Eq + Hash> Clicks<K> {
     pub fn step(&mut self, dt: f32) -> bool {
         let mut busy = false;
         for t in self.hov.values_mut().chain(self.prs.values_mut()) {
-            busy |= t.step(dt);
+            t.step(dt as f64 * 1000.0);
+            busy |= t.moving();
         }
         // drop settled entries of keys that are gone, so a list that churns does not grow the maps
         if self.hov.len() > 64 {
-            self.hov.retain(|k, t| !t.finished() || t.value() > 0.0 || self.hover.as_ref() == Some(k));
-            self.prs.retain(|_, t| !t.finished() || t.value() != 0.0);
+            self.hov.retain(|k, t| t.moving() || t.at() > 0.0 || self.hover.as_ref() == Some(k));
+            self.prs.retain(|_, t| t.moving() || t.at() != 0.0);
         }
         busy
     }
@@ -275,11 +283,20 @@ impl Xf {
     pub const ID: Xf = Xf { alpha: 1.0, dy: 0.0, scale: 1.0, p: 1.0 };
 }
 
+/// One cue in flight: opacity (FADE), offset and scale (FLOW / POP) and the plain progress, each a spring on its own target. Replaying a cue
+/// on the same target carries the current values and velocities over, so an enter cut short by an exit turns around instead of kinking.
 struct Live {
     target: String,
-    kind: Anim,
-    t_ms: f32,
-    dur_ms: f32,
+    alpha: Flow,
+    dy: Flow,
+    scale: Flow,
+    p: Flow,
+}
+
+impl Live {
+    fn moving(&self) -> bool {
+        self.alpha.moving() || self.dy.moving() || self.scale.moving() || self.p.moving()
+    }
 }
 
 /// Plays the `AnimCue`s a model emits. Look up an element's transform with [`Cues::xf`] while painting; `step` returns true while any plays.
@@ -299,17 +316,38 @@ impl Cues {
         if self.reduced {
             return;
         }
-        let dur_ms = match c.kind {
-            Anim::Enter { ms, .. } | Anim::Exit { ms, .. } | Anim::Pop { ms, .. } => (ms as f32).max(60.0),
-            Anim::Press => 260.0,
-            Anim::Collapse | Anim::Expand => 220.0,
-            Anim::Flip => 380.0,
-            Anim::Stagger => 400.0,
+        // (alpha, dy, scale) it starts from and the same where it ends; `kick` = a velocity impulse on the scale (press)
+        let (from, to, kick, scale_feel) = match c.kind {
+            Anim::Enter { y, .. } => ((0.0, y, 1.0), (1.0, 0.0, 1.0), 0.0, Feel::FLOW),
+            Anim::Exit { y, scale, .. } => ((1.0, 0.0, 1.0), (0.0, y, scale), 0.0, Feel::FLOW),
+            Anim::Pop { from_scale, .. } => ((0.0, 0.0, from_scale), (1.0, 0.0, 1.0), 0.0, Feel::POP),
+            Anim::Press => ((1.0, 0.0, 1.0), (1.0, 0.0, 1.0), -2.0, Feel::SNAP),
+            Anim::Collapse => ((1.0, 0.0, 1.0), (0.0, 0.0, 1.0), 0.0, Feel::FLOW),
+            Anim::Expand => ((0.0, 0.0, 1.0), (1.0, 0.0, 1.0), 0.0, Feel::FLOW),
+            Anim::Flip | Anim::Stagger => ((1.0, 0.0, 1.0), (1.0, 0.0, 1.0), 0.0, Feel::FLOW),
             // looping kinds are painted by the view from its own clock
             Anim::TypingDots | Anim::Caret | Anim::Spin | Anim::ProgressSweep => return,
         };
-        self.live.retain(|l| l.target != c.target);
-        self.live.push(Live { target: c.target, kind: c.kind, t_ms: 0.0, dur_ms });
+        let mut l = match self.live.iter().position(|l| l.target == c.target) {
+            Some(i) => self.live.remove(i),
+            None => {
+                let mut l = Live {
+                    target: c.target,
+                    alpha: Flow::new(from.0, Feel::FADE),
+                    dy: Flow::px(from.1, Feel::FLOW),
+                    scale: Flow::new(from.2, scale_feel),
+                    p: Flow::new(0.0, Feel::FLOW),
+                };
+                l.p.to(1.0);
+                l
+            }
+        };
+        l.alpha.to(to.0);
+        l.dy.to(to.1);
+        l.scale.set_feel(scale_feel);
+        l.scale.to(to.2);
+        l.scale.nudge(kick);
+        self.live.push(l);
     }
 
     pub fn play_all(&mut self, cues: Vec<AnimCue>) {
@@ -324,28 +362,19 @@ impl Cues {
 
     pub fn step(&mut self, dt_ms: f32) -> bool {
         for l in &mut self.live {
-            l.t_ms += dt_ms;
+            l.alpha.step(dt_ms as f64);
+            l.dy.step(dt_ms as f64);
+            l.scale.step(dt_ms as f64);
+            l.p.step(dt_ms as f64);
         }
-        self.live.retain(|l| l.t_ms < l.dur_ms);
+        self.live.retain(|l| l.moving());
         !self.live.is_empty()
     }
 
     /// The transform of `target` right now (identity when nothing plays on it).
     pub fn xf(&self, target: &str) -> Xf {
         let Some(l) = self.live.iter().find(|l| l.target == target) else { return Xf::ID };
-        let p = (l.t_ms / l.dur_ms).clamp(0.0, 1.0);
-        match l.kind {
-            Anim::Enter { y, .. } => Xf { alpha: curves::EASE_OUT.at(p), dy: y * (1.0 - curves::SPRING_SETTLE.at(p)), scale: 1.0, p },
-            Anim::Exit { y, scale, .. } => {
-                let e = curves::EASE_IN.at(p);
-                Xf { alpha: 1.0 - e, dy: y * e, scale: f32::lerp(1.0, scale, e), p }
-            }
-            Anim::Pop { from_scale, .. } => Xf { alpha: curves::EASE_OUT.at((p * 2.0).min(1.0)), dy: 0.0, scale: f32::lerp(from_scale, 1.0, curves::SPRING_POP.at(p)), p },
-            Anim::Press => Xf { alpha: 1.0, dy: 0.0, scale: 1.0 - 0.04 * (p * std::f32::consts::PI).sin(), p },
-            Anim::Collapse => Xf { alpha: 1.0 - curves::EASE_IN.at(p), dy: 0.0, scale: 1.0, p },
-            Anim::Expand => Xf { alpha: curves::EASE_OUT.at(p), dy: 0.0, scale: 1.0, p },
-            _ => Xf { p, ..Xf::ID },
-        }
+        Xf { alpha: l.alpha.at01(), dy: l.dy.at(), scale: l.scale.at(), p: l.p.at01() }
     }
 
     /// Paint `f` under the transform of `target` (opacity + offset + scale about `about`).
@@ -748,19 +777,56 @@ mod tests {
 
     #[test]
     fn cues_enter_ends_at_identity_and_exit_at_zero_alpha() {
+        let _m = crate::ui::host::testing::motion_on();
         let mut cues = Cues::new();
         cues.play(AnimCue { target: "row".into(), kind: Anim::Enter { y: 6.0, ms: 180 } });
         let x0 = cues.xf("row");
-        assert!(x0.alpha < 0.05 && x0.dy > 5.0);
+        assert!(x0.alpha < 0.05 && x0.dy > 5.0, "starts transparent and low, no jump: {x0:?}");
         assert!(cues.step(90.0));
         let mid = cues.xf("row");
-        assert!(mid.alpha > 0.3 && mid.dy < 6.0 && mid.dy > 0.0);
-        assert!(!cues.step(200.0));
+        assert!(mid.alpha > 0.1 && mid.alpha < 1.0 && mid.dy < 6.0 && mid.dy > -1.0, "moves towards the target: {mid:?}");
+        let mut t = 90.0;
+        while cues.step(8.0) {
+            t += 8.0;
+            assert!(t < 900.0, "settles");
+        }
         assert_eq!(cues.xf("row"), Xf::ID);
         cues.play(AnimCue { target: "x".into(), kind: Anim::Exit { y: -4.0, scale: 0.96, ms: 160 } });
         cues.step(150.0);
         assert!(cues.xf("x").alpha < 0.3);
         assert_eq!(cues.xf("unknown"), Xf::ID);
+    }
+
+    #[test]
+    fn an_enter_cut_short_by_an_exit_turns_around_without_a_jump() {
+        let _m = crate::ui::host::testing::motion_on();
+        let mut cues = Cues::new();
+        cues.play(AnimCue { target: "r".into(), kind: Anim::Enter { y: 6.0, ms: 180 } });
+        for _ in 0..6 {
+            cues.step(16.0);
+        }
+        let before = cues.xf("r");
+        cues.play(AnimCue { target: "r".into(), kind: Anim::Exit { y: -4.0, scale: 0.96, ms: 160 } });
+        let after = cues.xf("r");
+        assert_eq!(before.alpha, after.alpha, "the alpha carries over");
+        cues.step(16.0);
+        assert!((cues.xf("r").alpha - before.alpha).abs() < 0.2, "no jump");
+        for _ in 0..80 {
+            cues.step(16.0);
+        }
+        assert!(cues.is_empty());
+    }
+
+    #[test]
+    fn a_press_cue_dips_and_springs_back() {
+        let _m = crate::ui::host::testing::motion_on();
+        let mut cues = Cues::new();
+        cues.play(AnimCue { target: "b".into(), kind: Anim::Press });
+        let mut low = 1.0f32;
+        while cues.step(8.0) {
+            low = low.min(cues.xf("b").scale);
+        }
+        assert!(low < 0.99 && low > 0.9, "a small dip: {low}");
     }
 
     #[test]

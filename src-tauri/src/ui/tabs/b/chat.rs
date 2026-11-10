@@ -9,11 +9,11 @@
 //! a click on a code block's Copy button copies the code. Selection across messages is not supported (one message at a time).
 use super::chat_pop::{HistPop, SetPop, K};
 use crate::ui::tabs::fx::{emit, TabFx};
-use super::kit::{self, Bk, Calls, Clicks, Cues, Field, Icons};
+use super::kit::{self, Bk, Calls, Clicks, Cues, Field, Icons, Lit, Swap, GROW};
 use crate::ui::view::{Cx, DropEvent, DropPayload, DropPhase, Msg, View};
 use glasskit::canvas::Canvas;
 use glasskit::controls::Widget;
-use glasskit::ease::{curves, dur, Tween};
+use crate::ui::liquid::{Feel, Flow};
 use glasskit::edit::EditEvent;
 use glasskit::geom::{Pt, Rect};
 use glasskit::input::{Cursor, InputEvent, KeyCode, MouseButton, Response};
@@ -141,7 +141,14 @@ pub struct ChatScreen {
     view: Option<ChatView>,
     dirty: bool,
     items: Vec<Item>,
-    ghost: Option<(MarkdownView, f32)>,
+    /// the answer that is being replaced (retry): fades out while it rises a little
+    ghost: Option<(MarkdownView, Flow, Flow)>,
+    /// this ghost of the model's view has been taken already (the model keeps it a little longer than the flow needs)
+    ghost_taken: bool,
+    /// the cross-fading copy / check icon of each answer's Copy button
+    copy_faces: std::collections::HashMap<usize, Swap<&'static str>>,
+    /// the empty-chat welcome fades in when the chat is emptied
+    empty_k: Lit,
     sv: ScrollView,
     geo: Geo,
     mounted: bool,
@@ -156,13 +163,12 @@ pub struct ChatScreen {
     recalling: bool,
     comp_enter: bool,
     ime: Option<Rect>,
-    err_k: Tween<f32>,
+    err_k: Flow,
     err_last: Option<ErrView>,
-    files_k: Tween<f32>,
+    files_k: Flow,
     files_last: Vec<String>,
-    off_k: Tween<f32>,
-    tools_k: Tween<f32>,
-    send_k: Tween<f32>,
+    off_k: Flow,
+    send_k: Flow,
     now_ms: f64,
     scale: f32,
     pick_busy: bool,
@@ -199,6 +205,9 @@ impl ChatScreen {
             dirty: true,
             items: Vec::new(),
             ghost: None,
+            ghost_taken: false,
+            copy_faces: std::collections::HashMap::new(),
+            empty_k: Lit::new(Feel::FADE),
             sv: ScrollView::new(),
             geo: Geo::default(),
             mounted: false,
@@ -212,13 +221,12 @@ impl ChatScreen {
             recalling: false,
             comp_enter: false,
             ime: None,
-            err_k: Tween::at_rest(0.0),
+            err_k: Flow::new(0.0, GROW),
             err_last: None,
-            files_k: Tween::at_rest(0.0),
+            files_k: Flow::new(0.0, GROW),
             files_last: Vec::new(),
-            off_k: Tween::at_rest(0.0),
-            tools_k: Tween::at_rest(0.7),
-            send_k: Tween::at_rest(0.0),
+            off_k: Flow::new(0.0, Feel::FADE),
+            send_k: Flow::new(0.0, Feel::FADE),
             now_ms: 0.0,
             scale: 1.0,
             pick_busy: false,
@@ -271,6 +279,7 @@ impl ChatScreen {
             self.comp.ti.set_text(&v.input);
             self.last_pushed = v.input.clone();
         }
+        self.empty_k.set(v.messages.is_empty() && v.empty.is_some());
         self.hist.sync(&v.history, cx.reduced_motion);
         self.set.sync(&v.settings, cx.reduced_motion);
         let target = |on: bool| on as u8 as f32;
@@ -305,7 +314,7 @@ impl ChatScreen {
             if reduced {
                 t.jump(to);
             } else {
-                t.retarget(to, dur::MED, curves::EASE_OUT);
+                t.to(to);
             }
         }
     }
@@ -987,8 +996,13 @@ impl View for ChatScreen {
         busy |= self.hist.step(dt_ms as f32);
         busy |= self.set.step(dt_ms as f32);
         for t in [&mut self.err_k, &mut self.files_k, &mut self.off_k, &mut self.send_k] {
-            busy |= t.step(dt);
+            t.step(dt_ms);
+            busy |= t.moving();
         }
+        for f in self.copy_faces.values_mut() {
+            busy |= f.step(dt_ms);
+        }
+        busy |= self.empty_k.step(dt_ms);
         for it in &mut self.items {
             if let Some(md) = &mut it.md {
                 busy |= md.step(dt);
@@ -998,12 +1012,13 @@ impl View for ChatScreen {
             busy |= f.ti.step(dt) || f.has_input();
         }
         busy |= self.comp_enter || self.dirty;
-        if let Some(g) = &mut self.ghost {
-            g.1 -= dt_ms as f32;
-            if g.1 <= 0.0 {
-                self.ghost = None;
-            } else {
+        if let Some((_, fade, rise)) = &mut self.ghost {
+            fade.step(dt_ms);
+            rise.step(dt_ms);
+            if fade.moving() || rise.moving() {
                 busy = true;
+            } else {
+                self.ghost = None;
             }
         }
         busy
@@ -1028,9 +1043,9 @@ impl View for ChatScreen {
         let ta_h = if self.comp.ti.text().is_empty() { COMPOSER_MIN } else { self.comp.ti.content_height(comp_w + 6.0, cv).clamp(COMPOSER_MIN, COMPOSER_MAX) };
         let box_h = (ta_h + 10.0).max(38.0);
         let err_h = self.err_h(cv, th, rect.w);
-        let err_vis = err_h * self.err_k.value().clamp(0.0, 1.0);
-        let files_vis = (24.0 + 8.0) * self.files_k.value().clamp(0.0, 1.0);
-        let bottom_h = 4.0 + if err_vis > 0.5 { err_vis + 8.0 * self.err_k.value().clamp(0.0, 1.0) } else { 0.0 } + files_vis + box_h;
+        let err_vis = err_h * self.err_k.at01();
+        let files_vis = (24.0 + 8.0) * self.files_k.at01();
+        let bottom_h = 4.0 + if err_vis > 0.5 { err_vis + 8.0 * self.err_k.at01() } else { 0.0 } + files_vis + box_h;
         let bottom = Rect::new(rect.x, rect.bottom() - bottom_h, rect.w, bottom_h);
         let viewport = Rect::new(rect.x, rect.y + SCROLL_TOP, rect.w, (bottom.y - rect.y - SCROLL_TOP).max(0.0));
         let row = Rect::new(rect.x, rect.bottom() - box_h, rect.w, box_h);
@@ -1060,11 +1075,12 @@ impl View for ChatScreen {
             });
             self.sv.bar.draw(cv, viewport, &self.sv.state, th);
         } else if v.empty.is_some() {
-            self.draw_empty(cv, th, &ic, viewport, &v, !inert);
+            let ek = self.empty_k.at();
+            cv.with_opacity(ek, |cv| self.draw_empty(cv, th, &ic, viewport, &v, !inert));
         }
-        if let Some((g, left)) = &self.ghost {
-            let k = (left / 180.0).clamp(0.0, 1.0);
-            let y = viewport.y + self.items.last().map_or(6.0, |i| i.y) - self.sv.offset() + (1.0 - k) * -6.0;
+        if let Some((g, fade, rise)) = &self.ghost {
+            let k = fade.at01();
+            let y = viewport.y + self.items.last().map_or(6.0, |i| i.y) - self.sv.offset() + rise.at();
             cv.with_clip(viewport, |cv| cv.with_opacity(k, |cv| g.draw(cv, (viewport.x + COL_X, y), th)));
         }
 
@@ -1096,7 +1112,7 @@ impl View for ChatScreen {
         let _ = mr;
 
         // ---------------- off card (covers everything)
-        if self.off_k.value() > 0.003 {
+        if self.off_k.at() > 0.003 {
             if let Some(off) = &v.off {
                 self.draw_off(cv, th, &ic, rect, off.title.as_str(), off.body.as_str(), off.enable_label.as_str());
             } else {
@@ -1188,10 +1204,16 @@ impl ChatScreen {
             y += it.h + MSG_GAP;
         }
         // the ghost of an answer that is being replaced (retry)
-        if !v.ghosts.is_empty() && self.ghost.is_none() {
+        if v.ghosts.is_empty() {
+            self.ghost_taken = false;
+        } else if !self.ghost_taken && self.ghost.is_none() {
             let g = &v.ghosts[0];
             if let Ok(md) = MarkdownView::new(cv, markdown::parse(&g.text), md_w, th, &labels) {
-                self.ghost = Some((md, g.left_ms as f32));
+                let (mut fade, mut rise) = (Flow::new(1.0, Feel::FADE), Flow::px(0.0, Feel::FLOW));
+                fade.to(0.0);
+                rise.to(-6.0);
+                self.ghost = Some((md, fade, rise));
+                self.ghost_taken = true;
             }
         }
     }
@@ -1278,7 +1300,17 @@ impl ChatScreen {
                     for (n, (k, icon)) in items.into_iter().enumerate() {
                         let r = Rect::new(x0 + COL_X - 6.0 + n as f32 * 28.0, ay, 26.0, 26.0);
                         self.clicks.add(k.clone(), r);
-                        kit::button(cv, th, ic, r, "", Some(icon), Bk::Icon, self.clicks.hover_amt(&k), self.clicks.press_scale(&k, 0.92), true);
+                        let (hv, ps) = (self.clicks.hover_amt(&k), self.clicks.press_scale(&k, 0.92));
+                        if n == 0 {
+                            // copy -> check cross-fades
+                            let face = self.copy_faces.entry(it.idx).or_insert_with(Swap::new);
+                            face.set(&icon);
+                            kit::button(cv, th, ic, r, "", None, Bk::Icon, hv, ps, true);
+                            let fg = th.icon.mix(th.text, hv);
+                            cv.with_scale_about(r.center(), ps, |cv| face.paint(|name, a| cv.with_opacity(a, |cv| ic.draw(cv, name, r.centered(18.0, 18.0), fg))));
+                        } else {
+                            kit::button(cv, th, ic, r, "", Some(icon), Bk::Icon, hv, ps, true);
+                        }
                     }
                 }
             }
@@ -1326,7 +1358,7 @@ impl ChatScreen {
     }
 
     fn draw_off(&mut self, cv: &Canvas, th: &Theme, ic: &Icons, rect: Rect, title: &str, body: &str, enable: &str) {
-        let k = self.off_k.value().clamp(0.0, 1.0);
+        let k = self.off_k.at01();
         let live = !title.is_empty();
         if live {
             self.clicks.add(K::SBody, rect);
@@ -1363,7 +1395,7 @@ impl ChatScreen {
         // error banner
         if err_vis > 0.5 {
             if let Some(e) = self.err_last.clone() {
-                let k = self.err_k.value().clamp(0.0, 1.0);
+                let k = self.err_k.at01();
                 let r = Rect::new(g.err.x, g.err.y, g.err.w, err_vis);
                 cv.with_clip(r, |cv| {
                     cv.with_opacity(k, |cv| {
@@ -1398,7 +1430,7 @@ impl ChatScreen {
             }
         }
         // files
-        let fk = self.files_k.value().clamp(0.0, 1.0);
+        let fk = self.files_k.at01();
         if fk > 0.02 {
             let files = if v.files.is_empty() { self.files_last.clone() } else { v.files.clone() };
             cv.with_opacity(fk, |cv| {
@@ -1442,7 +1474,7 @@ impl ChatScreen {
         btn(cv, &self.clicks, K::Attach, attach, "c-attach", None);
         btn(cv, &self.clicks, K::Mic, mic, "c-mic", if v.mic_recording { Some(Color::rgb8(0xff, 0x5a, 0x4e)) } else { None });
         // send / stop
-        let sk = self.send_k.value().clamp(0.0, 1.0);
+        let sk = self.send_k.at01();
         {
             let (hv, ps) = (self.clicks.hover_amt(&K::Send), self.clicks.press_scale(&K::Send, 0.94));
             cv.with_scale_about(send.center(), ps, |cv| {

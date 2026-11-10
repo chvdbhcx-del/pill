@@ -9,15 +9,16 @@
 //! * Nothing starts without a click: every download button shows source and size (the model builds those strings).
 //! * No API key is handled here: the model only asks `voice_has_key` for a yes/no; keys are typed on the Voice / AI settings pages, which the
 //!   two "cloud" buttons open (`TabFx::GoPage`).
-//! * Motion: hover/press on every control (`kit::Clicks`), chips pop when chosen, the remove button dips when armed, blocks that appear (progress,
-//!   plan, result lines, the Ollama block) fade + rise, the switch knob springs, bars ease / slide (glasskit `ProgressBar`), spinner while a job
-//!   runs. With reduced motion everything lands on its end state.
+//! * Motion (all liquid, see `ui::liquid`): hover/press on every control (`kit::Clicks`), chips pop when chosen and their selected look fades,
+//!   the remove button dips when armed, blocks that appear (progress, plan, result lines, the Ollama block) fade + rise, the switch knob
+//!   springs, bars fill with inertia and fade (`flowkit::LiquidBar`), spinner while a job runs. With reduced motion everything lands on its end state.
 //! ponytail: the model drop-down of a running server is a click-to-cycle pill (a popup `Select` needs its own window); blocks that
 //! disappear (a finished progress box) vanish at once instead of fading out.
-use super::kit::{self, button, button_w, Bk, Calls, Clicks, Cues, Icons};
+use super::flowkit::{FlowSwitch, LiquidBar, LiquidSpinner};
+use super::kit::{self, button, button_w, Bk, Calls, Clicks, Cues, Icons, Lit};
+use crate::ui::liquid::Feel;
 use crate::ui::view::{Cx, Msg, View};
 use glasskit::canvas::Canvas;
-use glasskit::controls::{ProgressBar, Spinner, Toggle, Widget};
 use glasskit::geom::Rect;
 use glasskit::input::{InputEvent, Response};
 use glasskit::scroll::ScrollView;
@@ -544,9 +545,13 @@ pub struct AiSetupScreen {
     seen: HashSet<String>,
     first_layout: bool,
     scroll: ScrollView,
-    bars: HashMap<Job, ProgressBar>,
-    spinner: Spinner,
-    toggle: Toggle,
+    bars: HashMap<Job, LiquidBar>,
+    spinner: LiquidSpinner,
+    toggle: FlowSwitch,
+    /// the switch has been given its first state (that one lands at once)
+    sw_seen: bool,
+    /// the selected look of every model chip, by cue key
+    chip_on: HashMap<String, Lit>,
     mounted: bool,
     lang: Lang,
     carry: f64,
@@ -580,8 +585,10 @@ impl AiSetupScreen {
             first_layout: true,
             scroll: ScrollView::new(),
             bars: HashMap::new(),
-            spinner: Spinner::new(),
-            toggle: Toggle::new(false).spring(0.45),
+            spinner: LiquidSpinner::new(),
+            toggle: FlowSwitch::new(false),
+            sw_seen: false,
+            chip_on: HashMap::new(),
             mounted: false,
             lang: Lang::En,
             carry: 0.0,
@@ -605,9 +612,15 @@ impl AiSetupScreen {
                 OllamaBlock::Models { progress, .. } => states.push((Job::OllamaPull, Some(progress))),
             }
         }
+        if let ms::View::Page { voice, .. } = &self.vw {
+            // the selected look of each model chip follows the model (here, on the step path, so the glide gets its frames)
+            for c in &voice.chips {
+                self.chip_on.entry(format!("chip:{}", c.id)).or_insert_with(|| Lit::new(Feel::FADE)).set(c.on);
+            }
+        }
         for job in Job::ALL {
             let pv = states.iter().find(|(j, _)| *j == job).and_then(|(_, p)| *p).filter(|p| p.running);
-            let bar = self.bars.entry(job).or_insert_with(ProgressBar::indeterminate);
+            let bar = self.bars.entry(job).or_insert_with(LiquidBar::hidden);
             match pv {
                 Some(p) => {
                     bar.set_visible(true);
@@ -622,9 +635,10 @@ impl AiSetupScreen {
         }
         self.spinner.set_active(states.iter().any(|(_, p)| p.map_or(false, |p| p.running)));
         if let Some((on, en)) = sw {
-            if self.toggle.on() != on {
-                self.toggle.set_on(on, true);
+            if self.toggle.on() != on || !self.sw_seen {
+                self.toggle.set_on(on, self.sw_seen);
             }
+            self.sw_seen = true;
             self.toggle.set_enabled(en);
         }
     }
@@ -702,6 +716,7 @@ impl AiSetupScreen {
         }
         self.first_layout = false;
         self.seen = now;
+
     }
 
     fn content_ev(&self, ev: &InputEvent) -> InputEvent {
@@ -719,7 +734,7 @@ impl View for AiSetupScreen {
         let cev = self.content_ev(ev);
         // the switch first (it is not a Clicks target: the Toggle owns its press / drag)
         if let Some(sr) = self.built.switch {
-            let enabled = self.toggle.state().enabled;
+            let enabled = self.toggle.enabled;
             let before = self.toggle.on();
             let tr = self.toggle.event(&cev, sr);
             if tr.changed && enabled {
@@ -798,6 +813,9 @@ impl View for AiSetupScreen {
         busy |= self.clicks.step(dt);
         busy |= self.scroll.step(dt);
         busy |= self.toggle.step(dt);
+        for l in self.chip_on.values_mut() {
+            busy |= l.step(dt_ms);
+        }
         busy |= self.spinner.step(dt);
         for b in self.bars.values_mut() {
             busy |= b.step(dt);
@@ -854,15 +872,16 @@ impl AiSetupScreen {
             K::Chip { id, name, size, on, disk, inuse, cue } => {
                 self.cues.apply(cv, cue, r.center(), |cv| {
                     let h = self.clicks.hover_amt(id);
+                    let lit = self.chip_on.get(cue).map_or(*on as u8 as f32, |l| l.at());
                     cv.with_scale_about(r.center(), self.clicks.press_scale(id, 0.93), |cv| {
-                        let bg = if *on { th.accent_soft } else { th.seg_bg.mix(th.btn_hover, h * 0.6) };
+                        let bg = th.seg_bg.mix(th.btn_hover, h * 0.6).mix(th.accent_soft, lit);
                         cv.fill_rr(r, 8.0, bg);
-                        if *on {
-                            cv.stroke_rr(r, 8.0, 1.0, th.accent.fade(0.55));
+                        if lit > 0.0 {
+                            cv.stroke_rr(r, 8.0, 1.0, th.accent.fade(0.55 * lit));
                         }
                         let mut x = r.x + 12.0;
                         let nw = cv.text_width(name, th.body());
-                        cv.text(Rect::new(x, r.y, nw + 2.0, r.h), name, th.body(), if *on { th.text } else { th.text2.mix(th.text, 0.4) });
+                        cv.text(Rect::new(x, r.y, nw + 2.0, r.h), name, th.body(), th.text2.mix(th.text, 0.4).mix(th.text, lit));
                         x += nw + 8.0;
                         let szs = Style::new(11.0, 400);
                         let sw = cv.text_width(size, szs);
@@ -879,7 +898,7 @@ impl AiSetupScreen {
                 });
             }
             K::Switch { enabled } => {
-                cv.with_opacity(1.0, |cv| self.toggle.draw(cv, th, r));
+                self.toggle.draw(cv, th, r);
                 let _ = enabled;
             }
             K::Bar(job) => {
