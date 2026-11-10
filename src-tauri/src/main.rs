@@ -19,6 +19,7 @@ mod timers;
 mod watch;
 mod audio;
 mod agents;
+mod agent_bridge;
 mod launcher;
 mod settingswin;
 mod capture;
@@ -78,6 +79,7 @@ fn main() {
             watch::init(app);
             livesys::init(app);
             agents::init(app);
+            agent_bridge::init();
             launcher::init(app);
             settingswin::init(app);
             capture::init(app);

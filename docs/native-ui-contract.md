@@ -12,6 +12,8 @@ The names and shapes the Rust backend and the native UI say to each other. There
 |---|---|---|---|
 | `agents:changed` | pill | `snap` | agents.rs |
 | `agents:done` | pill | `json!({ "session": s.session, "tool": s.tool, "title": s.title, "cwd": s.cwd })` | agents.rs |
+| `agents:ask` | pill | `json!({ "id", "kind": "permission"\|"question", "toolName", "summary", "question", "options", "project", "session", "cwd" })` (only while `agents.answerFromIsland` is on) | agent_bridge.rs |
+| `agents:ask-gone` | pill | `json!({ "id" })` (the hook was cancelled: answered in the terminal) | agent_bridge.rs |
 | `aisetup:progress` | all windows | `json!({ "id": id, "item": item, "done": done, "total": total, "phase": phase, "message": message })` | aisetup.rs |
 | `audio:bands` | pill | `&Frame { b, rms: (rms * 1000.0).round() / 1000.0, t }` | audio.rs |
 | `capture:begin` | capture-N overlay | `json!({ "id": id })` | capture.rs |
@@ -174,6 +176,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `agents_open_folder` | `session: String` | `bool` | agents.rs |
 | `agents_open_code` | `session: String` | `bool` | agents.rs |
 | `agents_tools` | - | `Value` | agents.rs |
+| `agents_answer` | `id: String, choice: String` | `bool` | agent_bridge.rs |
 | `launcher_list` | - | `Vec<Link>` | launcher.rs |
 | `launcher_add` | `paths: Vec<String>` | `usize` | launcher.rs |
 | `launcher_remove` | `id: i64` | `()` | launcher.rs |

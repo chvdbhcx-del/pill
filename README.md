@@ -48,7 +48,7 @@ Chips and cards available today:
 | --- | --- |
 | Music | Track title (or a mini player with cover and buttons); the edge spikes to the real spectrum of what is playing |
 | Timer and reminders | A running-timer chip; a card when a reminder or timer goes off |
-| AI coding agents | "Agent working" / "Needs your input" chips and an "Agent finished" card; hooks for **Claude Code** and **Codex** (the app never edits your config, *Settings* shows the snippet to paste) |
+| AI coding agents | "Agent working" / "Needs your input" chips and an "Agent finished" card; hooks for **Claude Code** and **Codex**, a plugin for **opencode** (the app never edits your config, *Settings* shows the snippet to paste). Optional *Answer agents from the island* (off by default): a Claude Code permission request or a question with options arrives as a card (Allow / Deny / pick an answer) through a local 127.0.0.1 bridge with a per-session token; with no answer in 120 s Claude Code asks in the terminal as usual |
 | Downloads | Progress chip for browser downloads and a card with *Show in folder* when a file lands in Downloads |
 | Steam | A progress ring with game, percent and speed; a card when the download finishes |
 | USB drives | A card when a drive is connected or removed |
@@ -71,7 +71,7 @@ Press **`Alt+Shift+Space`** (the default; change it in *Settings → Hotkeys*). 
 - **Calculator and unit converter** work offline: `5*8+12`, `5 km in mi`.
 - **System actions** (lock, sleep, restart, shut down; destructive ones ask twice), `> command` runs a shell command, anything else can be searched in your browser.
 - **Filters:** `c` clipboard, `n` notes, `f` files, `a` apps, `s` settings.
-- **Ask your AI:** start with `? `, `ai ` or `ии `. The answer is formatted (lists, **bold**, code blocks with a copy button), the next line you type continues the conversation (Esc ends it). Needs an AI endpoint in *Settings → AI*.
+- **Ask your AI:** start with `? `, `ai ` or `ии `. The answer is formatted (lists, task lists, tables, **bold**, ~~strikethrough~~, code blocks with a copy button), the next line you type continues the conversation (Esc ends it). Needs an AI endpoint in *Settings → AI*.
 - **Dictate** with the microphone button or `F4`.
 - A selected row has buttons and a right-click menu: open, show in folder, copy the path (`Ctrl+Shift+C`), run as administrator (`Ctrl+Shift+Enter`).
 

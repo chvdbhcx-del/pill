@@ -45,6 +45,8 @@ pub struct LiveFx {
     card_s: Flow,
     card_check: Flow,
     card_hov: Vec<Flow>,
+    /// the button that was under the pointer while the card was in: it stays lit while the card leaves (which one was pressed)
+    card_last: Option<usize>,
     /// clock side-column items popping in after a reshape: key -> (scale, opacity, last age seen)
     pops: Vec<((bool, usize), Flow, Flow, f64)>,
     /// clock digits rolling: (roll, progress)
@@ -92,6 +94,7 @@ impl LiveFx {
             card_s: Flow::new(0.96, Feel::POP.within(360.0)),
             card_check: Flow::new(0.0, Feel::FADE.within(320.0)),
             card_hov: Vec::new(),
+            card_last: None,
             pops: Vec::new(),
             rolls: Vec::new(),
             dots: [Flow::new(0.0, Feel::POP), Flow::new(0.0, Feel::POP)],
@@ -169,6 +172,7 @@ impl LiveFx {
                 self.card_s.jump(0.96);
                 self.card_check.jump(0.0);
                 self.card_hov.clear();
+                self.card_last = None;
             }
             match cv.phase {
                 CardPhase::In { since_ms } => {
@@ -185,6 +189,8 @@ impl LiveFx {
                     go(&mut self.card_s, 0.97, Feel::FLOW.within(180.0));
                 }
             }
+            let hover = if matches!(cv.phase, CardPhase::Out { .. }) { hover.or(self.card_last) } else { hover };
+            self.card_last = if matches!(cv.phase, CardPhase::Out { .. }) { self.card_last } else { hover };
             if let Some(i) = hover {
                 while self.card_hov.len() <= i {
                     self.card_hov.push(Flow::new(0.0, HOVER));

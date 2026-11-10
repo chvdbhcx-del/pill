@@ -145,6 +145,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         "agents_open_folder" => ok(agents::agents_open_folder(a.req("session")?)),
         "agents_open_code" => ok(agents::agents_open_code(a.req("session")?)),
         "agents_tools" => ok(agents::agents_tools()),
+        "agents_answer" => ok(crate::agent_bridge::agents_answer(a.req("id")?, a.req("choice")?)),
         "launcher_list" => ok(launcher::launcher_list()),
         "launcher_add" => ok(launcher::launcher_add(app.clone(), a.req("paths")?)),
         "launcher_remove" => ok(launcher::launcher_remove(app.clone(), a.req("id")?)),

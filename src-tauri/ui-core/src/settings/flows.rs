@@ -545,7 +545,19 @@ pub fn snippets_text(lang: Lang, res: &Value) -> String {
     if res.is_null() {
         return pick(lang, "Не удалось получить фрагменты", "Could not get the snippets").to_string();
     }
-    format!("Claude Code - {}\n{}\n\nCodex - {}\n{}", s(res, "claude_code_where"), s(res, "claude_code"), s(res, "codex_where"), s(res, "codex"))
+    let mut t = format!("Claude Code - {}\n{}\n\nCodex - {}\n{}", s(res, "claude_code_where"), s(res, "claude_code"), s(res, "codex_where"), s(res, "codex"));
+    if !s(res, "opencode").is_empty() {
+        t.push_str(&format!("\n\nopencode - {}\n{}", s(res, "opencode_where"), s(res, "opencode")));
+    }
+    if !s(res, "answer_hook").is_empty() {
+        let head = pick(
+            lang,
+            "Ответ из острова (Claude Code): хук запроса разрешения. Включите переключатель «Отвечать агентам из острова»; без него хук ничего не делает. Pill слушает только 127.0.0.1, случайный порт и токен лежат в %LOCALAPPDATA%\\Pill\\agent-bridge.json, пока переключатель включён. Через 120 с без ответа Claude Code спросит в терминале как обычно.",
+            "Answer from the island (Claude Code): the permission-request hook. Turn on the \"Answer agents from the island\" switch; without it the hook does nothing. Pill listens on 127.0.0.1 only, the random port and token are in %LOCALAPPDATA%\\Pill\\agent-bridge.json while the switch is on. After 120 s without an answer Claude Code asks in the terminal as usual.",
+        );
+        t.push_str(&format!("\n\n{head}\n{}\n{}\n\n{}", s(res, "answer_where"), s(res, "answer_hook"), s(res, "answer_script")));
+    }
+    t
 }
 
 // ------------------------------------------------------------------------------------------------ live-event status lines
@@ -871,6 +883,9 @@ mod tests {
         assert_eq!(weather_refresh_result(Lang::En, &json!({"status": "ok", "city": "Kazan", "now": {"temp": 12.6}})).text, "Updated: Kazan, 13°");
         assert_eq!(weather_refresh_result(Lang::En, &json!({"status": "nocity"})).text, "Choose a city first");
         assert_eq!(snippets_text(Lang::En, &json!({"claude_code_where": "a", "claude_code": "b", "codex_where": "c", "codex": "d"})), "Claude Code - a\nb\n\nCodex - c\nd");
+        let full = snippets_text(Lang::En, &json!({"claude_code_where": "a", "claude_code": "b", "codex_where": "c", "codex": "d", "opencode_where": "w", "opencode": "js", "answer_where": "aw", "answer_hook": "{hook}", "answer_script": "ps"}));
+        assert!(full.contains("\n\nopencode - w\njs") && full.contains("Answer from the island") && full.ends_with("aw\n{hook}\n\nps"));
+        assert!(snippets_text(Lang::Ru, &json!({"answer_hook": "x"})).contains("Ответ из острова"));
     }
 
     #[test]

@@ -45,6 +45,7 @@ fn tool_name(tool: &str) -> &'static str {
     match tool {
         "claude-code" => "Claude Code",
         "codex" => "Codex",
+        "opencode" => "OpenCode",
         _ => "",
     }
 }
@@ -276,7 +277,7 @@ impl Provider for AgentsLive {
         "agents"
     }
     fn events(&self) -> &'static [&'static str] {
-        &["agents:changed", "agents:done", "agents:refetch", "settings:changed"]
+        &["agents:changed", "agents:done", "agents:refetch", "agents:ask", "agents:ask-gone", "settings:changed"]
     }
     fn boot(&self) -> Vec<Query> {
         // events sent before this UI existed are gone: ask once
@@ -286,6 +287,8 @@ impl Provider for AgentsLive {
         match name {
             "agents:changed" | "agents:refetch" => self.feed(env, p),
             "agents:done" => self.done(env, p),
+            "agents:ask" => super::agents_ask::ask(env, p),
+            "agents:ask-gone" => super::agents_ask::gone(env, p),
             "settings:changed" => {
                 // the switch works at once, both ways
                 let now_on = env.live_on("agents");

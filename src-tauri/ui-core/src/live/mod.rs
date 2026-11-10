@@ -82,6 +82,7 @@
 //! * String lengths and slices are UTF-16 based (`util`), so cut points match the web UI, including emoji.
 
 pub mod agents;
+pub mod agents_ask;
 pub mod board;
 pub mod capture;
 pub mod env;
