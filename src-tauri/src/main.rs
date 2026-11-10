@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![recursion_limit = "256"] // the settings defaults are one big `json!` (src/settings.rs)
 
 // One module per feature; each owner edits only their own file (plus their marked lines below).
 // init() is called once from setup().

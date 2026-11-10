@@ -268,8 +268,8 @@ fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
     let expect = [
-        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 14), ("live", 33), ("clipboard", 18), ("search", 4),
-        ("sound", 10), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
+        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 19), ("live", 36), ("clipboard", 18), ("search", 4),
+        ("sound", 15), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
     ];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");
