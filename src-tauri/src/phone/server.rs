@@ -5,6 +5,8 @@ use super::files::{self, Dir, Refused, Status, Transfer, Transfers};
 use super::http::{self, Range, Req};
 use super::reg::{self, Device, Registry};
 use super::ws::{self, Msg};
+use super::{relay, v2};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
@@ -32,6 +34,12 @@ pub struct Cfg {
     pub apk_url: String,
     pub muted: Vec<String>,
     pub pc_name: String,
+    /// `phone.relay`: reach paired phones through the internet relay
+    pub relay_on: bool,
+    /// `phone.relayUrl` as typed (empty = no relay); see `relay::parse_url`
+    pub relay_url: String,
+    /// `phone.relayMaxFileMB` in bytes: the size cap of a file that travels through the relay
+    pub relay_max_bytes: u64,
 }
 
 pub struct Opts {
@@ -63,16 +71,65 @@ struct PhoneStatus {
     stats: Stats,
 }
 
-struct Conn {
-    id: u64,
-    device: String,
-    w: Mutex<TcpStream>,
+/// How a phone is reached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Route {
+    /// the LAN WebSocket
+    Lan,
+    /// the encrypted relay (docs/phone-relay.md)
+    Relay,
+}
+
+pub(super) enum Out {
+    Tcp(Mutex<TcpStream>),
+    Relay(Arc<super::relay::Link>),
+}
+
+/// One live channel to a phone: a LAN WebSocket or a relay link. The message handlers do not care which.
+pub(super) struct Conn {
+    pub id: u64,
+    pub device: String,
+    pub route: Route,
+    out: Out,
+}
+
+impl Conn {
+    fn lan(id: u64, device: &str, s: TcpStream) -> Conn {
+        Conn { id, device: device.to_string(), route: Route::Lan, out: Out::Tcp(Mutex::new(s)) }
+    }
+    pub fn relay(id: u64, device: &str, link: Arc<super::relay::Link>) -> Conn {
+        Conn { id, device: device.to_string(), route: Route::Relay, out: Out::Relay(link) }
+    }
+    /// One v1 JSON message to the phone.
+    pub fn send_text(&self, text: &str) -> bool {
+        match &self.out {
+            Out::Tcp(w) => w.lock().map(|mut s| ws::write_all(&mut *s, &ws::text_frame(text)).is_ok()).unwrap_or(false),
+            Out::Relay(l) => l.send_text(text),
+        }
+    }
+    /// Closes a LAN socket with an application code. A relay link is owned by `relay::Hub` (it ends when the device leaves the list).
+    fn close(&self, code: u16) {
+        if let Out::Tcp(w) = &self.out {
+            if let Ok(mut s) = w.lock() {
+                let _ = s.write_all(&ws::close_frame(code));
+                let _ = s.shutdown(Shutdown::Both);
+            }
+        }
+    }
+    fn pong(&self, payload: &[u8]) {
+        if let Out::Tcp(w) = &self.out {
+            let _ = w.lock().map(|mut s| ws::write_all(&mut *s, &ws::pong_frame(payload)));
+        }
+    }
 }
 
 pub struct Shared {
     opts: Opts,
     pub addr: SocketAddr,
     reg: Registry,
+    me: std::sync::Weak<Shared>,
+    pub(super) relay: super::relay::Hub,
+    pub(super) rf: super::relay_files::State,
     codes: reg::Codes,
     limiter: reg::Limiter,
     pub transfers: Transfers,
@@ -120,10 +177,13 @@ impl Server {
     pub fn start(opts: Opts) -> std::io::Result<Server> {
         let listener = TcpListener::bind(SocketAddr::new(IpAddr::V4(opts.bind), opts.port))?;
         let addr = listener.local_addr()?;
-        let shared = Arc::new(Shared {
+        let shared = Arc::new_cyclic(|me| Shared {
             reg: Registry::load(opts.dir.clone()),
             opts,
             addr,
+            me: me.clone(),
+            relay: Default::default(),
+            rf: Default::default(),
             codes: Default::default(),
             limiter: Default::default(),
             transfers: Default::default(),
@@ -137,6 +197,7 @@ impl Server {
         });
         let sh = shared.clone();
         let thread = std::thread::Builder::new().name("phone-accept".into()).spawn(move || accept_loop(listener, sh))?;
+        shared.relay_sync(); // phones paired earlier reach the relay again (only when phone.relay is on and a URL is set)
         Ok(Server { shared, thread: Some(thread) })
     }
 
@@ -150,11 +211,10 @@ impl Server {
         if sh.stop.swap(true, Ordering::SeqCst) {
             return;
         }
-        for c in sh.conns.lock().unwrap_or_else(|e| e.into_inner()).drain(..) {
-            if let Ok(mut s) = c.w.lock() {
-                let _ = s.write_all(&ws::close_frame(1001));
-                let _ = s.shutdown(Shutdown::Both);
-            }
+        sh.relay.stop_all(); // closes the relay sockets and joins their threads (they detach their own links)
+        let lan: Vec<Arc<Conn>> = sh.conns.lock().unwrap_or_else(|e| e.into_inner()).drain(..).collect();
+        for c in lan {
+            c.close(1001);
         }
         let _ = TcpStream::connect_timeout(&sh.addr, Duration::from_millis(500)); // wakes accept()
         if let Some(t) = self.thread.take() {
@@ -286,16 +346,55 @@ impl Shared {
             return http::err(w, 400, "bad_request");
         }
         let now = now_ms();
-        if !self.codes.take(v["code"].as_str().unwrap_or(""), now) {
+        let code = v["code"].as_str().unwrap_or("");
+        // v2 key agreement (docs/phone-relay.md): checked before the one-time code is spent, so a bad key costs the phone nothing
+        let v2 = match v["pk"].as_str() {
+            None => None,
+            Some(pk) => {
+                let Some(raw) = relay::b64_any(pk) else { return http::err(w, 400, "bad_request") };
+                let secret: [u8; 32] = reg::random_bytes(32).try_into().expect("32 bytes");
+                match v2::pair_pc(&raw, code, id, secret) {
+                    Some(x) => Some(x),
+                    None => return http::err(w, 400, "bad_request"),
+                }
+            }
+        };
+        if !self.codes.take(code, now) {
             self.limiter.bad(ip, now);
             return http::err(w, 403, "bad_code");
         }
         let token = reg::new_token();
         let name = v["name"].as_str().filter(|s| !s.trim().is_empty()).or(v["model"].as_str()).unwrap_or("Phone");
         self.close_device(id, 4001); // a second pairing replaces the token: the old socket must go
-        self.reg.pair(id, name, v["model"].as_str().unwrap_or(""), v["os"].as_str().unwrap_or(""), v["appVersion"].as_str().unwrap_or(""), &token, now);
+        let keys = v2.as_ref().map(|(_, k)| k.clone());
+        self.reg.pair(id, name, v["model"].as_str().unwrap_or(""), v["os"].as_str().unwrap_or(""), v["appVersion"].as_str().unwrap_or(""), &token, now, keys.clone());
+        let c = self.cfg();
+        let mut resp = json!({ "token": token, "pcName": c.pc_name, "serverVersion": SERVER_VERSION });
+        if let Some((pk, k)) = &v2 {
+            resp["pk"] = json!(B64.encode(pk));
+            if let Some(r) = self.relay_block(&c, k) {
+                resp["relay"] = r;
+            }
+        }
+        self.relay_sync(); // new keys: (re)connect this phone's room, or a plain v1 pairing: drop any old link
         self.emit("phone:state", self.status());
-        http::json(w, 200, &json!({ "token": token, "pcName": self.cfg().pc_name, "serverVersion": SERVER_VERSION }))
+        http::json(w, 200, &resp)
+    }
+
+    /// `{"url","room","join"}` for a phone when the relay is switched on and has a usable address.
+    fn relay_block(&self, c: &Cfg, k: &v2::Keys) -> Option<Value> {
+        if !c.relay_on {
+            return None;
+        }
+        let t = relay::parse_url(&c.relay_url)?;
+        Some(json!({ "url": t.base_url(), "room": v2::room(k), "join": v2::join(k) }))
+    }
+
+    /// Makes the relay connections match the settings, the device list and their keys.
+    pub fn relay_sync(&self) {
+        if let Some(me) = self.me.upgrade() {
+            self.relay.sync(&me);
+        }
     }
 
     // ------------------------------------------------------------------------------------------------ files over HTTP
@@ -410,77 +509,128 @@ impl Shared {
         w.flush()?;
         r.get_ref().set_read_timeout(Some(WS_IDLE))?;
         self.close_device(&dev.id, 4000); // one socket per phone: a reconnect replaces the stale one
-        let conn = Arc::new(Conn { id: self.seq.fetch_add(1, Ordering::SeqCst), device: dev.id.clone(), w: Mutex::new(w.try_clone()?) });
-        self.conns.lock().unwrap_or_else(|e| e.into_inner()).push(conn.clone());
-        {
-            let mut g = self.phones.lock().unwrap_or_else(|e| e.into_inner());
-            let p = g.entry(dev.id.clone()).or_default();
-            p.connected = true;
-            p.ip = peer.to_string();
-            p.connected_at = now_ms();
-        }
-        self.reg.touch(&dev.id, now_ms(), false);
+        let conn = Arc::new(Conn::lan(self.seq.fetch_add(1, Ordering::SeqCst), &dev.id, w.try_clone()?));
+        self.attach(&conn, Some(peer.to_string()));
         self.send_conn(&conn, &json!({ "t": "hello", "pcName": self.cfg().pc_name, "serverVersion": SERVER_VERSION, "time": now_ms() }));
-        self.emit("phone:state", self.status());
+        if let Some(rc) = self.relay_config(&dev) {
+            self.send_conn(&conn, &rc); // lets a phone paired before the relay existed learn its address (optional message, see docs/phone-relay.md)
+        }
         loop {
             match ws::read_msg(&mut r) {
                 Ok(Msg::Text(t)) => self.on_message(&dev, &conn, &t),
-                Ok(Msg::Ping(p)) => {
-                    let _ = conn.w.lock().map(|mut s| ws::write_all(&mut *s, &ws::pong_frame(&p)));
-                }
+                Ok(Msg::Ping(p)) => conn.pong(&p),
                 Ok(Msg::Pong) => {}
-                Ok(Msg::Close(_)) | Err(_) => break,
+                Ok(Msg::Close(_)) | Ok(Msg::Bin(_)) | Err(_) => break,
             }
             if self.stop.load(Ordering::SeqCst) {
                 break;
             }
         }
-        // only the socket that is still the current one marks the phone as gone (a replaced one must not)
-        let mut cs = self.conns.lock().unwrap_or_else(|e| e.into_inner());
-        let had = cs.iter().any(|c| c.id == conn.id);
-        cs.retain(|c| c.id != conn.id);
-        let still = cs.iter().any(|c| c.device == dev.id);
-        drop(cs);
-        if had && !still {
-            if let Some(p) = self.phones.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&dev.id) {
-                p.connected = false;
-            }
-            self.reg.touch(&dev.id, now_ms(), true);
-            self.emit("phone:state", self.status());
-        }
-        let _ = conn.w.lock().map(|s| s.shutdown(Shutdown::Both));
+        self.detach(&conn);
+        let _ = w.shutdown(Shutdown::Both);
         Ok(())
     }
 
+    /// Registers a live channel of a phone and tells the UI.
+    pub(super) fn attach(&self, conn: &Arc<Conn>, ip: Option<String>) {
+        self.conns.lock().unwrap_or_else(|e| e.into_inner()).push(conn.clone());
+        {
+            let mut g = self.phones.lock().unwrap_or_else(|e| e.into_inner());
+            let p = g.entry(conn.device.clone()).or_default();
+            if !p.connected || conn.route == Route::Lan {
+                p.connected_at = now_ms();
+            }
+            p.connected = true;
+            if let Some(ip) = ip {
+                p.ip = ip;
+            }
+        }
+        self.reg.touch(&conn.device, now_ms(), false);
+        self.emit("phone:state", self.status());
+    }
+
+    /// Removes a channel. Only when it was the phone's last one is the phone marked as gone (a replaced socket must not do that).
+    pub(super) fn detach(&self, conn: &Conn) {
+        let mut cs = self.conns.lock().unwrap_or_else(|e| e.into_inner());
+        let had = cs.iter().any(|c| c.id == conn.id);
+        cs.retain(|c| c.id != conn.id);
+        let still = cs.iter().any(|c| c.device == conn.device);
+        drop(cs);
+        if had && !still {
+            if let Some(p) = self.phones.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&conn.device) {
+                p.connected = false;
+            }
+            self.reg.touch(&conn.device, now_ms(), true);
+        }
+        if had {
+            self.emit("phone:state", self.status()); // the route may have changed too
+        }
+    }
+
+    /// The optional `relay.config` message for a LAN socket: where the relay is and which room, when it is on and this phone has keys.
+    fn relay_config(&self, dev: &Device) -> Option<Value> {
+        let k = dev.keys.as_ref()?;
+        let b = self.relay_block(&self.cfg(), k)?;
+        Some(json!({ "t": "relay.config", "url": b["url"], "room": b["room"], "join": b["join"] }))
+    }
+
     /// Counts something for a phone and tells the UI (the counters travel with `phone:state`).
-    fn bump(&self, device: &str, f: impl FnOnce(&mut Stats)) {
+    pub(super) fn bump(&self, device: &str, f: impl FnOnce(&mut Stats)) {
         f(&mut self.phones.lock().unwrap_or_else(|e| e.into_inner()).entry(device.to_string()).or_default().stats);
         self.emit("phone:state", self.status());
     }
 
-    fn send_conn(&self, c: &Conn, v: &Value) -> bool {
-        c.w.lock().map(|mut s| ws::write_all(&mut *s, &ws::text_frame(&v.to_string())).is_ok()).unwrap_or(false)
+    pub(super) fn send_conn(&self, c: &Conn, v: &Value) -> bool {
+        c.send_text(&v.to_string())
     }
 
-    /// Sends to one device, or to every connected one when `device` is None. Returns how many sockets got it.
+    pub(super) fn me_arc(&self) -> Option<Arc<Shared>> {
+        self.me.upgrade()
+    }
+    pub(super) fn stopping(&self) -> bool {
+        self.stop.load(Ordering::SeqCst)
+    }
+    pub(super) fn next_conn_id(&self) -> u64 {
+        self.seq.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// The channels of a device, the LAN one first (the relay one stays as standby).
+    pub(super) fn channels(&self, device: &str) -> Vec<Arc<Conn>> {
+        let mut cs: Vec<Arc<Conn>> = self.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|c| c.device == device).cloned().collect();
+        cs.sort_by_key(|c| c.route != Route::Lan);
+        cs
+    }
+
+    /// How a device is reached right now: LAN beats relay, `None` = offline.
+    pub fn route_of(&self, device: &str) -> Option<Route> {
+        self.channels(device).first().map(|c| c.route)
+    }
+
+    /// Sends to one device, or to every connected one when `device` is None: over its LAN socket when it has one, else over the relay
+    /// (also when the LAN write fails). Returns how many devices got it.
     pub fn send(&self, device: Option<&str>, v: &Value) -> usize {
-        let cs: Vec<Arc<Conn>> = self.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|c| device.map_or(true, |d| c.device == d)).cloned().collect();
-        cs.iter().filter(|c| self.send_conn(c, v)).count()
+        let text = v.to_string();
+        let mut ids: Vec<String> = self.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|c| device.map_or(true, |d| c.device == d)).map(|c| c.device.clone()).collect();
+        ids.sort();
+        ids.dedup();
+        ids.iter().filter(|id| self.channels(id).iter().any(|c| c.send_text(&text))).count()
     }
 
-    /// Closes the sockets of a device with an application close code (4001 = revoked).
+    /// Closes the LAN sockets of a device with an application close code (4001 = revoked). Its relay link follows `relay_sync`.
     fn close_device(&self, id: &str, code: u16) {
-        let cs: Vec<Arc<Conn>> = self.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|c| c.device == id).cloned().collect();
-        for c in cs {
-            if let Ok(mut s) = c.w.lock() {
-                let _ = s.write_all(&ws::close_frame(code));
-                let _ = s.shutdown(Shutdown::Both);
-            }
+        for c in self.channels(id) {
+            c.close(code);
         }
     }
 
     fn on_message(&self, dev: &Device, conn: &Conn, text: &str) {
-        let Ok(m) = serde_json::from_str::<Value>(text) else { return };
+        if let Ok(m) = serde_json::from_str::<Value>(text) {
+            self.on_value(dev, conn, &m);
+        }
+    }
+
+    /// One v1 message from a phone, whichever route it came by.
+    pub(super) fn on_value(&self, dev: &Device, conn: &Conn, m: &Value) {
         match m["t"].as_str().unwrap_or("") {
             "ping" => {
                 self.send_conn(conn, &json!({ "t": "pong" }));
@@ -544,6 +694,12 @@ impl Shared {
                     self.emit("phone:files", json!({ "kind": if ok { "sent" } else { "failed" }, "transfer": t.public() }));
                 }
             }
+            // files through the relay (docs/phone-relay.md); relay_files.rs ignores them when they do not come over a relay link
+            "file.accept" => self.rf_accept(dev, conn, m),
+            "file.chunk" => self.rf_chunk(dev, conn, m),
+            "file.end" => self.rf_end(dev, conn, m),
+            "file.ack" => self.rf_ack(dev, conn, m),
+            "file.abort" => self.rf_abort(dev, conn, m),
             _ => {}
         }
     }
@@ -604,7 +760,7 @@ impl Shared {
         }
         let c = self.cfg();
         let size = m["size"].as_u64().unwrap_or(u64::MAX);
-        if size > c.max_bytes {
+        if size > c.max_bytes || (conn.route == Route::Relay && size > c.relay_max_bytes) {
             return reject("too_big");
         }
         let name = files::sanitize_name(&clip(&m["name"], 300));
@@ -638,13 +794,17 @@ impl Shared {
         if !meta.is_file() {
             return Err("not a file".into());
         }
-        if meta.len() > self.cfg().max_bytes {
+        let c = self.cfg();
+        if meta.len() > c.max_bytes {
             return Err("file is larger than the size cap".into());
         }
         let dev = {
             let cs = self.conns.lock().unwrap_or_else(|e| e.into_inner());
             cs.iter().map(|c| c.device.clone()).find(|d| device.map_or(true, |x| x == d)).ok_or("no phone is connected")?
         };
+        if self.route_of(&dev) == Some(Route::Relay) && meta.len() > c.relay_max_bytes {
+            return Err("file is larger than the size cap for the internet relay".into());
+        }
         let name = files::sanitize_name(&path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
         let t = Transfer { id: reg::new_id(), device: dev.clone(), dir: Dir::Out, mime: files::mime_of(&name).into(), name, size: meta.len(), status: Status::Accepted, path: Some(path.to_path_buf()), bytes: 0, at: now_ms() };
         self.transfers.add(t.clone());
@@ -706,6 +866,8 @@ impl Shared {
         let gone = self.reg.revoke(id);
         if gone {
             self.close_device(id, 4001);
+            self.relay_sync(); // the device is no longer wanted: its relay link and room connection end
+            self.rf_device_gone(id);
             self.phones.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
             self.notifs.lock().unwrap_or_else(|e| e.into_inner()).retain(|x| x["device"] != id);
             self.emit("phone:state", self.status());
@@ -714,6 +876,17 @@ impl Shared {
     }
 
     pub fn devices(&self) -> Vec<Value> {
+        let routes: HashMap<String, Route> = {
+            let cs = self.conns.lock().unwrap_or_else(|e| e.into_inner());
+            let mut m: HashMap<String, Route> = HashMap::new();
+            for c in cs.iter() {
+                let e = m.entry(c.device.clone()).or_insert(c.route);
+                if c.route == Route::Lan {
+                    *e = Route::Lan;
+                }
+            }
+            m
+        };
         let ph = self.phones.lock().unwrap_or_else(|e| e.into_inner());
         self.reg
             .list()
@@ -731,6 +904,12 @@ impl Shared {
                 v["info"] = if p.info.is_object() { p.info.clone() } else { json!({}) };
                 v["ip"] = json!(p.ip);
                 v["connectedAt"] = json!(p.connected_at);
+                v["route"] = json!(match routes.get(&d.id) {
+                    Some(Route::Lan) => "lan",
+                    Some(Route::Relay) => "relay",
+                    None => "none",
+                });
+                v["relay"] = json!(d.keys.is_some()); // this phone can use the internet relay (paired with v2 keys)
                 v["stats"] = p.stats.json();
                 v
             })

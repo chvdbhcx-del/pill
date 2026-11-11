@@ -14,6 +14,10 @@ tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # @deps-begin (extra crates, one per line; don't remove others')
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] } # phone/relay.rs: XChaCha20-Poly1305 frames (RustCrypto); nonces come from BCryptGenRandom
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] } # phone pairing key agreement (RustCrypto/dalek)
+hkdf = "0.12" # phone pairing: key derivation (digest 0.10 like sha2)
+hmac = "0.12" # phone pairing: room / join derivation
 png = "0.18"
 base64 = "0.22"
 tauri-plugin-global-shortcut = "2"

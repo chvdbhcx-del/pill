@@ -68,6 +68,9 @@ pub struct Device {
     pub first_seen: i64,
     #[serde(rename = "lastSeen")]
     pub last_seen: i64,
+    /// protocol v2 keys (docs/phone-relay.md), DPAPI-protected in the file; `None` for a phone paired before v2 (LAN only)
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "super::v2::stored")]
+    pub keys: Option<super::v2::Keys>,
 }
 
 impl Device {
@@ -132,11 +135,11 @@ impl Registry {
     }
 
     /// Adds a device, or replaces the token (and the details) of the same `device_id`; the old token dies.
-    pub fn pair(&self, device_id: &str, name: &str, model: &str, os: &str, app_version: &str, token: &str, now: i64) -> Device {
+    pub fn pair(&self, device_id: &str, name: &str, model: &str, os: &str, app_version: &str, token: &str, now: i64, keys: Option<super::v2::Keys>) -> Device {
         let mut g = self.lock();
         let first = g.devices.iter().find(|d| d.id == device_id).map_or(now, |d| d.first_seen);
         g.devices.retain(|d| d.id != device_id);
-        let dev = Device { id: clip(device_id, 64), name: clip(name, 60), model: clip(model, 60), os: clip(os, 40), app_version: clip(app_version, 20), token_hash: hash_token(token), first_seen: first, last_seen: now };
+        let dev = Device { id: clip(device_id, 64), name: clip(name, 60), model: clip(model, 60), os: clip(os, 40), app_version: clip(app_version, 20), token_hash: hash_token(token), first_seen: first, last_seen: now, keys };
         g.devices.push(dev.clone());
         self.save(&g);
         dev
@@ -272,7 +275,7 @@ mod tests {
         let dir = tmp("reg");
         let r = Registry::load(dir.clone());
         let t1 = new_token();
-        r.pair("dev-1", "Pixel 8", "Pixel 8", "Android 15", "1.0.0", &t1, 1000);
+        r.pair("dev-1", "Pixel 8", "Pixel 8", "Android 15", "1.0.0", &t1, 1000, None);
         let text = std::fs::read_to_string(dir.join("devices.json")).unwrap();
         assert!(!text.contains(&t1), "the token itself must never be written");
         assert!(text.contains(&hash_token(&t1)));
@@ -280,7 +283,7 @@ mod tests {
         assert!(r.by_token("nope").is_none() && r.by_token("").is_none());
         // pairing again replaces the token, keeps first_seen
         let t2 = new_token();
-        let d = r.pair("dev-1", "Pixel 8 Pro", "Pixel 8", "Android 15", "1.0.1", &t2, 5000);
+        let d = r.pair("dev-1", "Pixel 8 Pro", "Pixel 8", "Android 15", "1.0.1", &t2, 5000, None);
         assert_eq!((d.first_seen, d.name.as_str()), (1000, "Pixel 8 Pro"));
         assert!(r.by_token(&t1).is_none() && r.by_token(&t2).is_some());
         assert_eq!(r.list().len(), 1);

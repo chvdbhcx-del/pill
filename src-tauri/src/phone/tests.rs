@@ -23,7 +23,7 @@ impl Rig {
     fn new(loopback: bool) -> Rig {
         let dir = std::env::temp_dir().join(format!("pill-phone-e2e-{}", super::reg::new_id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let cfg = Arc::new(Mutex::new(Cfg { downloads: dir.join("dl"), max_bytes: 10 * 1024 * 1024, auto_accept: true, apk_url: "https://example.org/PillPhone.apk".into(), muted: vec![], pc_name: "TEST-PC".into() }));
+        let cfg = Arc::new(Mutex::new(Cfg { downloads: dir.join("dl"), max_bytes: 10 * 1024 * 1024, auto_accept: true, apk_url: "https://example.org/PillPhone.apk".into(), muted: vec![], pc_name: "TEST-PC".into(), relay_on: false, relay_url: String::new(), relay_max_bytes: 100 * 1024 * 1024 }));
         let events: Events = Default::default();
         let (c2, e2) = (cfg.clone(), events.clone());
         let server = Server::start(Opts {

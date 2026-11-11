@@ -16,8 +16,12 @@ mod http;
 mod info;
 mod page;
 mod reg;
+mod relay;
+mod relay_files;
 mod server;
+mod v2;
 mod ws;
+mod wsclient;
 #[cfg(test)]
 mod tests;
 
@@ -63,6 +67,9 @@ fn cfg() -> server::Cfg {
         apk_url: if apk.starts_with("https://") || apk.starts_with("http://") { apk } else { DEFAULT_APK_URL.into() },
         muted: crate::settings::get_list("phone.mutedApps"),
         pc_name: pc_name(),
+        relay_on: crate::settings::get_bool("phone.relay", true),
+        relay_url: crate::settings::get_str("phone.relayUrl", ""),
+        relay_max_bytes: (crate::settings::get_f64("phone.relayMaxFileMB", 100.0).clamp(1.0, 4096.0) * 1024.0 * 1024.0) as u64,
     }
 }
 
@@ -113,6 +120,13 @@ fn sync() {
             r.server.stop(); // closes every socket, frees the port
         }
         let _ = bus::emit("phone:state", phone_status());
+    } else if want && have {
+        // phone.relay / phone.relayUrl may have changed: connect or tear down the relay links
+        let sh = g.as_ref().map(|r| r.server.shared.clone());
+        drop(g);
+        if let Some(sh) = sh {
+            sh.relay_sync();
+        }
     }
 }
 
