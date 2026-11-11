@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -86,6 +87,7 @@ class HomeActions(
     val onScan: () -> Unit = {},
     val onEnterCode: () -> Unit = {},
     val onSendFiles: () -> Unit = {},
+    val onSendClipboard: () -> Unit = {},
     val onApps: () -> Unit = {},
     val onReconnect: () -> Unit = {},
     val onSelectPc: (String) -> Unit = {},
@@ -270,12 +272,17 @@ private fun HeroButtons(link: LinkUi, a: HomeActions) {
     }
 }
 
-/** Send files and Apps: two equal glass pills (icon and a short label); the number of mirrored apps is a small badge. */
+/** Send files and Apps: two equal glass pills (icon and a short label); the number of mirrored apps is a small badge. With clipboard sync on, "Send clipboard" slides in under them. */
 @Composable
 private fun QuickActions(ui: HomeUi, a: HomeActions, modifier: Modifier) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        ActionPill(stringResource(R.string.btn_send_files), Icons.Rounded.Upload, a.onSendFiles, Modifier.weight(1f))
-        ActionPill(stringResource(R.string.apps_card_title), Icons.Rounded.NotificationsActive, a.onApps, Modifier.weight(1f), badge = ui.mirroredApps)
+    Column(modifier.animateContentSize(Motion.soft())) {
+        Row(Modifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ActionPill(stringResource(R.string.btn_send_files), Icons.Rounded.Upload, a.onSendFiles, Modifier.weight(1f))
+            ActionPill(stringResource(R.string.apps_card_title), Icons.Rounded.NotificationsActive, a.onApps, Modifier.weight(1f), badge = ui.mirroredApps)
+        }
+        AnimatedVisibility(ui.clipEnabled, enter = Motion.enterItem, exit = Motion.exitItem) {
+            ActionPill(stringResource(R.string.btn_send_clipboard), Icons.Rounded.ContentPaste, a.onSendClipboard, Modifier.fillMaxWidth().padding(top = 12.dp))
+        }
     }
 }
 

@@ -127,6 +127,12 @@ sealed interface Msg {
     @Serializable @SerialName("file.ack") data class FileAck(val id: String, val upto: Long) : Msg
     @Serializable @SerialName("file.end") data class FileEnd(val id: String, val size: Long) : Msg
     @Serializable @SerialName("file.abort") data class FileAbort(val id: String, val reason: String = "") : Msg
+
+    // ---- v1.2, clipboard sync (both directions; old peers ignore both) ----
+    /** Sent right after a connection is up, only while the clipboard feature is on: "I can do clip". Never encoded with a 0. */
+    @Serializable @SerialName("caps") data class Caps(val clip: Int = 0) : Msg
+    /** Plain text, at most [ClipSync.MAX_BYTES] bytes of UTF-8. [ts] is Unix milliseconds. */
+    @Serializable @SerialName("clip") data class Clip(val id: String, val text: String, val ts: Long) : Msg
 }
 
 object Codec {

@@ -36,6 +36,11 @@ sealed interface SendUi {
     data class Sending(val count: Int) : SendUi
     data object NotConnected : SendUi
     data object Nothing : SendUi
+    // ---- clipboard (the share target's text, the tile, the notification action, the Home button) ----
+    data object ClipSent : SendUi
+    data object ClipEmpty : SendUi
+    data object ClipTooLarge : SendUi
+    data object ClipOff : SendUi
 }
 
 /** The "Send to PC" share target: a small glass sheet over the app the user came from. */
@@ -56,7 +61,7 @@ fun SendSheet(
         StateBlob(
             when (state) {
                 SendUi.Preparing -> BlobState.Connecting
-                is SendUi.Sending -> BlobState.Connected
+                is SendUi.Sending, SendUi.ClipSent -> BlobState.Connected
                 else -> BlobState.Offline
             },
             size = 132.dp,
@@ -71,6 +76,10 @@ fun SendSheet(
                 is SendUi.Sending -> pluralStringResource(R.plurals.send_sending, s.count, s.count) to stringResource(R.string.send_title)
                 SendUi.NotConnected -> stringResource(R.string.send_not_connected_title) to stringResource(R.string.send_not_connected_body)
                 SendUi.Nothing -> stringResource(R.string.send_nothing_title) to stringResource(R.string.send_nothing_body)
+                SendUi.ClipSent -> stringResource(R.string.clip_sent_title) to stringResource(R.string.clip_sent_body)
+                SendUi.ClipEmpty -> stringResource(R.string.clip_empty_title) to stringResource(R.string.clip_empty_body)
+                SendUi.ClipTooLarge -> stringResource(R.string.clip_big_title) to stringResource(R.string.clip_big_body)
+                SendUi.ClipOff -> stringResource(R.string.clip_off_title) to stringResource(R.string.clip_off_body)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(title, style = MaterialTheme.typography.headlineSmall, color = c.text, textAlign = TextAlign.Center)
@@ -80,10 +89,10 @@ fun SendSheet(
                 }
             }
         }
-        if (state == SendUi.NotConnected || state == SendUi.Nothing) {
+        if (state == SendUi.NotConnected || state == SendUi.Nothing || state == SendUi.ClipOff) {
             Spacer(Modifier.height(20.dp))
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (state == SendUi.NotConnected) PillButton(stringResource(R.string.send_open_app), onOpenApp, Modifier.fillMaxWidth())
+                if (state == SendUi.NotConnected || state == SendUi.ClipOff) PillButton(stringResource(R.string.send_open_app), onOpenApp, Modifier.fillMaxWidth())
                 PillButton(stringResource(R.string.send_close), onClose, Modifier.fillMaxWidth(), kind = ButtonKind.Glass)
             }
         }

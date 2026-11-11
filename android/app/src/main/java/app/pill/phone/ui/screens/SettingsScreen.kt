@@ -38,6 +38,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Computer
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.Lock
@@ -84,6 +86,8 @@ class SettingsActions(
     val onAutoReceive: (Boolean) -> Unit = {},
     val onOngoing: (Boolean) -> Unit = {},
     val onRelay: (Boolean) -> Unit = {},
+    val onClip: (Boolean) -> Unit = {},
+    val onClipReceive: (Boolean) -> Unit = {},
     val onUnpair: (String) -> Unit = {},
     val onRenamePc: (String, String) -> Unit = { _, _ -> },
     val onPcMirror: (String, Boolean) -> Unit = { _, _ -> },
@@ -160,6 +164,8 @@ fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: String? 
                         }
                     }
                 }
+                item(key = "clip-label") { SectionLabel(stringResource(R.string.clip_section)) }
+                item(key = "clip") { ClipCard(ui, actions.onClip, actions.onClipReceive, Modifier.staggerIn(2)) }
                 item(key = "files-label") { SectionLabel(stringResource(R.string.files_title)) }
                 item(key = "files") {
                     GlassCard(Modifier.staggerIn(2)) {
@@ -246,6 +252,29 @@ private fun RelayCard(ui: SettingsUi, onRelay: (Boolean) -> Unit, modifier: Modi
         }
         Text(
             stringResource(R.string.settings_relay_body), Modifier.padding(top = 10.dp),
+            style = MaterialTheme.typography.bodySmall, color = c.textDim,
+        )
+    }
+}
+
+/** Clipboard sync: the master switch, "Receive from PC" that slides in under it, and why sending is manual on Android. */
+@Composable
+private fun ClipCard(ui: SettingsUi, onClip: (Boolean) -> Unit, onReceive: (Boolean) -> Unit, modifier: Modifier) {
+    val c = Pill.colors
+    GlassCard(modifier.animateContentSize(Motion.soft())) {
+        SettingRow(stringResource(R.string.clip_sync), subtitle = stringResource(R.string.clip_sync_body), icon = Icons.Rounded.ContentPaste) {
+            PillSwitch(ui.clipEnabled, onClip)
+        }
+        AnimatedVisibility(ui.clipEnabled, enter = Motion.enterItem, exit = Motion.exitItem) {
+            Column {
+                Divider(Modifier.padding(vertical = 8.dp))
+                SettingRow(stringResource(R.string.clip_receive), subtitle = stringResource(R.string.clip_receive_body), icon = Icons.Rounded.Download) {
+                    PillSwitch(ui.clipReceive, onReceive)
+                }
+            }
+        }
+        Text(
+            stringResource(R.string.clip_manual_note), Modifier.padding(top = 10.dp),
             style = MaterialTheme.typography.bodySmall, color = c.textDim,
         )
     }

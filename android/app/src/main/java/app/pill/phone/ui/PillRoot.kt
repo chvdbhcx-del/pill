@@ -38,6 +38,7 @@ import app.pill.phone.ui.theme.Motion
 class HostActions(
     val scanQr: () -> Unit,
     val pickFiles: () -> Unit,
+    val sendClipboard: () -> Unit,
     val perms: PermissionActions,
 )
 
@@ -87,6 +88,7 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
                     onScan = host.scanQr,
                     onEnterCode = { vm.openPair(manual = true) },
                     onSendFiles = host.pickFiles,
+                    onSendClipboard = host.sendClipboard,
                     onApps = { vm.openApps(null) },
                     onReconnect = vm::reconnect,
                     onSelectPc = vm::selectPc,
@@ -130,6 +132,8 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
                     onAutoReceive = vm::setAutoReceive,
                     onOngoing = vm::setIncludeOngoing,
                     onRelay = vm::setRelayEnabled,
+                    onClip = vm::setClipEnabled,
+                    onClipReceive = vm::setClipReceive,
                     onUnpair = vm::unpair,
                     onRenamePc = vm::renamePc,
                     onPcMirror = vm::setPcMirror,

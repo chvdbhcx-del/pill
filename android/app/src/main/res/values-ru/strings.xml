@@ -290,4 +290,22 @@
     <string name="pick_all">Отправить на все ПК</string>
     <string name="pick_none">Сейчас ни один ПК не доступен</string>
     <string name="pick_offline">Не в сети</string>
+
+    <!-- Синхронизация буфера обмена (протокол v1.2) -->
+    <string name="clip_section">Буфер обмена</string>
+    <string name="clip_sync">Синхронизация буфера</string>
+    <string name="clip_sync_body">Делиться скопированным текстом с ПК</string>
+    <string name="clip_receive">Получать с ПК</string>
+    <string name="clip_receive_body">Текст, скопированный на ПК, попадает в буфер телефона</string>
+    <string name="clip_manual_note">Android запрещает приложениям читать буфер в фоне, поэтому отправка ручная: кнопка «Отправить буфер» здесь, плитка в шторке, кнопка в уведомлении или «Поделиться».</string>
+    <string name="btn_send_clipboard">Отправить буфер</string>
+    <string name="clip_sent_title">Буфер отправлен</string>
+    <string name="clip_sent_body">Вставьте его на ПК</string>
+    <string name="clip_empty_title">Буфер пуст</string>
+    <string name="clip_empty_body">Сначала скопируйте текст, затем отправьте снова.</string>
+    <string name="clip_big_title">Текст слишком большой</string>
+    <string name="clip_big_body">Текст буфера может быть до 256 КБ.</string>
+    <string name="clip_off_title">Синхронизация буфера выключена</string>
+    <string name="clip_off_body">Включите её в настройках Pill Phone.</string>
+    <string name="clip_received_toast">Буфер обновлён с ПК</string>
 </resources>

@@ -13,6 +13,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import app.pill.phone.ClipSendActivity
 import app.pill.phone.MainActivity
 import app.pill.phone.R
 import app.pill.phone.data.Paired
@@ -52,11 +53,11 @@ object Notifs {
     }
 
     /** The foreground notification: one line about the single PC, or, with several, how many are reachable. */
-    fun link(ctx: Context, pcs: List<Paired>, views: Map<String, PcView>, revoked: Boolean = false): Notification {
+    fun link(ctx: Context, pcs: List<Paired>, views: Map<String, PcView>, revoked: Boolean = false, clip: Boolean = false): Notification {
         if (pcs.size <= 1) {
             val p = pcs.firstOrNull()
             val state = if (revoked && p == null) LinkState.Revoked else views[p?.pcId]?.state ?: LinkState.Connecting
-            return link(ctx, state, p?.label.orEmpty())
+            return link(ctx, state, p?.label.orEmpty(), clip)
         }
         val states = pcs.map { views[it.pcId]?.state ?: LinkState.Connecting }
         val up = states.count { it is LinkState.Connected }
@@ -69,10 +70,10 @@ object Notifs {
                 else -> ctx.getString(R.string.notif_notfound_all)
             }
         }
-        return linkBuilder(ctx, title).build()
+        return linkBuilder(ctx, title).also { if (clip && up > 0) it.addClipAction(ctx) }.build()
     }
 
-    fun link(ctx: Context, state: LinkState, pcName: String): Notification {
+    fun link(ctx: Context, state: LinkState, pcName: String, clip: Boolean = false): Notification {
         val title = when (state) {
             is LinkState.Connected -> ctx.getString(
                 if (state.route == Route.Relay) R.string.notif_connected_relay else R.string.notif_connected,
@@ -85,6 +86,7 @@ object Notifs {
             LinkState.Revoked -> ctx.getString(R.string.notif_revoked)
         }
         val b = linkBuilder(ctx, title)
+        if (clip && state is LinkState.Connected) b.addClipAction(ctx)
         if (state == LinkState.NotFound) b.addAction(0, ctx.getString(R.string.act_scan_again), openApp(ctx, MainActivity.ACTION_SCAN, 1))
         if (state == LinkState.Revoked) b.addAction(0, ctx.getString(R.string.act_pair_again), openApp(ctx, MainActivity.ACTION_SCAN, 1))
         return b.build()
@@ -98,6 +100,12 @@ object Notifs {
             .setContentIntent(openApp(ctx)).setAutoCancel(true).setSilent(true)
             .build()
         notify(ctx, ID_BASE - 1 - (pcName.hashCode() and 0xFF), n)
+    }
+
+    /** "Send clipboard" on the connection notification: opens the see-through activity that can read the clipboard. */
+    private fun NotificationCompat.Builder.addClipAction(ctx: Context) {
+        val i = Intent(ctx, ClipSendActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        addAction(0, ctx.getString(R.string.btn_send_clipboard), PendingIntent.getActivity(ctx, 2, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
     }
 
     private fun linkBuilder(ctx: Context, title: String): NotificationCompat.Builder {

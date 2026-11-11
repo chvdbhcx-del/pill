@@ -287,4 +287,22 @@
     <string name="pick_all">Send to all PCs</string>
     <string name="pick_none">No PC is reachable right now</string>
     <string name="pick_offline">Offline</string>
+
+    <!-- Clipboard sync (protocol v1.2) -->
+    <string name="clip_section">Clipboard</string>
+    <string name="clip_sync">Clipboard sync</string>
+    <string name="clip_sync_body">Share copied text with your PC</string>
+    <string name="clip_receive">Receive from PC</string>
+    <string name="clip_receive_body">Text copied on your PC lands on this phone\'s clipboard</string>
+    <string name="clip_manual_note">Android blocks apps from reading the clipboard in the background, so sending is manual: use Send clipboard here, the quick settings tile, the notification button or Share.</string>
+    <string name="btn_send_clipboard">Send clipboard</string>
+    <string name="clip_sent_title">Clipboard sent</string>
+    <string name="clip_sent_body">Paste it on your PC</string>
+    <string name="clip_empty_title">Clipboard is empty</string>
+    <string name="clip_empty_body">Copy some text first, then send again.</string>
+    <string name="clip_big_title">Text is too big</string>
+    <string name="clip_big_body">Clipboard text can be up to 256 KB.</string>
+    <string name="clip_off_title">Clipboard sync is off</string>
+    <string name="clip_off_body">Turn it on in the Pill Phone settings.</string>
+    <string name="clip_received_toast">Clipboard updated from PC</string>
 </resources>
