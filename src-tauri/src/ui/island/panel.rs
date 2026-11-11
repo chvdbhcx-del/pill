@@ -476,6 +476,38 @@ mod tests {
         assert!(fx.frame && fx.cursor == Some(CursorShape::Hand) && fx.focus == Some(true));
     }
 
+    /// A tab that keeps asking for frames; `ambient` says whether that is only for a breathing background.
+    struct Breather(bool);
+    impl View for Breather {
+        fn step(&mut self, _dt_ms: f64, cx: &mut Cx) -> bool {
+            if self.0 {
+                cx.ambient_frame();
+            }
+            true
+        }
+        fn draw(&mut self, _cv: &Canvas, _th: &Theme, _rect: Rect, _cx: &Cx) {}
+    }
+
+    #[test]
+    fn a_tab_that_only_breathes_is_reported_as_ambient_and_a_busy_one_is_not() {
+        let _m = crate::ui::host::testing::motion_on();
+        let mut cx = Cx::headless();
+        for (ambient, keep) in [(true, false), (false, true)] {
+            let mut h = TabHost::new();
+            h.show("home", TabDir::Right, false, &mut cx, 0.0);
+            frames(&mut h, &mut cx, 100);
+            h.slots.insert("home".into(), Slot::new(Box::new(Breather(ambient)), false));
+            h.slots.get_mut("home").unwrap().a.jump(1.0);
+            assert_eq!(h.step(8.0, 0.0, &mut cx), keep, "ambient={ambient}");
+            assert_eq!(h.ambient(), ambient);
+            assert!(!cx.take_ambient(), "the host consumed the mark");
+        }
+        let mut h = TabHost::new();
+        h.show("home", TabDir::Right, false, &mut cx, 0.0);
+        frames(&mut h, &mut cx, 100);
+        assert!(!h.ambient(), "a quiet host is not ambient");
+    }
+
     fn frames(h: &mut TabHost, cx: &mut Cx, n: usize) {
         for _ in 0..n {
             h.step(8.0, 0.0, cx);

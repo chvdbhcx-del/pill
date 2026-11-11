@@ -98,9 +98,8 @@ const GLOW: Color = Color::rgb8(0xff, 0xd3, 0x6b);
 fn sun(cv: &Canvas, g: &Grid, cx: f32, cy: f32, r: f32, t: f64) {
     let c = g.p(cx, cy);
     let b = 0.5 + 0.5 * wave(t, 6.0, 0.0);
-    for (k, a) in [(2.7, 0.05), (2.1, 0.07), (1.6, 0.10)] {
-        cv.fill_circle(c, r * k * g.s * (0.94 + 0.08 * b), GLOW.alpha(a + 0.03 * b));
-    }
+    let gr = r * 2.8 * g.s * (0.94 + 0.08 * b);
+    super::super::draw::radial(cv, Rect::new(c.0 - gr, c.1 - gr, 2.0 * gr, 2.0 * gr), gr, c, gr, gr, &[(0.0, GLOW.alpha(0.30 + 0.08 * b)), (0.4, GLOW.alpha(0.12 + 0.04 * b)), (1.0, GLOW.alpha(0.0))]);
     let a0 = cycle(t, 48.0) * 360.0;
     for i in 0..8 {
         let (s, k) = (a0 + i as f32 * 45.0).to_radians().sin_cos();
@@ -190,7 +189,9 @@ pub fn draw(cv: &Canvas, scene: Scene, r: Rect, p: &Pose) {
                 let f = p.flash.clamp(0.0, 1.0);
                 if f > 0.01 {
                     cloud(cv, &g, Tone::Front, dx, -6.0 + dy, 0.95, 0.5 * f);
-                    cv.fill_circle(g.p(24.0, 38.0), 15.0 * g.s, Color::rgb8(0xff, 0xe5, 0x8a).alpha(0.30 * f));
+                    let (c, gr) = (g.p(25.0, 38.0), 17.0 * g.s);
+                    let glow = Color::rgb8(0xff, 0xe5, 0x8a);
+                    super::super::draw::radial(cv, Rect::new(c.0 - gr, c.1 - gr, 2.0 * gr, 2.0 * gr), gr, c, gr, gr, &[(0.0, glow.alpha(0.55 * f)), (0.5, glow.alpha(0.18 * f)), (1.0, glow.alpha(0.0))]);
                 }
                 shape(cv, &g, "bolt", BOLT, "#ffd23d", 0.0, 0.0, 1.0, 0.30 + 0.70 * f);
             }

@@ -199,7 +199,8 @@ fn left_card_pictures() {
             r.v.left.force_flash(0.85);
         }
         for (th, tn) in [(Theme::pill_dark(), "dark"), (Theme::pill_light(), "light")] {
-            let img = shoot(&mut r.v, &r.cx, &th, 1.0, "weather", &format!("sky-{name}-{tn}"));
+            r.cx.scale = 3.0;
+            let img = shoot(&mut r.v, &r.cx, &th, 3.0, "weather", &format!("sky-{name}-{tn}"));
             assert!(img.count(None, |p| p[3] > 0) > 4000, "{name} {tn} drew nothing");
         }
     }

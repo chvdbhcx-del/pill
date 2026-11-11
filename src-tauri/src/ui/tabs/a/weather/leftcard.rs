@@ -230,6 +230,15 @@ impl WeatherView {
             self.blobs(cv, left, l.from, 1.0 - l.blend.at01());
         }
         self.precip(cv, left);
+        if l.scene == Scene::Fog {
+            // three soft bands of mist drifting sideways at their own pace
+            for i in 0..3 {
+                let (dx, dy) = (34.0 * wave(l.t, 19.0 + 4.0 * i as f64, i as f32 * 0.31), 9.0 * wave(l.t, 13.0 + 3.0 * i as f64, i as f32 * 0.17));
+                let cy = left.y + left.h * (0.30 + 0.20 * i as f32) + dy;
+                let band = Rect::new(left.x, cy - 46.0, left.w, 92.0);
+                draw::radial(cv, band, 0.0, (left.x + left.w / 2.0 + dx, cy), left.w * 0.8, 46.0, &[(0.0, WHITE.alpha(0.10 * l.blend.at01())), (1.0, WHITE.alpha(0.0))]);
+            }
+        }
         if l.flash > 0.01 {
             cv.fill_rr(left, 16.0, WHITE.alpha(0.10 * l.flash));
         }
