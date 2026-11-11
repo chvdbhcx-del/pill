@@ -12,7 +12,27 @@ use std::time::{Duration, Instant};
 
 type Events = Arc<Mutex<Vec<(String, Value)>>>;
 
+/// The system clipboard replaced by memory: what the server wrote, and whether it asked for the listener.
+#[derive(Default)]
+pub(super) struct FakeClip {
+    pub(super) text: Mutex<Option<String>>,
+    pub(super) writes: std::sync::atomic::AtomicUsize,
+    pub(super) watching: std::sync::atomic::AtomicBool,
+}
+
+impl super::clip::ClipIo for FakeClip {
+    fn set_text(&self, text: &str) -> bool {
+        *self.text.lock().unwrap() = Some(text.to_string());
+        self.writes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        true
+    }
+    fn watch(&self, on: bool) {
+        self.watching.store(on, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 pub(super) struct Rig {
+    pub(super) clip: Arc<FakeClip>,
     pub(super) server: Option<Server>,
     pub(super) events: Events,
     pub(super) dir: PathBuf,
@@ -23,9 +43,10 @@ impl Rig {
     pub(super) fn new(loopback: bool) -> Rig {
         let dir = std::env::temp_dir().join(format!("pill-phone-e2e-{}", super::reg::new_id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let cfg = Arc::new(Mutex::new(Cfg { downloads: dir.join("dl"), max_bytes: 10 * 1024 * 1024, auto_accept: true, apk_url: "https://example.org/PillPhone.apk".into(), muted: vec![], pc_name: "TEST-PC".into(), relay_on: false, relay_url: String::new(), relay_max_bytes: 100 * 1024 * 1024 }));
+        let cfg = Arc::new(Mutex::new(Cfg { downloads: dir.join("dl"), max_bytes: 10 * 1024 * 1024, auto_accept: true, apk_url: "https://example.org/PillPhone.apk".into(), muted: vec![], pc_name: "TEST-PC".into(), relay_on: false, relay_url: String::new(), relay_max_bytes: 100 * 1024 * 1024, clip: Default::default() }));
         let events: Events = Default::default();
         let (c2, e2) = (cfg.clone(), events.clone());
+        let clip: Arc<FakeClip> = Default::default();
         let server = Server::start(Opts {
             dir: dir.join("data"),
             bind: Ipv4Addr::LOCALHOST,
@@ -33,9 +54,10 @@ impl Rig {
             allow_loopback: loopback,
             cfg: Arc::new(move || c2.lock().unwrap().clone()),
             emit: Arc::new(move |n, v| e2.lock().unwrap().push((n.to_string(), v))),
+            clip: clip.clone(),
         })
         .unwrap();
-        Rig { server: Some(server), events, dir, cfg }
+        Rig { clip, server: Some(server), events, dir, cfg }
     }
     pub(super) fn sh(&self) -> &super::server::Shared {
         &self.server.as_ref().unwrap().shared

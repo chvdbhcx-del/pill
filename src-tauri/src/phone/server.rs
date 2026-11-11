@@ -5,14 +5,14 @@ use super::files::{self, Dir, Refused, Status, Transfer, Transfers};
 use super::http::{self, Range, Req};
 use super::reg::{self, Device, Registry};
 use super::ws::{self, Msg};
-use super::{relay, v2};
+use super::{clip, relay, v2};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -40,6 +40,8 @@ pub struct Cfg {
     pub relay_url: String,
     /// `phone.relayMaxFileMB` in bytes: the size cap of a file that travels through the relay
     pub relay_max_bytes: u64,
+    /// `phone.clipboard` / `phone.clipToPhone` / `phone.clipFromPhone` (docs/phone-protocol.md, "Clipboard (v1.2)")
+    pub clip: clip::ClipCfg,
 }
 
 pub struct Opts {
@@ -52,6 +54,8 @@ pub struct Opts {
     pub cfg: Arc<dyn Fn() -> Cfg + Send + Sync>,
     /// bus events: `phone:state`, `phone:notif`, `phone:files`
     pub emit: Arc<dyn Fn(&str, Value) + Send + Sync>,
+    /// the system clipboard (the real one lives in clipwin.rs; tests bring a fake)
+    pub clip: Arc<dyn clip::ClipIo>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -91,14 +95,16 @@ pub(super) struct Conn {
     pub device: String,
     pub route: Route,
     out: Out,
+    /// the `clip` value of the phone's `caps` on THIS connection (0 = never announced, or switched off on the phone)
+    pub clip: AtomicU8,
 }
 
 impl Conn {
     fn lan(id: u64, device: &str, s: TcpStream) -> Conn {
-        Conn { id, device: device.to_string(), route: Route::Lan, out: Out::Tcp(Mutex::new(s)) }
+        Conn { id, device: device.to_string(), route: Route::Lan, out: Out::Tcp(Mutex::new(s)), clip: AtomicU8::new(0) }
     }
     pub fn relay(id: u64, device: &str, link: Arc<super::relay::Link>) -> Conn {
-        Conn { id, device: device.to_string(), route: Route::Relay, out: Out::Relay(link) }
+        Conn { id, device: device.to_string(), route: Route::Relay, out: Out::Relay(link), clip: AtomicU8::new(0) }
     }
     /// One v1 JSON message to the phone.
     pub fn send_text(&self, text: &str) -> bool {
@@ -140,6 +146,7 @@ pub struct Shared {
     stop: AtomicBool,
     live: AtomicUsize,
     seq: AtomicU64,
+    clipst: clip::State,
 }
 
 pub struct Server {
@@ -194,6 +201,7 @@ impl Server {
             stop: AtomicBool::new(false),
             live: AtomicUsize::new(0),
             seq: AtomicU64::new(1),
+            clipst: Default::default(),
         });
         let sh = shared.clone();
         let thread = std::thread::Builder::new().name("phone-accept".into()).spawn(move || accept_loop(listener, sh))?;
@@ -211,6 +219,7 @@ impl Server {
         if sh.stop.swap(true, Ordering::SeqCst) {
             return;
         }
+        sh.opts.clip.watch(false); // no listener outlives the link
         sh.relay.stop_all(sh); // closes the relay sockets and joins their threads (they detach their own links)
         let lan: Vec<Arc<Conn>> = sh.conns.lock().unwrap_or_else(|e| e.into_inner()).drain(..).collect();
         for c in lan {
@@ -575,6 +584,7 @@ impl Shared {
             self.reg.touch(&conn.device, now_ms(), true);
         }
         if had {
+            self.clip_sync(); // the last phone that wanted the clipboard may be gone
             self.emit("phone:state", self.status()); // the route may have changed too
         }
     }
@@ -692,6 +702,11 @@ impl Shared {
                     self.emit("phone:notif", json!({ "kind": "reply", "key": key, "ok": ok, "error": m["error"].as_str().map(|s| clip(&json!(s), 40)) }));
                 }
             }
+            "caps" => {
+                conn.clip.store(m["clip"].as_i64().unwrap_or(0).clamp(0, 255) as u8, Ordering::SeqCst);
+                self.clip_sync();
+            }
+            "clip" => self.clip_in(dev, m),
             "file.offer" => self.file_offer(dev, conn, &m),
             "file.done" => {
                 let id = clip(&m["id"], 64);
@@ -720,6 +735,50 @@ impl Shared {
             "file.abort" => self.rf_abort(dev, conn, m),
             _ => {}
         }
+    }
+
+    // ------------------------------------------------------------------------------------------------ clipboard (protocol v1.2)
+
+    /// Starts or stops watching the PC clipboard: only while the switches allow PC -> phone AND some connection announced `clip`. Idempotent.
+    pub fn clip_sync(&self) {
+        let c = self.cfg().clip;
+        let want = c.on && c.to_phone && !self.stopping() && self.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|c| c.clip.load(Ordering::SeqCst) >= 1);
+        self.opts.clip.watch(want);
+    }
+
+    /// The PC clipboard changed to `text` (formats already checked by the watcher). Sends it to every phone that announced `clip`
+    /// (LAN socket first, else the relay link); returns how many phones got it.
+    pub fn clip_local(&self, text: &str) -> usize {
+        let c = self.cfg().clip;
+        if !(c.on && c.to_phone) || self.clipst.check_outgoing(text).is_err() {
+            return 0;
+        }
+        let msg = clip::message(&reg::new_id(), text, now_ms()).to_string();
+        let mut ids: Vec<String> = self.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|c| c.clip.load(Ordering::SeqCst) >= 1).map(|c| c.device.clone()).collect();
+        ids.sort();
+        ids.dedup();
+        let n = ids.iter().filter(|id| self.channels(id).iter().any(|c| c.clip.load(Ordering::SeqCst) >= 1 && c.send_text(&msg))).count();
+        if n > 0 {
+            self.clipst.sent(text);
+        }
+        n
+    }
+
+    /// A `clip` from a phone: put it on the PC clipboard and tell the island (a short card). Needs the master switch and `phone.clipFromPhone`.
+    fn clip_in(&self, dev: &Device, m: &Value) {
+        let c = self.cfg().clip;
+        if !(c.on && c.from_phone) {
+            return;
+        }
+        let Some(text) = clip::parse(m) else { return };
+        if !self.clipst.take_incoming(&text) {
+            return;
+        }
+        if !self.opts.clip.set_text(&text) {
+            self.clipst.undo_incoming(&text);
+            return;
+        }
+        self.emit("phone:clip", json!({ "device": dev.id, "name": dev.name })); // never the text
     }
 
     fn notif_posted(&self, dev: &Device, m: &Value) {

@@ -2,8 +2,10 @@
 // It runs ONLY while Settings > Phone > "Phone link" (`phone.enabled`) is on; off = no thread, no socket. The server blocks on sockets (no polling).
 // Mirrored notifications, file transfers and pairing live in phone/server.rs; the pieces: ws.rs (WebSocket), http.rs, reg.rs (devices, codes,
 // limiter), files.rs (names, transfer table), page.rs (the QR landing page).
-// Events (bus): `phone:state` {running, ip, port, pcName, devices[], connected}, `phone:notif` {kind: posted|removed|read|reply, ...},
-// `phone:files` {kind: offer|start|progress|done|sent|failed|offered|accepted|rejected, transfer}.
+// Events (bus): `phone:state` {running, ip, port, pcName, devices[], connected, clipboard}, `phone:notif` {kind: posted|removed|read|reply, ...},
+// `phone:files` {kind: offer|start|progress|done|sent|failed|offered|accepted|rejected, transfer}, `phone:clip` {device, name} (a text from a phone
+// was put on the PC clipboard; never the text itself).
+// Clipboard sync (v1.2, clip.rs / clipwin.rs): opt-in `phone.clipboard`; the listener exists only while a phone that announced `clip` is connected.
 // PRIVACY / SECURITY: tokens only as SHA-256 in %LOCALAPPDATA%\Pill\phone\devices.json; pairing codes one-use, 5 minutes; private-network peers only;
 // neither tokens nor message text are ever logged; notification text is kept in memory only.
 use crate::ui::bus;
@@ -11,6 +13,8 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+mod clip;
+mod clipwin;
 mod files;
 mod http;
 mod info;
@@ -28,7 +32,7 @@ mod relay_tests;
 mod tests;
 
 /// Bus event names (also the literals the contract test looks for).
-pub const EVENTS: [&str; 3] = ["phone:state", "phone:notif", "phone:files"];
+pub const EVENTS: [&str; 4] = ["phone:state", "phone:notif", "phone:files", "phone:clip"];
 pub const DEFAULT_APK_URL: &str = "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk";
 const DEFAULT_PORT: u16 = 41717;
 
@@ -72,7 +76,23 @@ fn cfg() -> server::Cfg {
         relay_on: crate::settings::get_bool("phone.relay", true),
         relay_url: crate::settings::get_str("phone.relayUrl", "wss://pill-relay.chvdbhcx-pill.workers.dev"),
         relay_max_bytes: (crate::settings::get_f64("phone.relayMaxFileMB", 100.0).clamp(1.0, 4096.0) * 1024.0 * 1024.0) as u64,
+        clip: clip_cfg(),
     }
+}
+
+fn clip_cfg() -> clip::ClipCfg {
+    clip::ClipCfg {
+        on: crate::settings::get_bool("phone.clipboard", false),
+        to_phone: crate::settings::get_bool("phone.clipToPhone", true),
+        from_phone: crate::settings::get_bool("phone.clipFromPhone", true),
+    }
+}
+
+/// The system clipboard for the server.
+fn clip_io() -> Arc<dyn clip::ClipIo> {
+    Arc::new(clipwin::WinClip::new(Arc::new(|text| {
+        let _ = with(|s| s.clip_local(&text));
+    })))
 }
 
 fn start() {
@@ -91,6 +111,7 @@ fn start() {
             emit: Arc::new(|name, v| {
                 let _ = bus::emit(name, v);
             }),
+            clip: clip_io(),
         };
         if let Ok(s) = server::Server::start(opts) {
             if port != base {
@@ -130,9 +151,16 @@ fn sync() {
         drop(g);
         if let Some(sh) = sh {
             sh.relay_sync();
+            sh.clip_sync(); // a changed clipboard switch starts or stops the listener
         }
     }
+    // the Phone tab shows the clipboard switch: tell it when it flips
+    let clip_on = clip_cfg().on;
+    if CLIP_SHOWN.swap(clip_on, std::sync::atomic::Ordering::SeqCst) != clip_on {
+        let _ = bus::emit("phone:state", phone_status());
+    }
 }
+static CLIP_SHOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn init(_app: &tauri::App) {
     bus::subscribe("settings:changed", |_| sync());
@@ -153,6 +181,7 @@ pub fn phone_status() -> Value {
     let enabled = crate::settings::get_bool("phone.enabled", false);
     let mut v = with(|s| s.status()).unwrap_or_else(|| json!({ "running": false, "ip": null, "port": null, "pcName": pc_name(), "devices": [], "connected": 0 }));
     v["enabled"] = json!(enabled);
+    v["clipboard"] = json!(clip_cfg().on);
     v["error"] = json!(*lock(&ERROR));
     v
 }

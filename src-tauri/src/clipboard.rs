@@ -49,7 +49,7 @@ fn cfg_bool(key: &str, d: bool) -> bool {
 fn cfg_i64(key: &str, d: i64) -> i64 {
     setting(key).and_then(|v| v.as_i64()).unwrap_or(d)
 }
-fn deny_list() -> Vec<String> {
+pub(crate) fn deny_list() -> Vec<String> {
     match setting("clipboard.denyList").and_then(|v| v.as_array().cloned()) {
         Some(a) => a.iter().filter_map(|x| x.as_str().map(|s| s.to_lowercase())).collect(),
         None => DEFAULT_DENY.iter().map(|s| s.to_string()).collect(),
@@ -174,7 +174,7 @@ fn thumb_path(p: &str) -> String {
 }
 
 // ---------- Win32 helpers ----------
-unsafe fn exe_stem(hwnd: HWND) -> Option<String> {
+pub(crate) unsafe fn exe_stem(hwnd: HWND) -> Option<String> {
     let mut pid = 0u32;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
     let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
@@ -187,7 +187,7 @@ unsafe fn exe_stem(hwnd: HWND) -> Option<String> {
     Some(std::path::Path::new(&p).file_stem()?.to_string_lossy().to_lowercase())
 }
 
-unsafe fn open_clipboard() -> bool {
+pub(crate) unsafe fn open_clipboard() -> bool {
     for _ in 0..10 {
         if OpenClipboard(HWND::default()).is_ok() {
             return true;
@@ -197,7 +197,7 @@ unsafe fn open_clipboard() -> bool {
     false
 }
 
-unsafe fn global_bytes(fmt: u32, max: usize) -> Option<Vec<u8>> {
+pub(crate) unsafe fn global_bytes(fmt: u32, max: usize) -> Option<Vec<u8>> {
     let h = HGLOBAL(GetClipboardData(fmt).ok()?.0);
     let n = GlobalSize(h);
     if n == 0 || n > max {
@@ -212,7 +212,7 @@ unsafe fn global_bytes(fmt: u32, max: usize) -> Option<Vec<u8>> {
     Some(v)
 }
 
-unsafe fn set_global(fmt: u32, data: &[u8]) -> bool {
+pub(crate) unsafe fn set_global(fmt: u32, data: &[u8]) -> bool {
     let Ok(h) = GlobalAlloc(GMEM_MOVEABLE, data.len().max(1)) else { return false };
     let p = GlobalLock(h) as *mut u8;
     if p.is_null() {
@@ -223,7 +223,7 @@ unsafe fn set_global(fmt: u32, data: &[u8]) -> bool {
     SetClipboardData(fmt, HANDLE(h.0)).is_ok() // on success the system owns the memory
 }
 
-fn utf16_bytes(s: &str, nul2: bool) -> Vec<u8> {
+pub(crate) fn utf16_bytes(s: &str, nul2: bool) -> Vec<u8> {
     let mut v: Vec<u16> = s.encode_utf16().collect();
     v.push(0);
     if nul2 {
