@@ -9,7 +9,8 @@ import androidx.annotation.StringRes
 import app.pill.phone.PillApp
 import app.pill.phone.R
 import app.pill.phone.data.Store
-import app.pill.phone.net.Link
+import app.pill.phone.net.LinkManager
+import app.pill.phone.net.PcLink
 import app.pill.phone.net.PcApi
 import app.pill.phone.net.Route
 import app.pill.phone.net.await
@@ -36,6 +37,7 @@ import java.io.FileInputStream
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /** One row of the Files list. */
 data class Transfer(
@@ -49,12 +51,29 @@ data class Transfer(
     val errorArg: Int = 0,
     val uri: Uri? = null,
     val mime: String = "",
+    /** The PC this file goes to / comes from. */
+    val pcId: String = "",
 ) {
     val progress: Float get() = if (size > 0) (bytes.toFloat() / size).coerceIn(0f, 1f) else 0f
 }
 
-/** A file picked on the phone, already opened so it can still be read after the share activity is gone. */
-class Source(val name: String, val size: Long, val mime: String, val pfd: ParcelFileDescriptor)
+/**
+ * A file picked on the phone, already opened so it can still be read after the share activity is gone. One source can go to
+ * several PCs at once (send to all): it is reference counted and read by position, so uploads to different PCs do not share a file offset.
+ */
+class Source(val name: String, val size: Long, val mime: String, val pfd: ParcelFileDescriptor) {
+    private val refs = AtomicInteger(1)
+    private val channel by lazy { FileInputStream(pfd.fileDescriptor).channel }
+
+    /** One more user of this file (one more PC it is sent to). */
+    fun retain(n: Int = 1) { refs.addAndGet(n) }
+
+    /** A user is done; the last one closes the descriptor. */
+    fun release() { if (refs.decrementAndGet() <= 0) runCatching { pfd.close() } }
+
+    /** Reads up to [len] bytes at [pos] into [buf]; -1 at the end. */
+    fun readAt(buf: ByteArray, len: Int, pos: Long): Int = channel.read(java.nio.ByteBuffer.wrap(buf, 0, len), pos)
+}
 
 /**
  * File transfer in both directions (protocol "file.*" messages and /api/up, /api/down).
@@ -65,8 +84,11 @@ object Transfers {
     val items: StateFlow<List<Transfer>> = _items
 
     private val answers = ConcurrentHashMap<String, CompletableDeferred<Msg>>()
-    private val uploadQueue = Channel<suspend () -> Unit>(Channel.UNLIMITED)
-    private var worker = false
+    /** One upload queue and worker per PC, so a PC that is slow to answer never holds up a file going to another. */
+    private val uploadQueues = ConcurrentHashMap<String, Channel<suspend () -> Unit>>()
+
+    /** Ids are only unique per PC, so every map of running transfers is keyed by both. */
+    private fun key(pcId: String, id: String) = "$pcId|$id"
 
     private const val KEEP = 30
     private const val ANSWER_TIMEOUT_MS = 60_000L
@@ -106,37 +128,45 @@ object Transfers {
         return Source(clean, size, mime, pfd)
     }
 
-    fun send(ctx: Context, sources: List<Source>) {
+    /**
+     * Queue every source for every PC in [pcIds] (one PC, or all of them for "send to all"). Each (file, PC) pair is its own
+     * transfer with its own row, so one PC saying no or being offline leaves the others untouched.
+     */
+    fun send(ctx: Context, sources: List<Source>, pcIds: List<String>) {
         val app = ctx.applicationContext
-        ensureWorker()
-        for (s in sources) {
-            val id = UUID.randomUUID().toString()
-            add(Transfer(id, s.name, s.size, true, TransferPhase.Waiting, mime = s.mime))
-            uploadQueue.trySend { upload(app, id, s) }
-        }
-    }
-
-    private fun ensureWorker() {
-        synchronized(this) {
-            if (worker) return
-            worker = true
-        }
-        PillApp.scope.launch(Dispatchers.IO) {
-            for (job in uploadQueue) {
-                try { job() } catch (e: CancellationException) { throw e } catch (_: Exception) { }
+        val targets = pcIds.distinct()
+        if (targets.isEmpty()) { sources.forEach { it.release() }; return }
+        sources.forEach { it.retain(targets.size - 1) }
+        for (pcId in targets) {
+            val queue = queueFor(pcId)
+            for (s in sources) {
+                val id = UUID.randomUUID().toString()
+                add(Transfer(id, s.name, s.size, true, TransferPhase.Waiting, mime = s.mime, pcId = pcId))
+                queue.trySend { upload(app, id, pcId, s) }
             }
         }
     }
 
-    private suspend fun upload(ctx: Context, id: String, s: Source) {
-        s.pfd.use {
-            val p = Store.paired.value
-            if (p == null || !Link.isConnected) return fail(ctx, id, R.string.tr_err_not_connected)
-            if (Link.route == Route.Relay && tooBigForRelay(s.size)) return fail(ctx, id, R.string.tr_err_relay_big, Link.relayMaxFileMB.value)
-            val answer = CompletableDeferred<Msg>().also { answers[id] = it }
-            Link.send(Msg.FileOffer(id, s.name, s.size, s.mime.ifBlank { Saver.guessMime(s.name, "") }))
+    private fun queueFor(pcId: String): Channel<suspend () -> Unit> = uploadQueues.getOrPut(pcId) {
+        Channel<suspend () -> Unit>(Channel.UNLIMITED).also { q ->
+            PillApp.scope.launch(Dispatchers.IO) {
+                for (job in q) {
+                    try { job() } catch (e: CancellationException) { throw e } catch (_: Exception) { }
+                }
+            }
+        }
+    }
+
+    private suspend fun upload(ctx: Context, id: String, pcId: String, s: Source) {
+        try {
+            val p = Store.pc(pcId)
+            val link = LinkManager.link(pcId)
+            if (p == null || link == null || !link.isConnected) return fail(ctx, id, R.string.tr_err_not_connected)
+            if (link.route == Route.Relay && tooBigForRelay(link, s.size)) return fail(ctx, id, R.string.tr_err_relay_big, link.relayMaxFileMB.value)
+            val answer = CompletableDeferred<Msg>().also { answers[key(pcId, id)] = it }
+            link.send(Msg.FileOffer(id, s.name, s.size, s.mime.ifBlank { Saver.guessMime(s.name, "") }))
             val reply = withTimeoutOrNull(ANSWER_TIMEOUT_MS) { answer.await() }
-            answers.remove(id)
+            answers.remove(key(pcId, id))
             when (reply) {
                 is Msg.FileAccept -> Unit
                 is Msg.FileReject -> return fail(ctx, id, R.string.tr_err_declined)
@@ -144,17 +174,16 @@ object Transfers {
             }
             patch(id) { it.copy(phase = TransferPhase.Active) }
             Notifs.progress(ctx, id, s.name, true, 0f)
-            if (Link.route == Route.Relay) return uploadViaRelay(ctx, id, s)
+            if (link.route == Route.Relay) return uploadViaRelay(ctx, id, link, s)
             val body = object : RequestBody() {
                 override fun contentType() = (s.mime.ifBlank { "application/octet-stream" }).toMediaTypeOrNull()
                 override fun contentLength() = s.size
                 override fun writeTo(sink: BufferedSink) {
-                    val input = FileInputStream(s.pfd.fileDescriptor)
                     val buf = ByteArray(64 * 1024)
                     var sent = 0L
                     var lastUi = 0L
                     while (sent < s.size) {
-                        val n = input.read(buf, 0, minOf(buf.size.toLong(), s.size - sent).toInt())
+                        val n = s.readAt(buf, minOf(buf.size.toLong(), s.size - sent).toInt(), sent)
                         if (n < 0) throw IOException("file shorter than announced")
                         sink.write(buf, 0, n)
                         sent += n
@@ -170,25 +199,26 @@ object Transfers {
             } catch (_: IOException) {
                 fail(ctx, id, R.string.tr_err_io)
             }
+        } finally {
+            s.release()
         }
     }
 
     // ---- through the relay: file.chunk / file.ack / file.end / file.abort (docs/phone-relay.md), no HTTP side channel ----
 
-    private fun tooBigForRelay(size: Long) = size > Link.relayMaxFileMB.value * 1024L * 1024L
+    private fun tooBigForRelay(link: PcLink, size: Long) = size > link.relayMaxFileMB.value * 1024L * 1024L
 
-    /** The data messages of a running relay transfer, by file id. */
+    /** The data messages of a running relay transfer, by PC and file id. */
     private val flows = ConcurrentHashMap<String, Channel<Msg>>()
 
-    private fun inbox(id: String) = Channel<Msg>(Channel.UNLIMITED).also { flows[id] = it }
+    private fun inbox(pcId: String, id: String) = Channel<Msg>(Channel.UNLIMITED).also { flows[key(pcId, id)] = it }
 
     /** Streams the file from its descriptor; never more than the window of chunks in memory. */
-    private suspend fun uploadViaRelay(ctx: Context, id: String, s: Source) {
-        val box = inbox(id)
+    private suspend fun uploadViaRelay(ctx: Context, id: String, link: PcLink, s: Source) {
+        val box = inbox(link.pcId, id)
         try {
-            Link.holdRelay {
+            link.holdRelay {
                 val win = SendWindow()
-                val input = FileInputStream(s.pfd.fileDescriptor)
                 val buf = ByteArray(ChunkFlow.CHUNK)
                 var sent = 0L
                 var lastUi = 0L
@@ -209,18 +239,18 @@ object Transfers {
                 while (sent < s.size) {
                     while (!win.canSend()) {
                         val m = withTimeoutOrNull(STALL_MS) { box.receive() }
-                        if (m == null) { Link.send(Msg.FileAbort(id, "stalled")); return@holdRelay fail(ctx, id, R.string.tr_err_io) }
+                        if (m == null) { link.send(Msg.FileAbort(id, "stalled")); return@holdRelay fail(ctx, id, R.string.tr_err_io) }
                         if (handleAnswer(m)) return@holdRelay
                     }
                     while (true) { val m = box.tryReceive().getOrNull() ?: break; if (handleAnswer(m)) return@holdRelay }
-                    val n = input.read(buf, 0, minOf(buf.size.toLong(), s.size - sent).toInt())
-                    if (n < 0) { Link.send(Msg.FileAbort(id, "short_file")); return@holdRelay fail(ctx, id, R.string.tr_err_io) }
-                    if (!Link.send(Msg.FileChunk(id, sent, ChunkFlow.encode(buf, n)))) return@holdRelay fail(ctx, id, R.string.tr_err_io)
+                    val n = s.readAt(buf, minOf(buf.size.toLong(), s.size - sent).toInt(), sent)
+                    if (n < 0) { link.send(Msg.FileAbort(id, "short_file")); return@holdRelay fail(ctx, id, R.string.tr_err_io) }
+                    if (!link.send(Msg.FileChunk(id, sent, ChunkFlow.encode(buf, n)))) return@holdRelay fail(ctx, id, R.string.tr_err_io)
                     sent += n
                     win.onSent(sent)
                     delay(ChunkFlow.paceDelayMs(n))
                 }
-                if (!Link.send(Msg.FileEnd(id, s.size))) return@holdRelay fail(ctx, id, R.string.tr_err_io)
+                if (!link.send(Msg.FileEnd(id, s.size))) return@holdRelay fail(ctx, id, R.string.tr_err_io)
                 // done when the last byte is acknowledged (or the PC says file.done); the PC may also say it failed
                 while (win.acked < s.size) {
                     val m = withTimeoutOrNull(FINISH_MS) { box.receive() } ?: return@holdRelay fail(ctx, id, R.string.tr_err_no_answer)
@@ -232,42 +262,42 @@ object Transfers {
         } catch (e: IOException) {
             fail(ctx, id, R.string.tr_err_io)
         } finally {
-            flows.remove(id)?.close()
+            flows.remove(key(link.pcId, id))?.close()
         }
     }
 
-    private suspend fun downloadViaRelay(ctx: Context, t: Transfer) {
-        if (tooBigForRelay(t.size)) return fail(ctx, t.id, R.string.tr_err_relay_big, Link.relayMaxFileMB.value)
+    private suspend fun downloadViaRelay(ctx: Context, t: Transfer, link: PcLink) {
+        if (tooBigForRelay(link, t.size)) return fail(ctx, t.id, R.string.tr_err_relay_big, link.relayMaxFileMB.value)
         val saved = try {
             Saver.open(ctx, t.name, t.mime)
         } catch (_: Exception) {
             return fail(ctx, t.id, R.string.tr_err_save)
         }
-        val box = inbox(t.id)
+        val box = inbox(t.pcId, t.id)
         val rx = ChunkReceiver(t.size)
         var error: Int? = null
         try {
-            Link.holdRelay {
-                if (!Link.send(Msg.FileAccept(t.id))) { error = R.string.tr_err_io; return@holdRelay }
+            link.holdRelay {
+                if (!link.send(Msg.FileAccept(t.id))) { error = R.string.tr_err_io; return@holdRelay }
                 var lastUi = 0L
                 while (error == null) {
                     val m = withTimeoutOrNull(STALL_MS) { box.receive() }
                     when (m) {
-                        null -> { Link.send(Msg.FileAbort(t.id, "stalled")); error = R.string.tr_err_io }
+                        null -> { link.send(Msg.FileAbort(t.id, "stalled")); error = R.string.tr_err_io }
                         is Msg.FileChunk -> {
                             val data = ChunkFlow.decode(m.d)
                             if (data == null || rx.accept(m.off, data.size) != ChunkReceiver.Result.Ok) {
-                                Link.send(Msg.FileAbort(t.id, "bad_chunk")); error = R.string.tr_err_io
+                                link.send(Msg.FileAbort(t.id, "bad_chunk")); error = R.string.tr_err_io
                             } else {
                                 saved.out.write(data)
-                                Link.send(Msg.FileAck(t.id, rx.received))
+                                link.send(Msg.FileAck(t.id, rx.received))
                                 val now = System.currentTimeMillis()
                                 if (now - lastUi > 150) { lastUi = now; progress(ctx, t.id, t.name, false, rx.received) }
                             }
                         }
                         is Msg.FileEnd -> {
                             if (rx.complete(m.size)) break
-                            Link.send(Msg.FileAbort(t.id, "size_mismatch")); error = R.string.tr_err_io
+                            link.send(Msg.FileAbort(t.id, "size_mismatch")); error = R.string.tr_err_io
                         }
                         is Msg.FileAbort -> error = R.string.tr_err_declined
                         else -> Unit
@@ -277,15 +307,15 @@ object Transfers {
         } catch (e: IOException) {
             error = R.string.tr_err_save
         } finally {
-            flows.remove(t.id)?.close()
+            flows.remove(key(t.pcId, t.id))?.close()
         }
         if (error != null) {
             saved.abort()
-            Link.send(Msg.FileDone(t.id, false))
+            link.send(Msg.FileDone(t.id, false))
             return fail(ctx, t.id, error!!)
         }
         saved.finish { uri -> succeed(ctx, t.id, uri) }
-        Link.send(Msg.FileDone(t.id, true))
+        link.send(Msg.FileDone(t.id, true))
     }
 
     private const val STALL_MS = 45_000L
@@ -293,20 +323,24 @@ object Transfers {
 
     // ---- PC -> phone ----
 
-    fun handle(ctx: Context, m: Msg) {
+    /** A file message from [pcId]; it only ever touches that PC's own transfers. */
+    fun handle(ctx: Context, pcId: String, m: Msg) {
         when (m) {
-            is Msg.FileChunk -> flows[m.id]?.trySend(m)
-            is Msg.FileAck -> flows[m.id]?.trySend(m)
-            is Msg.FileEnd -> flows[m.id]?.trySend(m)
-            is Msg.FileAbort -> flows[m.id]?.trySend(m)
-            is Msg.FileDone -> flows[m.id]?.trySend(m)
-            is Msg.FileAccept -> answers[m.id]?.complete(m)
-            is Msg.FileReject -> answers[m.id]?.complete(m)
+            is Msg.FileChunk -> flows[key(pcId, m.id)]?.trySend(m)
+            is Msg.FileAck -> flows[key(pcId, m.id)]?.trySend(m)
+            is Msg.FileEnd -> flows[key(pcId, m.id)]?.trySend(m)
+            is Msg.FileAbort -> flows[key(pcId, m.id)]?.trySend(m)
+            is Msg.FileDone -> flows[key(pcId, m.id)]?.trySend(m)
+            is Msg.FileAccept -> answers[key(pcId, m.id)]?.complete(m)
+            is Msg.FileReject -> answers[key(pcId, m.id)]?.complete(m)
             is Msg.FileOffer -> {
                 val name = FileNames.sanitize(m.name)
-                add(Transfer(m.id, name, m.size, false, TransferPhase.Offered, mime = m.mime))
-                Notifs.offered(ctx, m.id, name, m.size)
-                if (Store.autoReceive.value) accept(ctx, m.id)
+                val pcs = Store.pcs.value
+                val pc = pcs.firstOrNull { it.pcId == pcId }
+                add(Transfer(m.id, name, m.size, false, TransferPhase.Offered, mime = m.mime, pcId = pcId))
+                // the notification names the PC only when there is a choice of PCs
+                Notifs.offered(ctx, m.id, name, m.size, pc?.label?.takeIf { pcs.size >= 2 })
+                if (pc?.autoReceives(Store.autoReceive.value) == true) accept(ctx, m.id)
             }
             else -> Unit
         }
@@ -321,12 +355,14 @@ object Transfers {
     }
 
     private suspend fun download(ctx: Context, t: Transfer) {
-        val p = Store.paired.value ?: return fail(ctx, t.id, R.string.tr_err_not_connected)
-        if (Link.route == Route.Relay) return downloadViaRelay(ctx, t)
+        val p = Store.pc(t.pcId)
+        val link = LinkManager.link(t.pcId)
+        if (p == null || link == null) return fail(ctx, t.id, R.string.tr_err_not_connected)
+        if (link.route == Route.Relay) return downloadViaRelay(ctx, t, link)
         val saved = try {
             Saver.open(ctx, t.name, t.mime)
         } catch (_: Exception) {
-            Link.send(Msg.FileDone(t.id, false))
+            link.send(Msg.FileDone(t.id, false))
             return fail(ctx, t.id, R.string.tr_err_save)
         }
         var written = 0L
@@ -369,11 +405,11 @@ object Transfers {
         }
         if (error != null || written < t.size) {
             saved.abort()
-            Link.send(Msg.FileDone(t.id, false))
+            link.send(Msg.FileDone(t.id, false))
             return fail(ctx, t.id, error ?: R.string.tr_err_io, errorArg)
         }
         saved.finish { uri -> succeed(ctx, t.id, uri) }
-        Link.send(Msg.FileDone(t.id, true))
+        link.send(Msg.FileDone(t.id, true))
     }
 
     // ---- state ----

@@ -35,6 +35,32 @@ data class TransferUi(
     /** Short reason for [TransferPhase.Failed], already user-readable. */
     val detail: String? = null,
     val canOpen: Boolean = false,
+    /** Which PC the file goes to / comes from; set only when two or more PCs are paired. */
+    val pc: String? = null,
+)
+
+/** One paired PC as the Home switcher shows it. */
+@Immutable
+data class PcUi(val pcId: String, val name: String, val link: LinkUi, val route: Route? = null)
+
+/** One paired PC as the Settings "PCs" section shows it. */
+@Immutable
+data class PcSettingsUi(
+    val pcId: String,
+    /** The user's name for it (or the PC's own). */
+    val name: String,
+    /** What the PC calls itself. */
+    val pcName: String,
+    val address: String,
+    val link: LinkUi,
+    val route: Route? = null,
+    /** Last time a session was up, ms; 0 = never. */
+    val lastSeen: Long = 0,
+    val mirror: Boolean = true,
+    val autoReceive: Boolean = false,
+    /** The PC has its own app filter instead of the global one. */
+    val ownFilter: Boolean = false,
+    val filterCount: Int? = null,
 )
 
 @Immutable
@@ -57,6 +83,9 @@ data class HomeUi(
     val relay: RelayState = RelayState.Standby,
     /** The "This phone" row shows its details. */
     val phoneExpanded: Boolean = false,
+    /** Every paired PC; the switcher on the hero appears with two or more. [link], [pcName], [route]... describe [selectedPcId]. */
+    val pcs: List<PcUi> = emptyList(),
+    val selectedPcId: String? = null,
 )
 
 @Immutable
@@ -79,6 +108,8 @@ data class SettingsUi(
     val route: Route? = null,
     /** Cap of a file through the relay, MB. */
     val relayMaxMb: Int = 100,
+    /** Every paired PC, for the "PCs" section (shown from two on; one PC keeps the single card). */
+    val pcs: List<PcSettingsUi> = emptyList(),
 )
 
 /** The pairing flow, one state at a time. */

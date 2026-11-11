@@ -2,6 +2,13 @@ package app.pill.phone.ui.screens
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.runtime.getValue
+import app.pill.phone.ui.PcUi
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -81,6 +88,7 @@ class HomeActions(
     val onSendFiles: () -> Unit = {},
     val onApps: () -> Unit = {},
     val onReconnect: () -> Unit = {},
+    val onSelectPc: (String) -> Unit = {},
     val onTogglePhone: () -> Unit = {},
     val onOpenTransfer: (String) -> Unit = {},
     val onAcceptTransfer: (String) -> Unit = {},
@@ -192,6 +200,10 @@ private fun Hero(ui: HomeUi, actions: HomeActions, modifier: Modifier) {
                 }
             }
         }
+        // with two or more PCs: small pills choose which one the card describes
+        AnimatedVisibility(ui.pcs.size >= 2, enter = Motion.enterItem, exit = Motion.exitItem) {
+            PcSwitcher(ui.pcs, ui.selectedPcId, actions.onSelectPc, Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp))
+        }
         AnimatedVisibility(explain != null, enter = Motion.enterItem, exit = Motion.exitItem) {
             // keep the last text while it fades out
             val last = remember { intArrayOf(0) }
@@ -202,6 +214,37 @@ private fun Hero(ui: HomeUi, actions: HomeActions, modifier: Modifier) {
             )
         }
         HeroButtons(ui.link, actions)
+    }
+}
+
+/** Small pills, one per PC: a status dot and the name. The selected one is tinted; the selection and the dot colour move on springs. */
+@Composable
+private fun PcSwitcher(pcs: List<PcUi>, selected: String?, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        pcs.forEach { PcPill(it, it.pcId == selected, { onSelect(it.pcId) }) }
+    }
+}
+
+@Composable
+private fun PcPill(pc: PcUi, selected: Boolean, onClick: () -> Unit) {
+    val c = Pill.colors
+    val accent = if (c.dark) c.accentSoft else c.accent
+    val fill by animateColorAsState(if (selected) accent.copy(alpha = 0.16f) else c.surfaceHigh, Motion.calm(), label = "pcFill")
+    val line by animateColorAsState(if (selected) accent.copy(alpha = 0.55f) else c.border, Motion.calm(), label = "pcLine")
+    val text by animateColorAsState(if (selected) c.text else c.textDim, Motion.calm(), label = "pcText")
+    val dotColor by animateColorAsState(
+        when (pc.link) { LinkUi.Connected -> c.good; LinkUi.Connecting -> accent; else -> c.textDim },
+        Motion.calm(), label = "pcDot",
+    )
+    val dot by animateDpAsState(if (selected) 9.dp else 7.dp, Motion.bouncy(), label = "pcDotSize")
+    Row(
+        Modifier.clip(CircleShape).background(fill).border(1.dp, line, CircleShape).pressable(pressedScale = 0.94f, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(9.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(dot).clip(CircleShape).background(dotColor)) }
+        Spacer(Modifier.width(7.dp))
+        Text(pc.name, Modifier.widthIn(max = 150.dp), style = MaterialTheme.typography.labelMedium, color = text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -288,7 +331,7 @@ private fun TransferCard(t: TransferUi, a: HomeActions, modifier: Modifier) {
                     TransferPhase.Failed -> t.detail ?: stringResource(R.string.tr_failed)
                 }
                 Text(
-                    "$status  ·  ${t.sizeText}", style = MaterialTheme.typography.bodySmall,
+                    "$status  ·  ${t.sizeText}" + (t.pc?.let { "  ·  $it" } ?: ""), style = MaterialTheme.typography.bodySmall,
                     color = if (t.phase == TransferPhase.Failed) c.bad else c.textDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }

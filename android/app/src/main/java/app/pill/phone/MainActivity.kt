@@ -27,8 +27,8 @@ class MainActivity : ComponentActivity() {
     private val storage = registerForActivityResult(ActivityResultContracts.RequestPermission()) { vm.refreshPerms() }
     private val picker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) lifecycleScope.launch {
-            // Open the files while the picker's grant is valid, then hand them to the process-wide transfer queue.
-            Transfers.send(this@MainActivity, Transfers.prepare(this@MainActivity, uris))
+            // Open the files while the picker's grant is valid, then let the view model send them (asking which PC when there are several).
+            vm.onFilesPicked(Transfers.prepare(this@MainActivity, uris))
         }
     }
 

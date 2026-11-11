@@ -250,4 +250,41 @@
     <string name="relay_file_cap">Files over the internet: up to %1$d MB</string>
     <string name="state_notfound_pc">Your PC is not running</string>
     <string name="notif_pc_offline">Waiting for your PC · internet link ready</string>
+
+    <!-- Several PCs -->
+    <string name="notif_connected_all">Connected to %1$d PCs</string>
+    <string name="notif_connected_some">%1$d of %2$d PCs reachable</string>
+    <string name="notif_connecting_all">Connecting to your PCs…</string>
+    <string name="notif_notfound_all">PCs not found on this network</string>
+    <string name="notif_pc_removed">%1$s removed this phone</string>
+    <string name="file_from_named_pc">File from %1$s</string>
+    <string name="pcs_section">PCs</string>
+    <string name="pcs_add">Add another PC</string>
+    <string name="pcs_rename">Rename</string>
+    <string name="pcs_rename_title">Name this PC</string>
+    <string name="pcs_rename_hint">Your name for it. The PC keeps its own.</string>
+    <string name="field_pc_name">Name</string>
+    <string name="btn_save">Save</string>
+    <string name="pcs_mirror">Mirror notifications</string>
+    <string name="pcs_mirror_body">Show this phone\'s notifications on this PC</string>
+    <string name="pcs_auto_receive">Auto-receive files</string>
+    <string name="pcs_auto_receive_body">Save files from this PC without asking</string>
+    <string name="pcs_filter">Own app filter</string>
+    <string name="pcs_filter_same">Same apps as for all PCs</string>
+    <string name="pcs_filter_custom">Its own list of apps</string>
+    <string name="pcs_filter_edit">Choose apps</string>
+    <string name="pcs_last_seen">Last seen %1$s</string>
+    <string name="pcs_never_seen">Not connected yet</string>
+    <string name="pcs_connected_via">Connected · %1$s</string>
+    <string name="pcs_offline">Not reachable</string>
+    <string name="pcs_connecting">Connecting…</string>
+    <string name="apps_title_for">Apps · %1$s</string>
+    <string name="pick_title">Send to which PC?</string>
+    <plurals name="pick_files">
+        <item quantity="one">%d file</item>
+        <item quantity="other">%d files</item>
+    </plurals>
+    <string name="pick_all">Send to all PCs</string>
+    <string name="pick_none">No PC is reachable right now</string>
+    <string name="pick_offline">Offline</string>
 </resources>

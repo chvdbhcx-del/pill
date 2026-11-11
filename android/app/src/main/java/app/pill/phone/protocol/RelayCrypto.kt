@@ -12,6 +12,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /** What a pairing with a v2 PC leaves on the phone (docs/phone-relay.md, "Keys"). Strings so [Paired] keeps value equality. */
+@kotlinx.serialization.Serializable
 data class RelayCfg(
     /** Base URL of the relay worker, `wss://...`. */
     val url: String,

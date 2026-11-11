@@ -2,7 +2,7 @@ package app.pill.phone
 
 import android.app.Application
 import app.pill.phone.data.Store
-import app.pill.phone.net.Link
+import app.pill.phone.net.LinkManager
 import app.pill.phone.protocol.Msg
 import app.pill.phone.service.NotifBridge
 import app.pill.phone.service.Notifs
@@ -17,14 +17,14 @@ class PillApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Store.init(this)
-        Link.init(this)
+        LinkManager.init(this)
         Notifs.createChannels(this)
         scope.launch {
             // One place routes every frame from the PC to whoever handles it.
-            Link.incoming.collect { m ->
-                if (m is Msg.Hello) StatusReporter.onHello()
-                NotifBridge.handle(this@PillApp, m)
-                Transfers.handle(this@PillApp, m)
+            LinkManager.incoming.collect { (pcId, m) ->
+                if (m is Msg.Hello) StatusReporter.onHello(pcId)
+                NotifBridge.handle(this@PillApp, pcId, m)
+                Transfers.handle(this@PillApp, pcId, m)
             }
         }
     }

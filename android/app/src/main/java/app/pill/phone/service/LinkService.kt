@@ -12,8 +12,7 @@ import android.os.IBinder
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import app.pill.phone.data.Store
-import app.pill.phone.net.Link
-import app.pill.phone.net.LinkState
+import app.pill.phone.net.LinkManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,22 +36,31 @@ class LinkService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val paired = Store.paired.value
-        enterForeground(Notifs.link(this, LinkState.Connecting, paired?.pcName.orEmpty()))
-        if (paired == null) {
+        val pcs = Store.pcs.value
+        enterForeground(Notifs.link(this, pcs, emptyMap()))
+        if (pcs.isEmpty()) {
             stopSelf()
             return
         }
-        Link.start(scope)
+        LinkManager.start(scope)
         StatusReporter.start(this, scope)
         watchNetwork()
         scope.launch {
-            combine(Link.state, Store.paired) { s, p -> s to p }.collect { (state, p) ->
-                if (p == null && state !is LinkState.Revoked) { stopSelf(); return@collect }
-                val n = Notifs.link(this@LinkService, state, p?.pcName.orEmpty())
+            // The headline follows all PCs: "Connected to AENEAS", "Connected to 2 PCs", "1 of 2 PCs reachable".
+            combine(LinkManager.views, Store.pcs, LinkManager.revoked) { v, p, r -> Triple(v, p, r) }.collect { (views, list, revoked) ->
+                if (list.isEmpty() && revoked.isEmpty()) { stopSelf(); return@collect }
+                val n = Notifs.link(this@LinkService, list, views, revoked = revoked.isNotEmpty())
                 getSystemService(NotificationManager::class.java).notify(Notifs.ID_LINK, n)
-                // The PC revoked us: nothing left to keep alive, the notification stays only until the user looks.
-                if (state is LinkState.Revoked) stopForegroundKeepingNotification()
+                // Every PC removed us: nothing left to keep alive, the notification stays only until the user looks.
+                if (list.isEmpty()) stopForegroundKeepingNotification()
+            }
+        }
+        scope.launch {
+            // One of several PCs removed this phone: say so once, the others keep running
+            var seen = 0
+            LinkManager.revoked.collect { names ->
+                if (names.size > seen && Store.pcs.value.isNotEmpty()) Notifs.pcRemoved(this@LinkService, names.last())
+                seen = names.size
             }
         }
     }
@@ -77,7 +85,7 @@ class LinkService : Service() {
             override fun onAvailable(network: Network) {
                 val changed = lastNetwork != null && lastNetwork != network
                 lastNetwork = network
-                if (changed) Link.networkChanged() else Link.nudge()
+                if (changed) LinkManager.networkChanged() else LinkManager.nudge()
                 StatusReporter.poke()
             }
 
@@ -105,7 +113,7 @@ class LinkService : Service() {
     override fun onDestroy() {
         netCallback?.let { runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(it) } }
         StatusReporter.stop()
-        Link.stop()
+        LinkManager.stop()
         scope.cancel()
         super.onDestroy()
     }
@@ -113,7 +121,7 @@ class LinkService : Service() {
     companion object {
         /** Start (or keep) the link. Safe to call from anywhere; if the system forbids it right now, it is simply skipped. */
         fun start(ctx: Context) {
-            if (Store.paired.value == null) return
+            if (Store.pcs.value.isEmpty()) return
             try {
                 ContextCompat.startForegroundService(ctx, Intent(ctx, LinkService::class.java))
             } catch (_: Exception) {

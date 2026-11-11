@@ -77,11 +77,13 @@ fun AppsScreen(
     enabledCount: Int,
     actions: AppsActions,
     iconLoader: suspend (String) -> ImageBitmap? = { null },
+    /** Set when the list is one PC's own filter. */
+    pcName: String? = null,
 ) {
     val c = Pill.colors
     PillBackground {
         Column(Modifier.fillMaxSize()) {
-            TopBar(stringResource(R.string.apps_title), actions.onBack)
+            TopBar(if (pcName != null) stringResource(R.string.apps_title_for, pcName) else stringResource(R.string.apps_title), actions.onBack)
             LazyColumn(
                 Modifier.weight(1f),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp),

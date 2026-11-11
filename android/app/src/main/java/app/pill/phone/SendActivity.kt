@@ -10,40 +10,59 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.lifecycleScope
-import app.pill.phone.net.Link
+import app.pill.phone.data.FileTarget
+import app.pill.phone.data.Routing
+import app.pill.phone.data.Store
+import app.pill.phone.net.LinkManager
 import app.pill.phone.transfer.Source
 import app.pill.phone.transfer.Transfers
 import app.pill.phone.ui.screens.SendSheet
 import app.pill.phone.ui.screens.SendUi
 import app.pill.phone.ui.theme.PillTheme
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Share-sheet target "Send to PC": ACTION_SEND / ACTION_SEND_MULTIPLE with any mime type (and shared text as a .txt). */
+/**
+ * Share-sheet target "Send to PC": ACTION_SEND / ACTION_SEND_MULTIPLE with any mime type (and shared text as a .txt).
+ * With one PC paired it just sends; with two or more it always asks which one (or all of them).
+ */
 class SendActivity : ComponentActivity() {
     private var ui by mutableStateOf<SendUi>(SendUi.Preparing)
+    /** The answer to "which PC?": the ids chosen, or null when the user backed out. */
+    private var choice: CompletableDeferred<List<String>?>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
+            val options by LinkManager.options.collectAsState(emptyList())
             PillTheme {
-                SendSheet(ui, onOpenApp = {
-                    startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    finish()
-                }, onClose = ::finish)
+                SendSheet(
+                    ui,
+                    onOpenApp = {
+                        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        finish()
+                    },
+                    onClose = { if (choice?.complete(null) != true) finish() },
+                    options = options,
+                    onPick = { ids -> choice?.complete(ids) },
+                )
             }
         }
         lifecycleScope.launch { run(intent) }
     }
 
     private suspend fun run(i: Intent) {
-        if (!Link.isConnected) {
+        val pcs = Store.pcs.value
+        val target = Routing.fileTarget(pcs, LinkManager.connectedIds())
+        if (target is FileTarget.None || (target is FileTarget.Single && !LinkManager.isConnected(target.pcId)) || (target is FileTarget.Ask && !target.anyOnline)) {
             ui = SendUi.NotConnected
             return
         }
@@ -58,7 +77,23 @@ class SendActivity : ComponentActivity() {
             ui = SendUi.Nothing
             return
         }
-        Transfers.send(this, sources)
+        val targets: List<String> = when (target) {
+            is FileTarget.Single -> listOf(target.pcId)
+            else -> {
+                // two or more PCs: always ask
+                ui = SendUi.Choose(sources.size)
+                val d = CompletableDeferred<List<String>?>().also { choice = it }
+                val picked = d.await()
+                choice = null
+                if (picked.isNullOrEmpty()) {
+                    sources.forEach { it.release() }
+                    finish()
+                    return
+                }
+                picked
+            }
+        }
+        Transfers.send(this, sources, targets)
         ui = SendUi.Sending(sources.size)
         delay(1600)
         finish()
