@@ -34,7 +34,7 @@ jobs:
       # The unit tests that need a Direct2D device (the snapshot_* renders) are skipped: a hosted runner has no GPU.
       - name: cargo test
         working-directory: src-tauri
-        run: cargo test --locked --workspace -- --skip snapshot
+        run: cargo test --locked --workspace -- --skip snapshot --skip pixels_ --skip dark_and_light
 
       # Informational until the tree is clean; flip continue-on-error to false to make them gates.
       - name: cargo fmt --check

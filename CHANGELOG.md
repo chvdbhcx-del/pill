@@ -2,6 +2,19 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.8.1] - 2026-11-11
+
+### Highlights
+- Pill Phone over the internet: an end-to-end encrypted relay (opt-in: put your own Cloudflare relay address in Settings, Phone), a route indicator per phone and files sent in chunks.
+- The Phone tab shows much more about the phone: battery, storage, memory, network, modes and session counters.
+- Phone link: Pill asks once to allow itself on your local network in Windows Firewall (a "Public" network blocked the phone).
+- The VPN chip switches the VPN adapter even without an own client; the Notifications and Agents tabs can be hidden.
+- Fixes: header icons no longer overlap, "Reply sent" is not cut off, a softer empty-shelf icon, the app download link points at this repository.
+
+### Also
+- Pill Phone app: own QR scanner, route badge, device card, relay switch (download from the QR page or the phone-latest release).
+- CI skips the GPU pixel tests that crash when run headless.
+
 ## [0.8.0] - 2026-11-10
 
 ### Highlights
