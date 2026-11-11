@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import app.pill.phone.MainActivity
 import app.pill.phone.R
 import app.pill.phone.net.LinkState
+import app.pill.phone.net.Route
 import app.pill.phone.protocol.FileNames
 
 /** Every notification the app itself posts: the calm connection one and the file transfer ones. */
@@ -49,10 +50,14 @@ object Notifs {
 
     fun link(ctx: Context, state: LinkState, pcName: String): Notification {
         val title = when (state) {
-            is LinkState.Connected -> ctx.getString(R.string.notif_connected, state.pcName.ifBlank { pcName })
+            is LinkState.Connected -> ctx.getString(
+                if (state.route == Route.Relay) R.string.notif_connected_relay else R.string.notif_connected,
+                state.pcName.ifBlank { pcName },
+            )
             LinkState.Connecting, LinkState.Unpaired -> ctx.getString(R.string.notif_connecting, pcName)
             LinkState.NoNetwork -> ctx.getString(R.string.notif_nonetwork)
             LinkState.NotFound -> ctx.getString(R.string.notif_notfound)
+            LinkState.PcOffline -> ctx.getString(R.string.notif_pc_offline)
             LinkState.Revoked -> ctx.getString(R.string.notif_revoked)
         }
         val b = NotificationCompat.Builder(ctx, CH_LINK)

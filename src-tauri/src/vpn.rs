@@ -189,10 +189,32 @@ fn contains_ci(hay: &str, needle: &str) -> bool {
     hay.to_lowercase().contains(&needle.to_lowercase())
 }
 
+/// An adapter that looks like a VPN's, up or not (a VPN that is switched off keeps its adapter, disabled).
+fn vpn_like(a: &Ad) -> bool {
+    let both = format!("{} {}", a.alias, a.desc).to_lowercase();
+    !NOT_VPN.iter().any(|w| both.contains(w)) && (a.ty == IF_PPP || VPN_WORDS.iter().any(|w| both.contains(w)))
+}
+
 /// An up adapter that looks like a VPN (no own client set).
 fn looks_like_vpn(a: &Ad) -> bool {
-    let both = format!("{} {}", a.alias, a.desc).to_lowercase();
-    a.up && !NOT_VPN.iter().any(|w| both.contains(w)) && (a.ty == IF_PPP || VPN_WORDS.iter().any(|w| both.contains(w)))
+    a.up && vpn_like(a)
+}
+
+/// With no own client set the island can still switch the VPN it sees: it enables / disables that VPN's adapters (`netsh`, one UAC prompt).
+/// The adapters it may touch: every VPN-looking one (never Tailscale, Hyper-V, WSL...). `up` = turn them off, otherwise on.
+fn auto_targets(ads: &[Ad]) -> Vec<Ad> {
+    ads.iter().filter(|a| vpn_like(a)).cloned().collect()
+}
+
+/// The elevated command line that sets the adapters `enabled` / `disabled` in one go. Names with characters a shell could misread are skipped.
+pub fn auto_cmd(aliases: &[String], enable: bool) -> Option<String> {
+    let verb = if enable { "enabled" } else { "disabled" };
+    let parts: Vec<String> = aliases
+        .iter()
+        .filter(|a| !a.is_empty() && !a.chars().any(|c| matches!(c, '"' | '&' | '%' | '^' | '|' | '<' | '>' | '\r' | '\n')))
+        .map(|a| format!("netsh interface set interface name=\"{a}\" admin={verb}"))
+        .collect();
+    (!parts.is_empty()).then(|| format!("cmd.exe /c {}", parts.join(" & ")))
 }
 
 /// Is the VPN on? `own_name`: Some(non-empty) = judged only by that name; None = any VPN-looking adapter.
@@ -233,12 +255,15 @@ fn current() -> State {
         return State { enabled: false, configured: false, on: false, name: String::new() };
     }
     let own = own();
+    let ads = adapters();
+    let auto = if own.is_none() { auto_targets(&ads) } else { Vec::new() };
     let on = match &own {
         Some(o) if o.name.is_empty() => LAST_ON.load(Ordering::Relaxed),
-        Some(o) => judge(&adapters(), Some(&o.name)),
-        None => judge(&adapters(), None),
+        Some(o) => judge(&ads, Some(&o.name)),
+        None => judge(&ads, None),
     };
-    State { enabled: true, configured: own.is_some(), on, name: own.map(|o| o.name).unwrap_or_default() }
+    // with no own client the VPN adapter the island sees is the thing it switches: that counts as set up
+    State { enabled: true, configured: own.is_some() || !auto.is_empty(), on, name: own.map(|o| o.name).or_else(|| auto.first().map(|a| a.alias.clone())).unwrap_or_default() }
 }
 
 /// Command `vpn_state`.
@@ -284,6 +309,20 @@ pub fn vpn_toggle() -> Value {
         return json!({ "status": "off" });
     }
     let Some(own) = own() else {
+        // no own client: switch the VPN adapter the island sees (off = disable the ones that are up, on = enable the ones that are down)
+        let ads = adapters();
+        let targets = auto_targets(&ads);
+        if !targets.is_empty() {
+            let was_on = targets.iter().any(|a| a.up);
+            let names: Vec<String> = targets.iter().filter(|a| a.up == was_on).map(|a| a.alias.clone()).collect();
+            let Some(cmd) = auto_cmd(&names, !was_on) else { return json!({ "status": "error", "message": "no adapter to switch" }) };
+            if let Err(e) = run(&Real, &cmd, true) {
+                return json!({ "status": "error", "message": e });
+            }
+            LAST_ON.store(!was_on, Ordering::Relaxed);
+            follow(!was_on);
+            return json!({ "status": "ok", "on": !was_on });
+        }
         // nothing to start yet: show where to set the client up
         if let Some(app) = APP.get() {
             let _ = bus::emit("pill:open-tab", json!({ "tab": "settings", "section": "modules" }));
@@ -352,6 +391,33 @@ mod tests {
 
     fn ad(alias: &str, desc: &str, ty: u32, up: bool) -> Ad {
         Ad { alias: alias.into(), desc: desc.into(), ty, up }
+    }
+
+    #[test]
+    fn with_no_own_client_the_islands_vpn_adapter_is_the_thing_it_switches() {
+        let ads = [
+            ad("Ethernet", "Intel Ethernet", 6, true),
+            ad("Radmin VPN", "Famatech Radmin VPN Ethernet Adapter", 6, true),
+            ad("Tailscale", "Tailscale Tunnel", 53, true),
+            ad("vEthernet (WSL)", "Hyper-V Virtual Ethernet Adapter", 6, true),
+        ];
+        let t = auto_targets(&ads);
+        assert_eq!(t.iter().map(|a| a.alias.as_str()).collect::<Vec<_>>(), ["Radmin VPN"], "never Tailscale, Hyper-V or the real network");
+        // a switched-off VPN keeps its (disabled) adapter: still a target, so the chip can switch it back on
+        let off = [ad("Radmin VPN", "Famatech Radmin VPN Ethernet Adapter", 6, false)];
+        assert_eq!(auto_targets(&off).len(), 1);
+        assert!(!judge(&off, None), "and it counts as off");
+        assert!(judge(&ads, None));
+    }
+
+    #[test]
+    fn the_adapter_switch_is_one_elevated_netsh_line_and_distrusts_odd_names() {
+        let c = auto_cmd(&["Radmin VPN".to_string()], false).unwrap();
+        assert_eq!(c, "cmd.exe /c netsh interface set interface name=\"Radmin VPN\" admin=disabled");
+        assert_eq!(auto_cmd(&["A".to_string(), "B".to_string()], true).unwrap(), "cmd.exe /c netsh interface set interface name=\"A\" admin=enabled & netsh interface set interface name=\"B\" admin=enabled");
+        assert!(auto_cmd(&["x\" & del c:\\".to_string(), "50%".to_string(), String::new()], true).is_none(), "names a shell could misread are never used");
+        // it runs as one admin exe through the same launcher as the own commands
+        assert!(matches!(plan(&c, true), Some(Plan::Exe { ref exe, admin: true, .. }) if exe == "cmd.exe"));
     }
 
     #[test]

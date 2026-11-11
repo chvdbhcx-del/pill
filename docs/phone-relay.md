@@ -64,3 +64,47 @@ PC: `phone.relay` (bool, default ON when a relay URL is set), `phone.relayUrl` (
 ## Deploying the relay
 
 `relay/` contains the Worker (`wrangler.toml`, `src/index.ts`, tests). Deploy with `npx wrangler login` (once, in a browser) then `npx wrangler deploy` from `relay/`; the URL is `https://pill-relay.<account-subdomain>.workers.dev`. Uses only the free plan features: a Durable Object class with SQLite storage (`new_sqlite_classes`) and the WebSocket Hibernation API. No secrets are needed.
+
+## Changes by the phone side (v2)
+
+The Android app (`android/`, `net/Link.kt`, `protocol/RelayCrypto.kt`, `transfer/Transfers.kt`) implements the text above as written. Where it was silent, the phone does the following; the PC side and the relay may rely on it (or must adapt to it):
+
+* **Encodings.** `room` is the 32-char lowercase hex string; the AAD is the UTF-8 bytes of `"pill-v2" + room + dir` (the hex text, not 16 raw bytes). The HKDF salt is `SHA256(UTF-8("pill-phone-v2" + code + deviceId))` with `code` as shown in the QR (upper case) and `deviceId` the UUID string as sent in `/api/pair`. `info` is the 4 bytes `keys`. All base64url values are written WITHOUT padding and read with or without. `join` in the `join` message is the same string as in the relay block.
+* **Relay URL.** `relay.url` is the Worker's base (`wss://host`); the phone connects to `<url>/r/<room>?role=phone` (a url that already contains `/r/` is used as is; `https://` is read as `wss://`; anything else, e.g. `ws://`, makes the phone treat the PC as having no relay).
+* **No relay block = LAN only.** If the pair answer has no `pk` or no `relay`, the phone keeps working over the LAN and shows "Internet link: not available, update Pill on your PC". If both are present but the phone's derived `room`/`join` differ, or `pk` is not a valid 32-byte key, pairing FAILS on the phone and nothing is stored (the PC may be left with an unused device record).
+* **`hello` over the relay.** The PC must send a v1 `hello` as soon as the relay tells it the phone is there (`joined` with `peer:true`, or `peer` with `up:true`), exactly as it does when a LAN socket opens: the phone replays notifications and the status on `hello`. `hello` may carry an optional `"relayMaxFileMB": <int>` (the `phone.relayMaxFileMB` setting); the phone defaults to 100 and shows the value read-only. If the PC speaks without a `hello`, the phone still counts it as present; 3 s after `peer up` with nothing received it sends a `ping`.
+* **Liveness.** Over the relay the phone sends an encrypted `{"t":"ping"}` every 20 s only while the PC is present, and drops the connection after 50 s without any frame from the PC; OkHttp's WebSocket ping (25 s) keeps the NAT mapping open. `joined`/`peer` JSON text frames and close codes `4401` (join rejected, shown as "pair again"), `4409` (replaced) are treated as in the text above.
+* **Replay window.** Per connection the receiver remembers the last `seq` of the 16 most recent `sid`s; a frame of an older `sid` that has fallen out of that window would be accepted once. A phone reconnect always uses a new random `sid`.
+* **Files over the relay, details.**
+  * Phone -> PC: `file.offer` / `file.accept` as in v1 (over the relay the accept is the go-ahead; the phone then sends `file.chunk`s). Receiver -> sender `file.ack {id,upto}` is **cumulative** and sent after each chunk is stored; the phone keeps at most 8 chunks (96 KiB raw) unacknowledged and sends `file.end {id,size}` after the last one. The upload counts as done when `upto == size` is acknowledged or the PC sends `file.done {id,ok:true}` (the PC should send `file.done` after verifying `size`; `ok:false`, `file.abort` or 60 s of silence fail it).
+  * PC -> phone: the PC offers with `file.offer`; the phone, when the user (or auto-receive) accepts and the route is the relay, answers `file.accept {id}` and the PC then streams `file.chunk` (contiguous `off`, at most 8 unacknowledged), then `file.end`. The phone acks every chunk, verifies `size`, and answers `file.done {id,ok}` (as in v1). On a gap, duplicate or oversize chunk the phone sends `file.abort {id,reason:"bad_chunk"}`; either side may send `file.abort` at any time.
+  * **Pacing.** The relay drops frames beyond 60 frames/s and 4 MiB/s per room, both directions together, and a dropped chunk kills the transfer. Both senders must therefore pace themselves: the phone sends at most ~3 MiB/s (one 96 KiB chunk per 32 ms). The PC should do the same.
+  * A file larger than the cap is refused on the phone before the offer (upload) or when accepting (download) with a message to use the home Wi-Fi; a transfer that is running holds the phone on the relay (no LAN switch-back until it ends). Over the LAN nothing changed.
+* **LAN switch-back probe.** While on the relay the phone calls `GET /api/state` with its bearer token on the stored LAN address (2 s timeout) every 60 s and when nudged (reconnect button, network callback); on `200` it drops the relay and reconnects over the LAN WebSocket. A network change restarts the whole attempt (LAN first, 2 s, then the relay). The PC must keep that endpoint cheap.
+* **Settings.** The phone stores "Use internet relay when away from home" (default ON); OFF means LAN only, and the relay socket is closed at once.
+* **Known gap.** A phone revoked on the PC while it is away only learns it on the next LAN contact (the relay room is gone; a rejoin would create an empty one). A `{"t":"revoked"}` frame is not part of v2.
+
+### Fixed-key test vector (made by an independent Python implementation; asserted in `android/app/src/test/java/app/pill/phone/RelayTest.kt`)
+
+```
+phone secret  = 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20 (hex)
+pc secret     = 65666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8081828384
+phone pk      = B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw
+pc pk         = VxR2nRFr92Q2rnS8eT0sMK0ZA8WaxSc4BcfiaYtBDDY
+code, deviceId= AB3D9XKQ , 0b6f2f6e-6c7e-4c53-9d2a-1d0c5b7a9e11
+shared        = c9ea6a3f79a000b60b076d4afc990b272f3f0b5aaa3f0b8713c209273e363863
+salt          = 220b38e089346c3d86a79bffeabea4fd52d25fc5f36f2b72c44eebdbb5b40da8
+k_p2c         = 6f29aa994173633730fd4e75b68768a37fd7a566053ee8b9eb547892d25121af
+k_c2p         = e305543817a96cab46c969005eabfeb66aa15dd70bcd93a3f31beb9ea743b726
+room          = 2fdc4b4165a4e9db4e0f4cf160d6d9e3
+join          = NsHWn-LIc5AIRoIZMQEdcxf-AmAm9IdoAFk89Q6YKJY
+```
+
+Frames (nonce `a0a1...b7` fixed for the vector only; hex):
+
+```
+p2c envelope {"sid":"a1b2c3d4e5f60718","seq":1,"m":{"t":"ping"}}
+p2c frame    a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b789056473c7a389b1db80a44d36411304040928e6c57ea0e40e475b3d740962081779a35e543d48cde87dcdde576e3aaa0126dbf10ae6d0b796da57c3f67332161e5f95
+c2p envelope {"sid":"0011223344556677","seq":7,"m":{"t":"hello","pcName":"DESKTOP-X","serverVersion":1,"time":1700000000000}}
+c2p frame    a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b74b5e5c8e21e8ba96a44f519ba3d061edd5f3647fb9b3930235a33f00b36717d055836d45e5ff3a68a141700eea3f1ca489d8a7ee22a0d6a54cd1d2890388aa9196673df1405638ae86dbf8c917786aa1ff6f810006275a3dea6b165d06d0a2ce70417ef0984529d34fa0d3fa5d71a4ff9e4de3309e246fb72b505748aebd21a2
+```

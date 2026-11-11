@@ -145,8 +145,8 @@
     <string name="settings_permissions">Permissions</string>
     <string name="settings_about">About</string>
     <string name="settings_version">Version %1$s</string>
-    <string name="settings_privacy">Local network only</string>
-    <string name="settings_privacy_body">Traffic stays on your Wi-Fi and is protected by a per-phone key. No cloud, no account.</string>
+    <string name="settings_privacy">Private by design</string>
+    <string name="settings_privacy_body">At home everything stays on your Wi-Fi. Away from home it goes through the relay, end-to-end encrypted. No account.</string>
     <string name="settings_proprietary">Proprietary software. All rights reserved.</string>
     <string name="unpair_title">Unpair from %1$s?</string>
     <string name="unpair_body">The PC forgets this phone, notifications stop, and you will need a new code to pair again.</string>
@@ -231,5 +231,29 @@
     <string name="dev_screen_off">Screen off</string>
     <string name="dev_model_line">Android %1$s</string>
     <string name="dev_shared_title">What your PC sees</string>
-    <string name="dev_shared_body">Battery, storage, memory, network name and signal, silent and Do Not Disturb modes. Only while connected, only over your home network. The Wi-Fi name needs the location permission, nothing else does.</string>
+    <string name="dev_shared_body">Battery, storage, memory, network name and signal, silent and Do Not Disturb modes. Only while connected, over your home network or the encrypted internet link. The Wi-Fi name needs the location permission, nothing else does.</string>
+
+    <!-- Internet relay (protocol v2) -->
+    <string name="route_home">Home network</string>
+    <string name="route_internet">Internet</string>
+    <string name="route_offline">Offline</string>
+    <string name="state_notfound_relay_body">Pill is not running on your PC. The internet link is ready and connects as soon as it starts.</string>
+    <string name="notif_connected_relay">Connected to %1$s via the internet</string>
+    <string name="tr_err_relay_big">Too big for the internet link (limit %1$d MB). Join your home Wi-Fi to send it.</string>
+    <string name="pair_err_relay_title">The internet link could not be set up</string>
+    <string name="pair_err_relay_body">The PC\'s keys do not match ours. Show a new code in Pill and pair again.</string>
+    <string name="settings_relay_section">Internet</string>
+    <string name="settings_relay">Use internet relay when away from home</string>
+    <string name="settings_relay_short">Keeps the link alive off your Wi-Fi</string>
+    <string name="settings_relay_body">Through the relay your data is end-to-end encrypted; the relay (a Cloudflare Worker you own) sees only that two devices exchange data, when, and how much.</string>
+    <string name="relay_unavailable">Internet link: not available, update Pill on your PC</string>
+    <string name="relay_disabled">Internet link: off</string>
+    <string name="relay_standby">Internet link: ready</string>
+    <string name="relay_connecting">Internet link: connecting…</string>
+    <string name="relay_waiting">Internet link: connected, waiting for your PC</string>
+    <string name="relay_active">Internet link: in use</string>
+    <string name="relay_refused">Internet link: rejected, pair again</string>
+    <string name="relay_file_cap">Files over the internet: up to %1$d MB</string>
+    <string name="state_notfound_pc">Your PC is not running</string>
+    <string name="notif_pc_offline">Waiting for your PC · internet link ready</string>
 </resources>

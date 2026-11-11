@@ -26,10 +26,12 @@ thread_local! {
         let st = || SvgStyle::line_icon(1.6);
         let vb = (0.0, 0.0, 120.0, 84.0);
         Rc::new([
-            Svg::from_fragment(r#"<path d="M44 6h22l10 10v26a4 4 0 0 1-4 4H44a4 4 0 0 1-4-4V10a4 4 0 0 1 4-4z"/><path d="M66 6v10h10"/><path d="M47 28h22M47 36h14"/>"#, vb, st()),
-            Svg::from_fragment(r#"<path d="M14 50h92l-9 24a4 4 0 0 1-3.7 2.6H26.7A4 4 0 0 1 23 74z" fill="currentColor" stroke="none"/>"#, vb, st()),
-            Svg::from_fragment(r#"<path d="M14 50h92l-9 24a4 4 0 0 1-3.7 2.6H26.7A4 4 0 0 1 23 74z"/>"#, vb, st()),
-            Svg::from_fragment(r#"<path d="M30 60h60"/>"#, vb, st()),
+            // a soft card: 7 px corners, a rounded folded corner, rounded text lines
+            Svg::from_fragment(r#"<path d="M41 13a7 7 0 0 1 7-7h14.2a4 4 0 0 1 2.9 1.2l10.7 10.7A4 4 0 0 1 77 20.8V39a7 7 0 0 1-7 7H48a7 7 0 0 1-7-7z"/><path d="M63.5 6.6v8.4a3 3 0 0 0 3 3H76.4"/><path d="M48.5 29h20M48.5 37h12"/>"#, vb, st()),
+            // the tray: a rounded bowl (6 px top corners, 12 px bottom ones) instead of a sharp trapezoid
+            Svg::from_fragment(r#"<path d="M14 56a6 6 0 0 1 6-6h80a6 6 0 0 1 6 6v10a12 12 0 0 1-12 12H26a12 12 0 0 1-12-12z" fill="currentColor" stroke="none"/>"#, vb, st()),
+            Svg::from_fragment(r#"<path d="M14 56a6 6 0 0 1 6-6h80a6 6 0 0 1 6 6v10a12 12 0 0 1-12 12H26a12 12 0 0 1-12-12z"/>"#, vb, st()),
+            Svg::from_fragment(r#"<path d="M34 61h52"/>"#, vb, st()),
         ])
     };
 }

@@ -28,7 +28,11 @@ sealed interface Msg {
 
     // ---- PC -> phone ----
     @Serializable @SerialName("hello")
-    data class Hello(val pcName: String = "", val serverVersion: Int = 1, val time: Long = 0) : Msg
+    data class Hello(
+        val pcName: String = "", val serverVersion: Int = 1, val time: Long = 0,
+        /** v2: the size cap of file transfers through the relay, in MB (absent: the default). */
+        val relayMaxFileMB: Int? = null,
+    ) : Msg
 
     @Serializable @SerialName("notif.dismiss") data class NotifDismiss(val key: String) : Msg
     @Serializable @SerialName("notif.read") data class NotifRead(val key: String) : Msg
@@ -115,6 +119,14 @@ sealed interface Msg {
     data class ReplyResult(val req: String, val ok: Boolean, val error: String? = null) : Msg
 
     @Serializable @SerialName("file.done") data class FileDone(val id: String, val ok: Boolean) : Msg
+
+    // ---- v2, files over the relay (both directions; the sender of the data is the one that sends chunk and end) ----
+    /** [d] is base64 of at most 96 KiB; [off] is the byte offset of its first byte. */
+    @Serializable @SerialName("file.chunk") data class FileChunk(val id: String, val off: Long, val d: String) : Msg
+    /** Cumulative: everything below [upto] arrived. The sender keeps at most 8 chunks unacknowledged. */
+    @Serializable @SerialName("file.ack") data class FileAck(val id: String, val upto: Long) : Msg
+    @Serializable @SerialName("file.end") data class FileEnd(val id: String, val size: Long) : Msg
+    @Serializable @SerialName("file.abort") data class FileAbort(val id: String, val reason: String = "") : Msg
 }
 
 object Codec {
@@ -149,7 +161,17 @@ object Codec {
 data class PairRequest(
     val code: String, val deviceId: String, val name: String,
     val model: String, val os: String, val appVersion: String,
+    /** v2: our X25519 public key, base64url; absent from a phone that has no relay support. */
+    val pk: String? = null,
 )
 
 @Serializable
-data class PairResponse(val token: String, val pcName: String = "", val serverVersion: Int = 1)
+data class PairResponse(
+    val token: String, val pcName: String = "", val serverVersion: Int = 1,
+    /** v2, only from a PC with a configured relay. */
+    val pk: String? = null,
+    val relay: RelayBlock? = null,
+)
+
+@Serializable
+data class RelayBlock(val url: String, val room: String, val join: String)

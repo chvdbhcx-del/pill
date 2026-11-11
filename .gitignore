@@ -25,3 +25,9 @@ src-tauri/target-*/
 src-tauri/ui-core/target/
 target-agent/
 src-tauri/target-agent/
+
+# Pill relay (Cloudflare Worker)
+relay/node_modules/
+relay/.wrangler/
+
+[OK] Command outcome recorded

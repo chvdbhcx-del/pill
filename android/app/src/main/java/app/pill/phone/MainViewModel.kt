@@ -10,7 +10,10 @@ import app.pill.phone.data.Perms
 import app.pill.phone.data.Store
 import app.pill.phone.net.Link
 import app.pill.phone.net.LinkState
+import app.pill.phone.data.Paired
 import app.pill.phone.net.PairResult
+import app.pill.phone.net.RelayState
+import app.pill.phone.protocol.Msg
 import app.pill.phone.net.PcApi
 import app.pill.phone.protocol.FileNames
 import app.pill.phone.protocol.PairLink
@@ -69,16 +72,16 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val home: StateFlow<HomeUi> = combine(
-        combine(Link.state, Store.paired, StatusReporter.current) { l, p, s -> Triple(l, p, s) },
+        combine(Link.state, Store.paired, StatusReporter.current, Link.relayState) { l, p, s, r -> LinkBits(l, p, s, r) },
         combine(Transfers.items, _perms, mirrored) { t, pe, m -> Triple(t, pe, m) },
-    ) { (link, paired, status), (transfers, perms, mirroredApps) ->
+    ) { (link, paired, status, relay), (transfers, perms, mirroredApps) ->
         HomeUi(
             link = when {
                 paired == null -> if (link is LinkState.Revoked) LinkUi.Revoked else LinkUi.Unpaired
                 else -> when (link) {
                     is LinkState.Connected -> LinkUi.Connected
                     LinkState.NoNetwork -> LinkUi.NoNetwork
-                    LinkState.NotFound -> LinkUi.NotFound
+                    LinkState.NotFound, LinkState.PcOffline -> LinkUi.NotFound
                     LinkState.Revoked -> LinkUi.Revoked
                     LinkState.Connecting, LinkState.Unpaired -> LinkUi.Connecting
                 }
@@ -93,8 +96,12 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             transfers = transfers.map { it.toUi() },
             mirroredApps = mirroredApps,
             status = status,
+            route = (link as? LinkState.Connected)?.route,
+            relay = relay,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeUi())
+
+    private data class LinkBits(val link: LinkState, val paired: Paired?, val status: Msg.Status?, val relay: RelayState)
 
     private fun Transfer.toUi() = TransferUi(
         id = id,
@@ -107,10 +114,17 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         canOpen = !outgoing && phase == TransferPhase.Done && uri != null,
     )
 
-    val settings: StateFlow<SettingsUi> = combine(Store.paired, Store.autoReceive, Store.includeOngoing, _perms) { p, auto, ongoing, perms ->
+    private val settingsBase = combine(Store.paired, Store.autoReceive, Store.includeOngoing, _perms) { p, auto, ongoing, perms ->
         SettingsUi(p?.pcName?.ifBlank { null }, p?.address, auto, ongoing, perms, BuildConfig.VERSION_NAME, android.os.Build.MODEL.orEmpty(), android.os.Build.VERSION.RELEASE.orEmpty())
+    }
+
+    val settings: StateFlow<SettingsUi> = combine(
+        settingsBase, Store.relayEnabled, Link.relayState, combine(Link.state, Link.relayMaxFileMB) { l, mb -> (l as? LinkState.Connected)?.route to mb },
+    ) { s, on, relay, (route, mb) ->
+        s.copy(relayEnabled = on, relay = relay, route = route, relayMaxMb = mb)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUi())
 
+    fun setRelayEnabled(on: Boolean) = Store.setRelayEnabled(on)
     fun setAutoReceive(on: Boolean) = Store.setAutoReceive(on)
     fun setIncludeOngoing(on: Boolean) = Store.setIncludeOngoing(on)
     fun acceptTransfer(id: String) = Transfers.accept(app, id)
@@ -199,7 +213,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             when (val r = PcApi.pair(t, app, Store.deviceId)) {
                 is PairResult.Ok -> {
-                    Store.savePairing(t.host, t.port, r.token, r.pcName)
+                    Store.savePaired(t.host, t.port, r.token, r.pcName, r.relay)
                     LinkService.start(app)
                     Link.networkChanged()   // a link to a previous PC must not linger
                     _pair.value = PairUi.Success(r.pcName)
@@ -210,6 +224,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 PairResult.BadCode -> _pair.value = PairUi.Failed(PairError.BadCode, t.address)
                 PairResult.Unreachable -> _pair.value = PairUi.Failed(PairError.Unreachable, t.address)
                 is PairResult.Refused -> _pair.value = PairUi.Failed(PairError.Refused, t.address)
+                PairResult.RelayMismatch -> _pair.value = PairUi.Failed(PairError.RelayMismatch, t.address)
             }
         }
     }
