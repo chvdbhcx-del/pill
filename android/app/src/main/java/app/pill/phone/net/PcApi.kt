@@ -19,6 +19,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -74,8 +76,9 @@ object PcApi {
             PairRequest(t.code, deviceId, name, model, "Android ${Build.VERSION.RELEASE}", BuildConfig.VERSION_NAME, V2.b64u(keys.public)),
         ).toRequestBody(JSON)
         val req = Request.Builder().url("http://${t.host}:${t.port}/api/pair").post(body).build()
+        // await() resumes on the caller's dispatcher (Main from the ViewModel), and reading the body is a blocking socket read.
         return try {
-            http.newCall(req).await().use { r ->
+            withContext(Dispatchers.IO) { http.newCall(req).await().use { r ->
                 val text = r.body?.string().orEmpty()
                 when {
                     r.code == 200 -> {
@@ -92,7 +95,7 @@ object PcApi {
                     r.code == 403 -> PairResult.BadCode
                     else -> PairResult.Refused(r.code)
                 }
-            }
+            } }
         } catch (_: IOException) {
             PairResult.Unreachable
         }
