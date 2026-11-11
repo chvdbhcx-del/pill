@@ -181,6 +181,9 @@ fn snapshot_dash() {
             for (th, tn) in [(Theme::pill_dark(), "dark"), (Theme::pill_light(), "light")] {
                 crate::ui::tabs::a::snap::shoot(&mut r.v, &r.cx, &th, 2.0, "phone", &format!("{name}-{ln}-{tn}"));
             }
+            // the island's smallest body (300 px of panel)
+            let img = render_view_cx(&mut r.v, &r.cx, (SIZE.0, 300.0), 2.0, &Theme::pill_dark());
+            crate::ui::host::testing::save_png(&img, crate::ui::tabs::a::snap::path("phone", &format!("{name}-{ln}-dark-300")));
         }
     }
 }
