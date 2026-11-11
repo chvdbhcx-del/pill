@@ -2,6 +2,15 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.8.2] - 2026-11-11
+
+### Highlights
+- Pill Phone works out of the box: the internet link uses Pill's own relay by default, no address to type. Settings, Phone still lets you point it at a relay of your own.
+- One phone can be paired with several PCs at once; with two or more the app asks which PC to send files to.
+- The Phone tab is rebuilt as two tiles when a phone is paired, with the QR code sliding in only when you ask for it.
+- The weather card has an animated sky.
+- Fixes: the Pill Phone app no longer crashes while pairing, clearer relay wording in Settings.
+
 ## [0.8.1] - 2026-11-11
 
 ### Highlights
