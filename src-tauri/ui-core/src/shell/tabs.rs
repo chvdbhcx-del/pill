@@ -36,7 +36,7 @@ pub fn module_key(id: &str) -> Option<&'static str> {
 
 /// Tabs the user may take off the strip (Settings > Modules > Island tabs). Home stays; the notification centre and the agents tab follow
 /// their own switches.
-pub const HIDEABLE: [&str; 8] = ["clipboard", "shelf", "text", "chat", "note", "weather", "controls", "phone"];
+pub const HIDEABLE: [&str; 10] = ["clipboard", "shelf", "text", "chat", "note", "weather", "notifs", "agents", "phone", "controls"];
 
 /// `tabs.hidden`: the tab is not drawn in the tab strip, yet it is still registered, so its hotkey and command open it.
 pub fn strip_hidden(id: &str, s: &ShellSettings) -> bool {
