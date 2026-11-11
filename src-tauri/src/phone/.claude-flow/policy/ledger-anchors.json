@@ -1,5 +1,0 @@
-{"version":1,"entries":[
-{"seq":0,"length":1,"headHash":"sha256:c5718c414246f6b82945dc0aaf1d49730c08d2797e9eeac46af1150c58db54b4","prevAnchorHash":null,"ts":1794418197222,"event":"append","hash":"aea9adeff6cb38ccc7a01543b8da07440e1ab673d72b666ab8952c65292c6018"},
-{"seq":1,"length":2,"headHash":"sha256:e820e050b5f58fd0c772aee159b78e3480bfd1a0d3c18687e41389926e597e0e","prevAnchorHash":"aea9adeff6cb38ccc7a01543b8da07440e1ab673d72b666ab8952c65292c6018","ts":1794418228539,"event":"append","hash":"904197b984bdfa4ace18944d801e67683e3a334f3e4cf7f8af493950151c276a"},
-{"seq":2,"length":3,"headHash":"sha256:2485fb42617ee5e68582cb92b9545b69e06d5d61f43fe0ddbeb26b02be52ae8d","prevAnchorHash":"904197b984bdfa4ace18944d801e67683e3a334f3e4cf7f8af493950151c276a","ts":1794418332537,"event":"append","hash":"577ed824002d6c3e098fce71f88b8e52dad52a0c7692e0829b73ec9821d0133b"}
-]}

@@ -31,3 +31,7 @@ relay/node_modules/
 relay/.wrangler/
 
 [OK] Command outcome recorded
+
+# tool state written by agent hooks
+.claude-flow/
+.swarm/

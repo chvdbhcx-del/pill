@@ -128,9 +128,14 @@ impl SettingsView {
                 }
             }
             C::SettingsInfo => {
-                self.version = v.get("version").and_then(Value::as_str).unwrap_or("").to_string();
-                self.dir = v.get("dir").and_then(Value::as_str).unwrap_or("").to_string();
-                if self.loaded && self.model.current == "updates" && !self.wiz.active() {
+                let version = v.get("version").and_then(Value::as_str).unwrap_or("").to_string();
+                let dir = v.get("dir").and_then(Value::as_str).unwrap_or("").to_string();
+                // `rebuild` re-enters the page, which asks for this very info again: rebuilding on an identical answer would loop forever,
+                // restarting the page's fade-in at 0.5 every round trip (the page stayed washed out) and burning CPU
+                let changed = version != self.version || dir != self.dir;
+                self.version = version;
+                self.dir = dir;
+                if changed && self.loaded && self.model.current == "updates" && !self.wiz.active() {
                     self.rebuild(cx);
                 }
             }

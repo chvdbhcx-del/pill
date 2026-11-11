@@ -217,3 +217,18 @@ fn a_fade_that_never_finished_cannot_leave_the_window_washed_out() {
     paint(&mut t);
     assert!((t.v.borrow().win_t.at() - 1.0).abs() < 1e-3, "an old enough window is fully opaque");
 }
+
+#[test]
+fn the_updates_page_does_not_ask_for_its_info_over_and_over_and_ends_fully_opaque() {
+    // every answer to `settings_info` used to rebuild the page, which asked for it again: the page's fade-in restarted at 0.5 forever
+    let _m = motion_on();
+    let mut t = boot(json!({"language": "en"}), "updates");
+    for _ in 0..40 {
+        t.sim.pump();
+        t.sim.run(12);
+    }
+    let asked = t.fakes.api.calls().iter().filter(|c| c.name == "settings_info").count();
+    assert!(asked <= 3, "settings_info was asked {asked} times");
+    let e = t.v.borrow().enter_t.at();
+    assert!((e - 1.0).abs() < 0.01, "the page stayed at {e} opacity");
+}
