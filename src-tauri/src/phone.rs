@@ -27,6 +27,8 @@ mod v2;
 mod ws;
 mod wsclient;
 #[cfg(test)]
+mod clip_tests;
+#[cfg(test)]
 mod relay_tests;
 #[cfg(test)]
 mod tests;

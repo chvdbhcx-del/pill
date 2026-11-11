@@ -871,3 +871,25 @@ fn http_still_needs_the_token_for_the_lan_file_routes() {
     assert_eq!(http(e.rig.addr(), "GET", "/api/down/abc", &bearer(&e.phone.k.token), b"").0, 404);
     e.stop();
 }
+
+#[test]
+fn the_clipboard_travels_through_the_relay_encrypted_in_both_directions() {
+    let mut e = Env::new();
+    e.rig.cfg.lock().unwrap().clip = super::clip::ClipCfg { on: true, to_phone: true, from_phone: true };
+    e.sh().clip_sync();
+    assert!(!e.rig.clip.watching.load(std::sync::atomic::Ordering::SeqCst), "no listener before the phone announced the capability");
+    assert_eq!(e.sh().clip_local("before caps ЛИМОННЫЙ"), 0);
+    e.phone.send(json!({ "t": "caps", "clip": 1 }));
+    wait_for("the listener", || e.rig.clip.watching.load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(e.sh().clip_local("пароль-не-для-ретранслятора"), 1);
+    assert_eq!(e.phone.recv_t("clip")["text"], "пароль-не-для-ретранслятора");
+    e.phone.send(json!({ "t": "clip", "id": "r1", "text": "ЛИМОННЫЙ-ТЕКСТ", "ts": 1 }));
+    e.rig.wait("phone:clip", |v| v["name"] == "Pixel 8");
+    assert_eq!(e.rig.clip.text.lock().unwrap().as_deref(), Some("ЛИМОННЫЙ-ТЕКСТ"));
+    // the relay saw ciphertext only
+    for f in e.relay.st.tap.lock().unwrap().iter() {
+        let hay = String::from_utf8_lossy(f);
+        assert!(!hay.contains("ЛИМОННЫЙ") && !hay.contains("пароль") && !hay.contains("clip"), "plaintext leaked to the relay");
+    }
+    e.stop();
+}
