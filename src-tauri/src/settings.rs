@@ -86,7 +86,7 @@ pub(crate) fn defaults() -> Cfg {
     let Value::Object(phone) = json!({
         "phone.enabled": false, "phone.port": 41717, "phone.downloadDir": "", "phone.maxFileMB": 4096, "phone.autoAccept": true,
         "phone.apkUrl": "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk", "phone.mutedApps": [], "module.phone": true, "live.phone": true,
-        "phone.relay": true, "phone.relayUrl": "", "phone.relayMaxFileMB": 100
+        "phone.relay": true, "phone.relayUrl": "wss://pill-relay.chvdbhcx-pill.workers.dev", "phone.relayMaxFileMB": 100
     }) else { unreachable!() };
     m.extend(phone);
     m

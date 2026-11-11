@@ -70,7 +70,7 @@ fn cfg() -> server::Cfg {
         muted: crate::settings::get_list("phone.mutedApps"),
         pc_name: pc_name(),
         relay_on: crate::settings::get_bool("phone.relay", true),
-        relay_url: crate::settings::get_str("phone.relayUrl", ""),
+        relay_url: crate::settings::get_str("phone.relayUrl", "wss://pill-relay.chvdbhcx-pill.workers.dev"),
         relay_max_bytes: (crate::settings::get_f64("phone.relayMaxFileMB", 100.0).clamp(1.0, 4096.0) * 1024.0 * 1024.0) as u64,
     }
 }

@@ -616,7 +616,7 @@ fn the_relay_rows_are_idle_by_default_and_carry_the_privacy_note() {
     assert!(note.get(Lang::En).contains("end-to-end encrypted") && note.get(Lang::En).contains("sees only that two devices exchange data, when, and how much"));
     assert!(note.get(Lang::Ru).contains("сквозно зашифрованы"));
     assert_eq!(schema().row("phone.relay").unwrap().default, json!(true));
-    assert_eq!(schema().row("phone.relayUrl").unwrap().default, json!(""), "no relay address until one is deployed");
+    assert_eq!(schema().row("phone.relayUrl").unwrap().default, json!("wss://pill-relay.chvdbhcx-pill.workers.dev"), "the deployed relay is the default");
     assert_eq!(schema().row("phone.relayMaxFileMB").unwrap().default, json!(100));
     assert_eq!(schema().row("phone.relayMaxFileMB").unwrap().control, Control::Number { min: 1, max: 4096 });
     for id in ["phone.relayUrl", "phone.relayMaxFileMB"] {

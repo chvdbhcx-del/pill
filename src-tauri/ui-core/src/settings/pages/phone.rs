@@ -89,7 +89,7 @@ pub fn phone() -> Page {
                         tr("Например wss://pill-relay.ваш-аккаунт.workers.dev; новые подключения телефонов получают этот адрес", "For example wss://pill-relay.your-account.workers.dev; phones paired from now on are given this address"),
                         TextKind::Url,
                         tr("wss://…", "wss://…"),
-                        "",
+                        "wss://pill-relay.chvdbhcx-pill.workers.dev",
                     )
                     .enabled(Cond::All(vec![on.clone(), Cond::On("phone.relay")]))
                     .kw(&["relay", "url", "worker", "cloudflare", "ретранслятор", "адрес"]),
