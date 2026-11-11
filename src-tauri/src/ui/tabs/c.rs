@@ -3,7 +3,9 @@
 
 mod phone;
 mod phone_card;
+mod phone_dash;
 mod phone_draw;
+mod phone_pair;
 mod phone_img;
 
 use crate::ui::view::View;

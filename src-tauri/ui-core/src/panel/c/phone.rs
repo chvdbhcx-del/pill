@@ -93,6 +93,8 @@ impl FileRow {
 
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Device {
+    /// the pairing id (the key of this phone in the PC's list)
+    pub id: String,
     pub name: String,
     pub connected: bool,
     pub battery: Option<i64>,
@@ -365,6 +367,7 @@ impl PhoneModel {
             .map(|a| {
                 a.iter()
                     .map(|d| Device {
+                        id: s(d, "id"),
                         name: s(d, "name"),
                         connected: b(d, "connected"),
                         battery: d.get("battery").and_then(Value::as_i64),

@@ -2,14 +2,12 @@
 //! click targets are registered here in window coordinates (the scroll offset is subtracted) and clipped to the body, so a row scrolled out of
 //! sight cannot be clicked.
 use super::phone::{PhoneView, K};
-use super::phone_card::LEFT_W;
 use crate::ui::tabs::b::kit::{button, button_w, Bk, Clicks};
 use crate::ui::view::Cx;
 use glasskit::canvas::Canvas;
 use glasskit::geom::Rect;
 use glasskit::text::Style;
 use glasskit::theme::Theme;
-use glasskit::Color;
 use pill_ui_core::panel::b::Tr;
 use pill_ui_core::panel::c::phone::{ago, size_text, ReplyState, Sub};
 
@@ -35,27 +33,6 @@ fn letter(s: &str) -> String {
     s.chars().find(|c| c.is_alphanumeric()).map(|c| c.to_uppercase().collect()).unwrap_or_else(|| "?".into())
 }
 
-/// Horizontal runs of dark modules `(col, row, length)` of a QR given as rows of `#` / `.` (fewer rects, no seams).
-fn qr_runs(rows: &[String]) -> Vec<(usize, usize, usize)> {
-    let mut out = Vec::new();
-    for (y, row) in rows.iter().enumerate() {
-        let b = row.as_bytes();
-        let mut x = 0;
-        while x < b.len() {
-            if b[x] == b'#' {
-                let s = x;
-                while x < b.len() && b[x] == b'#' {
-                    x += 1;
-                }
-                out.push((s, y, x - s));
-            } else {
-                x += 1;
-            }
-        }
-    }
-    out
-}
-
 impl PhoneView {
     pub(super) fn draw_all(&mut self, cv: &Canvas, th: &Theme, _cx: &Cx) {
         self.clicks.begin();
@@ -68,7 +45,17 @@ impl PhoneView {
         match self.model.sub() {
             Sub::Notifs => self.draw_notifs(cv, th),
             Sub::Files => self.draw_files(cv, th),
-            Sub::Phone => self.draw_phone(cv, th),
+            Sub::Phone => match self.shown().cloned() {
+                Some(d) => {
+                    let body = self.body_rect();
+                    self.draw_dash(cv, th, body, &d);
+                    self.draw_qr_panel(cv, th, body);
+                }
+                None => {
+                    let body = self.body_rect();
+                    self.draw_pair_main(cv, th, body);
+                }
+            },
         }
     }
 
@@ -369,59 +356,5 @@ impl PhoneView {
             });
         }
         self.scroll[1] = sv;
-    }
-
-    // ------------------------------------------------------------------------------------------------------------ phone
-    fn draw_phone(&mut self, cv: &Canvas, th: &Theme) {
-        let body = self.body_rect();
-        let l = self.model.lang();
-        let left = Rect::new(body.x, body.y, LEFT_W, body.h);
-        let right = Rect::new(left.right() + 8.0, body.y, body.w - LEFT_W - 8.0, body.h);
-        self.draw_phone_left(cv, th, left);
-        cv.fill_rr(right, 16.0, th.card);
-        let link = self.model.link().clone();
-        // the QR card
-        let cap = if link.paired > 0 { l.t("Подключить ещё телефон", "Pair another phone") } else { l.t("Подключить телефон", "Pair your phone") };
-        cv.text(Rect::new(right.x, right.y + 14.0, right.w, 18.0), cap, Style::new(13.0, 600).center(), th.text);
-        let side = 150.0;
-        let qr = Rect::new(right.cx() - side / 2.0, right.y + 40.0, side, side);
-        let pop = self.qr_k.raw();
-        let url = self.model.code().map(|c| c.url.clone());
-        let code = self.model.code().map(|c| c.code.clone());
-        if let Some(url) = &url {
-            if self.qr_cache.as_ref().map(|c| c.0.as_str()) != Some(url.as_str()) {
-                let rows = pill_ui_core::panel::b::qr::qr(url).map(|q| q.rows()).unwrap_or_default();
-                self.qr_cache = Some((url.clone(), rows));
-            }
-        }
-        let a = self.qr_k.at();
-        cv.with_opacity(a.max(0.15), |cv| {
-            cv.with_scale_about(qr.center(), 0.9 + 0.1 * pop.clamp(0.0, 1.2), |cv| {
-                cv.with_clip_rr(qr, 12.0, |cv| {
-                    cv.fill_rect(qr, if url.is_some() { Color::rgb8(255, 255, 255) } else { th.raised2 });
-                    if let Some((_, rows)) = self.qr_cache.as_ref().filter(|_| url.is_some()) {
-                        let quiet = 4usize;
-                        let px = side / (rows.len() + 2 * quiet) as f32;
-                        let sc = cv.scale;
-                        let snap = |v: f32| (v * sc).round() / sc;
-                        for (cx, cy, run) in qr_runs(rows) {
-                            let x0 = qr.x + (cx + quiet) as f32 * px;
-                            let y0 = qr.y + (cy + quiet) as f32 * px;
-                            let (sx, sy) = (snap(x0), snap(y0));
-                            cv.fill_rect(Rect::new(sx, sy, snap(x0 + run as f32 * px) - sx, snap(y0 + px) - sy), Color::rgb8(0, 0, 0));
-                        }
-                    }
-                });
-            });
-        });
-        if let Some(code) = code {
-            let spaced = format!("{} {}", &code[..4.min(code.len())], &code[4.min(code.len())..]);
-            cv.text(Rect::new(right.x, qr.bottom() + 8.0, right.w, 18.0), &spaced, Style::new(13.0, 600).mono().center(), th.text2);
-        }
-        let label = l.t("Новый код", "New code");
-        let bw = button_w(cv, th, label, false, Bk::Normal);
-        let br = Rect::new(right.cx() - bw / 2.0, right.bottom() - 14.0 - BTN_H, bw, BTN_H);
-        button(cv, th, &self.ic, br, label, None, Bk::Normal, self.clicks.hover_amt(&K::NewCode), self.clicks.press_scale(&K::NewCode, 0.96), true);
-        self.clicks.add(K::NewCode, br);
     }
 }

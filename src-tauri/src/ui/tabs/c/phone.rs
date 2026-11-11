@@ -8,6 +8,7 @@
 //! Nothing polls: the model is fed by the bus events `phone:state` / `phone:notif` / `phone:files` and by command replies; frames run only while
 //! something moves (or while the reply field is focused, for the caret).
 use super::phone_card::Card;
+use super::phone_dash::Dash;
 use super::phone_img::Images;
 use crate::ui::liquid::{Feel, Flow};
 use crate::ui::tabs::b::kit::{lang_of, Calls, Clicks, Field, FlowSwitch, Icons, Lit, GROW};
@@ -42,6 +43,11 @@ pub(super) enum K {
     Open(String),
     Folder(String),
     NewCode,
+    /// the phone switcher pills, the quiet "Pair another phone" button, the QR panel's close button and the scrim behind it
+    Pick(usize),
+    Pair,
+    CloseQr,
+    Scrim,
 }
 
 /// Per-row motion state of a notification.
@@ -92,9 +98,10 @@ pub struct PhoneView {
     seg_ready: bool,
     pub(super) rows: HashMap<String, RowAnim>,
     pub(super) files: HashMap<String, FileAnim>,
-    /// Notifications, Files, and the left card of the Phone sub-tab
+    /// Notifications, Files, and the paired view of the Phone sub-tab (only scrolls when the body is too short)
     pub(super) scroll: [ScrollView; 3],
     pub(super) card: Card,
+    pub(super) dash: Dash,
     pub(super) drag: bool,
     pub(super) drop_k: Lit,
     pub(super) drop_err: Option<String>,
@@ -148,6 +155,7 @@ impl PhoneView {
             files: HashMap::new(),
             scroll: [ScrollView::new(), ScrollView::new(), ScrollView::new()],
             card: Card::new(),
+            dash: Dash::new(),
             drag: false,
             drop_k: Lit::new(Feel::FLOW),
             drop_err: None,
@@ -237,6 +245,18 @@ impl PhoneView {
             K::Open(id) => self.act(Action::OpenFile(id), cx),
             K::Folder(id) => self.act(Action::Reveal(id), cx),
             K::NewCode => self.act(Action::NewCode, cx),
+            K::Pick(i) => {
+                self.pick(i);
+                cx.request_frame();
+            }
+            K::Pair => {
+                self.dash.qr_open = !self.dash.qr_open;
+                cx.request_frame();
+            }
+            K::CloseQr | K::Scrim => {
+                self.dash.qr_open = false;
+                cx.request_frame();
+            }
         }
     }
 
@@ -321,11 +341,12 @@ impl PhoneView {
         self.drop_err_k.set(self.drop_err.is_some());
         self.conn_k.set(self.model.link().connected());
         self.qr_k.set(self.model.code().is_some());
-        let bat = self.model.link().phone().and_then(|p| p.battery).unwrap_or(0) as f32 / 100.0;
+        let bat = self.shown().and_then(|p| p.battery).unwrap_or(0) as f32 / 100.0;
         go(&mut self.bat, bat, reduced);
-        if let Some(p) = self.model.link().phone().cloned() {
+        if let Some(p) = self.shown().cloned() {
             self.card.sync(&p, reduced);
         }
+        self.dash_sync();
         self.switch.set_on(self.model.link().enabled, !reduced);
     }
 
@@ -396,7 +417,7 @@ impl PhoneView {
         let (i, body) = match self.model.sub() {
             Sub::Notifs => (0, self.body_rect()),
             Sub::Files => (1, self.body_rect()),
-            Sub::Phone => (2, self.card_area()),
+            Sub::Phone => (2, self.body_rect()),
         };
         r.merge(self.scroll[i].event(ev, body))
     }
@@ -419,6 +440,7 @@ impl View for PhoneView {
 
     fn on_hide(&mut self, _cx: &mut Cx) {
         self.shown = false;
+        self.dash.qr_open = false;
         self.field.ti.set_focused(false);
     }
 
@@ -426,6 +448,14 @@ impl View for PhoneView {
         self.ctx(cx);
         match ev {
             InputEvent::Key { .. } | InputEvent::Char(_) | InputEvent::Ime(_) => {
+                // Escape slides the QR panel of a paired phone away
+                if self.dash.qr_open && !self.field.is_focused() {
+                    if let Some((KeyCode::Escape, _, false)) = ev.key_down() {
+                        self.dash.qr_open = false;
+                        cx.request_frame();
+                        return Response { consumed: true, redraw: true, ..Response::NONE };
+                    }
+                }
                 if !self.field.is_focused() {
                     return Response::NONE;
                 }
@@ -526,6 +556,7 @@ impl View for PhoneView {
             busy |= a.open.moving() || a.progress.moving();
         }
         busy |= self.card.step(dt_ms);
+        busy |= self.dash.step(dt_ms);
         busy |= self.clicks.step(dt);
         busy |= self.switch.step(dt);
         for s in &mut self.scroll {
@@ -563,5 +594,7 @@ const ICONS: [(&str, &str); 15] = [
     ("p-plane", r#"<path d="M21 15.5v-2L13 9V4.5a1.5 1.5 0 0 0-3 0V9l-8 4.5v2l8-2.5V18l-2 1.5V21l3.5-1 3.5 1v-1.5L13 18v-5z"/>"#),
 ];
 
+#[cfg(test)]
+mod dash_tests;
 #[cfg(test)]
 mod tests;
