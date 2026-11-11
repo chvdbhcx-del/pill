@@ -74,7 +74,7 @@ class SendActivity : ComponentActivity() {
         }
         // Shared text with clipboard sync on goes over as a clip (the PC's clipboard), unless it is too big for one: then it stays a file.
         val sync = ClipBridge.sync(this)
-        val clipText = if (uris.isEmpty() && i.action == Intent.ACTION_SEND && Store.clipEnabled.value) {
+        val clipText = if (uris.isEmpty() && i.action == Intent.ACTION_SEND && Store.clipEnabled.value && ClipBridge.allConnectedSupport()) {
             i.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.takeIf { sync.check(it) == null }
         } else null
         // The share grant ends with this activity, so every file is opened here before the transfer is queued.

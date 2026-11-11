@@ -44,6 +44,14 @@ object ClipBridge {
         inst ?: ClipSync(AndroidClipboard(ctx.applicationContext), { Store.clipEnabled.value }, { Store.clipReceive.value }).also { inst = it }
     }
 
+    /** PCs whose hello said they understand `clip` (an older Pill ignores it silently, so a shared text must not go to one as a clip). */
+    private val clipPeers: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    fun noteHello(pcId: String, clip: Int) { if (clip > 0) clipPeers.add(pcId) else clipPeers.remove(pcId) }
+
+    /** True when at least one PC is up and every PC that is up understands `clip`. */
+    fun allConnectedSupport(): Boolean = LinkManager.connectedIds().let { it.isNotEmpty() && clipPeers.containsAll(it) }
+
     /** A PC session just started: tell it we can do clip (nothing at all while the feature is off). */
     fun announce(ctx: Context, pcId: String) {
         sync(ctx).caps()?.let { LinkManager.send(pcId, it) }

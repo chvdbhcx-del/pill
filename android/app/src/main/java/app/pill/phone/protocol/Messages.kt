@@ -32,6 +32,8 @@ sealed interface Msg {
         val pcName: String = "", val serverVersion: Int = 1, val time: Long = 0,
         /** v2: the size cap of file transfers through the relay, in MB (absent: the default). */
         val relayMaxFileMB: Int? = null,
+        /** v1.2: this PC understands `clip` (absent on an older Pill). */
+        val clip: Int = 0,
     ) : Msg
 
     @Serializable @SerialName("notif.dismiss") data class NotifDismiss(val key: String) : Msg

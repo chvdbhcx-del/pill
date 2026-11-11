@@ -609,7 +609,7 @@ impl Shared {
     /// The v1 `hello`, plus the optional `relayMaxFileMB` (the phone shows it read-only).
     pub(super) fn hello_msg(&self) -> Value {
         let c = self.cfg();
-        json!({ "t": "hello", "pcName": c.pc_name, "serverVersion": SERVER_VERSION, "time": now_ms(), "relayMaxFileMB": c.relay_max_bytes / (1024 * 1024) })
+        json!({ "t": "hello", "pcName": c.pc_name, "serverVersion": SERVER_VERSION, "time": now_ms(), "relayMaxFileMB": c.relay_max_bytes / (1024 * 1024), "clip": 1 })
     }
 
     pub(super) fn me_arc(&self) -> Option<Arc<Shared>> {

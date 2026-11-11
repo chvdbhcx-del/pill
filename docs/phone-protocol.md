@@ -163,7 +163,10 @@ Text clipboard sync between the PC and a phone. Backward compatible: a peer that
 
 * `caps` (phone -> PC): `{"t":"caps","clip":1}`. Sent by the phone right after every (re)connection, LAN WebSocket or relay, once the connection is up (after `hello`). It is per connection: a new connection starts without capabilities, so the phone sends it again. `clip` is the highest clipboard version the phone speaks AND allows: `1` = clipboard sync on, `0` (or absent) = off. A phone whose own clipboard switch goes off sends `{"t":"caps","clip":0}` on the open connection; turning it on again sends `clip:1`. Unknown extra fields are ignored; later versions may add more capabilities to the same message.
 * `clip` (both directions): `{"t":"clip","id":"<uuid>","text":"<utf-8>","ts":<unix ms>}`. Text only (no images, files or rich text), at most **256 KiB (262144 bytes) of UTF-8**. `id` is a fresh unique string per message (for logs and de-duplication, the receiver does not need to remember it), `ts` is the sender's clock.
+* `hello` (PC -> phone) carries `"clip":1` from a PC that understands this section; an older Pill omits it. A phone that wants to send text as a `clip` WITHOUT a prior `caps` exchange (for example the Android share target) must do so only to a PC whose `hello` had `clip >= 1`, otherwise the text would be dropped silently; it falls back to a file offer.
 * A text larger than 256 KiB is **not sent** by the sender. An incoming `clip` that is larger, empty (`""`), not a string, or malformed is **dropped silently**: there is no error message on the wire.
+
+* The iPhone web client sends `{"t":"caps","clip":1}` when its WebSocket opens, lets the user paste into a field and press Send (a `clip`), shows incoming `clip` messages as cards with a Copy button (the last 3, in memory only), drops empty or over-256 KiB incoming clips, refuses to send over 256 KiB and does not send back a text it just received.
 
 ### When each side may send
 
