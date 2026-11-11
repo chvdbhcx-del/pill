@@ -585,6 +585,54 @@ fn web_client_routes_content_types_csp_and_install_meta() {
 }
 
 #[test]
+fn web_client_has_the_clipboard_card_and_its_limit_helper() {
+    let html = include_str!("web/w.html");
+    // wire format: caps after the socket opens, `clip` both ways, the 256 KiB limit
+    for needle in ["{t:'caps',clip:1}", "case 'clip':", "{t:'clip',id:", "text:v,ts:Date.now()", "CLIP_MAX=262144", "execCommand('copy')", "textContent"] {
+        assert!(html.contains(needle), "missing: {needle}");
+    }
+    // both languages carry every clipboard string, plus the "enable it on the PC" hint
+    for key in ["clipTitle", "clipPh", "clipHow", "clipSend", "clipSent", "clipBig", "clipOffline", "clipFrom", "clipCopy", "clipCopied", "clipCopyFail", "clipClear", "clipNeed"] {
+        assert_eq!(html.matches(&format!("{key}:'")).count(), 2, "{key} must be defined in en and ru");
+    }
+    assert!(html.contains("Settings > Phone > Clipboard") && html.contains("Настройки > Телефон > Буфер обмена"));
+    // received clips live in memory only, never in storage; the paste button that cannot work on iOS stays out
+    assert!(!html.contains("execCommand('paste')") && !html.contains("sset('pill.w.clip"));
+    // reduced motion still covers the new animations (global rule) and the card animates in and out
+    assert!(html.contains("prefers-reduced-motion:reduce") && html.contains(".cdr.open") && html.contains("@keyframes okflash"));
+
+    // optional JS checks: the page script parses, and the UTF-8 limit helper behaves (skipped when node is not installed)
+    let script = html.split("<script nonce=\"__NONCE__\">").nth(1).and_then(|s| s.split("</script>").next()).expect("the inline script");
+    let lib = script.split("// clip-lib:start").nth(1).and_then(|s| s.split("// clip-lib:end").next()).expect("the clip helper block");
+    let dir = std::env::temp_dir().join(format!("pill-w-js-{}", super::reg::new_id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (page, check) = (dir.join("page.js"), dir.join("check.js"));
+    std::fs::write(&page, script).unwrap();
+    std::fs::write(
+        &check,
+        format!(
+            "{lib}\nconst a=require('assert');\n\
+             a.strictEqual(utf8len('abc'),3);a.strictEqual(utf8len('\\u00e9'),2);a.strictEqual(utf8len('\\u20ac'),3);a.strictEqual(utf8len('\\ud83d\\ude00'),4);\n\
+             a.strictEqual(clipIn(''),false);a.strictEqual(clipIn(5),false);a.strictEqual(clipIn('hi'),true);\n\
+             a.strictEqual(clipIn('a'.repeat(262144)),true);a.strictEqual(clipIn('a'.repeat(262145)),false);\n\
+             a.strictEqual(clipIn('\\u00e9'.repeat(131072)),true);a.strictEqual(clipIn('\\u00e9'.repeat(131073)),false);\n\
+             a.strictEqual(clipId('0123456789abcdef0123456789abcdef'),'01234567-89ab-cdef-0123-456789abcdef');"
+        ),
+    )
+    .unwrap();
+    let run = |f: &std::path::Path, check_only: bool| std::process::Command::new("node").args(if check_only { vec!["--check"] } else { vec![] }).arg(f).output();
+    match run(&page, true) {
+        Err(_) => eprintln!("node not found: JS checks skipped"),
+        Ok(o) => {
+            assert!(o.status.success(), "node --check failed: {}", String::from_utf8_lossy(&o.stderr));
+            let o = run(&check, false).unwrap();
+            assert!(o.status.success(), "clip helper check failed: {}", String::from_utf8_lossy(&o.stderr));
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn web_client_is_refused_from_outside_the_lan() {
     let r = Rig::new(false);
     for p in ["/w", "/w/manifest.webmanifest", "/w/icon.png"] {
