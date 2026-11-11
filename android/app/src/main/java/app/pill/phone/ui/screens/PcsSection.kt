@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.LinkOff
@@ -98,7 +99,7 @@ fun PcCard(pc: PcSettingsUi, a: PcsActions, modifier: Modifier = Modifier) {
                 Divider(Modifier.padding(vertical = 8.dp))
                 SettingRow(
                     stringResource(R.string.pcs_filter_edit), subtitle = pc.filterCount?.let { stringResource(R.string.apps_count, it) },
-                    onClick = { a.onChooseApps(pc.pcId) },
+                    icon = Icons.Rounded.Apps, onClick = { a.onChooseApps(pc.pcId) },
                 ) { Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, tint = c.textDim) }
             }
         }

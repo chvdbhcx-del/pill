@@ -188,6 +188,69 @@ class ScreenshotTest {
         )
     }
 
+    // ---- several PCs ----
+    private val twoPcs = listOf(
+        app.pill.phone.ui.PcUi("a", "AENEAS", LinkUi.Connected, app.pill.phone.net.Route.Lan),
+        app.pill.phone.ui.PcUi("b", "Work laptop", LinkUi.Connected, app.pill.phone.net.Route.Relay),
+    )
+
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    @Test fun homeTwoPcs() = shoot("home-2pcs") {
+        HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Lan, pcs = twoPcs, selectedPcId = "a"), HomeActions())
+    }
+
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    @Test fun homeTwoPcsOneAway() = shoot("home-2pcs-away") {
+        val pcs = listOf(twoPcs[0], twoPcs[1].copy(link = LinkUi.NotFound, route = null))
+        HomeScreen(connectedQuiet.copy(link = LinkUi.NotFound, pcName = "Work laptop", pcs = pcs, selectedPcId = "b"), HomeActions())
+    }
+
+    @Config(qualifiers = "ru-w360dp-h800dp-xhdpi")
+    @Test fun homeTwoPcsRu() = shoot("home-2pcs-ru") {
+        HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Relay, pcs = twoPcs, selectedPcId = "a"), HomeActions())
+    }
+
+    private val pickOptions = listOf(
+        app.pill.phone.data.PcOption("a", "AENEAS", true, app.pill.phone.net.Route.Lan),
+        app.pill.phone.data.PcOption("b", "Work laptop", true, app.pill.phone.net.Route.Relay),
+        app.pill.phone.data.PcOption("c", "Old desktop", false, null),
+    )
+
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    @Test fun pickerSheet() = shoot("pick-pc") {
+        Box {
+            HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Lan, pcs = twoPcs, selectedPcId = "a"), HomeActions())
+            app.pill.phone.ui.screens.PcPickerSheet(true, pickOptions, 3, {}, {})
+        }
+    }
+
+    @Config(qualifiers = "ru-w360dp-h800dp-xhdpi")
+    @Test fun pickerSheetRu() = shoot("pick-pc-ru") {
+        Box { app.pill.phone.ui.screens.PcPickerSheet(true, pickOptions.take(2), 1, {}, {}) }
+    }
+
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    @Test fun pickerAllOffline() = shoot("pick-pc-offline") {
+        Box { app.pill.phone.ui.screens.PcPickerSheet(true, pickOptions.map { it.copy(online = false, route = null) }, 2, {}, {}) }
+    }
+
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    @Test fun sendSheetChoose() = shoot("send-choose") { SendSheet(SendUi.Choose(2), {}, {}, pickOptions, {}) }
+
+    private val twoPcSettings = listOf(
+        app.pill.phone.ui.PcSettingsUi("a", "AENEAS", "AENEAS", "192.168.1.20:41717", LinkUi.Connected, app.pill.phone.net.Route.Lan, System.currentTimeMillis(), true, true, false, null),
+        app.pill.phone.ui.PcSettingsUi("b", "Work laptop", "LAPTOP-7F2", "10.20.0.8:41717", LinkUi.NotFound, null, System.currentTimeMillis() - 3 * 3_600_000L, false, false, true, 24),
+    )
+
+    @Config(qualifiers = "w360dp-h2300dp-xhdpi")
+    @Test fun settingsTwoPcs() = shoot("settings-2pcs") {
+        SettingsScreen(
+            SettingsUi("AENEAS", "192.168.1.20:41717", false, false, PermissionsUi(true, true, true, false, true), "1.0.0", "Pixel 8", "15",
+                relayEnabled = true, relay = app.pill.phone.net.RelayState.Standby, route = app.pill.phone.net.Route.Lan, pcs = twoPcSettings),
+            SettingsActions(),
+        )
+    }
+
     @Test fun sendSheetSending() = shoot("send-sending") { SendSheet(SendUi.Sending(2), {}, {}) }
     @Test fun sendSheetNotConnected() = shoot("send-notconnected") { SendSheet(SendUi.NotConnected, {}, {}) }
 
