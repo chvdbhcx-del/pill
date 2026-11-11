@@ -41,6 +41,8 @@ pub struct TabBox {
     pub bk: f32,
     /// 0..1: how present the tab is in the strip (a tab that is taken off folds up and fades instead of vanishing)
     pub pres: f32,
+    /// the space left and right of the 18 px icon: 10 px, less when the strip has to squeeze to fit
+    pub pad: f32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -80,22 +82,7 @@ fn strip_target(t: &TabView) -> f32 {
 /// [`layout`] with the eased parts: `bk` = (presence, count) of a tab's badge, `vpn` = (text, presence) of the VPN chip.
 /// `pr` = how present a tab is in the strip (0..1); a tab with 0 is skipped, one in between is folded up and fading.
 pub fn layout_with(v: &ShellView, ru: bool, panel_h: f32, ks: &dyn Fn(&str, bool) -> f32, bk: &dyn Fn(&TabView) -> (f32, u32), pr: &dyn Fn(&TabView) -> f32, vpn: (&str, f32), m: &dyn Meter) -> ChromeLayout {
-    let mut x = 16.0;
-    let mut tabs = Vec::new();
-    for t in v.tabs.iter().filter(|t| !t.hidden) {
-        let pres = pr(t).clamp(0.0, 1.0);
-        if pres < 0.003 {
-            continue;
-        }
-        let tw = (m.w(&tab_title(&t.id, ru), TAB_LABEL) + 0.5).ceil();
-        let k = ks(&t.id, t.active).clamp(0.0, 1.0);
-        let (bp, count) = bk(t);
-        let badge_w = if count > 0 { (8.0 + (m.w(&count.to_string(), BADGE) + 10.0).max(18.0)) * bp.max(0.0) } else { 0.0 };
-        let w = (38.0 + k * (10.0 + tw + badge_w)) * pres;
-        tabs.push(TabBox { id: t.id.clone(), rect: Rect::new(x, 14.0, w, 32.0), icon: tab_icon(&t.id), tw, k, badge: count, bk: bp, pres });
-        x += w + 4.0 * pres;
-    }
-    let tabs_end = x - 4.0;
+    // the right group first (buttons, VPN chip): what is left of it is the room of the tab strip
     let mut bx = PANEL_W - 16.0;
     let mut buttons = Vec::new();
     for b in [Btn::Settings, Btn::Pin, Btn::Dict] {
@@ -111,6 +98,44 @@ pub fn layout_with(v: &ShellView, ru: bool, panel_h: f32, ks: &dyn Fn(&str, bool
         vpn_rect = Some(Rect::new(bx, 20.0, w, 24.0));
         bx -= 4.0 * vpn.1;
     }
+    // measure every tab that is in the strip
+    struct Item<'a> {
+        t: &'a TabView,
+        pres: f32,
+        tw: f32,
+        k: f32,
+        bp: f32,
+        count: u32,
+        extra: f32,
+    }
+    let mut items = Vec::new();
+    for t in v.tabs.iter().filter(|t| !t.hidden) {
+        let pres = pr(t).clamp(0.0, 1.0);
+        if pres < 0.003 {
+            continue;
+        }
+        let tw = (m.w(&tab_title(&t.id, ru), TAB_LABEL) + 0.5).ceil();
+        let k = ks(&t.id, t.active).clamp(0.0, 1.0);
+        let (bp, count) = bk(t);
+        let badge_w = if count > 0 { (8.0 + (m.w(&count.to_string(), BADGE) + 10.0).max(18.0)) * bp.max(0.0) } else { 0.0 };
+        items.push(Item { t, pres, tw, k, bp, count, extra: k * (10.0 + tw + badge_w) });
+    }
+    // a tab is `38 + extra` wide with a 4 px gap; when the row does not fit before the right group, only the 38 + 4 part shrinks (down to 32),
+    // the icons stay whole and nothing ever overlaps
+    let n: f32 = items.iter().map(|i| i.pres).sum();
+    let fixed: f32 = items.iter().map(|i| i.extra * i.pres).sum();
+    let room = bx - 16.0 - 10.0;
+    let unit = if n > 0.0 && n * 42.0 - 4.0 + fixed > room { ((room + 4.0 - fixed) / n).clamp(32.0, 42.0) } else { 42.0 };
+    let (base, gap) = (38.0 * unit / 42.0, 4.0 * unit / 42.0);
+    let pad = (base - 18.0) / 2.0;
+    let mut x = 16.0;
+    let mut tabs = Vec::new();
+    for i in &items {
+        let w = (base + i.extra) * i.pres;
+        tabs.push(TabBox { id: i.t.id.clone(), rect: Rect::new(x, 14.0, w, 32.0), icon: tab_icon(&i.t.id), tw: i.tw, k: i.k, badge: i.count, bk: i.bp, pres: i.pres, pad });
+        x += w + gap * i.pres;
+    }
+    let tabs_end = x - gap;
     let slot_l = tabs_end + 8.0;
     let pet_slot = Rect::new(slot_l, 14.0, (bx - slot_l).max(0.0), 32.0);
     ChromeLayout { tabs, buttons, vpn: vpn_rect, pet_slot, views: Rect::new(16.0, HEAD_H, PANEL_W - 32.0, (panel_h - HEAD_H - VIEWS_BOTTOM).max(0.0)) }
@@ -272,9 +297,9 @@ pub fn paint(cv: &Canvas, th: &Theme, gpu: &mut Gpu, lay: &ChromeLayout, fx: &He
                     cv.fill_rr(r, 16.0, th.hover.fade(hov * (1.0 - t.k)));
                 }
                 let col = th.icon.mix(th.text, lit);
-                gpu.icon(cv, t.icon, Rect::new(r.x + 10.0, r.cy() - 9.0, 18.0, 18.0), col, 1.6 + (2.0 * t.k).round() / 10.0);
+                gpu.icon(cv, t.icon, Rect::new(r.x + t.pad, r.cy() - 9.0, 18.0, 18.0), col, 1.6 + (2.0 * t.k).round() / 10.0);
                 if t.k > 0.01 {
-                    let lr = Rect::new(r.x + 10.0 + 18.0 + 8.0, r.cy() - 8.0, t.tw, 16.0);
+                    let lr = Rect::new(r.x + t.pad + 18.0 + 8.0, r.cy() - 8.0, t.tw, 16.0);
                     cv.with_clip(Rect::new(lr.x, r.y, (lr.w * t.k).max(0.0), r.h), |cv| cv.text(lr, &tab_title(&t.id, ru), TAB_LABEL, th.text.fade(t.k)));
                     if t.badge > 0 && t.bk > 0.01 {
                         let bw = (cv.text_width(&t.badge.to_string(), BADGE) + 10.0).max(18.0);
@@ -359,6 +384,28 @@ mod tests {
         assert_eq!((settings.w, settings.h), (28.0, 28.0));
         assert_eq!(lay.buttons[1].1.right() + 8.0, settings.x);
         assert_eq!(lay.views, Rect::new(16.0, 60.0, 648.0, 338.0 - 71.0));
+    }
+
+    #[test]
+    fn a_crowded_strip_squeezes_its_icons_together_instead_of_overlapping_the_right_group() {
+        // all the tabs of the product (11) with the long "Phone" label open, the VPN chip and the three buttons
+        let ids = ["home", "clipboard", "shelf", "text", "chat", "note", "weather", "notifs", "command", "phone", "controls"];
+        let mut v = crate::ui::island::tests_support::blank_view();
+        v.tabs = ids.iter().enumerate().map(|(i, id)| TabView { id: id.to_string(), title: id.to_string(), order: i as i32, hidden: false, off: false, stripped: false, active: *id == "phone", badge: 0 }).collect();
+        v.chrome = ChromeView { vpn: "VPN".into(), vpn_on: true, pinned: false, settings_current: false };
+        for ru in [false, true] {
+            let lay = layout(&v, ru, 338.0, &|_, a| if a { 1.0 } else { 0.0 }, &Mono(0.5));
+            for w in lay.tabs.windows(2) {
+                assert!(w[0].rect.right() <= w[1].rect.x + 0.01, "tabs overlap: {:?} {:?}", w[0].rect, w[1].rect);
+            }
+            let right = lay.vpn.map_or(lay.buttons[0].1.x, |r| r.x);
+            let last = lay.tabs.last().unwrap();
+            assert!(last.rect.right() <= right - 4.0, "the strip ends at {} but the right group starts at {right}", last.rect.right());
+            assert!(lay.tabs.iter().all(|t| t.pad >= 5.0), "icons keep room around them");
+        }
+        // with room to spare nothing is squeezed
+        let roomy = layout(&view("home", ""), false, 338.0, &|_, a| if a { 1.0 } else { 0.0 }, &Mono(0.5));
+        assert!(roomy.tabs.iter().all(|t| t.pad == 10.0));
     }
 
     #[test]
