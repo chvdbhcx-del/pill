@@ -14,8 +14,8 @@ pub fn phone() -> Page {
             group_note(
                 tr("Связь с телефоном", "Phone link"),
                 tr(
-                    "Соединение идёт без шифрования (нет TLS) и только внутри вашей домашней или офисной сети: Pill слушает частный адрес и отвергает чужие. Каждый телефон получает свой ключ при подключении; его можно отозвать. Выключено: ничего не слушает и не работает.",
-                    "The connection is NOT encrypted (no TLS) and works only inside your home or office network: Pill listens on a private address and turns everything else away. Each phone gets its own key when it pairs, and you can revoke it. Off: nothing listens and nothing runs.",
+                    "В домашней или офисной сети соединение идёт без шифрования (нет TLS): Pill слушает частный адрес и отвергает чужие. Каждый телефон получает свой ключ при подключении; его можно отозвать. Выключено: ничего не слушает и не работает.",
+                    "On your home or office network the connection is NOT encrypted (no TLS): Pill listens on a private address and turns everything else away. Each phone gets its own key when it pairs, and you can revoke it. Off: nothing listens and nothing runs.",
                 ),
                 vec![
                     toggle(
@@ -64,8 +64,39 @@ pub fn phone() -> Page {
                         tr("https://…/PillPhone.apk", "https://…/PillPhone.apk"),
                         "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk",
                     )
-                    .enabled(on)
+                    .enabled(on.clone())
                     .kw(&["apk", "download", "url", "ссылка", "скачать"]),
+                ],
+            ),
+            group_note(
+                tr("Через интернет (ретранслятор)", "Over the internet (relay)"),
+                tr(
+                    "Через ретранслятор ваши данные сквозно зашифрованы; ретранслятор (Cloudflare Worker, который принадлежит вам) видит только то, что два устройства обмениваются данными, когда и сколько. Телефон, подключённый до этого обновления, нужно подключить заново, чтобы получить ключи.",
+                    "Through the relay your data is end-to-end encrypted; the relay (a Cloudflare Worker you own) sees only that two devices exchange data, when, and how much. A phone paired before this update has to be paired again to get its keys.",
+                ),
+                vec![
+                    toggle(
+                        "phone.relay",
+                        tr("Связь через интернет", "Reach phones over the internet"),
+                        tr("Когда телефон не дома, Pill держит одно исходящее соединение с ретранслятором. Без адреса ретранслятора ничего не происходит", "When the phone is away from home Pill keeps one outgoing connection to the relay. Without a relay address nothing happens"),
+                        true,
+                    )
+                    .enabled(on.clone())
+                    .kw(&["relay", "internet", "remote", "away", "ретранслятор", "интернет", "вне дома"]),
+                    text(
+                        "phone.relayUrl",
+                        tr("Адрес ретранслятора", "Relay address"),
+                        tr("Например wss://pill-relay.ваш-аккаунт.workers.dev; новые подключения телефонов получают этот адрес", "For example wss://pill-relay.your-account.workers.dev; phones paired from now on are given this address"),
+                        TextKind::Url,
+                        tr("wss://…", "wss://…"),
+                        "",
+                    )
+                    .enabled(Cond::All(vec![on.clone(), Cond::On("phone.relay")]))
+                    .kw(&["relay", "url", "worker", "cloudflare", "ретранслятор", "адрес"]),
+                    Row::new("phone.relayMaxFileMB", "phone.relayMaxFileMB", tr("Предел файла через интернет, МБ", "File size cap over the internet, MB"), Control::Number { min: 1, max: 4096 }, json!(100))
+                        .hint(tr("Больший файл через ретранслятор не передаётся; по домашней сети предел обычный", "A bigger file does not travel through the relay; on the home network the normal cap applies"))
+                        .enabled(Cond::All(vec![on, Cond::On("phone.relay")]))
+                        .kw(&["relay", "size", "limit", "размер", "лимит", "мб"]),
                 ],
             ),
         ],

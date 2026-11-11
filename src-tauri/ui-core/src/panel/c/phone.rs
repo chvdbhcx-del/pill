@@ -109,6 +109,8 @@ pub struct Device {
     /// the address the PC saw the phone at (kept after it left), start of the current connection (ms, 0 = never)
     pub ip: String,
     pub connected_at: i64,
+    /// how the PC reaches the phone right now: `lan` | `relay` | `none` (empty from an older PC build: derived from `connected`)
+    pub route: String,
     /// the optional rich status and the session counters (`phone_info`)
     pub info: Info,
     pub stats: Stats,
@@ -126,6 +128,22 @@ pub struct Link {
     pub pc_name: String,
     pub devices: Vec<Device>,
     pub paired: usize,
+}
+
+impl Device {
+    /// The route in use as a word for the Phone tab: Home network / Internet (relay) / Offline.
+    pub fn route_text(&self, l: Lang) -> &'static str {
+        let route = match self.route.as_str() {
+            "" if self.connected => "lan",
+            "" => "none",
+            r => r,
+        };
+        match route {
+            "lan" => l.t("Домашняя сеть", "Home network"),
+            "relay" => l.t("Интернет (ретранслятор)", "Internet (relay)"),
+            _ => l.t("Не в сети", "Offline"),
+        }
+    }
 }
 
 impl Link {
@@ -361,6 +379,7 @@ impl PhoneModel {
                         last_seen: d.get("lastSeen").and_then(Value::as_i64).unwrap_or(0),
                         ip: s(d, "ip"),
                         connected_at: d.get("connectedAt").and_then(Value::as_i64).unwrap_or(0),
+                        route: s(d, "route"),
                         info: Info::parse(d.get("info").unwrap_or(&Value::Null)),
                         stats: Stats::parse(d.get("stats").unwrap_or(&Value::Null)),
                     })
@@ -884,5 +903,16 @@ mod tests {
         assert_eq!(size_text(1536 * 1024, Lang::En), "1.5 MB");
         assert_eq!(size_text(3 * 1024, Lang::Ru), "3.0 КБ");
         assert_eq!(Sub::Files.title(Lang::Ru), "Файлы");
+    }
+
+    #[test]
+    fn the_route_in_use_is_named_per_phone() {
+        let mut m = model();
+        m.on_event("phone:state", &json!({ "running": true, "devices": [
+            { "name": "A", "connected": true, "route": "lan" }, { "name": "B", "connected": true, "route": "relay" },
+            { "name": "C", "connected": false, "route": "none" }, { "name": "Old", "connected": true }, { "name": "OldOff", "connected": false }] }));
+        let words: Vec<&str> = m.link().devices.iter().map(|d| d.route_text(Lang::En)).collect();
+        assert_eq!(words, ["Home network", "Internet (relay)", "Offline", "Home network", "Offline"]);
+        assert_eq!(m.link().devices[1].route_text(Lang::Ru), "Интернет (ретранслятор)");
     }
 }

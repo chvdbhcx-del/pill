@@ -550,7 +550,7 @@ fn signature() -> u64 {
     h.finish()
 }
 
-fn tls_config() -> Result<Arc<rustls::ClientConfig>, String> {
+pub(crate) fn tls_config() -> Result<Arc<rustls::ClientConfig>, String> {
     use rustls_platform_verifier::BuilderVerifierExt;
     static CFG: OnceLock<Result<Arc<rustls::ClientConfig>, String>> = OnceLock::new();
     CFG.get_or_init(|| {

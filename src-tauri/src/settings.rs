@@ -81,10 +81,12 @@ pub(crate) fn defaults() -> Cfg {
     m.extend(homes);
     // Pill Phone link (phone.rs, docs/phone-protocol.md): the server runs only while phone.enabled is on. phone.port = where it listens (the first free one
     // from 41717 up is remembered), phone.downloadDir "" = Downloads\Pill, phone.maxFileMB = size cap per file, phone.mutedApps = package names whose
-    // notifications are ignored, module.phone / live.phone = the island tab and the cards on the folded island.
+    // notifications are ignored, module.phone / live.phone = the island tab and the cards on the folded island. phone.relay / phone.relayUrl /
+    // phone.relayMaxFileMB = the internet relay of protocol v2 (docs/phone-relay.md): on by default but idle until a relay URL is set.
     let Value::Object(phone) = json!({
         "phone.enabled": false, "phone.port": 41717, "phone.downloadDir": "", "phone.maxFileMB": 4096, "phone.autoAccept": true,
-        "phone.apkUrl": "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk", "phone.mutedApps": [], "module.phone": true, "live.phone": true
+        "phone.apkUrl": "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk", "phone.mutedApps": [], "module.phone": true, "live.phone": true,
+        "phone.relay": true, "phone.relayUrl": "", "phone.relayMaxFileMB": 100
     }) else { unreachable!() };
     m.extend(phone);
     m

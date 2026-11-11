@@ -58,6 +58,8 @@ pub fn accept_key(key: &str) -> String {
 #[derive(Debug, PartialEq)]
 pub enum Msg {
     Text(String),
+    /// a binary message (v2 relay frames); the LAN server treats one as a protocol error
+    Bin(Vec<u8>),
     Ping(Vec<u8>),
     Pong,
     Close(u16),
@@ -83,6 +85,9 @@ pub fn frame(opcode: u8, payload: &[u8]) -> Vec<u8> {
 pub fn text_frame(s: &str) -> Vec<u8> {
     frame(0x1, s.as_bytes())
 }
+pub fn binary_frame(b: &[u8]) -> Vec<u8> {
+    frame(0x2, b)
+}
 pub fn close_frame(code: u16) -> Vec<u8> {
     frame(0x8, &code.to_be_bytes())
 }
@@ -90,9 +95,15 @@ pub fn pong_frame(payload: &[u8]) -> Vec<u8> {
     frame(0xA, &payload[..payload.len().min(125)])
 }
 
-/// Reads one complete message. Errors (also timeouts) end the connection.
+/// Reads one complete message as a server (client frames must be masked). Errors (also timeouts) end the connection.
 pub fn read_msg(r: &mut impl Read) -> io::Result<Msg> {
+    read_msg_as(r, true)
+}
+
+/// `masked_peer`: true when reading a client's frames (the server side), false when reading a server's frames (the relay client).
+pub fn read_msg_as(r: &mut impl Read, masked_peer: bool) -> io::Result<Msg> {
     let mut text: Vec<u8> = Vec::new();
+    let mut binary = false;
     loop {
         let mut h = [0u8; 2];
         r.read_exact(&mut h)?;
@@ -107,21 +118,26 @@ pub fn read_msg(r: &mut impl Read) -> io::Result<Msg> {
             r.read_exact(&mut b)?;
             len = u64::from_be_bytes(b);
         }
-        if !masked || len > MAX_MSG as u64 || (op >= 8 && len > 125) || text.len() + len as usize > MAX_MSG {
+        if masked != masked_peer || len > MAX_MSG as u64 || (op >= 8 && len > 125) || text.len() + len as usize > MAX_MSG {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "bad frame"));
         }
         let mut mask = [0u8; 4];
-        r.read_exact(&mut mask)?;
+        if masked {
+            r.read_exact(&mut mask)?;
+        }
         let mut p = vec![0u8; len as usize];
         r.read_exact(&mut p)?;
-        for (i, b) in p.iter_mut().enumerate() {
-            *b ^= mask[i % 4];
+        if masked {
+            for (i, b) in p.iter_mut().enumerate() {
+                *b ^= mask[i % 4];
+            }
         }
         match op {
-            0x0 | 0x1 => {
+            0x0..=0x2 => {
+                binary |= op == 0x2;
                 text.extend_from_slice(&p);
                 if fin {
-                    return String::from_utf8(text).map(Msg::Text).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "utf8"));
+                    return if binary { Ok(Msg::Bin(text)) } else { String::from_utf8(text).map(Msg::Text).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "utf8")) };
                 }
             }
             0x8 => return Ok(Msg::Close(if p.len() >= 2 { u16::from_be_bytes([p[0], p[1]]) } else { 1005 })),
@@ -137,10 +153,18 @@ pub fn write_all(w: &mut impl Write, bytes: &[u8]) -> io::Result<()> {
     w.flush()
 }
 
+/// A masked client frame (RFC 6455: everything a client sends is masked), FIN set.
+pub fn masked_frame(op: u8, payload: &[u8], mask: [u8; 4]) -> Vec<u8> {
+    client_frame_with(op, true, payload, mask)
+}
+
 /// A masked client frame, the way a phone builds it (tests of this module and of the server).
 #[cfg(test)]
 pub fn client_frame(op: u8, fin: bool, payload: &[u8]) -> Vec<u8> {
-    let mask = [0x12u8, 0x34, 0x56, 0x78];
+    client_frame_with(op, fin, payload, [0x12u8, 0x34, 0x56, 0x78])
+}
+
+fn client_frame_with(op: u8, fin: bool, payload: &[u8], mask: [u8; 4]) -> Vec<u8> {
     let mut f = vec![if fin { 0x80 } else { 0 } | op];
     match payload.len() {
         n if n < 126 => f.push(0x80 | n as u8),
