@@ -1,6 +1,5 @@
 package app.pill.phone.net
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -15,22 +14,13 @@ import app.pill.phone.protocol.RelayCfg
 import app.pill.phone.protocol.RelayUrl
 import app.pill.phone.protocol.V2
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -75,84 +65,56 @@ enum class RelayState {
     /** The traffic goes through the relay right now. */
     Active,
     /** The relay rejected our join secret: pair again. */
-    Refused,
-}
+    Refused;
 
-/**
- * The one connection to the PC (protocol "Realtime channel"), over the LAN or, away from home, over the relay
- * (docs/phone-relay.md). Owned by [app.pill.phone.service.LinkService]; everything else only reads [state] /
- * [incoming] and calls [send], and does not care which route carries it.
- */
-@SuppressLint("StaticFieldLeak") // holds only the application context, which lives as long as the process
-object Link {
-    private lateinit var app: Context
-
-    private val _state = MutableStateFlow<LinkState>(LinkState.Unpaired)
-    val state: StateFlow<LinkState> = _state.asStateFlow()
-
-    private val _incoming = MutableSharedFlow<Msg>(extraBufferCapacity = 256, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-    /** Every frame from the PC except ping/pong. [Msg.Hello] marks a fresh session. */
-    val incoming: SharedFlow<Msg> = _incoming.asSharedFlow()
-
-    private val _relayDyn = MutableStateFlow(RelayState.Standby)
-    /** State of the internet link, folded with whether the pairing has keys and the setting is on. */
-    val relayState: Flow<RelayState> = combine(Store.paired, Store.relayEnabled, _relayDyn) { p, on, dyn ->
-        when {
-            p?.relay == null -> RelayState.Unavailable
-            !on -> RelayState.Disabled
+    companion object {
+        /** The dynamic state folded with whether this pairing has keys and the setting is on. */
+        fun effective(p: Paired?, enabled: Boolean, dyn: RelayState): RelayState = when {
+            p?.relay == null -> Unavailable
+            !enabled -> Disabled
             else -> dyn
         }
-    }.distinctUntilChanged()
+    }
+}
+
+/** A frame from one PC, tagged with where it came from so replies and results go back to the same PC. */
+data class Incoming(val pcId: String, val msg: Msg)
+
+/**
+ * The connection to ONE paired PC (protocol "Realtime channel"), over the LAN or, away from home, over the relay
+ * (docs/phone-relay.md). [LinkManager] owns one of these per PC; each makes its own route decision and keeps its own
+ * back-off, so one PC can be on the home network while another is on the internet. Everything else only reads [state] and
+ * calls [send], and does not care which route carries it.
+ */
+class PcLink(
+    val pcId: String,
+    private val app: Context,
+    private val emit: (Incoming) -> Unit,
+    private val onRevoked: (Paired) -> Unit,
+) {
+    private val _state = MutableStateFlow<LinkState>(LinkState.Connecting)
+    val state: StateFlow<LinkState> = _state.asStateFlow()
+
+    private val _relayDyn = MutableStateFlow(RelayState.Standby)
+    /** The relay's dynamic state, before it is folded with the pairing's keys and the setting. */
+    val relayDyn: StateFlow<RelayState> = _relayDyn.asStateFlow()
 
     private val _relayMaxMb = MutableStateFlow(DEFAULT_RELAY_MAX_MB)
     /** Size cap of a file through the relay, from the PC's hello (default 100 MB). */
     val relayMaxFileMB: StateFlow<Int> = _relayMaxMb.asStateFlow()
 
     private val nudges = Channel<Unit>(Channel.CONFLATED)
-    private var job: Job? = null
     @Volatile private var out: Conn? = null
     private val relayHolds = AtomicInteger()
-    private val policy = RoutePolicy { relayConfig(Store.paired.value) != null }
+    private val policy = RoutePolicy { relayConfig(Store.pc(pcId)) != null }
 
-    /** Consecutive failed attempts before we call it "PC not found" instead of "connecting". */
-    private const val NOT_FOUND_AFTER = 3
-    private const val JOIN_WAIT_MS = 8_000L
-    private const val HELLO_WAIT_MS = 3_000L
-    const val DEFAULT_RELAY_MAX_MB = 100
-
-    fun init(ctx: Context) {
-        app = ctx.applicationContext
-        if (Store.paired.value == null) _state.value = LinkState.Unpaired
-    }
-
-    @Synchronized
-    fun start(scope: CoroutineScope) {
-        if (job?.isActive == true) return
-        job = scope.launch { loop() }
-        // "Use internet relay" switched while running: leave the relay at once, or try it now.
-        scope.launch {
-            Store.relayEnabled.drop(1).collect { on ->
-                if (!on) out?.takeIf { it.route == Route.Relay }?.ws?.cancel()
-                nudge()
-            }
-        }
-    }
-
-    @Synchronized
-    fun stop() {
-        job?.cancel()
-        job = null
-        out?.ws?.cancel()
-        out = null
-        if (_state.value !is LinkState.Revoked) {
-            _state.value = if (Store.paired.value == null) LinkState.Unpaired else LinkState.Connecting
-        }
-    }
+    /** The current pairing of this PC; null once it is gone. */
+    private val paired: Paired? get() = Store.pc(pcId)
 
     /** Try again now instead of waiting out the back-off (button, network back); on the relay it also looks at the LAN. */
     fun nudge() { nudges.trySend(Unit) }
 
-    /** The default network changed: the open socket is probably dead, do not wait for the watchdog. The next attempt starts at the LAN again. */
+    /** The default network changed (or the credentials did): the open socket is probably dead, do not wait for the watchdog. The next attempt starts at the LAN again. */
     fun networkChanged() {
         out?.ws?.cancel()
         nudge()
@@ -179,16 +141,28 @@ object Link {
 
     private fun now() = System.currentTimeMillis()
 
+    /** Runs until cancelled (the PC is unpaired or the service stops). */
+    suspend fun run() = coroutineScope {
+        // "Use internet relay" switched while running: leave the relay at once, or try it now.
+        val watcher = launch {
+            Store.relayEnabled.drop(1).collect { on ->
+                if (!on) out?.takeIf { it.route == Route.Relay }?.ws?.cancel()
+                nudge()
+            }
+        }
+        try {
+            loop()
+        } finally {
+            watcher.cancel()
+            out?.ws?.cancel()
+            out = null
+        }
+    }
+
     private suspend fun loop() {
         var failures = 0
         while (currentCoroutineContext().isActive) {
-            val p = Store.paired.value
-            if (p == null) {
-                _state.value = LinkState.Unpaired
-                Store.paired.first { it != null }
-                failures = 0
-                continue
-            }
+            val p = paired ?: return   // unpaired: the manager is about to cancel us anyway
             if (!Net.isUp(app)) {
                 _state.value = LinkState.NoNetwork
                 withTimeoutOrNull(30_000) { nudges.receive() }
@@ -200,16 +174,14 @@ object Link {
             when (session(p)) {
                 End.Revoked -> {
                     _state.value = LinkState.Revoked   // before the pairing goes, so observers see why
-                    Store.clearPairing()
-                    Store.paired.first { it != null }
-                    failures = 0
-                    continue
+                    onRevoked(p)
+                    return
                 }
                 End.ToLan -> { failures = 0; continue }   // the home network answers again: straight back, no waiting
                 End.Dropped -> failures = 0          // it worked for a while: start the schedule over
                 End.Failed -> failures++
             }
-            if (Store.paired.value == null) continue
+            if (paired == null) return
             if (failures < NOT_FOUND_AFTER) _state.value = LinkState.Connecting
             withTimeoutOrNull(policy.retryDelayMs(failures.coerceAtLeast(1))) { nudges.receive() }
         }
@@ -269,6 +241,7 @@ object Link {
                 conn.lastRx.set(now())
                 _state.value = LinkState.Connected(p.pcName, Route.Lan)
                 _relayDyn.value = RelayState.Standby
+                Store.touchSeen(pcId)
                 conn.ready.complete(true)
             }
 
@@ -359,8 +332,9 @@ object Link {
                 m.relayMaxFileMB?.takeIf { it > 0 }?.let { _relayMaxMb.value = it }
                 _state.value = LinkState.Connected(name, conn.route)
                 if (conn.route == Route.Relay) _relayDyn.value = RelayState.Active
-                if (name != p.pcName) Store.savePairing(p.host, p.port, p.token, name)
-                _incoming.tryEmit(m)
+                Store.touchSeen(pcId)
+                if (name != p.pcName) Store.setPcName(pcId, name)
+                emit(Incoming(pcId, m))
             }
             else -> {
                 // A PC that talks without a hello first is still there.
@@ -368,7 +342,7 @@ object Link {
                     _state.value = LinkState.Connected(p.pcName, Route.Relay)
                     _relayDyn.value = RelayState.Active
                 }
-                _incoming.tryEmit(m)
+                emit(Incoming(pcId, m))
             }
         }
     }
@@ -396,6 +370,7 @@ object Link {
             conn.ws.close(1000, null)
             conn.ws.cancel()
             if (out === conn) out = null
+            if (conn.opened) Store.touchSeen(pcId)
         }
     }
 
@@ -406,9 +381,17 @@ object Link {
             val nudged = withTimeoutOrNull(policy.probeInMs(now(), busy)) { nudges.receive(); true } ?: false
             if (policy.shouldProbe(now(), relayHolds.get() > 0, nudged)) {
                 policy.onProbed(now())
-                if (PcApi.lanReachable(p)) { conn.done.complete(End.ToLan); return }
+                if (PcApi.lanReachable(paired ?: p)) { conn.done.complete(End.ToLan); return }
             }
         }
+    }
+
+    companion object {
+        /** Consecutive failed attempts before we call it "PC not found" instead of "connecting". */
+        private const val NOT_FOUND_AFTER = 3
+        private const val JOIN_WAIT_MS = 8_000L
+        private const val HELLO_WAIT_MS = 3_000L
+        const val DEFAULT_RELAY_MAX_MB = 100
     }
 }
 

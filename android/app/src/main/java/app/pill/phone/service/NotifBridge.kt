@@ -15,7 +15,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import app.pill.phone.data.AppFilter
 import app.pill.phone.data.Store
-import app.pill.phone.net.Link
+import app.pill.phone.data.Routing
+import app.pill.phone.net.LinkManager
 import app.pill.phone.protocol.Msg
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -33,44 +34,85 @@ object NotifBridge {
     /** What we need to act on a notification later; lives in memory only (a reply after a process restart is "expired"). */
     private class Entry(val reply: Notification.Action?, val read: PendingIntent?)
 
+    /** One entry per notification key, shared by every PC it was sent to: a reply typed on any of them goes through the same action. */
     private val entries = ConcurrentHashMap<String, Entry>()
-    private val sentHash = ConcurrentHashMap<String, Int>()
+    /** What each PC has already been sent (pcId -> key -> content hash), so a repeat is skipped and a removal is announced to exactly those PCs. */
+    private val sentHash = ConcurrentHashMap<String, ConcurrentHashMap<String, Int>>()
     private val appIcons = ConcurrentHashMap<String, String?>()
 
     private val READ_TITLE = Regex("mark.*read|^read$|прочитан|прочесть", RegexOption.IGNORE_CASE)
 
-    fun posted(ctx: Context, sbn: StatusBarNotification, replay: Boolean) {
-        if (!Link.isConnected) return
+    private fun sent(pcId: String) = sentHash.getOrPut(pcId) { ConcurrentHashMap() }
+
+    /**
+     * Mirror one notification to every connected PC that wants it: its "Mirror notifications" switch is on and its own app filter
+     * (or the global one) allows the app. [only] limits it to one PC (the replay after that PC connected).
+     */
+    fun posted(ctx: Context, sbn: StatusBarNotification, replay: Boolean, only: String? = null) {
+        val connected = LinkManager.connectedIds()
+        if (connected.isEmpty()) return
+        val pcs = Store.pcs.value.filter { only == null || it.pcId == only }
+        val system = prefilter(ctx, sbn) ?: return
+        val targets = Routing.mirrorTargets(pcs, connected, sbn.packageName, system, Store.overrides.value)
+        if (targets.isEmpty()) return
         val (msg, entry) = build(ctx, sbn, replay) ?: return
-        if (!replay && sentHash[msg.key] == msg.hashCode()) return   // same content again (progress ticks, re-posts)
         entries[msg.key] = entry
-        if (Link.send(msg)) sentHash[msg.key] = msg.hashCode()
+        val hash = msg.hashCode()
+        for (pc in targets) {
+            val seen = sent(pc.pcId)
+            if (!replay && seen[msg.key] == hash) continue   // same content again (progress ticks, re-posts)
+            if (LinkManager.send(pc.pcId, msg)) seen[msg.key] = hash
+        }
     }
 
+    /** Dismissed on the phone (or by a PC's dismiss): tell every PC that had it. */
     fun removed(key: String) {
         entries.remove(key)
-        if (sentHash.remove(key) != null) Link.send(Msg.NotifRemoved(key))
+        for ((pcId, seen) in sentHash) if (seen.remove(key) != null) LinkManager.send(pcId, Msg.NotifRemoved(key))
     }
 
-    /** On (re)connect: the PC has seen nothing, so every active notification goes out again, flagged as a replay. */
-    fun replayAll(ctx: Context) {
+    /** On (re)connect of [pcId] (null: all connected PCs): that PC has seen nothing, so every active notification goes to it again, flagged as a replay. */
+    fun replayAll(ctx: Context, pcId: String? = null) {
         val l = PillNotificationListener.instance ?: return
-        sentHash.clear()
         val active = try { l.activeNotifications } catch (_: Exception) { null } ?: return
-        for (sbn in active) posted(ctx, sbn, replay = true)
+        val ids = if (pcId != null) listOf(pcId) else LinkManager.connectedIds().toList()
+        for (id in ids) {
+            sent(id).clear()
+            for (sbn in active) posted(ctx, sbn, replay = true, only = id)
+        }
     }
 
-    fun handle(ctx: Context, m: Msg) {
+    /** What a message from a PC makes the phone do; a seam so the routing can be tested without Android. */
+    interface Phone {
+        fun dismiss(key: String)
+        fun read(key: String)
+        /** Null on success, otherwise the protocol's error word. */
+        fun reply(key: String, text: String): String?
+        fun replay(pcId: String)
+    }
+
+    /** A message from [pcId]: whatever it asks is carried out once, and anything answered goes back to that PC only. */
+    internal fun dispatch(pcId: String, m: Msg, phone: Phone, send: (String, Msg) -> Boolean) {
         when (m) {
-            is Msg.Hello -> PillApp.scope.launch(Dispatchers.Default) { replayAll(ctx) }
-            is Msg.NotifDismiss -> PillNotificationListener.instance?.cancelNotificationSafe(m.key)
-            is Msg.NotifRead -> read(m.key)
+            is Msg.Hello -> phone.replay(pcId)
+            is Msg.NotifDismiss -> phone.dismiss(m.key)
+            is Msg.NotifRead -> phone.read(m.key)
             is Msg.NotifReply -> {
-                val err = reply(ctx, m.key, m.text)
-                Link.send(Msg.ReplyResult(m.req, err == null, err))
+                val err = phone.reply(m.key, m.text)
+                send(pcId, Msg.ReplyResult(m.req, err == null, err))
             }
             else -> Unit
         }
+    }
+
+    fun handle(ctx: Context, pcId: String, m: Msg) {
+        if (m !is Msg.Hello && m !is Msg.NotifDismiss && m !is Msg.NotifRead && m !is Msg.NotifReply) return
+        dispatch(pcId, m, object : Phone {
+            override fun dismiss(key: String) { PillNotificationListener.instance?.cancelNotificationSafe(key) }
+            override fun read(key: String) = this@NotifBridge.read(key)
+            override fun reply(key: String, text: String) = this@NotifBridge.reply(ctx, key, text)
+            override fun replay(pcId: String) { PillApp.scope.launch(Dispatchers.Default) { replayAll(ctx, pcId) } }
+        }, LinkManager::send)
     }
 
     private fun read(key: String) {
@@ -102,18 +144,29 @@ object NotifBridge {
 
     // ---- building ----
 
+    private fun isOngoing(n: Notification) = n.flags and (Notification.FLAG_ONGOING_EVENT or Notification.FLAG_FOREGROUND_SERVICE) != 0
+
+    private fun isSystem(pm: PackageManager, pkg: String): Boolean {
+        val info = try { pm.getApplicationInfo(pkg, 0) } catch (_: PackageManager.NameNotFoundException) { null }
+        return info != null && info.flags and ApplicationInfo.FLAG_SYSTEM != 0 && info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0
+    }
+
+    /** The cheap checks that hold for every PC (ourselves, group summaries, ongoing); whether the app is a system app, or null when it is not sent at all. */
+    private fun prefilter(ctx: Context, sbn: StatusBarNotification): Boolean? {
+        val n = sbn.notification
+        if (sbn.packageName == AppFilter.SELF) return null
+        if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return null
+        if (isOngoing(n) && !Store.includeOngoing.value) return null
+        return isSystem(ctx.packageManager, sbn.packageName)
+    }
+
     private fun build(ctx: Context, sbn: StatusBarNotification, replay: Boolean): Pair<Msg.NotifPosted, Entry>? {
         val pkg = sbn.packageName
         val n = sbn.notification
-        if (pkg == AppFilter.SELF) return null
-        if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return null
-        val ongoing = n.flags and (Notification.FLAG_ONGOING_EVENT or Notification.FLAG_FOREGROUND_SERVICE) != 0
-        if (ongoing && !Store.includeOngoing.value) return null
+        val ongoing = isOngoing(n)
 
         val pm = ctx.packageManager
         val info = try { pm.getApplicationInfo(pkg, 0) } catch (_: PackageManager.NameNotFoundException) { null }
-        val system = info != null && info.flags and ApplicationInfo.FLAG_SYSTEM != 0 && info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0
-        if (!AppFilter.isEnabled(pkg, system, Store.overrides.value)) return null
 
         val extras = n.extras
         val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)

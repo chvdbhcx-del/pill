@@ -251,4 +251,43 @@
     <string name="relay_file_cap">Файлы через интернет: до %1$d МБ</string>
     <string name="state_notfound_pc">Ваш ПК не запущен</string>
     <string name="notif_pc_offline">Ждём ваш ПК · связь через интернет готова</string>
+
+    <!-- Несколько ПК -->
+    <string name="notif_connected_all">Подключено ПК: %1$d</string>
+    <string name="notif_connected_some">Доступно ПК: %1$d из %2$d</string>
+    <string name="notif_connecting_all">Подключаемся к вашим ПК…</string>
+    <string name="notif_notfound_all">ПК не найдены в этой сети</string>
+    <string name="notif_pc_removed">%1$s отвязал этот телефон</string>
+    <string name="file_from_named_pc">Файл с %1$s</string>
+    <string name="pcs_section">ПК</string>
+    <string name="pcs_add">Добавить ещё один ПК</string>
+    <string name="pcs_rename">Переименовать</string>
+    <string name="pcs_rename_title">Как назвать этот ПК?</string>
+    <string name="pcs_rename_hint">Ваше название. У самого ПК оно остаётся прежним.</string>
+    <string name="field_pc_name">Название</string>
+    <string name="btn_save">Сохранить</string>
+    <string name="pcs_mirror">Дублировать уведомления</string>
+    <string name="pcs_mirror_body">Показывать уведомления телефона на этом ПК</string>
+    <string name="pcs_auto_receive">Принимать файлы сразу</string>
+    <string name="pcs_auto_receive_body">Сохранять файлы с этого ПК без вопросов</string>
+    <string name="pcs_filter">Свой список приложений</string>
+    <string name="pcs_filter_same">Те же приложения, что и для всех ПК</string>
+    <string name="pcs_filter_custom">Отдельный список приложений</string>
+    <string name="pcs_filter_edit">Выбрать приложения</string>
+    <string name="pcs_last_seen">Был на связи: %1$s</string>
+    <string name="pcs_never_seen">Ещё не подключался</string>
+    <string name="pcs_connected_via">На связи · %1$s</string>
+    <string name="pcs_offline">Недоступен</string>
+    <string name="pcs_connecting">Подключаемся…</string>
+    <string name="apps_title_for">Приложения · %1$s</string>
+    <string name="pick_title">На какой ПК отправить?</string>
+    <plurals name="pick_files">
+        <item quantity="one">%d файл</item>
+        <item quantity="few">%d файла</item>
+        <item quantity="many">%d файлов</item>
+        <item quantity="other">%d файла</item>
+    </plurals>
+    <string name="pick_all">Отправить на все ПК</string>
+    <string name="pick_none">Сейчас ни один ПК не доступен</string>
+    <string name="pick_offline">Не в сети</string>
 </resources>

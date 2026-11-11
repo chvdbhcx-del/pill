@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.alpha
 import app.pill.phone.net.RelayState
 import androidx.compose.foundation.background
@@ -81,14 +84,25 @@ class SettingsActions(
     val onAutoReceive: (Boolean) -> Unit = {},
     val onOngoing: (Boolean) -> Unit = {},
     val onRelay: (Boolean) -> Unit = {},
-    val onUnpair: () -> Unit = {},
+    val onUnpair: (String) -> Unit = {},
+    val onRenamePc: (String, String) -> Unit = { _, _ -> },
+    val onPcMirror: (String, Boolean) -> Unit = { _, _ -> },
+    val onPcAutoReceive: (String, Boolean) -> Unit = { _, _ -> },
+    val onPcOwnFilter: (String, Boolean) -> Unit = { _, _ -> },
+    val onPcApps: (String) -> Unit = {},
     val onPair: () -> Unit = {},
     val perms: PermissionActions = PermissionActions(),
 )
 
 @Composable
-fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: Boolean = false, onAskUnpair: (Boolean) -> Unit = {}) {
+fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: String? = null, onAskUnpair: (String?) -> Unit = {}) {
     val c = Pill.colors
+    var renaming by remember { mutableStateOf<String?>(null) }
+    val several = ui.pcs.size >= 2
+    val pcActions = PcsActions(
+        onRename = { renaming = it }, onMirror = actions.onPcMirror, onAutoReceive = actions.onPcAutoReceive,
+        onOwnFilter = actions.onPcOwnFilter, onChooseApps = actions.onPcApps, onUnpair = { onAskUnpair(it) },
+    )
     PillBackground {
         Column(Modifier.fillMaxSize()) {
             TopBar(stringResource(R.string.settings_title), actions.onBack)
@@ -97,16 +111,27 @@ fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: Boolean 
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                item(key = "pc") {
-                    GlassCard(Modifier.staggerIn(0)) {
-                        SettingRow(
-                            ui.pcName ?: stringResource(R.string.state_unpaired),
-                            subtitle = ui.address ?: stringResource(R.string.settings_not_paired_body),
-                            icon = Icons.Rounded.Computer,
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        if (ui.pcName != null) PillButton(stringResource(R.string.btn_unpair), { onAskUnpair(true) }, Modifier.fillMaxWidth(), kind = ButtonKind.Danger, icon = Icons.Rounded.LinkOff)
-                        else PillButton(stringResource(R.string.btn_scan_qr), actions.onPair, Modifier.fillMaxWidth(), icon = Icons.Rounded.QrCodeScanner)
+                if (several) {
+                    item(key = "pcs-label") { SectionLabel(stringResource(R.string.pcs_section)) }
+                    items(ui.pcs, key = { "pc-" + it.pcId }) { pc ->
+                        PcCard(pc, pcActions, Modifier.staggerIn(0).animateItem(fadeInSpec = Motion.calm(), placementSpec = Motion.soft(), fadeOutSpec = Motion.calm()))
+                    }
+                    item(key = "pcs-add") { AddPcButton(actions.onPair, Modifier.staggerIn(1)) }
+                } else {
+                    item(key = "pc") {
+                        GlassCard(Modifier.staggerIn(0)) {
+                            SettingRow(
+                                ui.pcName ?: stringResource(R.string.state_unpaired),
+                                subtitle = ui.address ?: stringResource(R.string.settings_not_paired_body),
+                                icon = Icons.Rounded.Computer,
+                            )
+                            Spacer(Modifier.height(14.dp))
+                            if (ui.pcName != null) {
+                                PillButton(stringResource(R.string.btn_unpair), { ui.pcs.firstOrNull()?.let { onAskUnpair(it.pcId) } }, Modifier.fillMaxWidth(), kind = ButtonKind.Danger, icon = Icons.Rounded.LinkOff)
+                                // a second PC can be added next to this one; nothing is replaced
+                                AddPcButton(actions.onPair, Modifier.padding(top = 4.dp), kind = ButtonKind.Quiet)
+                            } else PillButton(stringResource(R.string.btn_scan_qr), actions.onPair, Modifier.fillMaxWidth(), icon = Icons.Rounded.QrCodeScanner)
+                        }
                     }
                 }
                 if (ui.pcName != null) {
@@ -138,10 +163,13 @@ fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: Boolean 
                 item(key = "files-label") { SectionLabel(stringResource(R.string.files_title)) }
                 item(key = "files") {
                     GlassCard(Modifier.staggerIn(2)) {
-                        SettingRow(stringResource(R.string.settings_auto_receive), subtitle = stringResource(R.string.settings_auto_receive_body), icon = Icons.Rounded.SaveAlt) {
-                            PillSwitch(ui.autoReceive, actions.onAutoReceive)
+                        // with several PCs the switch lives on each PC's card
+                        if (!several) {
+                            SettingRow(stringResource(R.string.settings_auto_receive), subtitle = stringResource(R.string.settings_auto_receive_body), icon = Icons.Rounded.SaveAlt) {
+                                PillSwitch(ui.autoReceive, actions.onAutoReceive)
+                            }
+                            Divider(Modifier.padding(vertical = 8.dp))
                         }
-                        Divider(Modifier.padding(vertical = 8.dp))
                         SettingRow(stringResource(R.string.settings_saved_to), subtitle = "Downloads/Pill", icon = Icons.AutoMirrored.Rounded.InsertDriveFile)
                     }
                 }
@@ -163,7 +191,15 @@ fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: Boolean 
                 item(key = "end") { NavBarSpacer() }
             }
         }
-        if (askUnpair) UnpairDialog(ui.pcName, onConfirm = { onAskUnpair(false); actions.onUnpair() }, onDismiss = { onAskUnpair(false) })
+        if (askUnpair != null) {
+            // keep the name while the dialog fades out after the PC is gone from the list
+            val name = ui.pcs.firstOrNull { it.pcId == askUnpair }?.name ?: ui.pcName
+            UnpairDialog(name, onConfirm = { onAskUnpair(null); actions.onUnpair(askUnpair) }, onDismiss = { onAskUnpair(null) })
+        }
+        renaming?.let { id ->
+            val pc = ui.pcs.firstOrNull { it.pcId == id }
+            if (pc != null) RenamePcDialog(pc.name, pc.pcName, onSave = { actions.onRenamePc(id, it); renaming = null }, onDismiss = { renaming = null })
+        }
     }
 }
 

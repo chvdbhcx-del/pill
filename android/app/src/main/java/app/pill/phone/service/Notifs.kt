@@ -15,7 +15,10 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import app.pill.phone.MainActivity
 import app.pill.phone.R
+import app.pill.phone.data.Paired
+import app.pill.phone.data.Routing
 import app.pill.phone.net.LinkState
+import app.pill.phone.net.PcView
 import app.pill.phone.net.Route
 import app.pill.phone.protocol.FileNames
 
@@ -48,6 +51,27 @@ object Notifs {
         return PendingIntent.getActivity(ctx, req, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
+    /** The foreground notification: one line about the single PC, or, with several, how many are reachable. */
+    fun link(ctx: Context, pcs: List<Paired>, views: Map<String, PcView>, revoked: Boolean = false): Notification {
+        if (pcs.size <= 1) {
+            val p = pcs.firstOrNull()
+            val state = if (revoked && p == null) LinkState.Revoked else views[p?.pcId]?.state ?: LinkState.Connecting
+            return link(ctx, state, p?.label.orEmpty())
+        }
+        val states = pcs.map { views[it.pcId]?.state ?: LinkState.Connecting }
+        val up = states.count { it is LinkState.Connected }
+        val title = when (val s = Routing.summary(up, pcs.size)) {
+            is Routing.Summary.All -> ctx.getString(R.string.notif_connected_all, s.count)
+            is Routing.Summary.Some -> ctx.getString(R.string.notif_connected_some, s.connected, s.total)
+            Routing.Summary.None -> when {
+                states.all { it == LinkState.NoNetwork } -> ctx.getString(R.string.notif_nonetwork)
+                states.any { it == LinkState.Connecting } -> ctx.getString(R.string.notif_connecting_all)
+                else -> ctx.getString(R.string.notif_notfound_all)
+            }
+        }
+        return linkBuilder(ctx, title).build()
+    }
+
     fun link(ctx: Context, state: LinkState, pcName: String): Notification {
         val title = when (state) {
             is LinkState.Connected -> ctx.getString(
@@ -60,6 +84,23 @@ object Notifs {
             LinkState.PcOffline -> ctx.getString(R.string.notif_pc_offline)
             LinkState.Revoked -> ctx.getString(R.string.notif_revoked)
         }
+        val b = linkBuilder(ctx, title)
+        if (state == LinkState.NotFound) b.addAction(0, ctx.getString(R.string.act_scan_again), openApp(ctx, MainActivity.ACTION_SCAN, 1))
+        if (state == LinkState.Revoked) b.addAction(0, ctx.getString(R.string.act_pair_again), openApp(ctx, MainActivity.ACTION_SCAN, 1))
+        return b.build()
+    }
+
+    /** One PC out of several removed this phone: a quiet note, the link to the others goes on. */
+    fun pcRemoved(ctx: Context, pcName: String) {
+        val n = NotificationCompat.Builder(ctx, CH_FILES)
+            .setSmallIcon(R.drawable.ic_stat_pill)
+            .setContentTitle(ctx.getString(R.string.notif_pc_removed, pcName))
+            .setContentIntent(openApp(ctx)).setAutoCancel(true).setSilent(true)
+            .build()
+        notify(ctx, ID_BASE - 1 - (pcName.hashCode() and 0xFF), n)
+    }
+
+    private fun linkBuilder(ctx: Context, title: String): NotificationCompat.Builder {
         val b = NotificationCompat.Builder(ctx, CH_LINK)
             .setSmallIcon(R.drawable.ic_stat_pill)
             .setContentTitle(title)
@@ -70,9 +111,7 @@ object Notifs {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-        if (state == LinkState.NotFound) b.addAction(0, ctx.getString(R.string.act_scan_again), openApp(ctx, MainActivity.ACTION_SCAN, 1))
-        if (state == LinkState.Revoked) b.addAction(0, ctx.getString(R.string.act_pair_again), openApp(ctx, MainActivity.ACTION_SCAN, 1))
-        return b.build()
+        return b
     }
 
     private fun canPost(ctx: Context) =
@@ -104,7 +143,7 @@ object Notifs {
     }
 
     /** "File from PC": tap or the Receive action starts the download. */
-    fun offered(ctx: Context, transferId: String, name: String, size: Long) {
+    fun offered(ctx: Context, transferId: String, name: String, size: Long, pcName: String? = null) {
         val receive = PendingIntent.getBroadcast(
             ctx, idFor(transferId),
             Intent(ctx, TransferActionReceiver::class.java).setAction(TransferActionReceiver.ACTION_RECEIVE).putExtra(TransferActionReceiver.EXTRA_ID, transferId),
@@ -112,7 +151,7 @@ object Notifs {
         )
         val n = NotificationCompat.Builder(ctx, CH_INCOMING)
             .setSmallIcon(R.drawable.ic_stat_pill)
-            .setContentTitle(ctx.getString(R.string.file_from_pc))
+            .setContentTitle(if (pcName != null) ctx.getString(R.string.file_from_named_pc, pcName) else ctx.getString(R.string.file_from_pc))
             .setContentText("$name  ·  ${FileNames.humanSize(size)}")
             .setContentIntent(openApp(ctx)).setAutoCancel(true)
             .addAction(0, ctx.getString(R.string.btn_receive), receive)

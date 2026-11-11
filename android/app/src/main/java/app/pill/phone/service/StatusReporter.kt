@@ -12,7 +12,8 @@ import android.media.AudioManager
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import androidx.core.content.ContextCompat
-import app.pill.phone.net.Link
+import app.pill.phone.data.Routing
+import app.pill.phone.net.LinkManager
 import app.pill.phone.net.Net
 import app.pill.phone.protocol.Msg
 import kotlinx.coroutines.CoroutineScope
@@ -36,7 +37,7 @@ object StatusReporter {
     val current: StateFlow<Msg.Status?> = _current
 
     private val trigger = Channel<Unit>(Channel.CONFLATED)
-    @Volatile private var forceNext = false
+    private val forced = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private var receiver: BroadcastReceiver? = null
     private var appCtx: Context? = null
 
@@ -59,18 +60,25 @@ object StatusReporter {
         ContextCompat.registerReceiver(app, r, f, ContextCompat.RECEIVER_NOT_EXPORTED)
         scope.launch {
             var lastAt = 0L
-            var lastSent: Msg.Status? = null
+            // what each PC has been told last: a PC that just connected knows nothing, the others only hear about changes
+            val lastSent = HashMap<String, Msg.Status>()
             while (true) {
                 trigger.receive()
-                if (forceNext) { lastSent = null; lastAt = 0L; forceNext = false }
+                if (forced.isNotEmpty()) {
+                    for (id in forced.toList()) { lastSent.remove(id); forced.remove(id) }
+                    lastAt = 0L
+                }
                 val wait = lastAt + MIN_GAP_MS - System.currentTimeMillis()
                 if (wait > 0) delay(wait)
                 val s = snapshot(app)
                 _current.value = s
-                if (Link.isConnected && s.copy(time = 0) != lastSent?.copy(time = 0) && Link.send(s)) {
-                    lastSent = s
-                    lastAt = System.currentTimeMillis()
-                }
+                val connected = LinkManager.connectedIds()
+                lastSent.keys.retainAll(connected)
+                val due = connected.filter { s.copy(time = 0) != lastSent[it]?.copy(time = 0) }
+                // each connected PC gets the status on its own link; one that fails keeps no record and is retried on the next trigger
+                val r = Routing.fanOut(due) { LinkManager.send(it, s) }
+                for (id in r.sent) lastSent[id] = s
+                if (r.sent.isNotEmpty()) lastAt = System.currentTimeMillis()
             }
         }
         // storage and memory have no broadcast: a slow look every 10 minutes, sent only if it changed by a coarse step
@@ -91,9 +99,9 @@ object StatusReporter {
 
     fun poke() { trigger.trySend(Unit) }
 
-    /** A new session began (hello received): the PC knows nothing yet, send the status straight away. */
-    fun onHello() {
-        forceNext = true
+    /** A new session with [pcId] began (hello received): that PC knows nothing yet, send it the status straight away. */
+    fun onHello(pcId: String) {
+        forced.add(pcId)
         poke()
     }
 
