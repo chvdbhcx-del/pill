@@ -214,6 +214,10 @@ pub fn vdesk_switch(dir: i64, wrap: Option<bool>) -> bool {
 
 /// Starts the poller when the setting is on (and it is not running yet).
 pub fn ensure() {
+    // the flash is on by default, so settings tests would start a real registry-watching thread inside the test process (a CI crash)
+    if cfg!(test) {
+        return;
+    }
     if wanted() && !RUNNING.swap(true, Ordering::SeqCst) {
         spawn_poller();
     }
