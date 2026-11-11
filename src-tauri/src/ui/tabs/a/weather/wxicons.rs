@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-const CLOUD: &str = "M14 38h21a8 8 0 0 0 1.2-15.9A11 11 0 0 0 15.1 20 9 9 0 0 0 14 38z";
+pub(super) const CLOUD: &str = "M14 38h21a8 8 0 0 0 1.2-15.9A11 11 0 0 0 15.1 20 9 9 0 0 0 14 38z";
 
 fn sun(cx: f32, cy: f32, r: f32) -> String {
     let mut rays = String::new();

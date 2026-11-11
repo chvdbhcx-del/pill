@@ -118,6 +118,17 @@ impl Forecast {
     }
 }
 
+/// 0 light, 1 normal, 2 heavy precipitation of a MET symbol code (`lightrain`, `rain`, `heavysnowshowers_day`).
+pub fn intensity(sym: &str) -> u8 {
+    if sym.starts_with("light") {
+        0
+    } else if sym.starts_with("heavy") {
+        2
+    } else {
+        1
+    }
+}
+
 /// Condition text for a MET symbol code (`cond`).
 pub fn condition(tr: &dyn Tr, sym: &str) -> String {
     let (light, heavy, sh) = (sym.starts_with("light"), sym.starts_with("heavy"), sym.contains("showers"));
@@ -269,6 +280,8 @@ pub struct OkView {
     pub refresh_title: String,
     pub spinning: bool,
     pub icon: String,
+    /// How hard it precipitates, from the MET symbol code: 0 light, 1 normal, 2 heavy (drives the animated icon).
+    pub intensity: u8,
     pub temp: String,
     pub condition: String,
     pub feels_line: String,
@@ -750,6 +763,7 @@ impl Weather {
             refresh_title: tr.t("Обновить", "Refresh"),
             spinning: self.spinning,
             icon: n.icon.clone(),
+            intensity: intensity(&n.symbol),
             temp: self.temp(n.temp),
             condition: condition(tr, &n.symbol),
             feels_line: format!("{}{} · {}…{}", tr.t("Ощущается как ", "Feels like "), self.temp(n.feels), self.temp(n.min), self.temp(n.max)),

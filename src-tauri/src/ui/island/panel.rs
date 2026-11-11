@@ -19,6 +19,9 @@ pub fn reapply(cx: &mut Cx, fx: Effects, tab: bool) {
     if fx.frame {
         cx.request_frame();
     }
+    if fx.ambient {
+        cx.ambient_frame();
+    }
     if let Some(c) = fx.cursor {
         cx.set_cursor(c);
     }
@@ -156,6 +159,8 @@ pub struct TabHost {
     /// true from `OpenClipAi` until the overlay says `OverlayClosed`: Esc and clicks go to it first
     pub overlay_open: bool,
     pub dir: Option<TabDir>,
+    /// the last `step` kept the frames coming only for an ambient animation of a tab (see `Cx::ambient_frame`)
+    ambient: bool,
 }
 
 /// The sideways offset a view comes from when the switch goes in direction `dir` (it leaves towards the opposite side).
@@ -383,19 +388,32 @@ impl TabHost {
     /// Steps the flows of the switch and the views that are visible (the current one and those still flowing out); true while any asks for frames.
     pub fn step(&mut self, dt_ms: f64, _now: f64, cx: &mut Cx) -> bool {
         let mut keep = false;
+        let mut amb = false;
         let cur = self.cur.clone();
         for (id, s) in self.slots.iter_mut() {
             s.a.step(dt_ms);
             s.dx.step(dt_ms);
             keep |= s.a.moving() || s.dx.moving();
             if Some(id) == cur.as_ref() || s.visible() {
-                keep |= guarded(cx, |cx| s.view.step(dt_ms, cx));
+                let more = guarded(cx, |cx| s.view.step(dt_ms, cx));
+                if cx.take_ambient() {
+                    amb |= more; // asks for frames only for an ambient animation
+                } else {
+                    keep |= more;
+                }
             }
         }
         if let Some(o) = self.overlay.as_mut() {
             keep |= guarded(cx, |cx| o.step(dt_ms, cx));
+            cx.take_ambient();
         }
+        self.ambient = amb && !keep;
         keep
+    }
+
+    /// True when the frames the tabs asked for in the last `step` are all ambient (a drifting cloud): the window may pace them.
+    pub fn ambient(&self) -> bool {
+        self.ambient
     }
 
     /// Draws the outgoing and the incoming view into `views` (panel css px) of the current canvas transform.
@@ -456,6 +474,38 @@ mod tests {
         assert_eq!(fx.hit_region, Some(vec![Rect::new(0.0, 0.0, 10.0, 10.0)]), "the island's own hit region survives");
         assert!(!fx.hide && fx.gaze.is_none(), "{fx:?}");
         assert!(fx.frame && fx.cursor == Some(CursorShape::Hand) && fx.focus == Some(true));
+    }
+
+    /// A tab that keeps asking for frames; `ambient` says whether that is only for a breathing background.
+    struct Breather(bool);
+    impl View for Breather {
+        fn step(&mut self, _dt_ms: f64, cx: &mut Cx) -> bool {
+            if self.0 {
+                cx.ambient_frame();
+            }
+            true
+        }
+        fn draw(&mut self, _cv: &Canvas, _th: &Theme, _rect: Rect, _cx: &Cx) {}
+    }
+
+    #[test]
+    fn a_tab_that_only_breathes_is_reported_as_ambient_and_a_busy_one_is_not() {
+        let _m = crate::ui::host::testing::motion_on();
+        let mut cx = Cx::headless();
+        for (ambient, keep) in [(true, false), (false, true)] {
+            let mut h = TabHost::new();
+            h.show("home", TabDir::Right, false, &mut cx, 0.0);
+            frames(&mut h, &mut cx, 100);
+            h.slots.insert("home".into(), Slot::new(Box::new(Breather(ambient)), false));
+            h.slots.get_mut("home").unwrap().a.jump(1.0);
+            assert_eq!(h.step(8.0, 0.0, &mut cx), keep, "ambient={ambient}");
+            assert_eq!(h.ambient(), ambient);
+            assert!(!cx.take_ambient(), "the host consumed the mark");
+        }
+        let mut h = TabHost::new();
+        h.show("home", TabDir::Right, false, &mut cx, 0.0);
+        frames(&mut h, &mut cx, 100);
+        assert!(!h.ambient(), "a quiet host is not ambient");
     }
 
     fn frames(h: &mut TabHost, cx: &mut Cx, n: usize) {

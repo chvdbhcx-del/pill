@@ -561,6 +561,9 @@ pub struct Effects {
     pub ime_rect: Option<Rect>,
     /// `Some(None)` removes the cap, `Some(Some(n))` caps this window at `n` frames per second. Never set by the framework on its own.
     pub fps_cap: Option<Option<u32>>,
+    /// This `step` is asking for frames only for an ambient animation (a drifting cloud, a breathing glow): a host that paces such
+    /// frames (the island: ~30 fps) may do so. Set it only when nothing else moves.
+    pub ambient: bool,
 }
 
 /// The per-window context passed to every view call. Fields below are written by the host before each call; views read them.
@@ -673,6 +676,17 @@ impl Cx {
     /// Render a frame soon even if nothing is animating.
     pub fn request_frame(&mut self) {
         self.fx.frame = true;
+    }
+
+    /// Call from `step` together with `return true` when the ONLY reason for more frames is an ambient animation: the host may pace
+    /// those frames (the island caps them at ~30 fps and lets the window idle once the view stops asking).
+    pub fn ambient_frame(&mut self) {
+        self.fx.ambient = true;
+    }
+
+    /// Host side: was the last view call ambient-only? Clears the mark.
+    pub fn take_ambient(&mut self) -> bool {
+        std::mem::take(&mut self.fx.ambient)
     }
 
     /// The cursor for the current pointer position (sticky until the next event; `Response::cursor` does the same per event).
