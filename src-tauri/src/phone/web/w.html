@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark"><meta name="theme-color" content="#0B0B0F"><meta name="robots" content="noindex">
+<meta name="format-detection" content="telephone=no">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Pill">
+<link rel="manifest" href="/w/manifest.webmanifest"><link rel="apple-touch-icon" sizes="180x180" href="/w/icon.png"><link rel="icon" type="image/png" href="/w/icon.png">
+<title>Pill Phone</title>
+<style>
+:root{--bg:#0B0B0F;--surface:#15151C;--line:#FFFFFF14;--text:#F2F2F7;--dim:#9A9AA8;--accent:#8E7BFF;--soft:#B9AEFF;--on:#0B0B0F;--ok:#5FD39A;--bad:#FF7A8A;--spring:cubic-bezier(.34,1.56,.64,1);--ease:cubic-bezier(.2,.8,.2,1)}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg);color-scheme:dark;overscroll-behavior:none;-webkit-text-size-adjust:100%}
+body{min-height:100vh;min-height:100dvh;overscroll-behavior:none;background:radial-gradient(120% 50% at 50% 0,#8E7BFF22,transparent 60%),var(--bg);color:var(--text);font:500 16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea{-webkit-user-select:text;user-select:text}
+.wrap{max-width:460px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 18px) calc(env(safe-area-inset-right) + 18px) calc(env(safe-area-inset-bottom) + 28px) calc(env(safe-area-inset-left) + 18px);display:flex;flex-direction:column;gap:16px}
+.top{display:flex;align-items:center;gap:12px;min-height:48px}
+.top svg{width:38px;height:38px;flex:none;filter:drop-shadow(0 4px 12px #8E7BFF66)}
+.ttl{flex:1;min-width:0}.ttl h1{font-size:20px;font-weight:700;letter-spacing:-.01em}
+.ttl p{color:var(--dim);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity .3s}
+.chip{display:none;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:13px;font-weight:600;transition:background .3s,color .3s}
+.chip.show{display:inline-flex;animation:pop .45s var(--spring)}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--dim);transition:background .3s,box-shadow .3s}
+.chip[data-s=on] i{background:var(--ok);box-shadow:0 0 0 4px #5FD39A2A}
+.chip[data-s=connecting] i{background:var(--accent);animation:pulse 1.1s ease-in-out infinite}
+.chip[data-s=off] i,.chip[data-s=replaced] i{background:var(--bad)}
+.screen{display:none;flex-direction:column;gap:16px}
+.screen.show{display:flex;animation:rise .5s var(--ease)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:28px;padding:22px 20px;box-shadow:0 20px 50px #0005}
+.card h2{font-size:20px;font-weight:700;letter-spacing:-.01em}
+.card p{color:var(--dim);font-size:14px;margin-top:6px}
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:56px;padding:0 22px;border:0;border-radius:999px;font:700 17px/1 inherit;font-family:inherit;color:var(--on);background:linear-gradient(135deg,var(--soft),var(--accent));box-shadow:0 10px 28px #8E7BFF55;cursor:pointer;text-decoration:none;transition:transform .25s var(--spring),box-shadow .25s,opacity .25s}
+.btn:active{transform:scale(.96);box-shadow:0 4px 14px #8E7BFF44}
+.btn[disabled]{opacity:.6;pointer-events:none}
+.btn.ghost{color:var(--text);background:transparent;border:1.5px solid var(--accent);box-shadow:none}
+.btn.sm{min-height:44px;font-size:15px;width:auto}
+.btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.btn.busy::after{content:"";width:16px;height:16px;border-radius:50%;border:2.5px solid #0B0B0F55;border-top-color:var(--on);animation:spin .7s linear infinite}
+.link{background:none;border:0;color:var(--soft);font:600 14px/1.3 inherit;font-family:inherit;padding:10px 6px;cursor:pointer;transition:transform .2s var(--spring),opacity .2s}
+.link:active{transform:scale(.94);opacity:.7}
+.link.quiet{color:var(--dim);font-weight:500}
+.field{width:100%;min-height:54px;margin-top:14px;padding:0 18px;border-radius:999px;border:1.5px solid var(--line);background:#FFFFFF08;color:var(--text);font:600 20px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.18em;text-align:center;text-transform:uppercase;outline:none;transition:border-color .25s,box-shadow .25s}
+.field.host{font-size:16px;letter-spacing:0;text-transform:none;margin-top:6px}
+.field:focus{border-color:var(--accent);box-shadow:0 0 0 4px #8E7BFF2A}
+.lbl{display:block;color:var(--dim);font-size:13px;margin-top:16px;padding-left:6px}
+.err{color:var(--bad);font-size:14px;margin-top:12px;text-align:center;min-height:0}
+.err.shake{animation:shake .4s}
+.steps{list-style:none;padding:0;margin:16px 0 18px;display:flex;flex-direction:column;gap:12px}
+.steps li{display:flex;gap:12px;align-items:flex-start;font-size:15px;opacity:0;animation:rise .5s var(--ease) forwards}
+.steps li:nth-child(2){animation-delay:.12s}.steps li:nth-child(3){animation-delay:.24s}
+.steps b{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--on);font-size:14px}
+.code{display:inline-block;margin-top:4px;padding:6px 14px;border-radius:999px;background:#FFFFFF0D;font:700 17px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.16em}
+.row{display:flex;gap:10px;margin-top:12px}
+.drawer{display:grid;grid-template-rows:0fr;transition:grid-template-rows .4s var(--ease)}
+.drawer.open{grid-template-rows:1fr}
+.drawer>div{overflow:hidden;min-height:0}
+textarea{width:100%;min-height:110px;margin-top:12px;padding:14px 16px;border-radius:20px;border:1.5px solid var(--line);background:#FFFFFF08;color:var(--text);font:500 16px/1.4 inherit;font-family:inherit;resize:none;outline:none;transition:border-color .25s,box-shadow .25s}
+textarea:focus{border-color:var(--accent);box-shadow:0 0 0 4px #8E7BFF2A}
+.vh{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.banner{display:none;align-items:flex-start;gap:10px;padding:14px 16px;border-radius:22px;background:#8E7BFF1F;border:1px solid #8E7BFF40;font-size:14px;line-height:1.4}
+.banner.show{display:flex;animation:rise .45s var(--ease)}
+.banner>div{flex:1}.banner .x{background:none;border:0;color:var(--dim);font-size:22px;line-height:1;padding:0 4px;cursor:pointer}
+.list{list-style:none;padding:0;display:flex;flex-direction:column;gap:10px}
+.item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:22px;background:var(--surface);border:1px solid var(--line);overflow:hidden;animation:pop .5s var(--spring);transition:height .35s var(--ease),opacity .3s,transform .3s,margin .35s,padding .35s,border-width .35s}
+.item.out{opacity:0;transform:scale(.94)}
+.ic{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:#8E7BFF22;color:var(--soft);transition:background .3s,color .3s}
+.ic svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.ic.pop{animation:pop .45s var(--spring)}
+.item[data-s=done] .ic{background:#5FD39A26;color:var(--ok)}.item[data-s=done] .ic path{stroke-dasharray:24;animation:draw .5s var(--ease)}
+.item[data-s=error] .ic{background:#FF7A8A26;color:var(--bad)}
+.mid{flex:1;min-width:0}
+.nm{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{font-size:13px;color:var(--dim);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item[data-s=error] .meta{color:var(--bad)}
+.bar{height:5px;margin-top:7px;border-radius:99px;background:var(--line);overflow:hidden;transition:opacity .3s,height .3s,margin .3s}
+.bar i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--soft),var(--accent));transition:width .3s linear,background .3s}
+.bar.ind i{width:38%;animation:slide 1.3s ease-in-out infinite}
+.bar.off{opacity:0;height:0;margin-top:0}
+.item[data-s=done] .bar i{background:var(--ok)}
+.act{flex:none;min-height:38px;padding:0 16px;border-radius:999px;border:1.5px solid var(--accent);background:transparent;color:var(--text);font:600 14px/1 inherit;font-family:inherit;cursor:pointer;transition:transform .25s var(--spring),opacity .25s}
+.act:active{transform:scale(.93)}
+.empty{color:var(--dim);font-size:14px;text-align:center;padding:26px 10px;animation:rise .5s var(--ease)}
+.note{color:var(--dim);font-size:13px;line-height:1.5;padding:0 6px}.note b{color:var(--text);font-weight:600}
+.foot{display:flex;flex-direction:column;align-items:center;gap:2px}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes pop{0%{opacity:0;transform:scale(.88)}100%{opacity:1;transform:none}}
+@keyframes pulse{50%{opacity:.35;transform:scale(.8)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes shake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(270%)}}
+@keyframes draw{from{stroke-dashoffset:24}to{stroke-dashoffset:0}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.001ms!important}.bar.ind i{width:100%;opacity:.5}}
+</style></head><body>
+<main class="wrap">
+<header class="top">
+<svg viewBox="0 0 96 96" aria-hidden="true"><defs><linearGradient id="g" x1="20%" y1="0" x2="80%" y2="100%"><stop offset="0" stop-color="#B9AEFF"/><stop offset="1" stop-color="#8E7BFF"/></linearGradient></defs><path d="M48 8C48 8 20 38 20 60a28 28 0 0 0 56 0C76 38 48 8 48 8Z" fill="url(#g)"/><ellipse cx="37" cy="58" rx="6" ry="11" fill="#fff" opacity=".28" transform="rotate(14 37 58)"/></svg>
+<div class="ttl"><h1>Pill Phone</h1><p id="pcname"></p></div>
+<div class="chip" id="chip" role="status"><i></i><span></span></div>
+</header>
+
+<section class="screen" id="s-pair">
+<div class="card" id="install" hidden>
+<h2 data-i="instTitle"></h2><p data-i="instLead"></p>
+<ol class="steps"><li><b>1</b><span data-i="inst1"></span></li><li><b>2</b><span data-i="inst2"></span></li><li><b>3</b><span><span data-i="inst3"></span><br><span class="code" id="instcode" hidden></span></span></li></ol>
+<button class="btn ghost" id="stay" type="button" data-i="stay"></button>
+</div>
+<div class="card" id="pairform">
+<h2 data-i="pairTitle"></h2><p data-i="pairHint"></p>
+<input class="field" id="code" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="12" data-ph="codePh" aria-label="code">
+<label class="lbl" for="host" data-i="hostLbl"></label>
+<input class="field host" id="host" type="text" inputmode="url" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="60" placeholder="192.168.1.5:41717">
+<p class="err" id="perr" role="alert"></p>
+<div class="row"><button class="btn" id="go" type="button"><span data-i="connect"></span></button></div>
+</div>
+</section>
+
+<section class="screen" id="s-main">
+<div class="banner" id="a2hs"><div data-i="a2hs"></div><button class="x" id="a2hsx" type="button" aria-label="close">&times;</button></div>
+<div class="banner" id="lost"><div><span id="losttxt"></span><div class="row"><input class="field host" id="host2" type="text" inputmode="url" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="60" placeholder="192.168.1.5:41717" style="margin-top:0"><button class="btn sm" id="host2go" type="button" data-i="open"></button></div></div></div>
+<div class="card">
+<label class="btn" for="pick"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg><span data-i="choose"></span></label>
+<input class="vh" id="pick" type="file" multiple>
+<div class="row"><button class="btn ghost" id="txtbtn" type="button" aria-expanded="false"><span data-i="sendText"></span></button></div>
+<div class="drawer" id="drawer"><div><textarea id="txt" data-ph="textPh" aria-label="text"></textarea><div class="row"><button class="btn" id="txtsend" type="button" data-i="send"></button></div></div></div>
+</div>
+<ul class="list" id="list"></ul>
+<div class="empty" id="empty" data-i="empty"></div>
+<div class="foot"><button class="link quiet" id="clear" type="button" data-i="clear" hidden></button></div>
+<p class="note"><b data-i="keepB"></b> <span data-i="keep"></span></p>
+<p class="note" data-i="noNotif"></p>
+<div class="foot"><button class="link" id="forget" type="button"></button></div>
+</section>
+</main>
+<script nonce="__NONCE__">
+(function(){
+'use strict';
+var $=function(i){return document.getElementById(i)};
+var RM=!!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches);
+var LANG=/^(ru|uk|be)/i.test(navigator.language||'')?'ru':'en';
+var T={en:{
+ on:'Connected',connecting:'Reconnecting…',off:'Offline',replaced:'Opened elsewhere',
+ pairTitle:'Connect to your PC',pairHint:'On the PC open Pill > Settings > Phone and type the code shown next to the QR code.',
+ codePh:'CODE',hostLbl:'PC address',connect:'Connect',connectingBtn:'Connecting…',
+ badCode:'Wrong or expired code. Get a new one on the PC.',shortCode:'The code has 8 letters and digits.',badHost:'Type the PC address like 192.168.1.5:41717.',
+ tooMany:'Too many attempts. Wait a minute and try again.',netErr:'Cannot reach the PC. Same Wi-Fi? Is the phone link switched on?',unpaired:'This device was unpaired on the PC.',
+ instTitle:'Install first',instLead:'Safari and the Home Screen app keep separate data, so pair inside the app.',
+ inst1:'Tap Share, then Add to Home Screen.',inst2:'Open Pill from the Home Screen.',inst3:'Type the code from the PC there.',stay:'Continue in Safari instead',
+ a2hs:'Tip: Share > Add to Home Screen opens Pill like an app. You will pair again there.',
+ lost:'Cannot reach the PC at {h}. Is the phone link on, and are you on the same Wi-Fi? If the PC address changed, type the new one.',open:'Open',
+ choose:'Choose files',sendText:'Send text',textPh:'Type or paste text…',send:'Send',
+ empty:'Files you send or receive appear here.',clear:'Clear finished',
+ keepB:'Keep this page open.',keep:'iPhone pauses it when the screen locks or you switch apps; transfers only run while it is on screen.',
+ noNotif:'iPhone does not let web pages read notifications, so they cannot be mirrored to the PC (the Android app can do that).',
+ forget:'Forget this PC',forgetSure:'Tap again to confirm',
+ cancel:'Cancel',retry:'Retry',download:'Download',save:'Save',toPc:'To PC',fromPc:'From PC',
+ queued:'Waiting',offered:'Waiting for the PC to accept',sending:'Sending',sent:'Sent',downloading:'Downloading',saved:'Downloaded',
+ eTooBig:'Larger than the PC allows',eDeclined:'The PC declined it',eLost:'Connection lost',eNet:'Network error',eGone:'The PC no longer has this file',eNotAcc:'Not accepted by the PC',eBusy:'The PC is busy, try again',eInt:'Interrupted',eSize:'The file changed while sending',eDisk:'The PC could not save it',
+ B:'B',KB:'KB',MB:'MB',GB:'GB'},
+ru:{
+ on:'Подключено',connecting:'Переподключение…',off:'Нет связи',replaced:'Открыто в другом месте',
+ pairTitle:'Подключение к ПК',pairHint:'На ПК откройте Pill > Настройки > Телефон и введите код рядом с QR-кодом.',
+ codePh:'КОД',hostLbl:'Адрес ПК',connect:'Подключить',connectingBtn:'Подключаемся…',
+ badCode:'Неверный или просроченный код. Возьмите новый на ПК.',shortCode:'В коде 8 букв и цифр.',badHost:'Введите адрес ПК, например 192.168.1.5:41717.',
+ tooMany:'Слишком много попыток. Подождите минуту.',netErr:'Не удаётся связаться с ПК. Та же сеть Wi-Fi? Включена ли связь с телефоном?',unpaired:'Это устройство отключено на ПК.',
+ instTitle:'Сначала установите',instLead:'Safari и приложение на экране «Домой» хранят данные раздельно, поэтому подключайтесь уже в приложении.',
+ inst1:'Нажмите «Поделиться», затем «На экран Домой».',inst2:'Откройте Pill с экрана «Домой».',inst3:'Введите там код с ПК.',stay:'Продолжить в Safari',
+ a2hs:'Совет: «Поделиться» > «На экран Домой» откроет Pill как приложение. Подключиться нужно будет заново.',
+ lost:'Не удаётся связаться с ПК по адресу {h}. Включена ли связь с телефоном, та же ли сеть Wi-Fi? Если адрес ПК изменился, введите новый.',open:'Открыть',
+ choose:'Выбрать файлы',sendText:'Отправить текст',textPh:'Введите или вставьте текст…',send:'Отправить',
+ empty:'Здесь появятся файлы, которые вы отправите или получите.',clear:'Убрать завершённые',
+ keepB:'Не закрывайте страницу.',keep:'iPhone приостанавливает её при блокировке экрана и смене приложения; передача идёт, только пока страница на экране.',
+ noNotif:'iPhone не даёт веб-страницам читать уведомления, поэтому зеркалить их на ПК нельзя (это умеет приложение для Android).',
+ forget:'Забыть этот ПК',forgetSure:'Нажмите ещё раз для подтверждения',
+ cancel:'Отмена',retry:'Повторить',download:'Скачать',save:'Сохранить',toPc:'На ПК',fromPc:'С ПК',
+ queued:'В очереди',offered:'Ждём, пока ПК примет',sending:'Отправка',sent:'Отправлено',downloading:'Загрузка',saved:'Скачано',
+ eTooBig:'Больше, чем разрешает ПК',eDeclined:'ПК отклонил файл',eLost:'Связь прервана',eNet:'Ошибка сети',eGone:'На ПК больше нет этого файла',eNotAcc:'ПК не принял файл',eBusy:'ПК занят, повторите',eInt:'Прервано',eSize:'Файл изменился при отправке',eDisk:'ПК не смог сохранить файл',
+ B:'Б',KB:'КБ',MB:'МБ',GB:'ГБ'}}[LANG];
+function tr(k,o){var s=T[k]||k;if(o)for(var n in o)s=s.replace('{'+n+'}',o[n]);return s}
+
+// ---- storage (every access guarded: private mode / blocked site data must not break the page)
+function sget(k){try{return localStorage.getItem(k)}catch(e){return null}}
+function sset(k,v){try{if(v==null)localStorage.removeItem(k);else localStorage.setItem(k,v)}catch(e){}}
+var UA=navigator.userAgent||'';
+var IOS=/iPhone|iPad|iPod/.test(UA)||(/Macintosh/.test(UA)&&navigator.maxTouchPoints>1);
+var STANDALONE=navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches);
+var S={token:sget('pill.w.token'),dev:sget('pill.w.dev'),pc:sget('pill.w.pc')||'',ws:null,conn:'off',fails:0,backoff:1000,last:0,items:[],rt:0,pt:0,seq:0};
+if(!S.dev){S.dev='w'+rnd(15);sset('pill.w.dev',S.dev)}
+function rnd(n){var a=new Uint8Array(n),s='';try{crypto.getRandomValues(a)}catch(e){for(var i=0;i<n;i++)a[i]=Math.random()*256}for(var j=0;j<n;j++)s+=('0'+a[j].toString(16)).slice(-2);return s}
+
+// ---- i18n
+document.documentElement.lang=LANG;
+function applyLang(){
+ [].forEach.call(document.querySelectorAll('[data-i]'),function(e){e.textContent=tr(e.getAttribute('data-i'))});
+ [].forEach.call(document.querySelectorAll('[data-ph]'),function(e){e.placeholder=tr(e.getAttribute('data-ph'))});
+ $('forget').textContent=tr('forget');
+}
+applyLang();
+
+// ---- small helpers
+function show(sec){['s-pair','s-main'].forEach(function(id){var e=$(id);e.classList.remove('show');if(id===sec){void e.offsetWidth;e.classList.add('show')}});$('chip').classList.toggle('show',sec==='s-main');$('pcname').textContent=sec==='s-main'?S.pc:''}
+function fmt(n){if(n<1024)return n+' '+tr('B');if(n<1048576)return (n/1024).toFixed(n<10240?1:0)+' '+tr('KB');if(n<1073741824)return (n/1048576).toFixed(n<10485760?1:0)+' '+tr('MB');return (n/1073741824).toFixed(2)+' '+tr('GB')}
+function authH(){return {Authorization:'Bearer '+S.token}}
+function setErr(msg){var e=$('perr');e.textContent=msg||'';if(msg){e.classList.remove('shake');void e.offsetWidth;e.classList.add('shake')}}
+function hostOk(h){return /^[A-Za-z0-9.\-]+(:\d{1,5})?$/.test(h)}
+function normHost(h){h=(h||'').replace(/^\s*https?:\/\//i,'').replace(/\/.*$/,'').trim();if(h&&h.indexOf(':')<0)h+=':41717';return h}
+function goHost(h,code){h=normHost(h);if(!hostOk(h))return false;sset('pill.w.host',h);if(h.toLowerCase()===location.host.toLowerCase())return false;location.href=location.protocol+'//'+h+'/w'+(code?'?c='+encodeURIComponent(code):'');return true}
+
+// ---- pairing
+function pairNow(){
+ var code=$('code').value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+ var host=normHost($('host').value);
+ if(code.length!==8)return setErr(tr('shortCode'));
+ if(!hostOk(host))return setErr(tr('badHost'));
+ if(goHost(host,code))return; // another PC: that PC's own page pairs (same origin, nothing crosses origins)
+ setErr('');var b=$('go');b.classList.add('busy');b.disabled=true;$('go').firstChild.textContent=tr('connectingBtn');
+ var model=/iPad/.test(UA)?'iPad':/iPhone/.test(UA)?'iPhone':'Browser';
+ var m=UA.match(/OS (\d+)[_.](\d+)/);
+ fetch('/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code,deviceId:S.dev,name:model+(STANDALONE?' (Pill)':' (Safari)'),model:model,os:m?'iOS '+m[1]+'.'+m[2]:'Web',appVersion:'web-1'})})
+ .then(function(r){return r.json().catch(function(){return {}}).then(function(j){return {st:r.status,j:j}})})
+ .then(function(x){
+  if(x.st===200&&x.j.token){S.token=x.j.token;S.pc=x.j.pcName||'';sset('pill.w.token',S.token);sset('pill.w.pc',S.pc);sset('pill.w.host',location.host);$('code').value='';enterMain();return}
+  setErr(x.st===429?tr('tooMany'):tr('badCode'));
+ }).catch(function(){setErr(tr('netErr'))})
+ .then(function(){b.classList.remove('busy');b.disabled=false;$('go').firstChild.textContent=tr('connect')});
+}
+function showPair(msg){
+ stopConn();
+ var q=new URLSearchParams(location.search),c=(q.get('c')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12);
+ $('host').value=sget('pill.w.host')||location.host;
+ var inst=IOS&&!STANDALONE&&!S.stay;
+ $('install').hidden=!inst;$('pairform').hidden=inst;
+ var ic=$('instcode');ic.hidden=!(inst&&c);ic.textContent=c;
+ if(c)$('code').value=c;
+ setErr(msg||'');show('s-pair');
+}
+
+// ---- the main screen
+function enterMain(){
+ show('s-main');
+ $('a2hs').classList.toggle('show',IOS&&!STANDALONE&&sget('pill.w.hint')!=='1');
+ paintEmpty();connect();
+}
+function setConn(c){S.conn=c;var e=$('chip');e.setAttribute('data-s',c);e.lastChild.textContent=tr(c);
+ var lost=c==='off'&&S.fails>=2;var b=$('lost');if(lost){$('losttxt').textContent=tr('lost',{h:location.host});if(!$('host2').value)$('host2').value=sget('pill.w.host')||location.host}b.classList.toggle('show',lost)}
+function wsSend(o){if(S.ws&&S.ws.readyState===1){try{S.ws.send(JSON.stringify(o));return true}catch(e){}}return false}
+function stopConn(){clearTimeout(S.rt);clearInterval(S.pt);var w=S.ws;S.ws=null;if(w){w.onclose=w.onmessage=w.onerror=null;try{w.close()}catch(e){}}}
+function connect(){
+ stopConn();if(!S.token)return;
+ setConn('connecting');
+ var ws;try{ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws?token='+encodeURIComponent(S.token))}catch(e){return retry()}
+ S.ws=ws;S.last=Date.now();var opened=false;
+ ws.onmessage=function(e){S.last=Date.now();var m;try{m=JSON.parse(e.data)}catch(_){return}onMsg(m)};
+ ws.onopen=function(){opened=true};
+ ws.onerror=function(){};
+ ws.onclose=function(e){if(S.ws!==ws)return;lost(e.code,opened)};
+ S.pt=setInterval(function(){
+  if(!S.ws)return;
+  if(Date.now()-S.last>50000){lost(1006,true);return}
+  wsSend({t:'ping'});
+ },20000);
+}
+function lost(code,opened){
+ var w=S.ws;clearInterval(S.pt);S.ws=null;if(w){w.onclose=w.onmessage=null;try{w.close()}catch(e){}}
+ items(function(it){if(it.dir==='up'&&it.state==='offered'){fail(it,'eLost')}});
+ if(code===4001){return unpaired()}
+ if(code===4000){setConn('replaced');return}
+ if(!opened)S.fails++;
+ setConn(S.fails>=2?'off':'connecting');
+ // the handshake answers 401 for a dead token but the browser hides it: ask over plain HTTP
+ fetch('/api/state',{headers:authH()}).then(function(r){if(r.status===401)unpaired();else retry()},function(){retry()});
+}
+function retry(){clearTimeout(S.rt);S.rt=setTimeout(connect,S.backoff);S.backoff=Math.min(S.backoff*2,30000)}
+function forgetLocal(){stopConn();clearAll();S.token=null;S.pc='';sset('pill.w.token',null);sset('pill.w.pc',null)}
+function unpaired(){forgetLocal();showPair(tr('unpaired'))}
+function wake(){if(!S.token||$('s-main').className.indexOf('show')<0)return;if(!S.ws||S.ws.readyState>1||Date.now()-S.last>50000){S.backoff=1000;connect()}}
+document.addEventListener('visibilitychange',function(){if(!document.hidden)wake()});
+window.addEventListener('online',wake);window.addEventListener('pageshow',wake);
+
+function onMsg(m){
+ switch(m.t){
+ case 'hello':S.fails=0;S.backoff=1000;if(m.pcName){S.pc=String(m.pcName).slice(0,80);sset('pill.w.pc',S.pc);$('pcname').textContent=S.pc}setConn('on');pump();break;
+ case 'file.accept':var a=find(m.id,'up');if(a&&a.state==='offered')upload(a);break;
+ case 'file.reject':var r=find(m.id,'up');if(r)fail(r,m.reason==='too_big'?'eTooBig':'eDeclined');break;
+ case 'file.offer':if(m.id&&!find(m.id,'down')){addItem({dir:'down',id:String(m.id).slice(0,64),name:String(m.name||'file').slice(0,200),size:+m.size||0,mime:String(m.mime||'').slice(0,80),state:'ready',done:0})}break;
+ }
+}
+
+// ---- the transfer list
+var list=$('list');
+var ICON={up:'<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',down:'<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg>',ok:'<svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>',bad:'<svg viewBox="0 0 24 24"><path d="M12 7v6M12 17h.01"/></svg>'};
+function items(f){S.items.slice().forEach(f)}
+function find(id,dir){for(var i=0;i<S.items.length;i++)if(S.items[i].id===id&&S.items[i].dir===dir)return S.items[i];return null}
+function addItem(it){
+ it.key=++S.seq;
+ var li=document.createElement('li');li.className='item';
+ li.innerHTML='<div class="ic"></div><div class="mid"><div class="nm"></div><div class="meta"></div><div class="bar"><i></i></div></div><button class="act" type="button"></button>';
+ it.el=li;it.ic=li.firstChild;it.nm=li.querySelector('.nm');it.meta=li.querySelector('.meta');it.bar=li.querySelector('.bar');it.fill=it.bar.firstChild;it.act=li.querySelector('.act');
+ it.nm.textContent=it.name;
+ it.act.addEventListener('click',function(){onAct(it)});
+ S.items.unshift(it);list.insertBefore(li,list.firstChild);
+ paint(it);paintEmpty();return it;
+}
+function paint(it){
+ var s=it.state,up=it.dir==='up',pct=it.size?Math.min(100,Math.round(it.done*100/it.size)):0;
+ var vis=s==='done'?'done':(s==='error'||s==='cancelled')?'error':'active';
+ it.el.setAttribute('data-s',vis);
+ var ic=s==='done'?ICON.ok:vis==='error'?ICON.bad:up?ICON.up:ICON.down;
+ if(it.icKey!==ic){it.icKey=ic;it.ic.innerHTML=ic;it.ic.classList.remove('pop');void it.ic.offsetWidth;it.ic.classList.add('pop')}
+ var txt,btn=null,ind=false,barOff=false;
+ var base=(up?tr('toPc'):tr('fromPc'))+' · '+fmt(it.size);
+ if(up){
+  if(s==='queued'){txt=tr('queued');ind=true}
+  else if(s==='offered'){txt=tr('offered');ind=true;btn='cancel'}
+  else if(s==='up'){txt=tr('sending')+' '+pct+'% · '+fmt(it.done)+' / '+fmt(it.size);btn='cancel'}
+  else if(s==='done'){txt=tr('sent')+' · '+fmt(it.size);barOff=true}
+  else{txt=tr(it.err||'eNet');btn='retry';barOff=true}
+ }else{
+  if(s==='ready'){txt=base;btn='download';barOff=true}
+  else if(s==='down'){txt=tr('downloading')+' '+pct+'% · '+fmt(it.done)+' / '+fmt(it.size);btn='cancel'}
+  else if(s==='done'){txt=tr('saved')+' · '+fmt(it.size);btn='save';barOff=true}
+  else{txt=tr(it.err||'eNet');btn='retry';barOff=true}
+ }
+ it.meta.textContent=txt;
+ it.bar.classList.toggle('ind',ind);it.bar.classList.toggle('off',barOff);
+ it.fill.style.width=ind?'':(s==='done'?100:pct)+'%';
+ it.act.hidden=!btn;it.act.setAttribute('data-a',btn||'');if(btn)it.act.textContent=tr(btn);
+ paintClear();
+}
+function paintClear(){var fin=false;S.items.forEach(function(x){if(x.state==='done'||x.state==='error')fin=true});$('clear').hidden=!fin}
+function paintEmpty(){$('empty').hidden=S.items.length>0}
+function removeItem(it){
+ var i=S.items.indexOf(it);if(i<0)return;S.items.splice(i,1);
+ if(it.url){try{URL.revokeObjectURL(it.url)}catch(e){}}
+ var el=it.el;
+ if(RM){el.remove()}else{el.style.height=el.offsetHeight+'px';void el.offsetHeight;el.classList.add('out');el.style.height='0';el.style.paddingTop=el.style.paddingBottom='0';el.style.marginTop=(-5)+'px';el.style.borderWidth='0';setTimeout(function(){el.remove()},380)}
+ paintEmpty();paintClear();pump();
+}
+function fail(it,key){it.state='error';it.err=key;it.xhr=null;paint(it);pump()}
+function onAct(it){
+ var a=it.act.getAttribute('data-a');
+ if(a==='cancel'){
+  if(it.xhr){var x=it.xhr;it.xhr=null;try{x.abort()}catch(e){}}
+  if(it.ctl){try{it.ctl.abort()}catch(e){}}
+  removeItem(it);
+ }else if(a==='retry'){
+  if(it.dir==='up'){it.id=rnd(16);it.done=0;it.tries=0;it.state='queued';paint(it);pump()}else download(it);
+ }else if(a==='download'){download(it)}
+ else if(a==='save'){saveBlob(it)}
+}
+
+// ---- phone -> PC: file.offer, then PUT once accepted (docs/phone-protocol.md)
+function queueFiles(files){
+ files.forEach(function(f){addItem({dir:'up',id:rnd(16),name:f.name||'file',size:f.size,mime:f.type||'',file:f,state:'queued',done:0,tries:0})});
+ pump();
+}
+function pump(){
+ var busy=0;S.items.forEach(function(x){if(x.dir==='up'&&(x.state==='offered'||x.state==='up'))busy++});
+ for(var i=S.items.length-1;i>=0&&busy<2;i--){ // oldest first
+  var it=S.items[i];
+  if(it.dir==='up'&&it.state==='queued'){
+   if(!wsSend({t:'file.offer',id:it.id,name:it.name,size:it.size,mime:it.mime}))return;
+   it.state='offered';paint(it);busy++;
+  }
+ }
+}
+function upload(it){
+ it.state='up';it.done=0;paint(it);
+ var x=new XMLHttpRequest();it.xhr=x;
+ x.open('PUT','/api/up/'+encodeURIComponent(it.id));x.setRequestHeader('Authorization','Bearer '+S.token);
+ x.upload.onprogress=function(e){if(e.lengthComputable&&it.xhr===x){it.done=e.loaded;paint(it)}};
+ x.onload=function(){
+  if(it.xhr!==x)return;it.xhr=null;
+  if(x.status===200){it.state='done';it.done=it.size;paint(it);pump();return}
+  var er='';try{er=JSON.parse(x.responseText).error}catch(e){}
+  if(x.status===503&&(it.tries=(it.tries||0)+1)<6){it.state='up';setTimeout(function(){if(S.items.indexOf(it)>=0&&it.state==='up')upload(it)},2000);return}
+  if(x.status===401)return unpaired();
+  fail(it,er==='too_large'?'eTooBig':er==='unknown_file'?'eNotAcc':er==='busy'?'eBusy':er==='size_mismatch'?'eSize':er==='disk'?'eDisk':er==='interrupted'?'eInt':'eNet');
+ };
+ x.onerror=function(){if(it.xhr===x){it.xhr=null;fail(it,'eNet')}};
+ x.send(it.file);
+}
+
+// ---- PC -> phone: GET /api/down/<id>, then hand the bytes to Safari's save sheet
+function download(it){
+ it.state='down';it.done=0;it.err='';paint(it);
+ var ctl=window.AbortController?new AbortController():null;it.ctl=ctl;
+ var fin=function(ok,key){it.ctl=null;wsSend({t:'file.done',id:it.id,ok:ok});if(ok){it.state='done';paint(it);saveBlob(it)}else fail(it,key||'eNet')};
+ fetch('/api/down/'+encodeURIComponent(it.id),{headers:authH(),signal:ctl?ctl.signal:undefined}).then(function(r){
+  if(r.status===401){unpaired();throw 0}
+  if(r.status===503){it.state='ready';paint(it);setTimeout(function(){if(S.items.indexOf(it)>=0&&it.state==='ready')download(it)},2000);throw 0}
+  if(!r.ok){fin(false,r.status===404?'eGone':'eNet');throw 0}
+  var type=it.mime||r.headers.get('Content-Type')||'application/octet-stream';
+  if(r.body&&r.body.getReader){
+   var rd=r.body.getReader(),parts=[];
+   return (function loop(){return rd.read().then(function(c){
+    if(c.done)return new Blob(parts,{type:type});
+    parts.push(c.value);it.done+=c.value.length;paint(it);return loop()})})();
+  }
+  return r.blob();
+ }).then(function(b){it.blob=b;fin(true)},function(e){if(e!==0&&S.items.indexOf(it)>=0)fin(false,'eNet')});
+}
+function saveBlob(it){
+ if(!it.blob)return;
+ if(it.url){try{URL.revokeObjectURL(it.url)}catch(e){}}
+ it.url=URL.createObjectURL(it.blob);
+ var a=document.createElement('a');a.href=it.url;a.download=it.name;a.style.display='none';document.body.appendChild(a);a.click();
+ setTimeout(function(){a.remove()},500);
+}
+function clearAll(){items(function(it){if(it.xhr){try{it.xhr.abort()}catch(e){}}if(it.url){try{URL.revokeObjectURL(it.url)}catch(e){}}it.el.remove()});S.items=[];paintEmpty()}
+
+// ---- wiring
+$('go').addEventListener('click',pairNow);
+$('code').addEventListener('keydown',function(e){if(e.key==='Enter')pairNow()});
+$('host').addEventListener('keydown',function(e){if(e.key==='Enter')pairNow()});
+$('stay').addEventListener('click',function(){S.stay=true;showPair()});
+$('pick').addEventListener('change',function(){var f=[].slice.call(this.files||[]);this.value='';if(f.length)queueFiles(f)});
+$('txtbtn').addEventListener('click',function(){var d=$('drawer'),o=!d.classList.contains('open');d.classList.toggle('open',o);this.setAttribute('aria-expanded',o);if(o)setTimeout(function(){$('txt').focus()},RM?0:250)});
+$('txtsend').addEventListener('click',function(){
+ var v=$('txt').value;if(!v.trim())return;
+ var f;try{f=new File([v],'Shared text.txt',{type:'text/plain'})}catch(e){f=new Blob([v],{type:'text/plain'});f.name='Shared text.txt'}
+ $('txt').value='';$('drawer').classList.remove('open');$('txtbtn').setAttribute('aria-expanded','false');queueFiles([f]);
+});
+$('clear').addEventListener('click',function(){items(function(it){if(it.state==='done'||it.state==='error')removeItem(it)})});
+$('a2hsx').addEventListener('click',function(){sset('pill.w.hint','1');$('a2hs').classList.remove('show')});
+$('host2go').addEventListener('click',function(){var h=$('host2').value;if(!goHost(h)){$('host2').focus()}});
+var fgT=0;
+$('forget').addEventListener('click',function(){
+ var b=this;
+ if(!b.getAttribute('data-sure')){b.setAttribute('data-sure','1');b.textContent=tr('forgetSure');clearTimeout(fgT);fgT=setTimeout(function(){b.removeAttribute('data-sure');b.textContent=tr('forget')},4000);return}
+ b.removeAttribute('data-sure');b.textContent=tr('forget');
+ var h=authH();stopConn();
+ var done=function(){forgetLocal();S.stay=false;showPair()};
+ fetch('/api/device',{method:'DELETE',headers:h}).then(done,done);
+});
+
+// ---- start
+var q=new URLSearchParams(location.search),qc=q.get('c');
+if(qc&&history.replaceState){try{history.replaceState(null,'',location.pathname)}catch(e){}}
+if(qc){
+ // a QR scan: the code is one-use, so it is spent only where the user wants the pairing to live (see the install card)
+ var qh=q.get('h'),qp=q.get('p');if(qh&&qp&&hostOk(qh+':'+qp))sset('pill.w.host',qh+':'+qp);
+ S.stay=!(IOS&&!STANDALONE);
+ showPair();
+ $('code').value=qc.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12);
+ if(S.stay&&$('code').value.length===8)pairNow();
+}else if(S.token){enterMain()}
+else showPair();
+})();
+</script>
+</body></html>

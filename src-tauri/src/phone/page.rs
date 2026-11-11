@@ -33,6 +33,9 @@ struct Text {
     step2: &'static str,
     retry: &'static str,
     note: &'static str,
+    web: &'static str,
+    web_hint: &'static str,
+    web_small: &'static str,
 }
 
 const RU: Text = Text {
@@ -44,6 +47,9 @@ const RU: Text = Text {
     step2: "Откройте его этой кнопкой, чтобы подключиться к",
     retry: "Не открылось? Попробуйте эту ссылку",
     note: "Связь идёт только по вашей домашней сети. Код действует 5 минут.",
+    web: "Открыть в браузере",
+    web_hint: "На iPhone приложения нет: Pill работает прямо в Safari (файлы между телефоном и ПК, без уведомлений). Лучше сначала добавить страницу на экран «Домой».",
+    web_small: "iPhone или iPad? Открыть в браузере",
 };
 const EN: Text = Text {
     title: "Pill Phone",
@@ -54,15 +60,33 @@ const EN: Text = Text {
     step2: "Open it with this button to connect to",
     retry: "Did not open? Try this link",
     note: "Everything stays on your home network. The code is valid for 5 minutes.",
+    web: "Open in browser",
+    web_hint: "There is no iPhone app: Pill runs right in Safari (files between phone and PC, no notifications). Best: add the page to your Home Screen first.",
+    web_small: "On iPhone or iPad? Open in browser",
 };
 
-pub fn render(lang: &str, pc: &str, ip: &str, port: u16, code: &str, apk: &str) -> String {
+/// iPhone / iPad Safari (no Android app there): the page offers the browser client instead.
+pub fn is_ios(user_agent: &str) -> bool {
+    user_agent.contains("iPhone") || user_agent.contains("iPad")
+}
+
+/// `/w` with the pairing code and the address, for the "Open in browser" button (the web client, docs/phone-protocol.md).
+pub fn web_url(ip: &str, port: u16, code: &str) -> String {
+    if code.is_empty() {
+        "/w".to_string()
+    } else {
+        format!("/w?c={}&h={}&p={port}", pct_encode(code), pct_encode(ip))
+    }
+}
+
+pub fn render(lang: &str, pc: &str, ip: &str, port: u16, code: &str, apk: &str, ios: bool) -> String {
     let t = if lang == "ru" { &RU } else { &EN };
     // the code is shown to nobody and only goes into the links; a malformed one is dropped instead of echoed
     let code = if super::reg::valid_code_shape(code) { code } else { "" };
     let open = esc(&intent_url(ip, port, code, pc));
     let scheme = esc(&scheme_url(ip, port, code, pc));
-    let open_btn = if code.is_empty() {
+    let web = esc(&web_url(ip, port, code));
+    let open_btn = if ios || code.is_empty() {
         String::new()
     } else {
         format!(r#"<a class="btn ghost" href="{open}"><span class="n">2</span>{}</a><p class="hint">{} <b>{}</b></p><a class="small" href="{scheme}">{}</a>"#, esc(t.open), esc(t.step2), esc(pc), esc(t.retry))
@@ -93,19 +117,40 @@ h1{{font-size:28px;font-weight:700;letter-spacing:-.02em}}
 <svg class="logo" viewBox="0 0 96 96" role="img" aria-label="Pill"><defs><linearGradient id="g" x1="20%" y1="0" x2="80%" y2="100%"><stop offset="0" stop-color="#B9AEFF"/><stop offset="1" stop-color="#8E7BFF"/></linearGradient></defs>
 <path d="M48 8C48 8 20 38 20 60a28 28 0 0 0 56 0C76 38 48 8 48 8Z" fill="url(#g)"/><ellipse cx="37" cy="58" rx="6" ry="11" fill="#fff" opacity=".28" transform="rotate(14 37 58)"/></svg>
 <h1>{title}</h1><p class="lead">{lead}</p>
-<a class="btn" href="{apk}"><span class="n">1</span>{get}</a><p class="hint">{step1}</p>
+{buttons}
 {open_btn}
 </main>
-<p class="note">{note}</p>
+{web_link}<p class="note">{note}</p>
 </body></html>"##,
         lang = if lang == "ru" { "ru" } else { "en" },
+        buttons = if ios {
+            format!(r#"<a class="btn" href="{web}">{}</a><p class="hint">{}</p>"#, esc(t.web), esc(t.web_hint))
+        } else {
+            format!(r#"<a class="btn" href="{}"><span class="n">1</span>{}</a><p class="hint">{}</p>"#, esc(apk), esc(t.get), esc(t.step1))
+        },
         title = esc(t.title),
         lead = esc(t.lead),
-        apk = esc(apk),
-        get = esc(t.get),
-        step1 = esc(t.step1),
         note = esc(t.note),
+        web_link = if ios { String::new() } else { format!(r#"<a class="small" href="{web}">{}</a>"#, esc(t.web_small)) },
     )
+}
+
+// ------------------------------------------------------------------------------------------------ the web client (`GET /w`)
+
+/// The browser client for iPhone (docs/phone-protocol.md, "Web client"): one self-contained document. It contains nothing of the PC's: the name,
+/// the token and every file name arrive over the API and go in with `textContent`. The only substitution is the per-request script nonce.
+const WEB_HTML: &str = include_str!("web/w.html");
+/// 180x180 apple-touch-icon (the droplet mark, violet on dark); iOS ignores SVG icons.
+pub const WEB_ICON: &[u8] = include_bytes!("web/icon.png");
+pub const WEB_MANIFEST: &str = r##"{"name":"Pill Phone","short_name":"Pill","id":"/w","start_url":"/w","scope":"/w","display":"standalone","orientation":"portrait","background_color":"#0B0B0F","theme_color":"#0B0B0F","description":"Files between your phone and your PC","icons":[{"src":"/w/icon.png","sizes":"180x180","type":"image/png","purpose":"any"}]}"##;
+
+pub fn web_page(nonce: &str) -> String {
+    WEB_HTML.replace("__NONCE__", nonce)
+}
+
+/// Inline script only with this request's nonce; styles may be inline; the page talks to its own origin and its WebSocket only.
+pub fn web_csp(nonce: &str) -> String {
+    format!("default-src 'none'; script-src 'nonce-{nonce}'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws:; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 }
 
 #[cfg(test)]
@@ -114,7 +159,7 @@ mod tests {
 
     #[test]
     fn page_has_both_buttons_the_logo_and_the_deep_link() {
-        let h = render("en", "DESKTOP-X", "192.168.1.5", 41717, "AB3D9XKQ", "https://example.org/PillPhone.apk");
+        let h = render("en", "DESKTOP-X", "192.168.1.5", 41717, "AB3D9XKQ", "https://example.org/PillPhone.apk", false);
         assert!(h.contains("Download the app") && h.contains("Open in Pill Phone"));
         assert!(h.contains("<svg") && h.contains("href=\"https://example.org/PillPhone.apk\""));
         assert!(h.contains("intent://pair?h=192.168.1.5&amp;p=41717&amp;c=AB3D9XKQ&amp;n=DESKTOP-X#Intent;scheme=pillphone;package=app.pill.phone;end"));
@@ -123,8 +168,19 @@ mod tests {
     }
 
     #[test]
+    fn iphone_gets_the_browser_client_as_the_main_button_and_android_a_small_link() {
+        let ios = render("en", "DESKTOP-X", "192.168.1.5", 41717, "AB3D9XKQ", "https://example.org/PillPhone.apk", true);
+        assert!(ios.contains("Open in browser") && ios.contains("href=\"/w?c=AB3D9XKQ&amp;h=192.168.1.5&amp;p=41717\""));
+        assert!(!ios.contains("Download the app") && !ios.contains("intent://") && !ios.contains("PillPhone.apk"));
+        let and = render("ru", "DESKTOP-X", "192.168.1.5", 41717, "AB3D9XKQ", "https://example.org/PillPhone.apk", false);
+        assert!(and.contains("Скачать приложение") && and.contains("iPhone или iPad? Открыть в браузере") && and.contains("href=\"/w?c=AB3D9XKQ"));
+        assert!(render("en", "PC", "10.0.0.2", 41717, "", "https://e.org/a.apk", true).contains("href=\"/w\""));
+        assert!(is_ios("Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)") && is_ios("Mozilla/5.0 (iPad; CPU OS 16_0)") && !is_ios("Mozilla/5.0 (Linux; Android 15)"));
+    }
+
+    #[test]
     fn russian_by_language_and_everything_is_escaped() {
-        let h = render("ru", "<img src=x onerror=alert(1)>", "10.0.0.2", 41717, "AB3D9XKQ", "https://e.org/a\"b");
+        let h = render("ru", "<img src=x onerror=alert(1)>", "10.0.0.2", 41717, "AB3D9XKQ", "https://e.org/a\"b", false);
         assert!(h.contains("Скачать приложение") && h.contains("Открыть в Pill Phone"));
         assert!(!h.contains("<img src=x"));
         assert!(!h.contains("a\"b"));
@@ -132,7 +188,7 @@ mod tests {
 
     #[test]
     fn a_malformed_code_is_never_echoed() {
-        let h = render("en", "PC", "10.0.0.2", 41717, "<b>bad</b>", "https://e.org/a.apk");
+        let h = render("en", "PC", "10.0.0.2", 41717, "<b>bad</b>", "https://e.org/a.apk", false);
         assert!(!h.contains("bad") && !h.contains("intent://"), "no deep link without a valid code");
         assert!(h.contains("Download the app"));
     }

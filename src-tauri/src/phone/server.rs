@@ -287,6 +287,9 @@ impl Shared {
         let Ok(req) = http::read_head(&mut r) else { return http::err(&mut w, 400, "bad_request") };
         match (req.method.as_str(), req.path.as_str()) {
             ("GET", "/p") => self.page(&mut w, &req),
+            ("GET", "/w") => self.web_page(&mut w),
+            ("GET", "/w/manifest.webmanifest") => http::respond(&mut w, 200, "application/manifest+json; charset=utf-8", super::page::WEB_MANIFEST.as_bytes(), &[]),
+            ("GET", "/w/icon.png") => http::respond(&mut w, 200, "image/png", super::page::WEB_ICON, &[]),
             ("POST", "/api/pair") => self.pair(&mut w, &mut r, &req, ip),
             ("GET", "/api/state") => match self.auth(&mut w, &req, ip, false)? {
                 Some(_) => http::json(&mut w, 200, &json!({ "pcName": self.cfg().pc_name, "serverVersion": SERVER_VERSION, "time": now_ms(), "paired": true })),
@@ -311,7 +314,7 @@ impl Shared {
                 Some(d) => self.download(&mut w, &req, &d, &p["/api/down/".len()..]),
                 None => Ok(()),
             },
-            (_, "/p" | "/api/pair" | "/api/state" | "/api/device" | "/ws") => http::err(&mut w, 405, "method_not_allowed"),
+            (_, "/p" | "/w" | "/w/manifest.webmanifest" | "/w/icon.png" | "/api/pair" | "/api/state" | "/api/device" | "/ws") => http::err(&mut w, 405, "method_not_allowed"),
             _ => http::err(&mut w, 404, "not_found"),
         }
     }
@@ -332,8 +335,17 @@ impl Shared {
     fn page(&self, w: &mut TcpStream, req: &Req) -> std::io::Result<()> {
         let c = self.cfg();
         let code = req.query.get("c").map(String::as_str).unwrap_or("");
-        let html = super::page::render(req.lang(), &c.pc_name, &self.addr.ip().to_string(), self.addr.port(), code, &c.apk_url);
+        let ios = super::page::is_ios(req.header("user-agent").unwrap_or(""));
+        let html = super::page::render(req.lang(), &c.pc_name, &self.addr.ip().to_string(), self.addr.port(), code, &c.apk_url, ios);
         http::respond(w, 200, "text/html; charset=utf-8", html.as_bytes(), &[("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'".into()), ("Referrer-Policy", "no-referrer".into())])
+    }
+
+    /// `GET /w`: the browser client. Same LAN-only peer rule and rate limit as every route; no token is needed to load it (it holds none).
+    fn web_page(&self, w: &mut TcpStream) -> std::io::Result<()> {
+        use base64::engine::general_purpose::STANDARD;
+        let nonce = STANDARD.encode(reg::random_bytes(16));
+        let html = super::page::web_page(&nonce);
+        http::respond(w, 200, "text/html; charset=utf-8", html.as_bytes(), &[("Content-Security-Policy", super::page::web_csp(&nonce)), ("Referrer-Policy", "no-referrer".into())])
     }
 
     fn pair(&self, w: &mut TcpStream, r: &mut R, req: &Req, ip: IpAddr) -> std::io::Result<()> {
