@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.8.3] - 2026-11-11
+
+### Highlights
+- Pill Phone on iPhone: open the QR code with the camera, choose Open in browser and add the page to the Home Screen. It pairs with the same code, sends files both ways and text to the PC, on the home network only.
+- iPhone cannot mirror notifications or run in the background, so the page says to keep it open.
+
 ## [0.8.2] - 2026-11-11
 
 ### Highlights
