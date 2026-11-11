@@ -61,6 +61,7 @@ mod applog;
 mod vpn;
 mod wifi;
 mod phone;
+mod phone_fw;
 
 fn main() {
     watchdog::wait_for_predecessor(); // restarted by the watchdog: the hung instance must be gone before the single-instance check

@@ -104,10 +104,12 @@ fn sync() {
     if want && !have {
         drop(g);
         start();
+        crate::phone_fw::ensure_async(); // a "Public" network blocks the phone unless Windows Firewall allows Pill on the LAN (one UAC prompt)
         let _ = bus::emit("phone:state", phone_status());
     } else if !want && have {
         let r = g.take();
         drop(g);
+        crate::phone_fw::reset();
         *lock(&ERROR) = None;
         if let Some(r) = r {
             r.server.stop(); // closes every socket, frees the port
