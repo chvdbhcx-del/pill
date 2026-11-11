@@ -36,6 +36,29 @@ pub fn phone() -> Page {
                 tr("Приложения появляются здесь, когда пришло их первое уведомление. Приглушённые не показываются на острове и не попадают в список.", "Apps appear here after their first notification. Muted ones are not shown on the island or in the list."),
                 vec![custom("phone.apps", tr("Приложения", "Apps"), tr("Нажмите на приложение, чтобы приглушить его или вернуть", "Click an app to mute it or bring it back"), "phone.apps").kw(&["mute", "apps", "приглушить", "приложения", "telegram"])],
             ),
+            group_note(
+                tr("Буфер обмена", "Clipboard"),
+                tr(
+                    "Скопированный текст сразу появляется на втором устройстве. Копии из менеджеров паролей и других защищённых программ не отправляются. Только текст, до 256 КБ. Для приложения на Android действует его собственный переключатель.",
+                    "Copied text shows up on the other device at once. Copies from password managers and other protected programs are never sent. Text only, up to 256 KB. The Android app has its own switch too.",
+                ),
+                vec![
+                    toggle(
+                        "phone.clipboard",
+                        tr("Общий буфер обмена с телефоном", "Share the clipboard with the phone"),
+                        tr("Выключено по умолчанию: в буфере бывают пароли. Включите, если хотите копировать на одном устройстве и вставлять на другом", "Off by default: a clipboard can hold passwords. Turn it on to copy on one device and paste on the other"),
+                        false,
+                    )
+                    .enabled(on.clone())
+                    .kw(&["clipboard", "copy", "paste", "sync", "буфер", "обмена", "копировать", "вставить", "синхронизация"]),
+                    toggle("phone.clipToPhone", tr("С компьютера на телефон", "PC to phone"), tr("Текст, скопированный на компьютере, приходит на телефон", "Text copied on the PC is sent to the phone"), true)
+                        .enabled(Cond::All(vec![on.clone(), Cond::On("phone.clipboard")]))
+                        .kw(&["clipboard", "pc", "phone", "буфер", "на телефон"]),
+                    toggle("phone.clipFromPhone", tr("С телефона на компьютер", "Phone to PC"), tr("Текст с телефона попадает в буфер компьютера, остров на секунду показывает, откуда он", "Text from the phone lands on the PC clipboard; the island briefly shows where it came from"), true)
+                        .enabled(Cond::All(vec![on.clone(), Cond::On("phone.clipboard")]))
+                        .kw(&["clipboard", "phone", "pc", "буфер", "с телефона"]),
+                ],
+            ),
             group(
                 tr("Файлы", "Files"),
                 vec![

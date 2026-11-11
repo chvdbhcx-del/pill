@@ -83,10 +83,12 @@ pub(crate) fn defaults() -> Cfg {
     // from 41717 up is remembered), phone.downloadDir "" = Downloads\Pill, phone.maxFileMB = size cap per file, phone.mutedApps = package names whose
     // notifications are ignored, module.phone / live.phone = the island tab and the cards on the folded island. phone.relay / phone.relayUrl /
     // phone.relayMaxFileMB = the internet relay of protocol v2 (docs/phone-relay.md): on by default but idle until a relay URL is set.
+    // phone.clipboard (OFF: a clipboard holds passwords) / phone.clipToPhone / phone.clipFromPhone = the clipboard sync of protocol v1.2.
     let Value::Object(phone) = json!({
         "phone.enabled": false, "phone.port": 41717, "phone.downloadDir": "", "phone.maxFileMB": 4096, "phone.autoAccept": true,
         "phone.apkUrl": "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk", "phone.mutedApps": [], "module.phone": true, "live.phone": true,
-        "phone.relay": true, "phone.relayUrl": "wss://pill-relay.chvdbhcx-pill.workers.dev", "phone.relayMaxFileMB": 100
+        "phone.relay": true, "phone.relayUrl": "wss://pill-relay.chvdbhcx-pill.workers.dev", "phone.relayMaxFileMB": 100,
+        "phone.clipboard": false, "phone.clipToPhone": true, "phone.clipFromPhone": true
     }) else { unreachable!() };
     m.extend(phone);
     m

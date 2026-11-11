@@ -43,6 +43,8 @@ pub(super) enum K {
     Open(String),
     Folder(String),
     NewCode,
+    /// the clipboard chip in the header
+    Clip,
     /// the phone switcher pills, the quiet "Pair another phone" button, the QR panel's close button and the scrim behind it
     Pick(usize),
     Pair,
@@ -107,6 +109,8 @@ pub struct PhoneView {
     pub(super) drop_err: Option<String>,
     pub(super) drop_err_k: Lit,
     pub(super) conn_k: Lit,
+    /// the clipboard chip: 0 = off, 1 = on
+    pub(super) clip_k: Flow,
     pub(super) qr_k: Lit,
     pub(super) bat: Flow,
     pub(super) switch: FlowSwitch,
@@ -161,6 +165,7 @@ impl PhoneView {
             drop_err: None,
             drop_err_k: Lit::new(Feel::FADE),
             conn_k: Lit::new(Feel::FADE),
+            clip_k: Flow::new(0.0, Feel::FLOW),
             qr_k: Lit::new(Feel::POP),
             bat: Flow::new(0.0, Feel::DRAG),
             switch: FlowSwitch::new(false),
@@ -245,6 +250,7 @@ impl PhoneView {
             K::Open(id) => self.act(Action::OpenFile(id), cx),
             K::Folder(id) => self.act(Action::Reveal(id), cx),
             K::NewCode => self.act(Action::NewCode, cx),
+            K::Clip => self.act(Action::ToggleClip, cx),
             K::Pick(i) => {
                 self.pick(i);
                 cx.request_frame();
@@ -347,6 +353,12 @@ impl PhoneView {
             self.card.sync(&p, reduced);
         }
         self.dash_sync();
+        let clip = self.model.link().clipboard as u8 as f32;
+        if self.model.link().running {
+            go(&mut self.clip_k, clip, reduced);
+        } else {
+            self.clip_k.jump(clip);
+        }
         self.switch.set_on(self.model.link().enabled, !reduced);
     }
 
@@ -537,7 +549,7 @@ impl View for PhoneView {
         self.sync();
         let mut busy = timers;
         let dt = (dt_ms / 1000.0) as f32;
-        for f in [&mut self.seg_x, &mut self.seg_w, &mut self.bat] {
+        for f in [&mut self.seg_x, &mut self.seg_w, &mut self.bat, &mut self.clip_k] {
             f.step(dt_ms);
             busy |= f.moving();
         }

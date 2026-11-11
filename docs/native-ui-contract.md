@@ -47,8 +47,9 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `pill:open-tab` | pill | `p` | command.rs |
 | `pill:show` | pill | `json!({ "reason": reason })` | pill.rs |
 | `phone:files` | pill | `json!({ "kind": "offer"\|"start"\|"progress"\|"done"\|"sent"\|"failed"\|"offered"\|"accepted"\|"rejected", "transfer": { "id", "device", "dir": "in"\|"out", "name", "size", "mime", "status", "path", "bytes", "at" } })` | phone/server.rs via phone.rs |
+| `phone:clip` | pill | `json!({ "device", "name" })` (a text from a phone was put on the PC clipboard; never the text) | phone/server.rs via phone.rs |
 | `phone:notif` | pill | `json!({ "kind": "posted", "notif": { "key", "device", "pkg", "app", "title", "text", "sub", "when", "category", "ongoing", "progress", "icon", "avatar", "canReply", "actions", "group", "replay", "received", "fresh" } })`<br>`json!({ "kind": "removed"\|"read", "key" })`<br>`json!({ "kind": "reply", "key", "ok", "error" })` | phone/server.rs via phone.rs |
-| `phone:state` | pill | `json!({ "running", "ip", "port", "pcName", "devices": [{ "id", "name", "model", "os", "appVersion", "firstSeen", "lastSeen", "connected", "battery", "charging", "network", "ssid", "dnd", "statusAt" }], "connected", "enabled", "error" })` | phone/server.rs via phone.rs |
+| `phone:state` | pill | `json!({ "running", "ip", "port", "pcName", "devices": [{ "id", "name", "model", "os", "appVersion", "firstSeen", "lastSeen", "connected", "battery", "charging", "network", "ssid", "dnd", "statusAt" }], "connected", "enabled", "clipboard", "error" })` | phone/server.rs via phone.rs |
 | `power:timer` | pill | `p.clone()` | command/power_timer.rs |
 | `rec:state` | pill | `json!({ "recording": true, "startedAt": started, "mode": kind, "fps": opts.fps })`<br>`json!({ "recording": false, "startedAt": r.started })` | capture.rs, capture.rs |
 | `remind:changed` | pill | `serde_json::Value::Null` | timers.rs, timers.rs |

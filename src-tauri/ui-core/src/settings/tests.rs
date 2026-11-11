@@ -268,7 +268,7 @@ fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
     let expect = [
-        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 22), ("live", 37), ("phone", 11), ("clipboard", 18), ("search", 4),
+        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 22), ("live", 37), ("phone", 14), ("clipboard", 18), ("search", 4),
         ("sound", 15), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
     ];
     for (id, n) in expect {
@@ -597,7 +597,7 @@ fn every_control_family_has_feedback_or_is_documented_static() {
 fn the_phone_page_has_the_link_widgets_and_gated_rows() {
     let p = schema().page("phone").expect("phone page");
     let ids: Vec<&str> = p.rows().map(|r| r.id).collect();
-    assert_eq!(ids, ["phone.enabled", "phone.link", "phone.devices", "phone.apps", "phone.downloadDir", "phone.maxFileMB", "phone.autoAccept", "phone.apkUrl", "phone.relay", "phone.relayUrl", "phone.relayMaxFileMB"]);
+    assert_eq!(ids, ["phone.enabled", "phone.link", "phone.devices", "phone.apps", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone", "phone.downloadDir", "phone.maxFileMB", "phone.autoAccept", "phone.apkUrl", "phone.relay", "phone.relayUrl", "phone.relayMaxFileMB"]);
     let sw = schema().row("phone.enabled").unwrap();
     assert_eq!(sw.default, json!(false), "the server never starts by itself");
     let note = p.groups[0].footer;
@@ -606,6 +606,22 @@ fn the_phone_page_has_the_link_widgets_and_gated_rows() {
         assert_eq!(schema().row(id).unwrap().enabled_if, super::schema::Cond::On("phone.enabled"), "{id} waits for the switch");
     }
     assert_eq!(schema().row("phone.maxFileMB").unwrap().control, Control::Number { min: 1, max: 1_048_576 });
+}
+
+#[test]
+fn the_clipboard_rows_are_opt_in_and_gated() {
+    use super::schema::Cond;
+    // the master switch is OFF by default (a clipboard holds passwords); the two directions default on but wait for it
+    assert_eq!(schema().row("phone.clipboard").unwrap().default, json!(false));
+    assert_eq!(schema().row("phone.clipToPhone").unwrap().default, json!(true));
+    assert_eq!(schema().row("phone.clipFromPhone").unwrap().default, json!(true));
+    assert_eq!(schema().row("phone.clipboard").unwrap().enabled_if, Cond::On("phone.enabled"));
+    for id in ["phone.clipToPhone", "phone.clipFromPhone"] {
+        assert_eq!(schema().row(id).unwrap().enabled_if, Cond::All(vec![Cond::On("phone.enabled"), Cond::On("phone.clipboard")]), "{id} waits for the master switch");
+    }
+    let p = schema().page("phone").unwrap();
+    let g = p.groups.iter().find(|g| g.rows.iter().any(|r| r.id == "phone.clipboard")).expect("a clipboard group");
+    assert!(g.footer.get(Lang::En).contains("password managers") && g.footer.get(Lang::Ru).contains("менеджеров паролей"));
 }
 
 #[test]

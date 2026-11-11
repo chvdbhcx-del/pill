@@ -72,6 +72,7 @@ impl PhoneView {
             x += w + 4.0;
         }
         self.note_segments(cache);
+        let seg_end = x - 4.0; // right edge of the last sub-tab chip
         let ind = Rect::new(r.x + self.seg_x.at(), r.y + 3.0, self.seg_w.at().max(0.0), 28.0);
         cv.fill_rr(ind, 14.0, th.raised2);
         let ind_c = ind.cx();
@@ -109,6 +110,36 @@ impl PhoneView {
         let tr = Rect::new(r.right() - 4.0 - tw, r.y, tw, 34.0);
         cv.text(tr, &text, sst.ellipsis(), th.dim.mix(th.text, k));
         cv.fill_circle((tr.x - 12.0, r.y + 17.0), 4.0, th.dim.mix(th.green, k));
+        if !self.link_off() {
+            self.draw_clip_chip(cv, th, Rect::new(r.x, r.y, tr.x - 22.0 - r.x, 34.0), seg_end);
+        }
+    }
+
+    /// The quiet clipboard chip left of the link state: a dot and "Clipboard on / off"; a click flips `phone.clipboard`. Skipped when it would not fit.
+    fn draw_clip_chip(&mut self, cv: &Canvas, th: &Theme, room: Rect, seg_end: f32) {
+        let l = self.model.lang();
+        let k = self.clip_k.at01();
+        let (label, on, off) = (l.t("Буфер", "Clipboard"), l.t("вкл", "on"), l.t("выкл", "off"));
+        let st = Style::new(11.0, 500);
+        let (lw, sw) = (cv.text_width(label, st).ceil(), cv.text_width(on, st).max(cv.text_width(off, st)).ceil());
+        let w = 12.0 + 7.0 + 6.0 + lw + 5.0 + sw + 12.0;
+        let chip = Rect::new(room.right() - w, room.y + 5.0, w, 24.0);
+        if chip.x < seg_end + 10.0 {
+            return;
+        }
+        self.clicks.add(K::Clip, chip);
+        let hv = self.clicks.hover_amt(&K::Clip);
+        cv.with_scale_about(chip.center(), self.clicks.press_scale(&K::Clip, 0.96), |cv| {
+            cv.fill_rr(chip, 12.0, th.hover.alpha(0.0).mix(th.hover, hv).mix(th.raised2, k * 0.6));
+            cv.stroke_rr(chip.inset(0.5), 11.5, 1.0, th.line.fade(0.9));
+            let fg = th.dim.mix(th.text, k.max(hv * 0.7));
+            cv.fill_circle((chip.x + 12.0 + 3.5, chip.cy()), 3.5, th.dim.mix(th.accent, k));
+            let tx = chip.x + 12.0 + 7.0 + 6.0;
+            cv.text(Rect::new(tx, chip.y, lw + 2.0, chip.h), label, st, fg);
+            let sr = Rect::new(tx + lw + 5.0, chip.y, sw + 2.0, chip.h);
+            cv.with_opacity(1.0 - k, |cv| cv.text(sr, off, st, th.dim));
+            cv.with_opacity(k, |cv| cv.text(sr, on, st, fg));
+        });
     }
 
     // ------------------------------------------------------------------------------------------------------------ link off / error

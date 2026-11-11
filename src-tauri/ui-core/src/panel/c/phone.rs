@@ -122,6 +122,8 @@ pub struct Device {
 pub struct Link {
     /// the "Phone link" switch
     pub enabled: bool,
+    /// `phone.clipboard`: the clipboard is shared with the phones (off by default)
+    pub clipboard: bool,
     pub running: bool,
     /// `no_private_ip` | `port_busy` while the server could not start
     pub error: Option<String>,
@@ -179,6 +181,8 @@ pub enum Action {
     Reveal(String),
     NewCode,
     Enable,
+    /// flip `phone.clipboard` (the chip in the header)
+    ToggleClip,
 }
 
 #[derive(Clone, Debug)]
@@ -393,6 +397,7 @@ impl PhoneModel {
         self.link = Link {
             enabled: v.get("enabled").and_then(Value::as_bool).unwrap_or(running || self.link.enabled),
             running,
+            clipboard: v.get("clipboard").and_then(Value::as_bool).unwrap_or(self.link.clipboard),
             error: opt_s(v, "error"),
             ip: s(v, "ip"),
             port: v.get("port").and_then(Value::as_u64).unwrap_or(0) as u16,
@@ -610,6 +615,10 @@ impl PhoneModel {
                 }
                 self.code_asked = true;
                 vec![self.call("phone_pair_code", json!({ "renew": true }), Pending::Code)]
+            }
+            Action::ToggleClip => {
+                self.link.clipboard = !self.link.clipboard; // shown at once; phone:state confirms
+                vec![self.call("settings_set", json!({ "patch": { "phone.clipboard": self.link.clipboard } }), Pending::Other)]
             }
             Action::Enable => {
                 self.link.enabled = true; // the switch shows "starting" until phone:state says more

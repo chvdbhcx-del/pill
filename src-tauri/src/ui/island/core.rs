@@ -101,7 +101,7 @@ pub const ISLAND_EVENTS: &[&str] = &[
     "live:volume", "live:privacy", "live:download", "update:available", "live:obs", "live:steam", "live:notification", "uninstall:ready", "live:file-done",
     "live:usb", "live:battery", "live:calendar", "live:mail", "agents:changed", "agents:done", "agents:ask", "agents:ask-gone", "rec:state", "capture:done", "voice:state", "voice:level",
     "sysmon:tick", "media:changed", "lyrics:changed", "timer:tick", "remind:due", "shelf:changed", "timer:done", "remind:changed", "kbd:now", "vdesk:now", "power:timer", "vpn:changed",
-    "phone:notif", "phone:files", "phone:state",
+    "phone:notif", "phone:files", "phone:state", "phone:clip",
 ];
 
 pub struct Core {
@@ -588,7 +588,7 @@ mod tests {
         for line in contract.lines().filter(|l| l.starts_with("| `") && l.contains("| pill |")) {
             let name = line.split('`').nth(1).unwrap();
             let handled = ISLAND_EVENTS.contains(&name);
-            let tab_only = ["chat:delta", "chat:done", "chat:focus", "clip:open", "launcher:changed", "remind:changed", "pill:cursor", "pill:gaze", "pill:display", "pill:hover", "pill:leave", "sys:changed", "kbd:state", "phone:state", "phone:notif", "phone:files"];
+            let tab_only = ["chat:delta", "chat:done", "chat:focus", "clip:open", "launcher:changed", "remind:changed", "pill:cursor", "pill:gaze", "pill:display", "pill:hover", "pill:leave", "sys:changed", "kbd:state", "phone:state", "phone:notif", "phone:files", "phone:clip"];
             assert!(handled || tab_only.contains(&name), "{name} is neither subscribed by the island nor listed as tab/native-only");
         }
     }

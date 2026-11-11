@@ -7,6 +7,7 @@
 //! * `phone:notif {kind: reply, key, ok}` -> the SAME card id, so it replaces the card on screen: "Reply sent" with a check, then the clock returns.
 //! * `phone:files {kind: done, dir: in}` -> "Received from phone: name" (button: Show in folder); `{kind: sent}` -> "Sent to phone";
 //!   `{kind: offer, status: pending}` -> "The phone wants to send: name" with Accept / Decline.
+//! * `phone:clip {device, name}` (a text from a phone was put on the PC clipboard) -> "Clipboard from <name>" for 2 s. The event never carries the text.
 //! * A badge with the number of listed notifications sits on the Phone tab.
 //!
 //! PRIVACY: message text only goes into the card data; nothing here logs or stores it.
@@ -24,6 +25,7 @@ use super::util::{cut, truthy};
 const TTL_MS: u32 = 7000;
 const REPLY_TTL_MS: u32 = 2200;
 const FILE_TTL_MS: u32 = 6000;
+const CLIP_TTL_MS: u32 = 2000;
 
 pub fn card_id(key: &str) -> String {
     format!("phone:{key}")
@@ -113,6 +115,17 @@ impl PhoneLive {
         vec![LiveCmd::Toast(c)]
     }
 
+    fn clip(&self, env: &dyn Env, p: &Value) -> Vec<LiveCmd> {
+        if !env.live_on("phone") {
+            return Vec::new();
+        }
+        let name = cut(&s(&p["name"]), 40);
+        let name = if name.is_empty() { env.tr("телефона", "phone") } else { name };
+        // one id: a second text while the card is still up replaces it instead of stacking
+        let title = format!("{} {}", env.tr("Буфер от", "Clipboard from"), name);
+        vec![LiveCmd::Toast(CardSpec::text("phone-clip", CLIP_TTL_MS, title, None).icon(IconName::Clipboard))]
+    }
+
     fn file(&self, env: &dyn Env, p: &Value) -> Vec<LiveCmd> {
         if !env.live_on("phone") {
             return Vec::new();
@@ -147,7 +160,7 @@ impl Provider for PhoneLive {
         "phone"
     }
     fn events(&self) -> &'static [&'static str] {
-        &["phone:notif", "phone:files", "phone:state"]
+        &["phone:notif", "phone:files", "phone:state", "phone:clip"]
     }
     fn on_event(&mut self, env: &dyn Env, name: &str, p: &Value, _now: i64) -> Vec<LiveCmd> {
         match name {
@@ -170,6 +183,7 @@ impl Provider for PhoneLive {
                 _ => Vec::new(),
             },
             "phone:files" => self.file(env, p),
+            "phone:clip" => self.clip(env, p),
             // the link went off or the phone left: nothing of it is listed any more
             "phone:state" if p["connected"].as_u64() == Some(0) || p["running"] == json!(false) => {
                 if self.listed.is_empty() {
@@ -222,6 +236,23 @@ mod tests {
         let ru = p.on_event(&MemEnv::default(), "phone:notif", &notif(json!({ "key": "k2" })), T0);
         let CardBody::Phone(ph) = &toast(&ru).unwrap().body else { panic!() };
         assert_eq!((ph.when.as_str(), ph.hide.as_str()), ("сейчас", "Скрыть"));
+    }
+
+    #[test]
+    fn a_text_from_the_phone_shows_a_two_second_card_without_the_text() {
+        let mut p = PhoneLive::default();
+        let cmds = p.on_event(&MemEnv::en(), "phone:clip", &json!({ "device": "d1", "name": "Pixel 8", "text": "must never be read" }), T0);
+        let c = toast(&cmds).expect("a card");
+        assert_eq!((c.id.as_str(), c.ttl_ms), ("phone-clip", 2000));
+        let CardBody::Text { title, sub } = &c.body else { panic!("{:?}", c.body) };
+        assert_eq!((title.as_str(), sub.as_deref()), ("Clipboard from Pixel 8", None));
+        assert_eq!(c.icon, Some(CardIcon::Name(IconName::Clipboard)));
+        let ru = p.on_event(&MemEnv::default(), "phone:clip", &json!({ "name": "Pixel 8" }), T0);
+        let CardBody::Text { title, .. } = &toast(&ru).unwrap().body else { panic!() };
+        assert_eq!(title, "Буфер от Pixel 8");
+        let mut off = MemEnv::en();
+        off.set("live.phone", json!(false));
+        assert!(toast(&p.on_event(&off, "phone:clip", &json!({ "name": "x" }), T0)).is_none());
     }
 
     #[test]
