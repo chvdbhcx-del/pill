@@ -142,10 +142,8 @@ private fun Usage(label: String, free: Long, total: Long, modifier: Modifier) {
     Column(modifier) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = c.textDim)
         Spacer(Modifier.height(2.dp))
-        Text(
-            stringResource(R.string.dev_free, FileNames.humanSize(free)) + " " + stringResource(R.string.dev_of, FileNames.humanSize(total)),
-            style = MaterialTheme.typography.bodySmall, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
-        )
+        Text(stringResource(R.string.dev_free, FileNames.humanSize(free)), style = MaterialTheme.typography.bodyMedium, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(stringResource(R.string.dev_of, FileNames.humanSize(total)), style = MaterialTheme.typography.bodySmall, color = c.textDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(8.dp))
         SpringProgress(used, height = 4.dp)
     }

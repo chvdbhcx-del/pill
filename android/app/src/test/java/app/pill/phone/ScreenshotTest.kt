@@ -103,6 +103,14 @@ class ScreenshotTest {
         HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Lan, status = busyPhone, phoneExpanded = true), HomeActions())
     }
 
+    @Config(qualifiers = "ru-w360dp-h800dp-xhdpi")
+    @Test fun homeConnectedRu() = shoot("home-connected-ru") {
+        HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Relay, status = busyPhone, phoneExpanded = true, mirroredApps = 128), HomeActions())
+    }
+
+    @Config(qualifiers = "ru-w360dp-h800dp-xhdpi")
+    @Test fun homeNotFoundRu() = shoot("home-notfound-ru") { HomeScreen(connectedQuiet.copy(link = LinkUi.NotFound), HomeActions()) }
+
     @Config(qualifiers = "w360dp-h900dp-xhdpi")
     @Test fun homeConnectedFiles() = shoot("home-connected-files") { HomeScreen(connectedQuiet.copy(transfers = transfers, route = app.pill.phone.net.Route.Lan), HomeActions()) }
 

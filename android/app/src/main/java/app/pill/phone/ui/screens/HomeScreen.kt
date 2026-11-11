@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -182,11 +183,11 @@ private fun Hero(ui: HomeUi, actions: HomeActions, modifier: Modifier) {
                         Text(title, style = MaterialTheme.typography.titleLarge, color = c.text)
                         if (sub != null) {
                             Spacer(Modifier.height(2.dp))
-                            Text(sub, style = MaterialTheme.typography.bodyMedium, color = c.textDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(sub, style = MaterialTheme.typography.bodyMedium, color = c.textDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
-                AnimatedVisibility(ui.link != LinkUi.Unpaired && ui.link != LinkUi.Revoked, enter = Motion.enterItem, exit = Motion.exitItem) {
+                AnimatedVisibility(ui.link == LinkUi.Connected || ui.link == LinkUi.NotFound || ui.link == LinkUi.NoNetwork, enter = Motion.enterItem, exit = Motion.exitItem) {
                     RouteBadge(ui.route, Modifier.padding(top = 10.dp), waitingForPc = relayWaiting, compact = true)
                 }
             }
@@ -239,21 +240,22 @@ private fun QuickActions(ui: HomeUi, a: HomeActions, modifier: Modifier) {
 private fun ActionPill(text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier, badge: Int? = null) {
     val c = Pill.colors
     val tint = if (c.dark) c.accentSoft else c.accent
-    Row(
-        modifier.height(52.dp).clip(CircleShape).background(c.surfaceHigh).border(1.dp, c.border, CircleShape)
-            .pressable(onClick = onClick).padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, Modifier.size(20.dp), tint = tint)
-        Spacer(Modifier.width(8.dp))
-        Text(text, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        AnimatedVisibility(badge != null, enter = Motion.enterItem, exit = Motion.exitItem) {
+    // the pill is clipped to its shape, the badge sits on its rim (a notification-style count, never steals label width)
+    Box(modifier.pressable(onClick = onClick)) {
+        Row(
+            Modifier.fillMaxWidth().height(52.dp).clip(CircleShape).background(c.surfaceHigh).border(1.dp, c.border, CircleShape).padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, null, Modifier.size(20.dp), tint = tint)
+            Spacer(Modifier.width(8.dp))
+            Text(text, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        AnimatedVisibility(badge != null, Modifier.align(Alignment.TopEnd).offset(x = (-12).dp, y = (-6).dp), enter = Motion.enterItem, exit = Motion.exitItem) {
             Box(
-                Modifier.padding(start = 8.dp).defaultMinSize(minWidth = 22.dp, minHeight = 22.dp).clip(CircleShape)
-                    .background(c.accent.copy(alpha = if (c.dark) 0.22f else 0.14f)).padding(horizontal = 6.dp),
+                Modifier.defaultMinSize(minWidth = 22.dp, minHeight = 22.dp).clip(CircleShape).background(c.accent).padding(horizontal = 6.dp),
                 contentAlignment = Alignment.Center,
-            ) { Text("${badge ?: 0}", style = MaterialTheme.typography.labelSmall, color = tint, maxLines = 1) }
+            ) { Text("${badge ?: 0}", style = MaterialTheme.typography.labelSmall, color = c.onAccent, maxLines = 1) }
         }
     }
 }
