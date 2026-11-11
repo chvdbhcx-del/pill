@@ -27,6 +27,7 @@ import app.pill.phone.ui.HomeUi
 import app.pill.phone.ui.LinkUi
 import app.pill.phone.ui.PairError
 import app.pill.phone.ui.PairUi
+import app.pill.phone.ui.PermissionsUi
 import app.pill.phone.ui.SettingsUi
 import app.pill.phone.ui.TransferPhase
 import app.pill.phone.ui.TransferUi
@@ -73,8 +74,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     val home: StateFlow<HomeUi> = combine(
         combine(Link.state, Store.paired, StatusReporter.current, Link.relayState) { l, p, s, r -> LinkBits(l, p, s, r) },
-        combine(Transfers.items, _perms, mirrored) { t, pe, m -> Triple(t, pe, m) },
-    ) { (link, paired, status, relay), (transfers, perms, mirroredApps) ->
+        combine(Transfers.items, _perms, mirrored, Store.phoneExpanded) { t, pe, m, x -> HomeBits(t, pe, m, x) },
+    ) { (link, paired, status, relay), (transfers, perms, mirroredApps, phoneExpanded) ->
         HomeUi(
             link = when {
                 paired == null -> if (link is LinkState.Revoked) LinkUi.Revoked else LinkUi.Unpaired
@@ -98,9 +99,11 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             status = status,
             route = (link as? LinkState.Connected)?.route,
             relay = relay,
+            phoneExpanded = phoneExpanded,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeUi())
 
+    private data class HomeBits(val transfers: List<Transfer>, val perms: PermissionsUi, val mirrored: Int?, val phoneExpanded: Boolean)
     private data class LinkBits(val link: LinkState, val paired: Paired?, val status: Msg.Status?, val relay: RelayState)
 
     private fun Transfer.toUi() = TransferUi(
@@ -130,6 +133,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     fun acceptTransfer(id: String) = Transfers.accept(app, id)
     fun openTransfer(id: String) = Transfers.open(app, id)
     fun reconnect() = Link.nudge()
+    fun togglePhone() = Store.setPhoneExpanded(!Store.phoneExpanded.value)
 
     // ---- apps filter ----
     val appsQuery = MutableStateFlow("")

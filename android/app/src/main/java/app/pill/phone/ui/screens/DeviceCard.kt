@@ -5,8 +5,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -19,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AirplanemodeActive
 import androidx.compose.material.icons.rounded.BatteryChargingFull
@@ -27,8 +24,7 @@ import androidx.compose.material.icons.rounded.BatteryStd
 import androidx.compose.material.icons.rounded.DoNotDisturbOn
 import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.SignalWifiOff
-import androidx.compose.material.icons.rounded.Smartphone
-import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Icon
@@ -38,7 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -50,57 +46,82 @@ import app.pill.phone.protocol.FileNames
 import app.pill.phone.protocol.Msg
 import app.pill.phone.ui.components.Chip
 import app.pill.phone.ui.components.GlassCard
-import app.pill.phone.ui.components.IconBadge
+import app.pill.phone.ui.components.Divider
 import app.pill.phone.ui.components.SpringProgress
 import app.pill.phone.ui.theme.Motion
 import app.pill.phone.ui.theme.Pill
 
 /**
- * "This phone": the facts the PC sees, in the same tiles as the island's Phone tab. Battery with charge line and
- * health, storage and memory bars, the network with its signal, and chips for the modes that are on. Everything that is
- * unknown (an older Android, a missing permission) is just left out; every number and bar glides to its new value.
+ * "This phone" as ONE slim glass row: battery (bolt while charging) with a thin bar, and the network with its signal.
+ * A tap opens the details in place on a spring: charge and health, storage, memory and only the modes that are NOT the
+ * usual ones (Do Not Disturb, airplane, silent). Everything unknown (an older Android, a missing permission) is left out.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DeviceCard(s: Msg.Status, modifier: Modifier = Modifier) {
+fun DeviceCard(s: Msg.Status, expanded: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
     val c = Pill.colors
-    GlassCard(modifier.animateContentSize(Motion.soft()), contentPadding = PaddingValues(18.dp)) {
-        val charging = s.charge == "charging" || (s.charge == null && s.charging)
-        val pct by animateIntAsState(s.battery, Motion.soft(), label = "battery")
+    val charging = s.charge == "charging" || (s.charge == null && s.charging)
+    val pct by animateIntAsState(s.battery, Motion.soft(), label = "battery")
+    val net = netInfoOf(s)
+    val chevron by animateFloatAsState(if (expanded) 180f else 0f, Motion.bouncy(), label = "chevron")
+    GlassCard(
+        modifier.fillMaxWidth().animateContentSize(Motion.soft()), onClick = onToggle,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(if (charging) Icons.Rounded.BatteryChargingFull else Icons.Rounded.BatteryStd, tint = if (charging) c.good else c.accentSoft)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text("$pct%", style = MaterialTheme.typography.titleLarge, color = c.text)
-                Spacer(Modifier.height(8.dp))
-                SpringProgress(s.battery / 100f)
+            Icon(
+                if (charging) Icons.Rounded.BatteryChargingFull else Icons.Rounded.BatteryStd, null, Modifier.size(20.dp),
+                tint = if (charging) c.good else c.textDim,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text("$pct%", style = MaterialTheme.typography.titleSmall, color = c.text, maxLines = 1)
+            Spacer(Modifier.width(10.dp))
+            SpringProgress(s.battery / 100f, Modifier.width(44.dp), height = 4.dp)
+            Spacer(Modifier.weight(1f))
+            if (net != null) {
+                Icon(net.icon, null, Modifier.size(18.dp), tint = c.textDim)
+                Spacer(Modifier.width(6.dp))
+                Text(net.title, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyMedium, color = c.textDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                net.bars?.let { Spacer(Modifier.width(8.dp)); SignalBars(it) }
             }
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Rounded.KeyboardArrowDown,
+                stringResource(if (expanded) R.string.dev_details_hide else R.string.dev_details_show),
+                Modifier.size(22.dp).graphicsLayer { rotationZ = chevron }, tint = c.textDim,
+            )
         }
-        Spacer(Modifier.height(10.dp))
-        Text(chargeLine(s, charging), style = MaterialTheme.typography.bodySmall, color = if (charging) c.good else c.textDim)
-        batteryDetail(s)?.let {
-            Spacer(Modifier.height(2.dp))
-            Text(it, style = MaterialTheme.typography.bodySmall, color = c.textDim)
-        }
-        if (s.storage != null || s.ram != null) {
-            Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                s.storage?.let { UsageTile(stringResource(R.string.dev_storage), it.free, it.total, Modifier.weight(1f)) }
-                s.ram?.let { UsageTile(stringResource(R.string.dev_memory), it.free * MB, it.total * MB, Modifier.weight(1f)) }
-            }
-        }
-        netInfoOf(s)?.let { n ->
-            Spacer(Modifier.height(10.dp))
-            NetTile(s, n)
-        }
-        val ringer = s.ringer?.takeIf { it != "sound" }
-        if (s.dnd || s.airplane == true || ringer != null || s.screen != null) {
-            Spacer(Modifier.height(10.dp))
-            FlowRow {
-                ModeChip(s.dnd, stringResource(R.string.dev_dnd), Icons.Rounded.DoNotDisturbOn)
-                ModeChip(s.airplane == true, stringResource(R.string.dev_airplane), Icons.Rounded.AirplanemodeActive)
-                ModeChip(ringer != null, stringResource(if (ringer == "silent") R.string.dev_ringer_silent else R.string.dev_ringer_vibrate), if (ringer == "silent") Icons.Rounded.VolumeOff else Icons.Rounded.Vibration)
-                ModeChip(s.screen != null, stringResource(if (s.screen == false) R.string.dev_screen_off else R.string.dev_screen_on), Icons.Rounded.Smartphone, dot = if (s.screen == true) c.good else null)
+        AnimatedVisibility(expanded, enter = Motion.enterItem, exit = Motion.exitItem) {
+            Column {
+                Spacer(Modifier.height(14.dp))
+                Divider()
+                Spacer(Modifier.height(14.dp))
+                Text(chargeLine(s, charging), style = MaterialTheme.typography.bodyMedium, color = if (charging) c.good else c.text)
+                batteryDetail(s)?.let {
+                    Spacer(Modifier.height(2.dp))
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = c.textDim)
+                }
+                if (s.storage != null || s.ram != null) {
+                    Spacer(Modifier.height(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        s.storage?.let { Usage(stringResource(R.string.dev_storage), it.free, it.total, Modifier.weight(1f)) }
+                        s.ram?.let { Usage(stringResource(R.string.dev_memory), it.free * MB, it.total * MB, Modifier.weight(1f)) }
+                    }
+                }
+                net?.detail?.let {
+                    Spacer(Modifier.height(16.dp))
+                    Text("${net.title} · $it", style = MaterialTheme.typography.bodySmall, color = c.textDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                // only what is out of the ordinary: DND, airplane, silent. "Screen on" and "Vibrate" are the normal state
+                val silent = s.ringer == "silent"
+                if (s.dnd || s.airplane == true || silent) {
+                    Spacer(Modifier.height(12.dp))
+                    FlowRow {
+                        ModeChip(s.dnd, stringResource(R.string.dev_dnd), Icons.Rounded.DoNotDisturbOn)
+                        ModeChip(s.airplane == true, stringResource(R.string.dev_airplane), Icons.Rounded.AirplanemodeActive)
+                        ModeChip(silent, stringResource(R.string.dev_ringer_silent), Icons.Rounded.VolumeOff)
+                    }
+                }
             }
         }
     }
@@ -109,38 +130,24 @@ fun DeviceCard(s: Msg.Status, modifier: Modifier = Modifier) {
 private const val MB = 1024L * 1024L
 
 @Composable
-private fun ModeChip(show: Boolean, text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, dot: androidx.compose.ui.graphics.Color? = null) {
+private fun ModeChip(show: Boolean, text: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
     // the gap is part of the chip, so a hidden chip leaves no hole in the row
-    AnimatedVisibility(show, enter = Motion.enterItem, exit = Motion.exitItem) { Chip(text, Modifier.padding(end = 8.dp, bottom = 8.dp), icon = icon, dot = dot) }
+    AnimatedVisibility(show, enter = Motion.enterItem, exit = Motion.exitItem) { Chip(text, Modifier.padding(end = 8.dp, bottom = 4.dp), icon = icon) }
 }
 
 @Composable
-private fun UsageTile(label: String, free: Long, total: Long, modifier: Modifier) {
+private fun Usage(label: String, free: Long, total: Long, modifier: Modifier) {
     val c = Pill.colors
-    val shape = RoundedCornerShape(18.dp)
     val used = if (total > 0) 1f - free.toFloat() / total else 0f
-    Column(modifier.clip(shape).background(c.surfaceHigh).border(1.dp, c.border, shape).padding(12.dp)) {
-        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = c.textDim)
-        Spacer(Modifier.height(4.dp))
-        Text(stringResource(R.string.dev_free, FileNames.humanSize(free)), style = MaterialTheme.typography.titleSmall, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(stringResource(R.string.dev_of, FileNames.humanSize(total)), style = MaterialTheme.typography.bodySmall, color = c.textDim, maxLines = 1)
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = c.textDim)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            stringResource(R.string.dev_free, FileNames.humanSize(free)) + " " + stringResource(R.string.dev_of, FileNames.humanSize(total)),
+            style = MaterialTheme.typography.bodySmall, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
         Spacer(Modifier.height(8.dp))
-        SpringProgress(used, height = 6.dp)
-    }
-}
-
-@Composable
-private fun NetTile(s: Msg.Status, n: NetLine) {
-    val c = Pill.colors
-    val shape = RoundedCornerShape(18.dp)
-    Row(Modifier.fillMaxWidth().clip(shape).background(c.surfaceHigh).border(1.dp, c.border, shape).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(n.icon, null, Modifier.size(22.dp), tint = c.textDim)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(n.title, style = MaterialTheme.typography.titleSmall, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            n.detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = c.textDim, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-        }
-        n.bars?.let { SignalBars(it) }
+        SpringProgress(used, height = 4.dp)
     }
 }
 

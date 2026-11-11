@@ -55,6 +55,8 @@ data class HomeUi(
     /** Home network or internet, while connected. */
     val route: Route? = null,
     val relay: RelayState = RelayState.Standby,
+    /** The "This phone" row shows its details. */
+    val phoneExpanded: Boolean = false,
 )
 
 @Immutable

@@ -87,17 +87,34 @@ class ScreenshotTest {
     @Test fun onboarding2() = shoot("onboarding-2") { OnboardingScreen({}, 1) }
     @Test fun onboarding3() = shoot("onboarding-3") { OnboardingScreen({}, 2) }
 
-    @Config(qualifiers = "w360dp-h1100dp-xhdpi")
-    @Test fun homeConnected() = shoot("home-connected") { HomeScreen(connected, HomeActions()) }
+    private val connectedQuiet = connected.copy(transfers = emptyList(), perms = PermissionsUi(true, true, true, true))
+    private val busyPhone = app.pill.phone.protocol.Msg.Status(
+        77, true, "wifi", "Home", true, 0L, charge = "charging", plug = "usb", tempC = 30.0, health = "good", fullInMin = 42,
+        storage = app.pill.phone.protocol.Msg.Status.Space(52_000_000_000, 128_000_000_000), ram = app.pill.phone.protocol.Msg.Status.Space(3072, 8000),
+        net = app.pill.phone.protocol.Msg.Status.NetInfo("wifi", mbps = 702, bars = 4), ringer = "silent", screen = true, airplane = false,
+    )
+
+    // 1080x2400 is about 360x800 dp: this is the first screen, nothing scrolled
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    @Test fun homeConnected() = shoot("home-connected") { HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Lan), HomeActions()) }
+
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    @Test fun homeConnectedExpanded() = shoot("home-connected-expanded") {
+        HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Lan, status = busyPhone, phoneExpanded = true), HomeActions())
+    }
+
+    @Config(qualifiers = "w360dp-h900dp-xhdpi")
+    @Test fun homeConnectedFiles() = shoot("home-connected-files") { HomeScreen(connectedQuiet.copy(transfers = transfers, route = app.pill.phone.net.Route.Lan), HomeActions()) }
 
     @Config(qualifiers = "w360dp-h1000dp-xhdpi")
     @Test fun homeConnectedEmptyAndPerms() = shoot("home-connected-setup") {
-        HomeScreen(connected.copy(transfers = emptyList(), perms = PermissionsUi(false, false, false, false, true)), HomeActions())
+        HomeScreen(connected.copy(transfers = emptyList(), perms = PermissionsUi(false, false, false, false, true), route = app.pill.phone.net.Route.Lan), HomeActions())
     }
 
     @Config(qualifiers = "w360dp-h1000dp-xhdpi")
     @Test fun homeUnpaired() = shoot("home-unpaired") { HomeScreen(HomeUi(perms = PermissionsUi(true, true, true, true, true)), HomeActions()) }
 
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
     @Test fun homeConnecting() = shoot("home-connecting") { HomeScreen(connected.copy(link = LinkUi.Connecting, transfers = emptyList(), perms = PermissionsUi(true, true, true, true)), HomeActions()) }
     @Test fun homeNotFound() = shoot("home-notfound") { HomeScreen(connected.copy(link = LinkUi.NotFound, transfers = emptyList(), perms = PermissionsUi(true, true, true, true)), HomeActions()) }
     @Test fun homeNoNetwork() = shoot("home-nonetwork") { HomeScreen(connected.copy(link = LinkUi.NoNetwork, transfers = emptyList(), perms = PermissionsUi(true, true, true, true)), HomeActions()) }

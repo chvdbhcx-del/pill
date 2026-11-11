@@ -78,6 +78,7 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
                     onSendFiles = host.pickFiles,
                     onApps = { vm.push(Route.Apps) },
                     onReconnect = vm::reconnect,
+                    onTogglePhone = vm::togglePhone,
                     onOpenTransfer = vm::openTransfer,
                     onAcceptTransfer = vm::acceptTransfer,
                     perms = host.perms,

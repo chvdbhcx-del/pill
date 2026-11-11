@@ -48,18 +48,8 @@
     <string name="net_none">Нет сети</string>
 
     <!-- Home -->
-    <string name="send_files_hint">Выберите файлы для ПК</string>
     <string name="apps_card_title">Приложения</string>
-    <string name="apps_card_hint">Что пересылать</string>
-    <plurals name="apps_on">
-        <item quantity="one">%d приложение</item>
-        <item quantity="few">%d приложения</item>
-        <item quantity="many">%d приложений</item>
-        <item quantity="other">%d приложения</item>
-    </plurals>
     <string name="files_title">Файлы</string>
-    <string name="files_empty_title">Файлов пока нет</string>
-    <string name="files_empty_body">Отправьте что-нибудь с телефона или поделитесь файлом с Pill Phone из любого приложения.</string>
     <string name="tr_offered">С вашего ПК</string>
     <string name="tr_waiting">Ждём ПК</string>
     <string name="tr_sending">Отправка</string>
@@ -203,6 +193,8 @@
     <string name="btn_open_settings">Открыть настройки</string>
 
     <!-- Этот телефон (что видит ПК) -->
+    <string name="dev_details_show">Показать подробности</string>
+    <string name="dev_details_hide">Скрыть подробности</string>
     <string name="dev_section">Этот телефон</string>
     <string name="dev_charging">Заряжается</string>
     <string name="dev_full">Заряжен</string>

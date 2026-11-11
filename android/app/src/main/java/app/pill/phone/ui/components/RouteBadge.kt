@@ -54,7 +54,7 @@ private enum class Way { Home, Internet, Offline }
  * re-tints the pill on a spring.
  */
 @Composable
-fun RouteBadge(route: Route?, modifier: Modifier = Modifier, waitingForPc: Boolean = false) {
+fun RouteBadge(route: Route?, modifier: Modifier = Modifier, waitingForPc: Boolean = false, compact: Boolean = false) {
     val c = Pill.colors
     val reduce = LocalReduceMotion.current
     val way = when {
@@ -76,20 +76,20 @@ fun RouteBadge(route: Route?, modifier: Modifier = Modifier, waitingForPc: Boole
     Row(
         modifier.animateContentSize(Motion.soft()).clip(CircleShape)
             .background(tint.copy(alpha = 0.12f)).border(1.dp, tint.copy(alpha = 0.35f), CircleShape)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = if (compact) 10.dp else 14.dp, vertical = if (compact) 5.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(if (compact) 12.dp else 16.dp), contentAlignment = Alignment.Center) {
             if (alive) Canvas(Modifier.matchParentSize()) {
                 drawCircle(tint.copy(alpha = (1f - pulse) * 0.5f), radius = size.minDimension / 2f * (0.45f + 0.55f * pulse))
             }
             Box(
-                Modifier.size(8.dp).clip(CircleShape).then(
+                Modifier.size(if (compact) 6.dp else 8.dp).clip(CircleShape).then(
                     if (alive || way == Way.Offline) Modifier.background(tint) else Modifier.border(1.5.dp, tint, CircleShape),
                 ),
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
         AnimatedContent(
             way,
             transitionSpec = {
@@ -101,12 +101,12 @@ fun RouteBadge(route: Route?, modifier: Modifier = Modifier, waitingForPc: Boole
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     when (w) { Way.Home -> Icons.Rounded.Home; Way.Internet -> Icons.Rounded.Public; Way.Offline -> Icons.Rounded.CloudOff },
-                    null, Modifier.size(16.dp), tint = tint,
+                    null, Modifier.size(if (compact) 14.dp else 16.dp), tint = tint,
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(if (compact) 4.dp else 6.dp))
                 Text(
                     stringResource(when (w) { Way.Home -> R.string.route_home; Way.Internet -> R.string.route_internet; Way.Offline -> R.string.route_offline }),
-                    style = MaterialTheme.typography.labelLarge, color = c.text, maxLines = 1,
+                    style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge, color = c.text, maxLines = 1,
                 )
             }
         }

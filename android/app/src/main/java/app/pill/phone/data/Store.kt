@@ -37,6 +37,10 @@ object Store {
     private val _autoReceive = MutableStateFlow(false)
     val autoReceive: StateFlow<Boolean> = _autoReceive.asStateFlow()
 
+    private val _phoneExpanded = MutableStateFlow(false)
+    /** The "This phone" row on Home is open (details shown). Remembered across launches. */
+    val phoneExpanded: StateFlow<Boolean> = _phoneExpanded.asStateFlow()
+
     private val _includeOngoing = MutableStateFlow(false)
     val includeOngoing: StateFlow<Boolean> = _includeOngoing.asStateFlow()
 
@@ -54,6 +58,7 @@ object Store {
         _onboarded.value = plain.getBoolean("onboarded", false)
         _autoReceive.value = plain.getBoolean("autoReceive", false)
         _includeOngoing.value = plain.getBoolean("includeOngoing", false)
+        _phoneExpanded.value = plain.getBoolean("phoneExpanded", false)
         _relayEnabled.value = plain.getBoolean("relayEnabled", true)
         _overrides.value = plain.getStringSet("filterOn", emptySet()).orEmpty().associateWith { true } +
             plain.getStringSet("filterOff", emptySet()).orEmpty().associateWith { false }
@@ -121,6 +126,7 @@ object Store {
 
     fun setOnboarded() { plain.edit().putBoolean("onboarded", true).apply(); _onboarded.value = true }
     fun setAutoReceive(on: Boolean) { plain.edit().putBoolean("autoReceive", on).apply(); _autoReceive.value = on }
+    fun setPhoneExpanded(on: Boolean) { plain.edit().putBoolean("phoneExpanded", on).apply(); _phoneExpanded.value = on }
     fun setRelayEnabled(on: Boolean) { plain.edit().putBoolean("relayEnabled", on).apply(); _relayEnabled.value = on }
     fun setIncludeOngoing(on: Boolean) { plain.edit().putBoolean("includeOngoing", on).apply(); _includeOngoing.value = on }
 

@@ -49,16 +49,8 @@
     <string name="net_none">No network</string>
 
     <!-- Home -->
-    <string name="send_files_hint">Pick files for the PC</string>
     <string name="apps_card_title">Apps</string>
-    <string name="apps_card_hint">Choose what to mirror</string>
-    <plurals name="apps_on">
-        <item quantity="one">%d app mirrored</item>
-        <item quantity="other">%d apps mirrored</item>
-    </plurals>
     <string name="files_title">Files</string>
-    <string name="files_empty_title">No files yet</string>
-    <string name="files_empty_body">Send something from this phone, or share a file to Pill Phone from any app.</string>
     <string name="tr_offered">From your PC</string>
     <string name="tr_waiting">Waiting for the PC</string>
     <string name="tr_sending">Sending</string>
@@ -200,6 +192,8 @@
     <string name="btn_open_settings">Open settings</string>
 
     <!-- This phone (what the PC sees) -->
+    <string name="dev_details_show">Show details</string>
+    <string name="dev_details_hide">Hide details</string>
     <string name="dev_section">This phone</string>
     <string name="dev_charging">Charging</string>
     <string name="dev_full">Fully charged</string>
