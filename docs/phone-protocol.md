@@ -155,3 +155,39 @@ Add to Home Screen (Share -> Add to Home Screen) gives a standalone app: `apple-
 * **Safari and the Home Screen app keep separate `localStorage`.** A token paired in Safari is invisible to the installed app, so the Safari page tells an iPhone user to install first and to pair inside the app: open the installed app, type the 8-character code (A-Z and 2-9, shown beside the QR code on the PC) and, if needed, the PC address. "Continue in Safari instead" pairs in Safari (no install).
 * **The PC address can change (DHCP).** A page served from `http://<ip>:<port>` cannot load at all when the PC has another address; the installed app then shows Safari's error and nothing can be done from the page (no service worker over `http`). When the page *does* load but the PC is unreachable (link switched off, other Wi-Fi) it shows "Cannot reach the PC at ..." with an address field; typing a new `ip[:port]` opens that PC's own `/w` (a different origin, so it pairs again there). If the address changed, remove the Home Screen icon and open the new QR code. The protocol offers no stable name, so none is invented.
 
+## Clipboard (v1.2)
+
+Text clipboard sync between the PC and a phone. Backward compatible: a peer that does not know `caps` or `clip` ignores them like any unknown message type (the PC does: unknown types are dropped without an answer, over the LAN socket and inside the relay envelope alike). The Android app and the web client are written against this section.
+
+### Messages
+
+* `caps` (phone -> PC): `{"t":"caps","clip":1}`. Sent by the phone right after every (re)connection, LAN WebSocket or relay, once the connection is up (after `hello`). It is per connection: a new connection starts without capabilities, so the phone sends it again. `clip` is the highest clipboard version the phone speaks AND allows: `1` = clipboard sync on, `0` (or absent) = off. A phone whose own clipboard switch goes off sends `{"t":"caps","clip":0}` on the open connection; turning it on again sends `clip:1`. Unknown extra fields are ignored; later versions may add more capabilities to the same message.
+* `clip` (both directions): `{"t":"clip","id":"<uuid>","text":"<utf-8>","ts":<unix ms>}`. Text only (no images, files or rich text), at most **256 KiB (262144 bytes) of UTF-8**. `id` is a fresh unique string per message (for logs and de-duplication, the receiver does not need to remember it), `ts` is the sender's clock.
+* A text larger than 256 KiB is **not sent** by the sender. An incoming `clip` that is larger, empty (`""`), not a string, or malformed is **dropped silently**: there is no error message on the wire.
+
+### When each side may send
+
+* **PC -> phone**: the PC sends `clip` to a device only after it received `caps` with `clip >= 1` on the CURRENT connection, and only while Settings > Phone > Clipboard is on with "PC -> phone" on. A phone reachable by both the LAN socket and the relay gets it once, over the LAN socket. Nothing is queued: a text copied while the phone is away, or before its `caps`, is never delivered later.
+* **Phone -> PC**: the phone may send `clip` whenever its own switch allows it. The PC applies it only if the master switch (`phone.clipboard`) and "Phone -> PC" are on and the device is paired (an authenticated connection); otherwise it is dropped silently. The PC puts the text on the Windows clipboard and shows a card on the island for about 2 seconds, "Clipboard from <phone name>". The PC never logs clipboard text.
+
+### Loop prevention (all peers must do this)
+
+A clipboard text a peer APPLIED from the other side is not a user copy and must never be sent back:
+
+* Remember a hash (not the text) of the last text applied from the other side and of the last text sent. A local clipboard change that equals either is not sent. A received `clip` equal to the last text this peer SENT is ignored (echo), and one equal to the last text it applied is not applied twice.
+* Ignore the clipboard change that your own write caused (the PC uses the clipboard sequence number plus the hash). On Android set the text, remember the hash, and skip the next `OnPrimaryClipChangedListener` call that matches it.
+* Applying a text forgets the "last sent" hash and sending a text forgets the "last applied" hash, so after the PC sent X and then applied Y, copying X again on the PC is news again.
+
+### Privacy rules
+
+* **Opt-in, default OFF** on both sides. The PC's master switch `phone.clipboard` ships off (a clipboard holds passwords) and the two directions (`phone.clipToPhone`, `phone.clipFromPhone`, default on) only matter once it is on. The phone app must also ship with its switch off and send `caps` with `clip:1` only after the user turned it on.
+* The PC skips a copy whose clipboard data carries the format `ExcludeClipboardContentFromMonitorProcessing`, or `CanIncludeInClipboardHistory` or `CanUploadToCloudClipboard` with the value 0 (password managers set these), a copy from a process on the clipboard history deny list (KeePass, 1Password, Bitwarden, ...), and any copy that is empty or over 256 KiB. Only `CF_UNICODETEXT` is read, and only after those checks. Phones do the equivalent: Android marks sensitive clips with `ClipDescription.EXTRA_IS_SENSITIVE` (API 33+, skip those); an app that cannot tell must not send automatically in the background.
+* Over the LAN the text is not encrypted (the whole v1 link is plain, see above); through the relay it is end-to-end encrypted like everything else. Settings says so.
+* Nothing is stored: the PC keeps only hashes of the last two texts in memory, a phone should do the same. No clipboard text in any log, crash report or notification history.
+* The PC registers its Windows clipboard listener only while the master switch and "PC -> phone" are on AND at least one connected phone announced `clip >= 1`; otherwise there is no listener and no cost. Changes are debounced by 150 ms.
+
+### Platform limits (what the other clients can honestly do)
+
+* **Android 10+ (API 29)**: an app cannot read the clipboard while it is in the background (only the default keyboard and the focused app can). So Phone -> PC works when the user acts: a "Send clipboard to PC" button, a share-sheet or quick-settings tile action, or a notification action that brings the app (or a transparent activity) to the foreground for the read. Automatic background sending is not possible without root or accessibility tricks and must not be attempted. PC -> phone works while the app's connection is alive, because writing the clipboard is allowed from a foreground service (Android 13+ shows its own "copied" toast); only reading is restricted.
+* **iPhone / web client over plain `http`**: Safari offers no clipboard API on a page that is not a secure context (`navigator.clipboard` needs https), the web client already has no `crypto.subtle` for the same reason. So the web client cannot read or write the clipboard automatically: it may show a text area for the user to paste into and a "Send" button (a `clip` message), and show received text in a box with a "Select all" hint so the user can copy it by hand (`document.execCommand("copy")` from a click handler may work on some iOS versions; treat it as best effort). It sends `caps` with `clip:1` only when it can show received text, and must never claim to sync automatically. The page is suspended when the screen locks, so nothing arrives in the background.
+* The Windows side has no such limits (a listener window sees every change).

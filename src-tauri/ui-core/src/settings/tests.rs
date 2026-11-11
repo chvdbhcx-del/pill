@@ -629,7 +629,7 @@ fn the_relay_rows_are_idle_by_default_and_carry_the_privacy_note() {
     let p = schema().page("phone").unwrap();
     let relay = p.groups.iter().find(|g| g.rows.iter().any(|r| r.id == "phone.relay")).expect("a relay group");
     let note = relay.footer;
-    assert!(note.get(Lang::En).contains("end-to-end encrypted") && note.get(Lang::En).contains("sees only that two devices exchange data, when, and how much"));
+    assert!(note.get(Lang::En).contains("end-to-end encrypted") && note.get(Lang::En).contains("sees only that two devices exchange data, when and how much"));
     assert!(note.get(Lang::Ru).contains("сквозно зашифрованы"));
     assert_eq!(schema().row("phone.relay").unwrap().default, json!(true));
     assert_eq!(schema().row("phone.relayUrl").unwrap().default, json!("wss://pill-relay.chvdbhcx-pill.workers.dev"), "the deployed relay is the default");

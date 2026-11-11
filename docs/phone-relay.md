@@ -55,6 +55,7 @@ envelope= {"sid":"<random 8 bytes hex, new per connection>","seq":<u64, starts a
 * **Route choice on the phone**: try LAN `ws://<last host>:<port>/ws` (2 s); if it fails try the relay; while on the relay retry the LAN every 60 s and when the Wi-Fi network changes, and switch back when it works. The phone must reconnect with back-off 1..30 s as in v1.
 * **Replays**: on each (re)connection the phone replays active notifications exactly as in v1.
 * **Files over the relay** (no HTTP side channel there): `file.offer`/`file.accept` as in v1, then data as v1-style messages `{"t":"file.chunk","id":"...","off":<byte offset>,"d":"<base64, <= 96 KiB raw>"}`, flow control `{"t":"file.ack","id","upto":<bytes>}` (sender keeps at most 8 chunks unacked), end `{"t":"file.end","id","size"}`, abort `{"t":"file.abort","id","reason"}`; the receiver verifies `size`. A setting caps the size over the relay (`phone.relayMaxFileMB`, default 100). Downloads PC -> phone over the relay use the same messages in the other direction. Over the LAN nothing changes.
+* **Clipboard** (`caps` / `clip`, docs/phone-protocol.md, "Clipboard (v1.2)"): ordinary v1 JSON messages inside the same encrypted envelope; nothing else to add. `caps` is per connection, so the phone sends it again after each relay (re)connect.
 * **Cost/privacy note shown in Settings**: "Through the relay your data is end-to-end encrypted; the relay (a Cloudflare Worker you own) sees only that two devices exchange data, when, and how much."
 
 ## Settings
