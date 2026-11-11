@@ -291,12 +291,19 @@ pub fn log_info(tail: &str, appid: u64, now: i64) -> Option<LogInfo> {
             at = *t;
         }
     }
+    // The first interval of a session is the ramp-up and its rate line is low by how far the speed still had to climb. The next rate line shows
+    // how far that was: a session that went 60 -> 94 Mbps lost about 0.64 of the first interval, one that held 90 -> 94 lost almost nothing.
+    // ponytail: with only one rate line so far the factor is a guess (0.75); it is corrected as soon as the second line arrives.
+    let mut rates = after.iter().filter_map(|(_, l)| mbps(l));
+    let ramp = match (rates.next(), rates.next()) {
+        (Some(a), Some(b)) if b > 0.0 => (a / b).clamp(0.5, 1.0),
+        _ => 0.75,
+    };
     let (mut prev, mut last, mut lt) = (at, 0.0f64, s);
     for (t, l) in after {
         if let Some(r) = mbps(l) {
             if *t > at {
-                // the first interval of a session is the ramp-up: half the rate
-                got += r * (*t - prev) as f64 * if prev == s { 0.5 } else { 1.0 };
+                got += r * (*t - prev) as f64 * if prev == s { ramp } else { 1.0 };
                 prev = *t;
             }
             last = r;
@@ -687,12 +694,26 @@ mod tests {
     fn log_before_the_first_stats_window_integrates_the_rates() {
         let head: String = WT.lines().take(5).map(|l| format!("{l}\n")).collect(); // up to the 00:31:26 rate line
         let i = log_info(&head, 236390, T + 31 * 60 + 36).unwrap();
-        // ramp-up interval at half rate, then 61 s at 94.429, then 10 s extrapolated
-        let want = 60.106 * MB * 8.0 * 0.5 + 94.429 * MB * 61.0 + 94.429 * MB * 10.0;
+        // ramp-up interval at 60.106/94.429 of its rate (the second line shows how far the speed climbed), then 61 s at 94.429, then 10 s extrapolated
+        let want = 60.106 * MB * 8.0 * (60.106 / 94.429) + 94.429 * MB * 61.0 + 94.429 * MB * 10.0;
         assert!((i.received as f64 - want).abs() < 1.0, "{} vs {}", i.received, want);
         // nothing since the session start, not even a rate line yet
         let none = log_info(&head.lines().take(3).collect::<Vec<_>>().join("\n"), 236390, T + 30 * 60 + 20).unwrap();
         assert_eq!(none.received, 0);
+    }
+
+    #[test]
+    fn a_session_that_started_at_full_speed_is_not_cut_in_half() {
+        // War Thunder, 2026-11-11: 90 Mbps at the first rate line, 94 later. Steam itself showed about 1.6 GB of 19.97 GB (8 %) at 21:00:16;
+        // the old half-rate ramp-up estimate said 6 %.
+        let log = "[2026-11-11 20:58:03] AppID 236390 update started : download 0/19972018912, store 0/0, reuse 0/21741842630, delta 0/3783446019, stage 0/43350638183 \n[2026-11-11 20:59:01] Current download rate: 90.204 Mbps\n[2026-11-11 21:00:02] Current download rate: 93.584 Mbps\n";
+        let now = line_time("[2026-11-11 21:00:16] x").unwrap();
+        let got = log_info(log, 236390, now).unwrap().received as f64;
+        assert!(got / 19_972_018_912.0 > 0.073, "{} is {:.1} %", got, got / 19_972_018_912.0 * 100.0);
+        // with a single rate line (no second one yet) the guess is 0.75 of the first interval
+        let one: String = log.lines().take(2).map(|l| format!("{l}\n")).collect();
+        let g1 = log_info(&one, 236390, line_time("[2026-11-11 20:59:20] x").unwrap()).unwrap().received as f64;
+        assert!((g1 - (90.204 * MB * 58.0 * 0.75 + 90.204 * MB * 19.0)).abs() < 1.0, "{g1}");
     }
 
     #[test]

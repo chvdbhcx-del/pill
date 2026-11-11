@@ -52,6 +52,18 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 const WM_APP_WAKE: u32 = WM_APP + 1;
 const WM_MOUSELEAVE: u32 = 0x02A3;
 const T_MODAL: usize = 1;
+/// How long a window may want a frame without getting one before it stops waiting for its swap chain's latency handle (see `render_due`).
+const STARVED_MS: f64 = 120.0;
+/// The same for a window whose last present said it is covered: it is only probed once a second (a game over the island costs nothing).
+const STARVED_OCCLUDED_MS: f64 = 1000.0;
+
+fn starve_after(occluded: bool) -> f64 {
+    if occluded {
+        STARVED_OCCLUDED_MS
+    } else {
+        STARVED_MS
+    }
+}
 const CLASS: PCWSTR = w!("PillNativeWindow");
 const MSG_CLASS: PCWSTR = w!("PillNativeHostMsg");
 
@@ -482,6 +494,8 @@ struct Win {
     in_size_move: bool,
     captured: bool,
     retry_at: f64,
+    /// the last present said the window is covered or minimized (then a starved window is only re-probed once a second)
+    occluded: bool,
     /// layered fallback: earliest time of the next frame
     pace_at: f64,
     hz: u32,
@@ -657,6 +671,7 @@ impl Host {
             in_size_move: false,
             captured: false,
             retry_at: 0.0,
+            occluded: false,
             pace_at: 0.0,
             hz,
             drop_registered,
@@ -1251,6 +1266,7 @@ impl Host {
         if let Some(win) = self.wins.get_mut(&id) {
             win.frame.end(keep);
             perf::frame(&win.spec.label, t_step, t_draw, t_present);
+            win.occluded = occluded;
             if occluded {
                 win.retry_at = now + 100.0; // minimized / covered: look again in 100 ms instead of spinning
             }
@@ -1270,9 +1286,13 @@ impl Host {
             if w.frame.wait_ms(now).is_none_or(|ms| ms > 0.0) {
                 continue; // an explicit fps cap says not yet
             }
+            // A frame that was consumed from the latency handle but never presented (the swap chain answered "occluded") leaves the handle
+            // unsignalled for good, and the window would hang on its last, half-faded frame until something forced a redraw (a drag does).
+            // So a window that wants a frame and has had none for STARVED_MS draws without waiting for the handle.
+            let starved = w.frame.since_last_ms(now) > starve_after(w.occluded);
             let ready = match w.pres.as_ref().and_then(|p| p.latency_handle()) {
                 // the sleep in `run_loop` already consumed this handle's signal (kept as a token), else try to consume it now
-                Some(h) => self.ready.contains(&(h.0 as isize)) || unsafe { WaitForSingleObject(h, 0) == WAIT_OBJECT_0 },
+                Some(h) => starved || self.ready.contains(&(h.0 as isize)) || unsafe { WaitForSingleObject(h, 0) == WAIT_OBJECT_0 },
                 None => now >= w.pace_at, // layered: one frame per display period
             };
             if ready {
@@ -1414,6 +1434,8 @@ impl Host {
                 match w.frame.wait_ms(now) {
                     Some(ms) if ms > 0.0 => put(now + ms),
                     Some(_) if w.pres.as_ref().is_some_and(|p| p.latency_handle().is_none()) => put(w.pace_at), // layered pacing
+                    // a window waiting on its frame handle wakes by itself once the handle has stayed silent for STARVED_MS (see `render_due`)
+                    Some(_) => put(now + (starve_after(w.occluded) - w.frame.since_last_ms(now)).max(1.0)),
                     _ => {}
                 }
             }

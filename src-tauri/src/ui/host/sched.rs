@@ -56,6 +56,11 @@ impl FrameState {
         self.animating
     }
 
+    /// Milliseconds since the last frame began (infinite before the first one).
+    pub fn since_last_ms(&self, now_ms: f64) -> f64 {
+        now_ms - self.last_ms
+    }
+
     pub fn frames(&self) -> u64 {
         self.frames
     }
