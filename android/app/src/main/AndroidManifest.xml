@@ -82,6 +82,26 @@
             </intent-filter>
         </activity>
 
+        <!-- "Send clipboard": see-through, reads the clipboard once it has focus (tile, notification action, Home button) -->
+        <activity
+            android:name=".ClipSendActivity"
+            android:exported="false"
+            android:label="@string/btn_send_clipboard"
+            android:theme="@style/Theme.PillPhone.Sheet"
+            android:excludeFromRecents="true"
+            android:taskAffinity="" />
+
+        <service
+            android:name=".service.ClipTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_clip"
+            android:label="@string/btn_send_clipboard"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".service.LinkService"
             android:exported="false"

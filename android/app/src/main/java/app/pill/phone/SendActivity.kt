@@ -13,10 +13,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.lifecycleScope
+import app.pill.phone.data.ClipSendResult
 import app.pill.phone.data.FileTarget
 import app.pill.phone.data.Routing
 import app.pill.phone.data.Store
 import app.pill.phone.net.LinkManager
+import app.pill.phone.service.ClipBridge
 import app.pill.phone.transfer.Source
 import app.pill.phone.transfer.Transfers
 import app.pill.phone.ui.screens.SendSheet
@@ -70,10 +72,15 @@ class SendActivity : ComponentActivity() {
             Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(i, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
             else -> listOfNotNull(IntentCompat.getParcelableExtra(i, Intent.EXTRA_STREAM, Uri::class.java))
         }
+        // Shared text with clipboard sync on goes over as a clip (the PC's clipboard), unless it is too big for one: then it stays a file.
+        val sync = ClipBridge.sync(this)
+        val clipText = if (uris.isEmpty() && i.action == Intent.ACTION_SEND && Store.clipEnabled.value) {
+            i.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.takeIf { sync.check(it) == null }
+        } else null
         // The share grant ends with this activity, so every file is opened here before the transfer is queued.
-        val sources = ArrayList(Transfers.prepare(this, uris))
-        if (uris.isEmpty()) i.getCharSequenceExtra(Intent.EXTRA_TEXT)?.let { text -> textSource(text.toString())?.let(sources::add) }
-        if (sources.isEmpty()) {
+        val sources = ArrayList(if (clipText == null) Transfers.prepare(this, uris) else emptyList())
+        if (clipText == null && uris.isEmpty()) i.getCharSequenceExtra(Intent.EXTRA_TEXT)?.let { text -> textSource(text.toString())?.let(sources::add) }
+        if (clipText == null && sources.isEmpty()) {
             ui = SendUi.Nothing
             return
         }
@@ -93,8 +100,16 @@ class SendActivity : ComponentActivity() {
                 picked
             }
         }
-        Transfers.send(this, sources, targets)
-        ui = SendUi.Sending(sources.size)
+        if (clipText != null) {
+            ui = when (sync.send(clipText, targets, LinkManager::sendTo)) {
+                is ClipSendResult.Sent, ClipSendResult.AlreadyThere -> SendUi.ClipSent
+                else -> SendUi.NotConnected
+            }
+            if (ui == SendUi.NotConnected) return
+        } else {
+            Transfers.send(this, sources, targets)
+            ui = SendUi.Sending(sources.size)
+        }
         delay(1600)
         finish()
     }

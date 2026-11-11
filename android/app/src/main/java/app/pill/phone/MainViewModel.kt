@@ -104,9 +104,9 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     val home: StateFlow<HomeUi> = combine(
         combine(Store.pcs, LinkManager.views, selected, LinkManager.revoked) { pcs, v, sel, rev -> NetBits(pcs, v, sel, rev.isNotEmpty()) },
-        combine(Store.relayEnabled, StatusReporter.current) { on, s -> on to s },
+        combine(Store.relayEnabled, Store.clipEnabled, StatusReporter.current) { on, clip, s -> Triple(on, clip, s) },
         combine(Transfers.items, _perms, mirrored, Store.phoneExpanded) { t, pe, m, x -> HomeBits(t, pe, m, x) },
-    ) { net, (relayOn, status), (transfers, perms, mirroredApps, phoneExpanded) ->
+    ) { net, (relayOn, clipOn, status), (transfers, perms, mirroredApps, phoneExpanded) ->
         val sel = net.sel
         val v = view(net.views, sel)
         val state = v.state
@@ -129,6 +129,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             route = v.route,
             relay = RelayState.effective(sel, relayOn, v.relayDyn),
             phoneExpanded = phoneExpanded,
+            clipEnabled = clipOn,
             pcs = if (two) net.pcs.map { PcUi(it.pcId, it.label, view(net.views, it).state.toUi(), view(net.views, it).route) } else emptyList(),
             selectedPcId = sel?.pcId,
         )
@@ -155,9 +156,11 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     val settings: StateFlow<SettingsUi> = combine(
         settingsBase, Store.relayEnabled, LinkManager.views, combine(Store.pcs, Store.overrides, selected) { p, o, s -> Triple(p, o, s) },
-    ) { s, on, views, (pcs, global, sel) ->
+        combine(Store.clipEnabled, Store.clipReceive) { e, r -> e to r },
+    ) { s, on, views, (pcs, global, sel), (clipOn, clipRecv) ->
         val v = view(views, sel)
         s.copy(
+            clipEnabled = clipOn, clipReceive = clipRecv,
             relayEnabled = on, relay = RelayState.effective(sel, on, v.relayDyn), route = v.route, relayMaxMb = v.relayMaxMb,
             pcs = pcs.map { p ->
                 val pv = view(views, p)
@@ -172,6 +175,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setRelayEnabled(on: Boolean) = Store.setRelayEnabled(on)
     fun setAutoReceive(on: Boolean) = Store.setAutoReceive(on)
+    fun setClipEnabled(on: Boolean) = Store.setClipEnabled(on)
+    fun setClipReceive(on: Boolean) = Store.setClipReceive(on)
     fun setIncludeOngoing(on: Boolean) = Store.setIncludeOngoing(on)
     fun acceptTransfer(id: String) = Transfers.accept(app, id)
     fun openTransfer(id: String) = Transfers.open(app, id)

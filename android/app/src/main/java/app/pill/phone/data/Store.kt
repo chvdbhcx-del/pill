@@ -46,6 +46,14 @@ object Store {
     /** "Use internet relay when away from home". */
     val relayEnabled: StateFlow<Boolean> = _relayEnabled.asStateFlow()
 
+    private val _clipEnabled = MutableStateFlow(false)
+    /** Clipboard sync, the master switch. Off until the user opts in. */
+    val clipEnabled: StateFlow<Boolean> = _clipEnabled.asStateFlow()
+
+    private val _clipReceive = MutableStateFlow(true)
+    /** "Receive from PC": clips from a PC are put on this phone's clipboard (only matters while [clipEnabled]). */
+    val clipReceive: StateFlow<Boolean> = _clipReceive.asStateFlow()
+
     private val _overrides = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     /** The global app filter; a PC can have its own instead. */
     val overrides: StateFlow<Map<String, Boolean>> = _overrides.asStateFlow()
@@ -59,6 +67,8 @@ object Store {
         _includeOngoing.value = plain.getBoolean("includeOngoing", false)
         _phoneExpanded.value = plain.getBoolean("phoneExpanded", false)
         _relayEnabled.value = plain.getBoolean("relayEnabled", true)
+        _clipEnabled.value = plain.getBoolean("clipEnabled", false)
+        _clipReceive.value = plain.getBoolean("clipReceive", true)
         _overrides.value = plain.getStringSet("filterOn", emptySet()).orEmpty().associateWith { true } +
             plain.getStringSet("filterOff", emptySet()).orEmpty().associateWith { false }
         _selectedPc.value = plain.getString("selectedPc", null)
@@ -165,6 +175,8 @@ object Store {
     fun setAutoReceive(on: Boolean) { plain.edit().putBoolean("autoReceive", on).apply(); _autoReceive.value = on }
     fun setPhoneExpanded(on: Boolean) { plain.edit().putBoolean("phoneExpanded", on).apply(); _phoneExpanded.value = on }
     fun setRelayEnabled(on: Boolean) { plain.edit().putBoolean("relayEnabled", on).apply(); _relayEnabled.value = on }
+    fun setClipEnabled(on: Boolean) { plain.edit().putBoolean("clipEnabled", on).apply(); _clipEnabled.value = on }
+    fun setClipReceive(on: Boolean) { plain.edit().putBoolean("clipReceive", on).apply(); _clipReceive.value = on }
     fun setIncludeOngoing(on: Boolean) { plain.edit().putBoolean("includeOngoing", on).apply(); _includeOngoing.value = on }
 
     fun setAppEnabled(pkg: String, on: Boolean) {

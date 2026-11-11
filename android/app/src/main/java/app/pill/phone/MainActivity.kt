@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
 import app.pill.phone.data.Perms
+import app.pill.phone.service.ClipBridge
 import app.pill.phone.service.LinkService
 import app.pill.phone.transfer.Transfers
 import app.pill.phone.ui.HostActions
@@ -43,6 +44,7 @@ class MainActivity : ComponentActivity() {
                     HostActions(
                         scanQr = vm::openScanner,
                         pickFiles = { picker.launch(arrayOf("*/*")) },
+                        sendClipboard = { startActivity(Intent(this, ClipSendActivity::class.java)) },
                         perms = PermissionActions(
                             onNotificationAccess = { open(Perms.notificationAccessIntent(this)) },
                             onPostNotifications = {
@@ -62,6 +64,16 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handle(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        ClipBridge.foreground = true
+    }
+
+    override fun onStop() {
+        ClipBridge.foreground = false
+        super.onStop()
     }
 
     override fun onResume() {

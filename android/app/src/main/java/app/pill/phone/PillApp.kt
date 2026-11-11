@@ -4,6 +4,7 @@ import android.app.Application
 import app.pill.phone.data.Store
 import app.pill.phone.net.LinkManager
 import app.pill.phone.protocol.Msg
+import app.pill.phone.service.ClipBridge
 import app.pill.phone.service.NotifBridge
 import app.pill.phone.service.Notifs
 import app.pill.phone.service.StatusReporter
@@ -11,6 +12,7 @@ import app.pill.phone.transfer.Transfers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 class PillApp : Application() {
@@ -22,10 +24,15 @@ class PillApp : Application() {
         scope.launch {
             // One place routes every frame from the PC to whoever handles it.
             LinkManager.incoming.collect { (pcId, m) ->
-                if (m is Msg.Hello) StatusReporter.onHello(pcId)
+                if (m is Msg.Hello) { StatusReporter.onHello(pcId); ClipBridge.announce(this@PillApp, pcId) }
+                ClipBridge.handle(this@PillApp, m)
                 NotifBridge.handle(this@PillApp, pcId, m)
                 Transfers.handle(this@PillApp, pcId, m)
             }
+        }
+        scope.launch {
+            // switched on while PCs are connected: announce now
+            Store.clipEnabled.drop(1).collect { if (it) ClipBridge.announceAll(this@PillApp) }
         }
     }
 

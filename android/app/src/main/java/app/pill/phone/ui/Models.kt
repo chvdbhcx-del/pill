@@ -83,6 +83,8 @@ data class HomeUi(
     val relay: RelayState = RelayState.Standby,
     /** The "This phone" row shows its details. */
     val phoneExpanded: Boolean = false,
+    /** Clipboard sync is on: Home offers "Send clipboard". */
+    val clipEnabled: Boolean = false,
     /** Every paired PC; the switcher on the hero appears with two or more. [link], [pcName], [route]... describe [selectedPcId]. */
     val pcs: List<PcUi> = emptyList(),
     val selectedPcId: String? = null,
@@ -110,6 +112,9 @@ data class SettingsUi(
     val relayMaxMb: Int = 100,
     /** Every paired PC, for the "PCs" section (shown from two on; one PC keeps the single card). */
     val pcs: List<PcSettingsUi> = emptyList(),
+    /** Clipboard sync (master) and "Receive from PC". */
+    val clipEnabled: Boolean = false,
+    val clipReceive: Boolean = true,
 )
 
 /** The pairing flow, one state at a time. */

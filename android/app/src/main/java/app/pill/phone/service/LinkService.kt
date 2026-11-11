@@ -11,14 +11,18 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import app.pill.phone.data.Paired
 import app.pill.phone.data.Store
 import app.pill.phone.net.LinkManager
+import app.pill.phone.net.PcView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+
+private data class LinkSnap(val views: Map<String, PcView>, val pcs: List<Paired>, val revoked: List<String>, val clip: Boolean)
 
 /**
  * Keeps the link to the PC alive: owns the WebSocket (via [Link]), shows the calm "Connected to ..." notification,
@@ -47,9 +51,9 @@ class LinkService : Service() {
         watchNetwork()
         scope.launch {
             // The headline follows all PCs: "Connected to AENEAS", "Connected to 2 PCs", "1 of 2 PCs reachable".
-            combine(LinkManager.views, Store.pcs, LinkManager.revoked) { v, p, r -> Triple(v, p, r) }.collect { (views, list, revoked) ->
+            combine(LinkManager.views, Store.pcs, LinkManager.revoked, Store.clipEnabled) { v, p, r, c -> LinkSnap(v, p, r, c) }.collect { (views, list, revoked, clip) ->
                 if (list.isEmpty() && revoked.isEmpty()) { stopSelf(); return@collect }
-                val n = Notifs.link(this@LinkService, list, views, revoked = revoked.isNotEmpty())
+                val n = Notifs.link(this@LinkService, list, views, revoked = revoked.isNotEmpty(), clip = clip)
                 getSystemService(NotificationManager::class.java).notify(Notifs.ID_LINK, n)
                 // Every PC removed us: nothing left to keep alive, the notification stays only until the user looks.
                 if (list.isEmpty()) stopForegroundKeepingNotification()
