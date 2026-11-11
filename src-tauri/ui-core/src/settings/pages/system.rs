@@ -172,7 +172,7 @@ pub fn modules() -> Page {
     p
 }
 
-const LIVE: [(&str, Tr, Tr, bool); 18] = [
+const LIVE: [(&str, Tr, Tr, bool); 19] = [
     ("live.volume", tr("Громкость", "Volume"), tr("Полоска при изменении громкости, колесо мыши над островом", "A bar when the volume changes, the mouse wheel over the pill"), true),
     ("live.music", tr("Музыка", "Music"), tr("Название трека и эквалайзер в пилюле, пока играет музыка", "The track title and an equaliser in the pill while music plays"), true),
     ("live.micCam", tr("Микрофон и камера", "Microphone and camera"), tr("Точки в острове, пока приложение слушает или снимает", "Dots in the pill while an app listens or films"), true),
@@ -181,6 +181,7 @@ const LIVE: [(&str, Tr, Tr, bool); 18] = [
     ("live.notifications", tr("Уведомления", "Notifications"), tr("Карточки с событиями вместо всплывающих окон", "Event cards instead of pop-up windows"), true),
     ("live.reminders", tr("Напоминания и таймеры", "Reminders and timers"), tr("Карточка, когда напоминание или таймер сработали", "A card when a reminder or a timer goes off"), true),
     ("live.keyboardLayout", tr("Раскладка клавиатуры", "Keyboard layout"), tr("Короткая подсказка при смене языка ввода и Caps Lock", "A short hint when the input language or Caps Lock changes"), true),
+    ("live.virtualDesktopFlash", tr("Смена рабочего стола", "Virtual desktop change"), tr("На секунду появляется «Рабочий стол 2» (или его название), когда вы переключаете виртуальный рабочий стол Windows. Клик по метке рабочего стола и колесо мыши над ней переключают столы. Читается из реестра пользователя, ничего не уходит с компьютера", "\"Desktop 2\" (or its name) appears for a second when you switch the Windows virtual desktop. A click on the desktop chip and the mouse wheel over it switch desktops. Read from your user registry, nothing leaves the PC"), true),
     ("live.copy", tr("Реакция на копирование", "Reaction to copying"), tr("Остров слегка вздрагивает, когда в буфер попал новый текст", "The pill twitches slightly when new text reaches the clipboard"), true),
     ("live.obs", tr("OBS: запись и трансляция", "OBS: recording and streaming"), tr("Пока OBS пишет или транслирует, в пилюле горит REC или LIVE, готовая запись приходит карточкой. В OBS включите сервер WebSocket (Сервис → Настройки сервера WebSocket)", "While OBS records or streams, the pill shows REC or LIVE and the finished recording arrives as a card. In OBS, enable the WebSocket server (Tools → WebSocket Server Settings)"), false),
     ("live.agents", tr("ИИ-агенты в терминале", "AI agents in the terminal"), tr("Claude Code, Codex и opencode: в пилюле видно, что агент работает, ждёт ответа или закончил, а когда он ждёт или закончил — приходит карточка", "Claude Code, Codex and opencode: the pill shows that an agent works, waits for an answer or has finished, and a card arrives when it waits or finishes"), true),
@@ -259,7 +260,7 @@ pub fn live() -> Page {
     // chips beside the time and how long cards stay (they read nothing off the PC beyond the layout of the window in front and the desktop number)
     rows.push(toggle("live.keyboardLayoutAlways", tr("Раскладка в пилюле всегда", "Layout in the pill, always"), tr("Метка RU / EN остаётся слева от времени, а не вспыхивает на 1,4 с при смене языка", "The RU / EN chip stays left of the time instead of flashing for 1.4 s when the language changes"), false).kw(&["keyboard", "layout", "language", "раскладка", "язык ввода", "chip"]));
     rows.push(
-        seg("live.virtualDesktop", tr("Виртуальный рабочий стол", "Virtual desktop"), tr("Метка справа от времени: номер или название текущего рабочего стола Windows (Win+Ctrl+стрелки). Читается из реестра пользователя, раз в секунду, пока включено", "A chip right of the time: the number or the name of the current Windows desktop (Win+Ctrl+arrows). Read from your user registry once a second while it is on"), so(&[("off", tr("Выкл.", "Off")), ("number", tr("Номер", "Number")), ("name", tr("Название", "Name"))]), json!("off"))
+        seg("live.virtualDesktop", tr("Виртуальный рабочий стол", "Virtual desktop"), tr("Метка справа от времени: номер или название текущего рабочего стола Windows (Win+Ctrl+стрелки). Читается из реестра пользователя; клик по метке и колесо мыши над ней переключают столы", "A chip right of the time: the number or the name of the current Windows desktop (Win+Ctrl+arrows). Read from your user registry; a click on the chip and the mouse wheel over it switch desktops"), so(&[("off", tr("Выкл.", "Off")), ("number", tr("Номер", "Number")), ("name", tr("Название", "Name"))]), json!("off"))
             .kw(&["desktop", "virtual", "рабочий стол", "виртуальный", "workspace"]),
     );
     rows.push(

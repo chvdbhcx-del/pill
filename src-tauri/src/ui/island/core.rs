@@ -486,6 +486,7 @@ mod tests {
             other => panic!("{other:?}"),
         };
         let mut c = core();
+        c.bus_event("settings:changed", &json!({"live.virtualDesktopFlash": false}), 0.5); // the flash would replace the clock row
         c.bus_event("kbd:now", &json!({"lang": "RU", "name": "Russian"}), 1.0);
         c.bus_event("vdesk:now", &json!({"index": 2, "total": 3, "name": null}), 1.0);
         assert!(tags(&c).is_empty(), "both are off by default");
@@ -501,6 +502,12 @@ mod tests {
         c.bus_event("settings:changed", &json!({"live.keyboardLayoutAlways": true}), 6.0);
         c.bus_event("kbd:layout", &json!({"lang": "RU", "name": "Russian"}), 7.0);
         assert!(!c.rows.contains_key("kbd"));
+        // the switch flash: a change of desktop shows on the folded island, the same desktop again does not
+        c.bus_event("settings:changed", &json!({"live.virtualDesktopFlash": true}), 8.0);
+        c.bus_event("vdesk:now", &json!({"index": 3, "total": 3, "name": null}), 9.0);
+        assert!(!c.rows.contains_key("vdesk"));
+        c.bus_event("vdesk:now", &json!({"index": 1, "total": 3, "name": null}), 10.0);
+        assert!(c.rows.contains_key("vdesk"));
     }
 
     #[test]

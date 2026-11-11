@@ -52,7 +52,7 @@ pub(crate) fn defaults() -> Cfg {
     m.extend(quiet);
     // island looks and small behaviour (island.color: a ready colour or hex, "" = the theme's own; island.colorCustom: typed hex that wins), chips beside the time, card lifetime, web search engine
     let Value::Object(look) = json!({
-        "island.color": "", "island.colorCustom": "", "live.keyboardLayoutAlways": false, "live.virtualDesktop": "off", "cards.duration": "normal", "search.engine": "google", "search.customUrl": ""
+        "island.color": "", "island.colorCustom": "", "live.keyboardLayoutAlways": false, "live.virtualDesktop": "off", "live.virtualDesktopFlash": true, "cards.duration": "normal", "search.engine": "google", "search.customUrl": ""
     }) else { unreachable!() };
     m.extend(look);
     // audio sources (audio.rs, media.rs): perApp = the spectrum follows the player's own sound (process loopback), legacyPlayers = AIMP / Winamp

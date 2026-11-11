@@ -62,6 +62,53 @@ impl Provider for KbdLive {
     }
 }
 
+/// `vdesk:now {index, total, name}` (vdesk.rs, read from the user's registry) -> "Desktop 2" (or the desktop's own name) for 1.4 s when the
+/// desktop CHANGED (priority 90). The first value only sets the baseline; a renamed or added desktop is not a switch.
+/// Settings > Live events > Virtual desktop (`live.virtualDesktopFlash`, on by default). Quiet-hours source `vdesk`.
+#[derive(Debug, Default)]
+pub struct VdeskLive {
+    last: Option<u64>,
+}
+
+/// (title, small text) of the flash: a named desktop shows its name and "2/3"; an unnamed one "Desktop 2" and "of 3" (nothing when alone).
+pub fn vdesk_texts(env: &dyn Env, index: u64, total: u64, name: Option<&str>) -> (String, String) {
+    match name.map(str::trim).filter(|n| !n.is_empty()) {
+        Some(n) => (n.to_string(), if total > 1 { format!("{index}/{total}") } else { String::new() }),
+        None => (format!("{} {index}", env.tr("Рабочий стол", "Desktop")), if total > 1 { format!("{} {total}", env.tr("из", "of")) } else { String::new() }),
+    }
+}
+
+impl Provider for VdeskLive {
+    fn name(&self) -> &'static str {
+        "vdesk"
+    }
+    fn events(&self) -> &'static [&'static str] {
+        &["vdesk:now"]
+    }
+    fn on_event(&mut self, env: &dyn Env, _name: &str, p: &Value, _now: i64) -> Vec<LiveCmd> {
+        let Some(index) = p.get("index").and_then(Value::as_u64).filter(|i| *i > 0) else { return Vec::new() };
+        let changed = self.last.is_some_and(|l| l != index);
+        self.last = Some(index); // tracked while the flash is off too, so switching it on does not flash an old change
+        if !changed || !env.collapsed() || !env.live_on("virtualDesktopFlash") {
+            return Vec::new();
+        }
+        let total = p.get("total").and_then(Value::as_u64).unwrap_or(1);
+        let (title, small) = vdesk_texts(env, index, total, p.get("name").and_then(Value::as_str));
+        let mut row = RowSpec::new("vdesk", 90)
+            .ttl(KBD_MS)
+            .anim(Anim::Pop, Anim::None, Anim::Fade)
+            .with(Elem::icon_c(IconName::Monitor, 17.0, ColorRole::Dim))
+            .with(Elem::text_max(title, TextStyle::Label, 170.0));
+        if !small.is_empty() {
+            row = row.with(Elem::text(small, TextStyle::Dim));
+        }
+        vec![LiveCmd::set(row)]
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct CopyLive;
 
@@ -166,6 +213,35 @@ mod tests {
         assert!(!k.on_event(&env, "kbd:layout", &json!({"lang": "EN"}), T0).is_empty());
         env.set("live.keyboardLayoutAlways", json!(true));
         assert!(k.on_event(&env, "kbd:layout", &json!({"lang": "EN"}), T0).is_empty());
+    }
+
+    #[test]
+    fn vdesk_flash_only_on_a_real_switch() {
+        let mut v = VdeskLive::default();
+        let mut env = MemEnv::default();
+        let at = |i: u64, name: Value| json!({"index": i, "total": 3, "name": name});
+        assert!(v.on_event(&env, "vdesk:now", &at(1, Value::Null), T0).is_empty(), "the first value is the baseline");
+        assert!(v.on_event(&env, "vdesk:now", &at(1, json!("Work")), T0).is_empty(), "a rename is not a switch");
+        let cmds = v.on_event(&env, "vdesk:now", &at(2, Value::Null), T0);
+        let r = row(&cmds);
+        assert_eq!((r.id.as_str(), r.priority, r.ttl_ms), ("vdesk", 90, Some(1400)));
+        assert_eq!((txt(r, 1), txt(r, 2)), ("Рабочий стол 2".to_string(), "из 3".to_string()));
+        let cmds = v.on_event(&MemEnv::en(), "vdesk:now", &at(3, json!("Games")), T0);
+        assert_eq!((txt(row(&cmds), 1), txt(row(&cmds), 2)), ("Games".to_string(), "3/3".to_string()));
+        assert!(v.on_event(&env, "vdesk:now", &json!({"index": 0}), T0).is_empty(), "garbage");
+        assert!(v.on_event(&env, "vdesk:now", &Value::Null, T0).is_empty());
+        // alone on one desktop: just the title
+        let cmds = v.on_event(&env, "vdesk:now", &json!({"index": 1, "total": 1}), T0);
+        assert_eq!(row(&cmds).elements.len(), 2);
+        // gates: expanded island, the switch off; the index is tracked meanwhile
+        env.state = PillState::Expanded;
+        assert!(v.on_event(&env, "vdesk:now", &at(2, Value::Null), T0).is_empty());
+        env.state = PillState::Collapsed;
+        env.set("live.virtualDesktopFlash", json!(false));
+        assert!(v.on_event(&env, "vdesk:now", &at(3, Value::Null), T0).is_empty());
+        env.set("live.virtualDesktopFlash", json!(true));
+        assert!(v.on_event(&env, "vdesk:now", &at(3, Value::Null), T0).is_empty(), "no flash for a change made while it was off");
+        assert!(!v.on_event(&env, "vdesk:now", &at(1, Value::Null), T0).is_empty());
     }
 
     #[test]

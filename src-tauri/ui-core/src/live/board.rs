@@ -7,7 +7,7 @@
 use super::model::{LiveCmd, RowSpec};
 
 /// Sources whose chips, pulses and edge reactions are muted during quiet hours (`QUIET_SRC` of pill.js).
-pub const QUIET_SRC: [&str; 7] = ["agents", "agent-done", "copy", "download", "steam", "sysmon", "kbd"];
+pub const QUIET_SRC: [&str; 8] = ["agents", "agent-done", "copy", "download", "steam", "sysmon", "kbd", "vdesk"];
 
 pub fn is_quiet_src(id: &str) -> bool {
     QUIET_SRC.contains(&id)
@@ -177,13 +177,13 @@ mod tests {
 
     #[test]
     fn quiet_source_membership_is_exact() {
-        for id in ["agents", "agent-done", "copy", "download", "steam", "sysmon", "kbd"] {
+        for id in ["agents", "agent-done", "copy", "download", "steam", "sysmon", "kbd", "vdesk"] {
             assert!(is_quiet_src(id), "{id}");
         }
         for id in ["media", "volume", "obs", "rec", "voice", "timer", "shelf", "shelf-drop", "remind", "capture"] {
             assert!(!is_quiet_src(id), "{id}");
         }
-        assert_eq!(QUIET_SRC.len(), 7);
+        assert_eq!(QUIET_SRC.len(), 8);
     }
 
     #[test]

@@ -19,7 +19,7 @@ use super::agents::{AgentsIo, AgentsLive};
 use super::board::{filter_quiet, Board, QUIET_SRC};
 use super::capture::{CaptureCards, RecLive};
 use super::env::Env;
-use super::events::{CopyLive, KbdLive};
+use super::events::{CopyLive, KbdLive, VdeskLive};
 use super::ext::{NotificationLive, ObsLive, SteamLive, UninstallLive};
 use super::media::MediaLive;
 use super::model::{LiveCmd, Query};
@@ -74,6 +74,7 @@ impl Hub {
             Box::new(UpdateLive),
             Box::new(KbdLive),
             Box::new(CopyLive),
+            Box::new(VdeskLive::default()),
             Box::new(ObsLive::default()),
             Box::new(SteamLive),
             Box::new(NotificationLive),

@@ -117,7 +117,7 @@ pub fn layout_clock(row: &ClockRow, time: Option<&str>, m: &dyn Meter) -> ClockL
 }
 
 /// The clock row; `x0` = left edge, `cy` = vertical centre.
-pub fn paint_clock(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &ClockRow, time: Option<&str>, rolls: &[(DigitRoll, f32)], entering: &[(bool, usize, f32, f32)], lay: &ClockLayout, ring: (f32, f32), x0: f32, cy: f32) {
+pub fn paint_clock(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &ClockRow, time: Option<&str>, rolls: &[(DigitRoll, f32)], entering: &[(bool, usize, f32, f32)], lay: &ClockLayout, ring: (f32, f32), x0: f32, cy: f32) -> Option<Rect> {
     let pop = |right: bool, i: usize| -> (f32, f32) { entering.iter().find(|e| e.0 == right && e.1 == i).map_or((1.0, 1.0), |e| (e.2, e.3)) };
     // left column: right aligned against the time
     let mut x = x0 + 16.0 + lay.left_w;
@@ -130,15 +130,21 @@ pub fn paint_clock(cv: &Canvas, th: &Theme, gpu: &mut Gpu, row: &ClockRow, time:
     }
     // right column: left aligned against the time
     let mut x = x0 + lay.right_x;
+    let mut chip = None;
     for (i, it) in row.right.iter().enumerate() {
         let w = it_w_cached(it, cv);
         let (s, a) = pop(true, i);
-        paint_item(cv, th, gpu, it, Rect::new(x, cy - 10.0, w, 20.0), s, a, ring);
+        let r = Rect::new(x, cy - 10.0, w, 20.0);
+        if matches!(it, ClockItem::Tag(_)) {
+            chip = Some(r); // the only tag of the right column is the virtual desktop: a click on it switches desktops
+        }
+        paint_item(cv, th, gpu, it, r, s, a, ring);
         x += w + SIDE_GAP;
     }
     if let (true, Some(t)) = (row.show_time, time) {
         paint_time(cv, th, t, rolls, Rect::new(x0 + lay.time_x, cy - 9.0, lay.time_w, 18.0));
     }
+    chip
 }
 
 struct CvMeter<'a, 'b>(&'a Canvas<'b>);
@@ -389,6 +395,8 @@ pub fn measure(content: &LiveContent, ctx: &Ctx, m: &dyn Meter, th: &Theme) -> O
 pub struct Painted {
     pub row_hits: Hits,
     pub row_id: Option<String>,
+    /// the virtual-desktop chip beside the time (click / wheel switch desktops), local css px like the row's hits
+    pub chip: Option<Rect>,
     pub card_buttons: Vec<Rect>,
     pub card_rect: Option<Rect>,
     /// a phone card is the content: the island paints it itself (phonecard.rs) at this rect, with this opacity and scale
@@ -409,7 +417,7 @@ pub fn paint_content(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, content:
             let m = CvMeter(cv);
             let lay = layout_clock(row, time.as_deref(), &m);
             let x0 = area.cx() - lay.w / 2.0;
-            cv.with_opacity(alpha, |cv| paint_clock(cv, th, gpu, row, time.as_deref(), ctx.fx.rolls, ctx.fx.entering, &lay, ctx.fx.ring, x0, cy));
+            cv.with_opacity(alpha, |cv| out.chip = paint_clock(cv, th, gpu, row, time.as_deref(), ctx.fx.rolls, ctx.fx.entering, &lay, ctx.fx.ring, x0, cy));
         }
         LiveContent::Slot { id, .. } => {
             let Some(row) = ctx.rows.get(id) else { return };

@@ -268,7 +268,7 @@ fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
     let expect = [
-        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 22), ("live", 37), ("phone", 14), ("clipboard", 18), ("search", 4),
+        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 22), ("live", 38), ("phone", 14), ("clipboard", 18), ("search", 4),
         ("sound", 15), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
     ];
     for (id, n) in expect {
@@ -649,4 +649,13 @@ fn muted_apps_are_a_list_of_package_names() {
     assert!(m.try_set("phone.mutedApps", json!("org.telegram.messenger")).is_err());
     assert!(m.try_set("phone.mutedApps", json!([""])).is_err());
     assert!(m.try_set("phone.mutedApps", json!([5])).is_err());
+}
+
+#[test]
+fn the_desktop_flash_is_a_live_toggle_that_is_on_by_default() {
+    let row = schema().row("live.virtualDesktopFlash").expect("row");
+    assert_eq!(row.default, json!(true));
+    assert!(matches!(row.control, Control::Toggle), "a plain switch like its siblings");
+    assert_eq!(rust_defaults().get("live.virtualDesktopFlash"), Some(&json!(true)), "settings.rs agrees");
+    assert!(!row.hint.get(Lang::En).is_empty() && !row.hint.get(Lang::Ru).is_empty() && !row.label.get(Lang::Ru).is_empty());
 }

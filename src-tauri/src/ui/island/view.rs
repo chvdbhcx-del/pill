@@ -111,6 +111,8 @@ enum Hit {
     Btn(Btn),
     CardBtn(usize),
     RowBtn(usize),
+    /// the virtual-desktop chip beside the time
+    Chip,
     Pet,
     Views,
     Body,
@@ -132,6 +134,8 @@ pub struct IslandView {
     panel_a: f32,
     flare_a: f32,
     painted: Painted,
+    /// wheel travel collected over the desktop chip (a notch is `WHEEL_NOTCH_PX`)
+    chip_wheel: f32,
     chrome: ChromeLayout,
     panel_origin: (f32, f32, f32),
     pet_rect: Option<Rect>,
@@ -218,6 +222,7 @@ impl IslandView {
             panel_a: 0.0,
             flare_a: 1.0,
             painted: Painted::default(),
+            chip_wheel: 0.0,
             chrome: ChromeLayout::default(),
             panel_origin: (0.0, 0.0, 1.0),
             pet_rect: None,
@@ -284,7 +289,8 @@ impl IslandView {
     /// A chip beside the time that is switched on but has no value yet (the backend announces changes only): ask for it once.
     fn ask_chips(&mut self, cx: &mut Cx) {
         let on = |k: &str| self.core.settings.get(k).is_some_and(|v| *v == Value::Bool(true));
-        let desk = self.core.settings.get("live.virtualDesktop").and_then(|v| v.as_str()).is_some_and(|s| s != "off");
+        // the chip needs the value to show it, the flash needs one as its baseline (a switch is a change from it)
+        let desk = self.core.settings.get("live.virtualDesktop").and_then(|v| v.as_str()).is_some_and(|s| s != "off") || self.core.settings.get("live.virtualDesktopFlash") != Some(&Value::Bool(false));
         if on("live.keyboardLayoutAlways") && !self.core.chips.has_layout() {
             self.call(cx, "kbd_state", Value::Null, Pending::Chip("kbd:now"));
         }
@@ -547,6 +553,10 @@ impl IslandView {
                 return Hit::RowBtn(*idx);
             }
         }
+        // a little slack around the small chip
+        if self.painted.chip.is_some_and(|r| Rect::new(r.x - 3.0, r.y - 2.0, r.w + 6.0, r.h + 4.0).contains(self.local_live(p).0, self.local_live(p).1)) {
+            return Hit::Chip;
+        }
         Hit::Body
     }
 
@@ -584,7 +594,7 @@ impl IslandView {
 
 fn cursor_of(h: &Hit) -> Cursor {
     match h {
-        Hit::Tab(_) | Hit::Btn(_) | Hit::CardBtn(_) | Hit::RowBtn(_) | Hit::Pet => Cursor::Hand,
+        Hit::Tab(_) | Hit::Btn(_) | Hit::CardBtn(_) | Hit::RowBtn(_) | Hit::Chip | Hit::Pet => Cursor::Hand,
         _ => Cursor::Arrow,
     }
 }
@@ -885,6 +895,7 @@ impl View for IslandView {
                             self.run_action(cx, a);
                         }
                     }
+                    Hit::Chip => self.call(cx, "vdesk_switch", json!({ "dir": 1, "wrap": true }), Pending::Fire),
                     Hit::Pet => self.comp.poke(),
                     Hit::Views => resp = resp.merge(self.host.event(&self.views_event(ev), cx)),
                     Hit::Body | Hit::None => {
@@ -912,11 +923,20 @@ impl View for IslandView {
                 }
                 resp = r.merge(Response::redraw());
             }
-            InputEvent::Wheel { pos, .. } => {
-                if self.locate(*pos) == Hit::Views {
-                    resp = self.host.event(&self.views_event(ev), cx);
+            InputEvent::Wheel { pos, delta, .. } => match self.locate(*pos) {
+                Hit::Views => resp = self.host.event(&self.views_event(ev), cx),
+                // over the desktop chip: a notch down = the next desktop, up = the previous (a touchpad's small steps add up to a notch)
+                Hit::Chip => {
+                    self.chip_wheel += delta.1;
+                    if self.chip_wheel.abs() >= glasskit::input::WHEEL_NOTCH_PX * 0.9 {
+                        let dir = if self.chip_wheel > 0.0 { 1 } else { -1 };
+                        self.chip_wheel = 0.0;
+                        self.call(cx, "vdesk_switch", json!({ "dir": dir }), Pending::Fire);
+                    }
+                    resp = Response::consumed();
                 }
-            }
+                _ => self.chip_wheel = 0.0,
+            },
             InputEvent::Focus(false) => {
                 self.core.shell_event(Event::TextFocus(false), cx.now_ms);
                 resp = self.host.event(ev, cx);
