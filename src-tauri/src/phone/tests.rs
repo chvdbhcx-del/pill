@@ -12,15 +12,15 @@ use std::time::{Duration, Instant};
 
 type Events = Arc<Mutex<Vec<(String, Value)>>>;
 
-struct Rig {
-    server: Option<Server>,
-    events: Events,
-    dir: PathBuf,
-    cfg: Arc<Mutex<Cfg>>,
+pub(super) struct Rig {
+    pub(super) server: Option<Server>,
+    pub(super) events: Events,
+    pub(super) dir: PathBuf,
+    pub(super) cfg: Arc<Mutex<Cfg>>,
 }
 
 impl Rig {
-    fn new(loopback: bool) -> Rig {
+    pub(super) fn new(loopback: bool) -> Rig {
         let dir = std::env::temp_dir().join(format!("pill-phone-e2e-{}", super::reg::new_id()));
         std::fs::create_dir_all(&dir).unwrap();
         let cfg = Arc::new(Mutex::new(Cfg { downloads: dir.join("dl"), max_bytes: 10 * 1024 * 1024, auto_accept: true, apk_url: "https://example.org/PillPhone.apk".into(), muted: vec![], pc_name: "TEST-PC".into(), relay_on: false, relay_url: String::new(), relay_max_bytes: 100 * 1024 * 1024 }));
@@ -37,14 +37,14 @@ impl Rig {
         .unwrap();
         Rig { server: Some(server), events, dir, cfg }
     }
-    fn sh(&self) -> &super::server::Shared {
+    pub(super) fn sh(&self) -> &super::server::Shared {
         &self.server.as_ref().unwrap().shared
     }
-    fn addr(&self) -> std::net::SocketAddr {
+    pub(super) fn addr(&self) -> std::net::SocketAddr {
         self.sh().addr
     }
     /// Waits for an event the predicate accepts (the server thread emits on its own time).
-    fn wait(&self, name: &str, pred: impl Fn(&Value) -> bool) -> Value {
+    pub(super) fn wait(&self, name: &str, pred: impl Fn(&Value) -> bool) -> Value {
         let t = Instant::now();
         loop {
             if let Some(v) = self.events.lock().unwrap().iter().find(|(n, v)| n == name && pred(v)).map(|(_, v)| v.clone()) {
@@ -54,13 +54,13 @@ impl Rig {
             std::thread::sleep(Duration::from_millis(5));
         }
     }
-    fn pair(&self, device: &str) -> String {
+    pub(super) fn pair(&self, device: &str) -> String {
         let code = self.sh().pair_code(false)["code"].as_str().unwrap().to_string();
         let (st, _, body) = http(self.addr(), "POST", "/api/pair", &[], json!({ "code": code, "deviceId": device, "name": "Pixel 8", "model": "Pixel 8", "os": "Android 15", "appVersion": "1.0.0" }).to_string().as_bytes());
         assert_eq!(st, 200, "{}", String::from_utf8_lossy(&body));
         serde_json::from_slice::<Value>(&body).unwrap()["token"].as_str().unwrap().to_string()
     }
-    fn stop(mut self) {
+    pub(super) fn stop(mut self) {
         let addr = self.addr();
         self.server.take().unwrap().stop();
         assert!(TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_err(), "the port must be closed after stop()");
@@ -69,7 +69,7 @@ impl Rig {
 }
 
 /// One request, read to the end (the server always closes). Returns (status, lower-case headers as "k: v" lines, body).
-fn http(addr: std::net::SocketAddr, method: &str, path: &str, headers: &[(&str, String)], body: &[u8]) -> (u16, Vec<String>, Vec<u8>) {
+pub(super) fn http(addr: std::net::SocketAddr, method: &str, path: &str, headers: &[(&str, String)], body: &[u8]) -> (u16, Vec<String>, Vec<u8>) {
     let mut s = TcpStream::connect(addr).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
     let mut req = format!("{method} {path} HTTP/1.1\r\nHost: x\r\n");
@@ -91,16 +91,16 @@ fn http(addr: std::net::SocketAddr, method: &str, path: &str, headers: &[(&str, 
     (code, lines.map(|l| l.to_ascii_lowercase()).collect(), raw[(split + 4).min(raw.len())..].to_vec())
 }
 
-fn bearer(t: &str) -> [(&'static str, String); 1] {
+pub(super) fn bearer(t: &str) -> [(&'static str, String); 1] {
     [("Authorization", format!("Bearer {t}"))]
 }
 
-struct Phone {
+pub(super) struct Phone {
     s: TcpStream,
 }
 
 impl Phone {
-    fn connect(addr: std::net::SocketAddr, token: &str) -> Phone {
+    pub(super) fn connect(addr: std::net::SocketAddr, token: &str) -> Phone {
         let mut s = TcpStream::connect(addr).unwrap();
         s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         s.write_all(format!("GET /ws?token={token} HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n").as_bytes()).unwrap();
@@ -115,11 +115,11 @@ impl Phone {
         assert!(head.contains("s3pPLMBiTxaQ9kYGzzhZRbK+xOo="), "{head}");
         Phone { s }
     }
-    fn send(&mut self, v: Value) {
+    pub(super) fn send(&mut self, v: Value) {
         self.s.write_all(&ws::client_frame(1, true, v.to_string().as_bytes())).unwrap();
     }
     /// The next server frame: (opcode, payload).
-    fn frame(&mut self) -> (u8, Vec<u8>) {
+    pub(super) fn frame(&mut self) -> (u8, Vec<u8>) {
         let mut h = [0u8; 2];
         self.s.read_exact(&mut h).unwrap();
         let mut len = (h[1] & 0x7F) as usize;
@@ -132,12 +132,12 @@ impl Phone {
         self.s.read_exact(&mut p).unwrap();
         (h[0] & 0x0F, p)
     }
-    fn recv(&mut self) -> Value {
+    pub(super) fn recv(&mut self) -> Value {
         let (op, p) = self.frame();
         assert_eq!(op, 1);
         serde_json::from_slice(&p).unwrap()
     }
-    fn recv_t(&mut self, t: &str) -> Value {
+    pub(super) fn recv_t(&mut self, t: &str) -> Value {
         let v = self.recv();
         assert_eq!(v["t"], t, "{v}");
         v

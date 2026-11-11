@@ -88,6 +88,8 @@ impl Link {
 struct Ctl {
     chan: Mutex<Option<Arc<Chan>>>,
     thread: Mutex<Option<std::thread::Thread>>,
+    /// the registered channel of the phone, so a stop can unregister it at once (a blocked read may take a while to notice the closed socket)
+    conn: Mutex<Option<Arc<Conn>>>,
 }
 
 struct Worker {
@@ -99,10 +101,14 @@ struct Worker {
 }
 
 impl Worker {
-    fn signal(&self) {
+    fn signal(&self, sh: &Shared) {
         self.stop.store(true, Ordering::SeqCst);
         if let Some(c) = self.ctl.chan.lock().unwrap_or_else(|e| e.into_inner()).take() {
-            c.close(1000); // a blocked read wakes up with an error
+            c.close(1000); // the relay sees the close; our own blocked read ends when it answers
+        }
+        if let Some(c) = self.ctl.conn.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            sh.detach(&c);
+            sh.rf_conn_gone(&c);
         }
         if let Some(t) = self.ctl.thread.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             t.unpark(); // ends a back-off sleep
@@ -130,7 +136,7 @@ impl Hub {
         let mut old = Vec::new();
         for id in gone {
             if let Some(w) = ws.remove(&id) {
-                w.signal();
+                w.signal(sh);
                 old.push(w);
             }
         }
@@ -140,7 +146,7 @@ impl Hub {
             }
             let Some(t) = target.as_ref().map(|t| Target { tls: t.tls, host: t.host.clone(), port: t.port, base: t.base.clone() }) else { continue };
             let fp = (url, v2::room(&keys));
-            let (stop, ctl) = (Arc::new(AtomicBool::new(false)), Arc::new(Ctl { chan: Mutex::new(None), thread: Mutex::new(None) }));
+            let (stop, ctl) = (Arc::new(AtomicBool::new(false)), Arc::new(Ctl { chan: Mutex::new(None), thread: Mutex::new(None), conn: Mutex::new(None) }));
             let (sh2, id2, stop2, ctl2) = (sh.clone(), id.clone(), stop.clone(), ctl.clone());
             let th = std::thread::Builder::new().name("phone-relay".into()).spawn(move || run(sh2, id2, t, keys, stop2, ctl2)).ok();
             ws.insert(id, Worker { stop, ctl, fp, th });
@@ -150,14 +156,21 @@ impl Hub {
     }
 
     /// Ends every connection and waits for the threads (the server is going away).
-    pub fn stop_all(&self) {
+    pub fn stop_all(&self, sh: &Shared) {
         let all: Vec<Worker> = self.workers.lock().unwrap_or_else(|e| e.into_inner()).drain().map(|(_, w)| w).collect();
         for w in &all {
-            w.signal();
+            w.signal(sh);
         }
+        // a thread whose socket the relay does not answer is left to finish by itself after 2 s (it holds nothing that matters any more)
+        let until = Instant::now() + Duration::from_secs(2);
         for mut w in all {
             if let Some(t) = w.th.take() {
-                let _ = t.join();
+                while !t.is_finished() && Instant::now() < until {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                if t.is_finished() {
+                    let _ = t.join();
+                }
             }
         }
     }
@@ -178,8 +191,8 @@ fn run(sh: Arc<Shared>, dev_id: String, target: Target, keys: Keys, stop: Arc<At
     let mut replay = Replay::default(); // survives reconnects: the phone keeps its sid while its own relay socket lives
     let mut back = BACKOFF_MIN;
     while !stop.load(Ordering::SeqCst) {
-        let mut s = Session { sh: &sh, dev_id: &dev_id, keys: &keys, room: &room, stop: &stop, replay: &mut replay };
-        if s.run(&target, &join, &ctl) {
+        let mut s = Session { sh: &sh, dev_id: &dev_id, keys: &keys, room: &room, stop: &stop, replay: &mut replay, ctl: &ctl };
+        if s.run(&target, &join) {
             back = BACKOFF_MIN; // it got as far as being joined: start over politely
         }
         *ctl.chan.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -198,11 +211,13 @@ struct Session<'a> {
     room: &'a str,
     stop: &'a AtomicBool,
     replay: &'a mut Replay,
+    ctl: &'a Ctl,
 }
 
 impl Session<'_> {
     /// One connection from connect to close. True when it got as far as `joined`.
-    fn run(&mut self, target: &Target, join: &str, ctl: &Ctl) -> bool {
+    fn run(&mut self, target: &Target, join: &str) -> bool {
+        let ctl = self.ctl;
         let Ok(chan) = Chan::connect(target, &format!("/r/{}?role=pc", self.room)).map(Arc::new) else { return false };
         *ctl.chan.lock().unwrap_or_else(|e| e.into_inner()) = Some(chan.clone());
         if self.stop.load(Ordering::SeqCst) {
@@ -265,6 +280,10 @@ impl Session<'_> {
                     let Ok(v) = serde_json::from_str::<Value>(&t) else { continue };
                     if v["t"] == "peer" {
                         if v["up"].as_bool().unwrap_or(false) {
+                            // the phone (re)connected: greet it again even if we thought it was there (its earlier socket may have died unnoticed)
+                            if conn.is_some() {
+                                self.hello(conn.as_ref().expect("checked"));
+                            }
                             self.present(&link, &mut conn);
                         } else {
                             self.absent(&mut conn);
@@ -297,17 +316,23 @@ impl Session<'_> {
 
     /// The phone is on the other end: register a channel (once) and greet it like the LAN server does.
     fn present(&self, link: &Arc<Link>, conn: &mut Option<Arc<Conn>>) {
-        if conn.is_some() || self.sh.registry().get(self.dev_id).is_none() {
+        if conn.is_some() || self.stop.load(Ordering::SeqCst) || self.sh.registry().get(self.dev_id).is_none() {
             return;
         }
         let c = Arc::new(Conn::relay(self.sh.next_conn_id(), self.dev_id, link.clone()));
         self.sh.attach(&c, None);
-        self.sh.send_conn(&c, &json!({ "t": "hello", "pcName": self.sh.cfg().pc_name, "serverVersion": super::server::SERVER_VERSION, "time": super::server::now_ms() }));
+        self.hello(&c);
+        *self.ctl.conn.lock().unwrap_or_else(|e| e.into_inner()) = Some(c.clone());
         *conn = Some(c);
+    }
+
+    fn hello(&self, c: &Conn) {
+        self.sh.send_conn(c, &self.sh.hello_msg());
     }
 
     fn absent(&self, conn: &mut Option<Arc<Conn>>) {
         if let Some(c) = conn.take() {
+            self.ctl.conn.lock().unwrap_or_else(|e| e.into_inner()).take();
             self.sh.detach(&c);
             self.sh.rf_conn_gone(&c);
         }

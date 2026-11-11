@@ -292,6 +292,41 @@ mod tests {
         assert_eq!(open(&keys.p2c, &a, &frame).unwrap(), env);
     }
 
+    fn unhex(s: &str) -> Vec<u8> {
+        (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect()
+    }
+
+    /// The independent Python vector of the phone side (docs/phone-relay.md, "Changes by the phone side (v2)"): the PC must reproduce it.
+    #[test]
+    fn the_phone_sides_independent_vector() {
+        let phone_sk: [u8; 32] = unhex("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20").try_into().unwrap();
+        let pc_sk: [u8; 32] = unhex("65666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8081828384").try_into().unwrap();
+        let phone_pk = PublicKey::from(&StaticSecret::from(phone_sk));
+        assert_eq!(B64.encode(phone_pk.as_bytes()), "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw");
+        let (pc_pk, keys) = pair_pc(phone_pk.as_bytes(), "AB3D9XKQ", "0b6f2f6e-6c7e-4c53-9d2a-1d0c5b7a9e11", pc_sk).unwrap();
+        assert_eq!(B64.encode(pc_pk), "VxR2nRFr92Q2rnS8eT0sMK0ZA8WaxSc4BcfiaYtBDDY");
+        assert_eq!(hex(&keys.p2c), "6f29aa994173633730fd4e75b68768a37fd7a566053ee8b9eb547892d25121af");
+        assert_eq!(hex(&keys.c2p), "e305543817a96cab46c969005eabfeb66aa15dd70bcd93a3f31beb9ea743b726");
+        assert_eq!(room(&keys), "2fdc4b4165a4e9db4e0f4cf160d6d9e3");
+        assert_eq!(join(&keys), "NsHWn-LIc5AIRoIZMQEdcxf-AmAm9IdoAFk89Q6YKJY");
+        let nonce: [u8; 24] = std::array::from_fn(|i| 0xa0 + i as u8);
+        // the phone's p2c frame opens on the PC and holds the expected envelope
+        let p2c = unhex("a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b789056473c7a389b1db80a44d36411304040928e6c57ea0e40e475b3d740962081779a35e543d48cde87dcdde576e3aaa0126dbf10ae6d0b796da57c3f67332161e5f95");
+        let plain = open(&keys.p2c, &aad(&room(&keys), Dir::P2c), &p2c).unwrap();
+        assert_eq!(String::from_utf8(plain).unwrap(), r#"{"sid":"a1b2c3d4e5f60718","seq":1,"m":{"t":"ping"}}"#);
+        // the PC's c2p frame is byte for byte what the phone expects
+        let env = envelope("0011223344556677", 7, &json!({ "t": "hello", "pcName": "DESKTOP-X", "serverVersion": 1, "time": 1700000000000u64 }));
+        let mine = seal_with_nonce(&keys.c2p, &nonce, &aad(&room(&keys), Dir::C2p), &env);
+        let theirs = "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b74b5e5c8e21e8ba96a44f519ba3d061edd5f3647fb9b3930235a33f00b36717d055836d45e5ff3a68a141700eea3f1ca489d8a7ee22a0d6a54cd1d2890388aa9196673df1405638ae86dbf8c917786aa1ff6f810006275a3dea6b165d06d0a2ce70417ef0984529d34fa0d3fa5d71a4ff9e4de3309e246fb72b505748aebd21a2";
+        // json! sorts the hello keys, so compare through the plaintext rather than guessing key order
+        let opened = open(&keys.c2p, &aad(&room(&keys), Dir::C2p), &unhex(theirs)).unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&opened).unwrap(), serde_json::from_slice::<Value>(&env).unwrap());
+        let literal = r#"{"sid":"0011223344556677","seq":7,"m":{"t":"hello","pcName":"DESKTOP-X","serverVersion":1,"time":1700000000000}}"#;
+        assert_eq!(String::from_utf8(opened).unwrap(), literal);
+        assert_eq!(hex(&seal_with_nonce(&keys.c2p, &nonce, &aad(&room(&keys), Dir::C2p), literal.as_bytes())), theirs);
+        let _ = mine;
+    }
+
     #[test]
     fn frames_authenticate_direction_room_and_content() {
         let k = derive(&seq32(7), "ZZZZ2222", "d");

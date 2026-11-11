@@ -23,6 +23,8 @@ mod v2;
 mod ws;
 mod wsclient;
 #[cfg(test)]
+mod relay_tests;
+#[cfg(test)]
 mod tests;
 
 /// Bus event names (also the literals the contract test looks for).

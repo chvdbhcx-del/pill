@@ -183,7 +183,8 @@ impl Shared {
             });
             self.emit("phone:files", json!({ "kind": "done", "transfer": t.public() }));
         }
-        self.send_conn(conn, &json!({ "t": "file.ack", "id": id, "upto": n })); // the final ack is the receipt
+        self.send_conn(conn, &json!({ "t": "file.ack", "id": id, "upto": n })); // the final cumulative ack and `file.done` are the receipt
+        self.send_conn(conn, &json!({ "t": "file.done", "id": id, "ok": true }));
     }
 
     /// `file.ack` from a phone: frees the window of a file we are sending.

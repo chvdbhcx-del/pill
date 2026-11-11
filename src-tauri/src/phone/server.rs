@@ -211,7 +211,7 @@ impl Server {
         if sh.stop.swap(true, Ordering::SeqCst) {
             return;
         }
-        sh.relay.stop_all(); // closes the relay sockets and joins their threads (they detach their own links)
+        sh.relay.stop_all(sh); // closes the relay sockets and joins their threads (they detach their own links)
         let lan: Vec<Arc<Conn>> = sh.conns.lock().unwrap_or_else(|e| e.into_inner()).drain(..).collect();
         for c in lan {
             c.close(1001);
@@ -511,7 +511,7 @@ impl Shared {
         self.close_device(&dev.id, 4000); // one socket per phone: a reconnect replaces the stale one
         let conn = Arc::new(Conn::lan(self.seq.fetch_add(1, Ordering::SeqCst), &dev.id, w.try_clone()?));
         self.attach(&conn, Some(peer.to_string()));
-        self.send_conn(&conn, &json!({ "t": "hello", "pcName": self.cfg().pc_name, "serverVersion": SERVER_VERSION, "time": now_ms() }));
+        self.send_conn(&conn, &self.hello_msg());
         if let Some(rc) = self.relay_config(&dev) {
             self.send_conn(&conn, &rc); // lets a phone paired before the relay existed learn its address (optional message, see docs/phone-relay.md)
         }
@@ -582,6 +582,12 @@ impl Shared {
 
     pub(super) fn send_conn(&self, c: &Conn, v: &Value) -> bool {
         c.send_text(&v.to_string())
+    }
+
+    /// The v1 `hello`, plus the optional `relayMaxFileMB` (the phone shows it read-only).
+    pub(super) fn hello_msg(&self) -> Value {
+        let c = self.cfg();
+        json!({ "t": "hello", "pcName": c.pc_name, "serverVersion": SERVER_VERSION, "time": now_ms(), "relayMaxFileMB": c.relay_max_bytes / (1024 * 1024) })
     }
 
     pub(super) fn me_arc(&self) -> Option<Arc<Shared>> {
