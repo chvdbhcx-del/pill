@@ -82,6 +82,26 @@ textarea:focus{border-color:var(--accent);box-shadow:0 0 0 4px #8E7BFF2A}
 .empty{color:var(--dim);font-size:14px;text-align:center;padding:26px 10px;animation:rise .5s var(--ease)}
 .note{color:var(--dim);font-size:13px;line-height:1.5;padding:0 6px}.note b{color:var(--text);font-weight:600}
 .foot{display:flex;flex-direction:column;align-items:center;gap:2px}
+.cdr{display:grid;grid-template-rows:0fr;margin-top:-16px;transition:grid-template-rows .45s var(--ease),margin .45s var(--ease)}
+.cdr.open{grid-template-rows:1fr;margin-top:0}
+.cdr>div{overflow:hidden;min-height:0;visibility:hidden;transition:visibility 0s .45s}
+.cdr.open>div{visibility:visible;transition-delay:0s}
+.cdr .card{box-shadow:none;opacity:0;transform:translateY(10px);transition:opacity .4s,transform .45s var(--ease)}
+.cdr.open .card{opacity:1;transform:none}
+.cdr textarea{min-height:84px}
+.cdr textarea.flash{animation:okflash .9s var(--ease)}
+.cnote{margin-top:8px}
+.cmsg{font-size:14px;text-align:center;margin-top:10px;transition:opacity .3s}.cmsg:empty{display:none}
+.cmsg.ok{color:var(--ok);animation:pop .45s var(--spring)}.cmsg.bad{color:var(--bad);animation:shake .4s}.cmsg.gone{opacity:0}
+.chead{display:flex;align-items:center;justify-content:space-between;margin:18px 0 10px;padding-left:6px}
+.chead h3{font-size:15px;font-weight:700}
+.cl-i{flex-direction:column;align-items:stretch;gap:8px}
+.ct{white-space:pre-wrap;overflow-wrap:anywhere;max-height:9.5em;overflow:auto;-webkit-overflow-scrolling:touch;font-size:15px;line-height:1.45;padding:10px 12px;border-radius:16px;background:#FFFFFF08;-webkit-user-select:text;user-select:text}
+.cl-i .meta{padding-left:4px}
+.cl-i .cpy{margin-top:2px}
+.cl-i:not(:first-child) .cpy{min-height:46px;font-size:15px;color:var(--text);background:transparent;border:1.5px solid var(--accent);box-shadow:none}
+.cl-i .cpy.okb{color:var(--on);background:linear-gradient(135deg,#8CE8BC,var(--ok));border-color:transparent;box-shadow:0 8px 22px #5FD39A44;animation:pop .4s var(--spring)}
+@keyframes okflash{0%{border-color:var(--ok);box-shadow:0 0 0 4px #5FD39A33}100%{border-color:var(--line);box-shadow:0 0 0 0 #5FD39A00}}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 @keyframes pop{0%{opacity:0;transform:scale(.88)}100%{opacity:1;transform:none}}
 @keyframes pulse{50%{opacity:.35;transform:scale(.8)}}
@@ -123,6 +143,15 @@ textarea:focus{border-color:var(--accent);box-shadow:0 0 0 4px #8E7BFF2A}
 <div class="row"><button class="btn ghost" id="txtbtn" type="button" aria-expanded="false"><span data-i="sendText"></span></button></div>
 <div class="drawer" id="drawer"><div><textarea id="txt" data-ph="textPh" aria-label="text"></textarea><div class="row"><button class="btn" id="txtsend" type="button" data-i="send"></button></div></div></div>
 </div>
+<div class="cdr" id="cdr"><div><section class="card" id="clipcard">
+<h2 data-i="clipTitle"></h2>
+<textarea id="ctxt" data-ph="clipPh" aria-label="clipboard"></textarea>
+<p class="note cnote" data-i="clipHow"></p>
+<div class="row"><button class="btn" id="csend" type="button" data-i="clipSend"></button></div>
+<p class="cmsg" id="cmsg" role="status"></p>
+<div class="drawer" id="cfromd"><div><div class="chead"><h3 data-i="clipFrom"></h3><button class="link quiet" id="cclear" type="button" data-i="clipClear"></button></div><ul class="list" id="clist"></ul></div></div>
+<div class="drawer open" id="chintd"><div><p class="note cnote" data-i="clipNeed"></p></div></div>
+</section></div></div>
 <ul class="list" id="list"></ul>
 <div class="empty" id="empty" data-i="empty"></div>
 <div class="foot"><button class="link quiet" id="clear" type="button" data-i="clear" hidden></button></div>
@@ -152,6 +181,9 @@ var T={en:{
  keepB:'Keep this page open.',keep:'iPhone pauses it when the screen locks or you switch apps; transfers only run while it is on screen.',
  noNotif:'iPhone does not let web pages read notifications, so they cannot be mirrored to the PC (the Android app can do that).',
  forget:'Forget this PC',forgetSure:'Tap again to confirm',
+ clipTitle:'Clipboard',clipPh:'Paste text here…',clipHow:'Copy on the iPhone, then touch and hold this field, tap Paste and press Send.',clipSend:'Send to PC',
+ clipSent:'✓ Sent to PC',clipBig:'Too long: the limit is 256 KB.',clipOffline:'Not connected to the PC.',clipFrom:'From the PC',clipCopy:'Copy',clipCopied:'✓ Copied',
+ clipCopyFail:'Touch and hold the text to copy',clipClear:'Clear',clipPrev:'preview',clipNeed:'If nothing arrives from the PC, turn on Settings > Phone > Clipboard there.',
  cancel:'Cancel',retry:'Retry',download:'Download',save:'Save',toPc:'To PC',fromPc:'From PC',
  queued:'Waiting',offered:'Waiting for the PC to accept',sending:'Sending',sent:'Sent',downloading:'Downloading',saved:'Downloaded',
  eTooBig:'Larger than the PC allows',eDeclined:'The PC declined it',eLost:'Connection lost',eNet:'Network error',eGone:'The PC no longer has this file',eNotAcc:'Not accepted by the PC',eBusy:'The PC is busy, try again',eInt:'Interrupted',eSize:'The file changed while sending',eDisk:'The PC could not save it',
@@ -171,6 +203,9 @@ ru:{
  keepB:'Не закрывайте страницу.',keep:'iPhone приостанавливает её при блокировке экрана и смене приложения; передача идёт, только пока страница на экране.',
  noNotif:'iPhone не даёт веб-страницам читать уведомления, поэтому зеркалить их на ПК нельзя (это умеет приложение для Android).',
  forget:'Забыть этот ПК',forgetSure:'Нажмите ещё раз для подтверждения',
+ clipTitle:'Буфер обмена',clipPh:'Вставьте текст сюда…',clipHow:'Скопируйте на iPhone, затем нажмите и удерживайте это поле, выберите «Вставить» и нажмите «Отправить».',clipSend:'Отправить на ПК',
+ clipSent:'✓ Отправлено на ПК',clipBig:'Слишком длинный текст: лимит 256 КБ.',clipOffline:'Нет связи с ПК.',clipFrom:'С ПК',clipCopy:'Скопировать',clipCopied:'✓ Скопировано',
+ clipCopyFail:'Нажмите и удерживайте текст, чтобы скопировать',clipClear:'Очистить',clipPrev:'фрагмент',clipNeed:'Если с ПК ничего не приходит, включите там Настройки > Телефон > Буфер обмена.',
  cancel:'Отмена',retry:'Повторить',download:'Скачать',save:'Сохранить',toPc:'На ПК',fromPc:'С ПК',
  queued:'В очереди',offered:'Ждём, пока ПК примет',sending:'Отправка',sent:'Отправлено',downloading:'Загрузка',saved:'Скачано',
  eTooBig:'Больше, чем разрешает ПК',eDeclined:'ПК отклонил файл',eLost:'Связь прервана',eNet:'Ошибка сети',eGone:'На ПК больше нет этого файла',eNotAcc:'ПК не принял файл',eBusy:'ПК занят, повторите',eInt:'Прервано',eSize:'Файл изменился при отправке',eDisk:'ПК не смог сохранить файл',
@@ -240,7 +275,7 @@ function enterMain(){
  $('a2hs').classList.toggle('show',IOS&&!STANDALONE&&sget('pill.w.hint')!=='1');
  paintEmpty();connect();
 }
-function setConn(c){S.conn=c;var e=$('chip');e.setAttribute('data-s',c);e.lastChild.textContent=tr(c);
+function setConn(c){S.conn=c;var e=$('chip');e.setAttribute('data-s',c);$('cdr').classList.toggle('open',c==='on');e.lastChild.textContent=tr(c);
  var lost=c==='off'&&S.fails>=2;var b=$('lost');if(lost){$('losttxt').textContent=tr('lost',{h:location.host});if(!$('host2').value)$('host2').value=sget('pill.w.host')||location.host}b.classList.toggle('show',lost)}
 function wsSend(o){if(S.ws&&S.ws.readyState===1){try{S.ws.send(JSON.stringify(o));return true}catch(e){}}return false}
 function stopConn(){clearTimeout(S.rt);clearInterval(S.pt);var w=S.ws;S.ws=null;if(w){w.onclose=w.onmessage=w.onerror=null;try{w.close()}catch(e){}}}
@@ -250,7 +285,7 @@ function connect(){
  var ws;try{ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws?token='+encodeURIComponent(S.token))}catch(e){return retry()}
  S.ws=ws;S.last=Date.now();var opened=false;
  ws.onmessage=function(e){S.last=Date.now();var m;try{m=JSON.parse(e.data)}catch(_){return}onMsg(m)};
- ws.onopen=function(){opened=true};
+ ws.onopen=function(){opened=true;wsSend({t:'caps',clip:1})};
  ws.onerror=function(){};
  ws.onclose=function(e){if(S.ws!==ws)return;lost(e.code,opened)};
  S.pt=setInterval(function(){
@@ -270,7 +305,7 @@ function lost(code,opened){
  fetch('/api/state',{headers:authH()}).then(function(r){if(r.status===401)unpaired();else retry()},function(){retry()});
 }
 function retry(){clearTimeout(S.rt);S.rt=setTimeout(connect,S.backoff);S.backoff=Math.min(S.backoff*2,30000)}
-function forgetLocal(){stopConn();clearAll();S.token=null;S.pc='';sset('pill.w.token',null);sset('pill.w.pc',null)}
+function forgetLocal(){stopConn();clearAll();clearClips(true);S.token=null;S.pc='';sset('pill.w.token',null);sset('pill.w.pc',null)}
 function unpaired(){forgetLocal();showPair(tr('unpaired'))}
 function wake(){if(!S.token||$('s-main').className.indexOf('show')<0)return;if(!S.ws||S.ws.readyState>1||Date.now()-S.last>50000){S.backoff=1000;connect()}}
 document.addEventListener('visibilitychange',function(){if(!document.hidden)wake()});
@@ -279,6 +314,7 @@ window.addEventListener('online',wake);window.addEventListener('pageshow',wake);
 function onMsg(m){
  switch(m.t){
  case 'hello':S.fails=0;S.backoff=1000;if(m.pcName){S.pc=String(m.pcName).slice(0,80);sset('pill.w.pc',S.pc);$('pcname').textContent=S.pc}setConn('on');pump();break;
+ case 'clip':onClip(m);break;
  case 'file.accept':var a=find(m.id,'up');if(a&&a.state==='offered')upload(a);break;
  case 'file.reject':var r=find(m.id,'up');if(r)fail(r,m.reason==='too_big'?'eTooBig':'eDeclined');break;
  case 'file.offer':if(m.id&&!find(m.id,'down')){addItem({dir:'down',id:String(m.id).slice(0,64),name:String(m.name||'file').slice(0,200),size:+m.size||0,mime:String(m.mime||'').slice(0,80),state:'ready',done:0})}break;
@@ -331,9 +367,12 @@ function paintEmpty(){$('empty').hidden=S.items.length>0}
 function removeItem(it){
  var i=S.items.indexOf(it);if(i<0)return;S.items.splice(i,1);
  if(it.url){try{URL.revokeObjectURL(it.url)}catch(e){}}
- var el=it.el;
- if(RM){el.remove()}else{el.style.height=el.offsetHeight+'px';void el.offsetHeight;el.classList.add('out');el.style.height='0';el.style.paddingTop=el.style.paddingBottom='0';el.style.marginTop=(-5)+'px';el.style.borderWidth='0';setTimeout(function(){el.remove()},380)}
+ collapse(it.el);
  paintEmpty();paintClear();pump();
+}
+function collapse(el){
+ if(RM){el.remove();return}
+ el.style.height=el.offsetHeight+'px';void el.offsetHeight;el.classList.add('out');el.style.height='0';el.style.paddingTop=el.style.paddingBottom='0';el.style.marginTop=(-5)+'px';el.style.borderWidth='0';setTimeout(function(){el.remove()},380);
 }
 function fail(it,key){it.state='error';it.err=key;it.xhr=null;paint(it);pump()}
 function onAct(it){
@@ -408,6 +447,57 @@ function saveBlob(it){
 }
 function clearAll(){items(function(it){if(it.xhr){try{it.xhr.abort()}catch(e){}}if(it.url){try{URL.revokeObjectURL(it.url)}catch(e){}}it.el.remove()});S.items=[];paintEmpty()}
 
+// ---- clipboard (text only, kept in memory only; plain http has no async clipboard API, so: paste into a field, copy on a tap)
+// clip-lib:start
+var CLIP_MAX=262144; // 256 KiB of UTF-8, same as the PC
+function utf8len(s){var n=0;for(var i=0;i<s.length;i++){var c=s.charCodeAt(i);if(c<128)n++;else if(c<2048)n+=2;else if(c>=55296&&c<56320&&i+1<s.length&&(s.charCodeAt(i+1)&64512)===56320){n+=4;i++}else n+=3}return n}
+function clipIn(t){return typeof t==='string'&&t.length>0&&utf8len(t)<=CLIP_MAX} // incoming: drop empty and oversized
+function clipId(h){return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20,32)}
+// clip-lib:end
+var CLIP_KEEP=3,CLIP_PREVIEW=2000,cmT=0,cmT2=0;
+S.clips=[];S.lastIn='';S.gotClip=false;
+function cmsg(key,kind){
+ var e=$('cmsg');clearTimeout(cmT);clearTimeout(cmT2);
+ e.className='cmsg';e.textContent=tr(key);void e.offsetWidth;e.className='cmsg '+kind;
+ cmT=setTimeout(function(){e.classList.add('gone');cmT2=setTimeout(function(){e.textContent='';e.className='cmsg'},320)},2600);
+}
+function copyText(s){
+ var t=document.createElement('textarea');t.className='vh';t.value=s;t.readOnly=true;t.style.cssText='min-height:0;margin:0;font-size:16px;top:0;left:0';
+ document.body.appendChild(t);try{t.focus({preventScroll:true})}catch(e){}t.select();try{t.setSelectionRange(0,s.length)}catch(e){}
+ var ok=false;try{ok=document.execCommand('copy')}catch(e){}
+ t.remove();return ok;
+}
+function paintClips(){$('cfromd').classList.toggle('open',S.clips.length>0);$('chintd').classList.toggle('open',!S.gotClip)}
+function onClip(m){
+ if(!clipIn(m.text))return;
+ S.gotClip=true;S.lastIn=m.text;
+ var c={text:m.text,bytes:utf8len(m.text)},d=new Date(),li=document.createElement('li');li.className='item cl-i';
+ li.innerHTML='<div class="ct"></div><div class="meta"></div><button class="btn cpy" type="button"></button>';
+ var big=m.text.length>CLIP_PREVIEW;
+ li.firstChild.textContent=big?m.text.slice(0,CLIP_PREVIEW)+'…':m.text;
+ li.querySelector('.meta').textContent=('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)+' · '+fmt(c.bytes)+(big?' · '+tr('clipPrev'):'');
+ var b=li.querySelector('.cpy'),bt=0;b.textContent=tr('clipCopy');
+ b.addEventListener('click',function(){
+  var ok=copyText(c.text);clearTimeout(bt);
+  b.classList.remove('okb');void b.offsetWidth;b.textContent=tr(ok?'clipCopied':'clipCopyFail');if(ok)b.classList.add('okb');
+  bt=setTimeout(function(){b.classList.remove('okb');b.textContent=tr('clipCopy')},ok?1600:3200);
+ });
+ c.el=li;S.clips.unshift(c);$('clist').insertBefore(li,$('clist').firstChild);
+ while(S.clips.length>CLIP_KEEP)collapse(S.clips.pop().el);
+ paintClips();
+}
+function clearClips(now){
+ S.clips.forEach(function(c){if(now)c.el.remove();else collapse(c.el)});
+ S.clips=[];S.lastIn='';S.gotClip=false;paintClips();
+}
+function sendClip(){
+ var v=$('ctxt').value;if(!v.trim())return;
+ if(utf8len(v)>CLIP_MAX)return cmsg('clipBig','bad');
+ // a text that just came from the PC is not sent back
+ if(v!==S.lastIn&&!wsSend({t:'clip',id:clipId(rnd(16)),text:v,ts:Date.now()}))return cmsg('clipOffline','bad');
+ var t=$('ctxt');t.value='';t.classList.remove('flash');void t.offsetWidth;t.classList.add('flash');cmsg('clipSent','ok');
+}
+
 // ---- wiring
 $('go').addEventListener('click',pairNow);
 $('code').addEventListener('keydown',function(e){if(e.key==='Enter')pairNow()});
@@ -420,6 +510,8 @@ $('txtsend').addEventListener('click',function(){
  var f;try{f=new File([v],'Shared text.txt',{type:'text/plain'})}catch(e){f=new Blob([v],{type:'text/plain'});f.name='Shared text.txt'}
  $('txt').value='';$('drawer').classList.remove('open');$('txtbtn').setAttribute('aria-expanded','false');queueFiles([f]);
 });
+$('csend').addEventListener('click',sendClip);
+$('cclear').addEventListener('click',function(){clearClips(false)});
 $('clear').addEventListener('click',function(){items(function(it){if(it.state==='done'||it.state==='error')removeItem(it)})});
 $('a2hsx').addEventListener('click',function(){sset('pill.w.hint','1');$('a2hs').classList.remove('show')});
 $('host2go').addEventListener('click',function(){var h=$('host2').value;if(!goHost(h)){$('host2').focus()}});
