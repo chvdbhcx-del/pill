@@ -119,6 +119,8 @@ pub struct SettingsView {
     enter_t: Flow,
     /// the window fading in after it is shown
     win_t: Flow,
+    /// when the window was last shown (host clock, ms): the fade-in may not outlast it by long, see `paint`
+    shown_ms: f64,
     /// page requested while the old one slides out
     want_page: Option<String>,
     ui: Ui,
@@ -165,6 +167,7 @@ impl SettingsView {
             leave_t: Flow::new(0.0, Feel::FADE.within(150.0)),
             enter_t: Flow::new(1.0, Feel::FLOW),
             win_t: Flow::new(1.0, Feel::FLOW),
+            shown_ms: 0.0,
             want_page: None,
             ui: Ui::default(),
             dy: Dyn::default(),
@@ -256,6 +259,7 @@ impl View for SettingsView {
     fn on_show(&mut self, cx: &mut Cx) {
         let reduce = self.reduce();
         flow::from_to(&mut self.win_t, 0.0, 1.0, reduce);
+        self.shown_ms = cx.now_ms;
         cx.request_frame();
     }
 

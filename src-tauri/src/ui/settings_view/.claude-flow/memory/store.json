@@ -1,0 +1,77 @@
+{
+  "entries": {
+    "cmd-1794423256978": {
+      "key": "cmd-1794423256978",
+      "value": "{\"command\":\"cd\",\"exitCode\":0,\"success\":true}",
+      "namespace": "commands",
+      "storedAt": "2026-11-11T18:54:16.978Z",
+      "lastAccessed": "2026-11-11T18:54:16.978Z",
+      "accessCount": 0,
+      "expiresAt": "2026-12-11T18:54:16.978Z"
+    },
+    "cmd-1794423262465": {
+      "key": "cmd-1794423262465",
+      "value": "{\"command\":\"cd\",\"exitCode\":0,\"success\":true}",
+      "namespace": "commands",
+      "storedAt": "2026-11-11T18:54:22.465Z",
+      "lastAccessed": "2026-11-11T18:54:22.465Z",
+      "accessCount": 0,
+      "expiresAt": "2026-12-11T18:54:22.465Z"
+    },
+    "cmd-1794423268998": {
+      "key": "cmd-1794423268998",
+      "value": "{\"command\":\"cd\",\"exitCode\":0,\"success\":true}",
+      "namespace": "commands",
+      "storedAt": "2026-11-11T18:54:28.998Z",
+      "lastAccessed": "2026-11-11T18:54:28.998Z",
+      "accessCount": 0,
+      "expiresAt": "2026-12-11T18:54:28.998Z"
+    },
+    "cmd-1794423331112": {
+      "key": "cmd-1794423331112",
+      "value": "{\"command\":\"cd\",\"exitCode\":0,\"success\":true}",
+      "namespace": "commands",
+      "storedAt": "2026-11-11T18:55:31.112Z",
+      "lastAccessed": "2026-11-11T18:55:31.112Z",
+      "accessCount": 0,
+      "expiresAt": "2026-12-11T18:55:31.112Z"
+    },
+    "cmd-1794423335778": {
+      "key": "cmd-1794423335778",
+      "value": "{\"command\":\"cd\",\"exitCode\":0,\"success\":true}",
+      "namespace": "commands",
+      "storedAt": "2026-11-11T18:55:35.778Z",
+      "lastAccessed": "2026-11-11T18:55:35.778Z",
+      "accessCount": 0,
+      "expiresAt": "2026-12-11T18:55:35.778Z"
+    },
+    "cmd-1794423341790": {
+      "key": "cmd-1794423341790",
+      "value": "{\"command\":\"cd\",\"exitCode\":0,\"success\":true}",
+      "namespace": "commands",
+      "storedAt": "2026-11-11T18:55:41.790Z",
+      "lastAccessed": "2026-11-11T18:55:41.790Z",
+      "accessCount": 0,
+      "expiresAt": "2026-12-11T18:55:41.790Z"
+    },
+    "cmd-1794423436594": {
+      "key": "cmd-1794423436594",
+      "value": "{\"command\":\"rm\",\"exitCode\":0,\"success\":true}",
+      "namespace": "commands",
+      "storedAt": "2026-11-11T18:57:16.594Z",
+      "lastAccessed": "2026-11-11T18:57:16.594Z",
+      "accessCount": 0,
+      "expiresAt": "2026-12-11T18:57:16.594Z"
+    },
+    "cmd-1794423450686": {
+      "key": "cmd-1794423450686",
+      "value": "{\"command\":\"cd\",\"exitCode\":0,\"success\":true}",
+      "namespace": "commands",
+      "storedAt": "2026-11-11T18:57:30.686Z",
+      "lastAccessed": "2026-11-11T18:57:30.686Z",
+      "accessCount": 0,
+      "expiresAt": "2026-12-11T18:57:30.686Z"
+    }
+  },
+  "version": "3.0.0"
+}

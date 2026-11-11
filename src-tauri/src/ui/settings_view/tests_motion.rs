@@ -186,3 +186,34 @@ fn reduce_motion_lands_everything_at_once() {
     assert!(v.leaving.is_none() && !v.enter_t.moving() && !v.side.ind_y.moving());
     assert_eq!(v.side.ind_y.at(), chrome::Side::item_y("hotkeys"));
 }
+
+#[test]
+fn the_window_ends_fully_opaque_after_it_is_shown_on_every_page() {
+    let _m = motion_on();
+    for id in super::tests::all_page_ids() {
+        let mut t = boot(json!({"language": "en"}), id);
+        t.sim.frame.request();
+        t.sim.run(480); // two seconds at 240 Hz: some pages keep a live clock going, so only the window opacity is asserted
+        let k = t.v.borrow().win_t.at();
+        assert!((k - 1.0).abs() < 0.01, "{id}: the window stayed at {k} opacity");
+    }
+}
+
+#[test]
+fn a_fade_that_never_finished_cannot_leave_the_window_washed_out() {
+    let _m = motion_on();
+    let mut t = boot(json!({"language": "en"}), "updates");
+    t.sim.run(480);
+    // the steps stopped reaching the fade half way: the spring says 0.4 and nobody advances it
+    let now = t.sim.cx.now_ms;
+    {
+        let mut v = t.v.borrow_mut();
+        v.win_t.jump(0.4);
+        v.shown_ms = now; // just shown
+    }
+    paint(&mut t);
+    assert!((t.v.borrow().win_t.at() - 0.4).abs() < 1e-3, "inside the first 1.2 s after show nothing is forced");
+    t.sim.cx.now_ms += 5_000.0;
+    paint(&mut t);
+    assert!((t.v.borrow().win_t.at() - 1.0).abs() < 1e-3, "an old enough window is fully opaque");
+}

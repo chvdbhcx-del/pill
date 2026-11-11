@@ -47,6 +47,11 @@ impl SettingsView {
         }
         self.reduced = cx.reduced_motion;
         self.now_ms = cx.now_ms;
+        // the fade-in is a spring stepped once per frame; if the steps ever stop reaching it (a frame loop that went quiet mid-fade) the
+        // window would stay washed out for good, so a window shown over 1.2 s ago is fully opaque whatever the spring says
+        if self.win_t.at01() < 1.0 && cx.now_ms - self.shown_ms > 1200.0 {
+            self.win_t.jump(1.0);
+        }
         let size = (rect.w, rect.h);
         if size != self.size {
             self.size = size;
