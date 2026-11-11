@@ -19,6 +19,9 @@ pub fn reapply(cx: &mut Cx, fx: Effects, tab: bool) {
     if fx.frame {
         cx.request_frame();
     }
+    if fx.ambient {
+        cx.ambient_frame();
+    }
     if let Some(c) = fx.cursor {
         cx.set_cursor(c);
     }
@@ -156,6 +159,8 @@ pub struct TabHost {
     /// true from `OpenClipAi` until the overlay says `OverlayClosed`: Esc and clicks go to it first
     pub overlay_open: bool,
     pub dir: Option<TabDir>,
+    /// the last `step` kept the frames coming only for an ambient animation of a tab (see `Cx::ambient_frame`)
+    ambient: bool,
 }
 
 /// The sideways offset a view comes from when the switch goes in direction `dir` (it leaves towards the opposite side).
@@ -383,19 +388,32 @@ impl TabHost {
     /// Steps the flows of the switch and the views that are visible (the current one and those still flowing out); true while any asks for frames.
     pub fn step(&mut self, dt_ms: f64, _now: f64, cx: &mut Cx) -> bool {
         let mut keep = false;
+        let mut amb = false;
         let cur = self.cur.clone();
         for (id, s) in self.slots.iter_mut() {
             s.a.step(dt_ms);
             s.dx.step(dt_ms);
             keep |= s.a.moving() || s.dx.moving();
             if Some(id) == cur.as_ref() || s.visible() {
-                keep |= guarded(cx, |cx| s.view.step(dt_ms, cx));
+                let more = guarded(cx, |cx| s.view.step(dt_ms, cx));
+                if cx.take_ambient() {
+                    amb |= more; // asks for frames only for an ambient animation
+                } else {
+                    keep |= more;
+                }
             }
         }
         if let Some(o) = self.overlay.as_mut() {
             keep |= guarded(cx, |cx| o.step(dt_ms, cx));
+            cx.take_ambient();
         }
+        self.ambient = amb && !keep;
         keep
+    }
+
+    /// True when the frames the tabs asked for in the last `step` are all ambient (a drifting cloud): the window may pace them.
+    pub fn ambient(&self) -> bool {
+        self.ambient
     }
 
     /// Draws the outgoing and the incoming view into `views` (panel css px) of the current canvas transform.

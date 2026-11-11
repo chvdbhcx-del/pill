@@ -9,6 +9,9 @@
 pub(super) mod field; // the Controls tab's password field uses it too
 #[cfg(test)]
 mod tests;
+mod anicon;
+mod leftcard;
+mod sky;
 mod tiles;
 mod wxicons;
 
@@ -93,6 +96,8 @@ pub struct WeatherView {
     /// the right column (hours, days, summary, tiles) scrolls when the tiles do not fit under the daily list
     scroll: ScrollView,
     tiles: Tiles,
+    /// the sky card's motion (blobs, animated icon, counting temperature, entrance)
+    left: leftcard::Left,
     /// keyboard focus was requested from the host (so it is given back)
     kbd: bool,
 }
@@ -130,6 +135,7 @@ impl WeatherView {
                 s
             },
             tiles: Tiles::new(),
+            left: leftcard::Left::new(),
             kbd: false,
         };
         v.contact.input.style = v.contact.input.style.center(); // .wx-contact { text-align: center }
@@ -222,6 +228,7 @@ impl WeatherView {
                 self.city.input.set_focused(true);
             }
             Vw::Ok(_) if from != Kind::Ok => {
+                self.left.rewind(cx.reduced_motion);
                 for i in 0..7 {
                     self.base.player.play(&format!("day:{i}"), Anim::row_stagger(i), self.base.reduced);
                 }
@@ -409,66 +416,7 @@ impl WeatherView {
 
     fn draw_ok(&self, cv: &Canvas, th: &Theme, v: &OkView) {
         let o = self.o();
-        let left = Rect::new(o.x, o.y, LEFT_W, o.h);
-        // sky: the new gradient, the previous one fading out on top of it
-        let day = matches!(v.gradient.as_str(), "clear-day" | "partly-day");
-        draw::linear_deg(cv, left, 16.0, 180.0, &sky(&v.gradient));
-        if let Some(g) = &v.ghost_gradient {
-            let s = self.base.player.sample("gradient");
-            if s.active {
-                let a = 1.0 - s.p.clamp(0.0, 1.0);
-                let st: Vec<_> = sky(g).into_iter().map(|(p, c)| (p, c.fade(a))).collect();
-                draw::linear_deg(cv, left, 16.0, 180.0, &st);
-            }
-        }
-        let (lx, top) = (left.x + 14.0, left.y + 16.0);
-        // header: city button + refresh
-        let cr = self.city_rect();
-        let tw = cv.text_width(&v.city, Style::new(13.0, 600)).ceil();
-        let cw = (14.0 + 6.0 + tw + 4.0).min(150.0);
-        let press = self.city_it.press_scale(0.96);
-        cv.with_scale_about((cr.x + cw / 2.0, cr.cy()), press, |cv| {
-            cv.with_opacity(1.0 - 0.2 * self.city_it.hover(), |cv| {
-                icons::draw_markup(cv, "wx-pin", PIN, Rect::new(lx, top + 5.0, 14.0, 14.0), WHITE, 1.7);
-                txt(cv, Rect::new(lx + 20.0, top, cw - 24.0, 24.0), &v.city, Style::new(13.0, 600).ellipsis(), WHITE);
-            })
-        });
-        let rf = self.rf_rect();
-        let spin = self.base.player.sample("refresh");
-        let hov = self.rf_it.hover();
-        cv.with_scale_about(rf.center(), self.rf_it.press_scale(0.92), |cv| {
-            cv.fill_circle(rf.center(), 12.0, WHITE.alpha(0.12 * hov));
-            rotated(cv, rf.center(), spin.rot, |cv| icons::draw_markup(cv, "wx-refresh", REFRESH, rf.centered(14.0, 14.0), WHITE.alpha(0.75 + 0.25 * hov), 1.7));
-        });
-        // big temperature
-        let by = top + 32.0;
-        wxicons::draw(cv, &v.icon, Rect::new(lx, by + 3.0, 50.0, 50.0));
-        txt(cv, Rect::new(lx + 60.0, by, 130.0, 56.0), &v.temp, Style::new(56.0, 600).track(-1.12), WHITE);
-        txt(cv, Rect::new(lx, by + 68.0, 186.0, 20.0), &v.condition, Style::new(14.0, 600).ellipsis(), WHITE);
-        txt(cv, Rect::new(lx, by + 92.0, 186.0, 16.0), &v.feels_line, Style::new(11.0, 400).ellipsis(), WHITE.alpha(0.72));
-        // stats + sun, pinned to the bottom (14 px padding)
-        let sun_y = left.bottom() - 14.0 - 15.0;
-        let sy = sun_y - 12.0 - 50.0;
-        for (i, (st, w)) in v.stats.iter().zip([78.0, 48.0, 48.0]).enumerate() {
-            let x = lx + [0.0, 84.0, 138.0][i];
-            cv.fill_rr(Rect::new(x, sy, w, 50.0), 10.0, if day { Color::rgba(40.0 / 255.0, 50.0 / 255.0, 60.0 / 255.0, 0.38) } else { WHITE.alpha(0.09) });
-            icons::draw_markup(cv, stat_key(st.icon), stat_markup(st.icon), Rect::new(x + 8.0, sy + 8.0, 14.0, 14.0), WHITE.alpha(0.6), 1.7);
-            txt(cv, Rect::new(x + 8.0, sy + 28.0, w - 16.0, 14.0), &st.text, Style::new(11.0, 600).mono().ellipsis(), WHITE);
-        }
-        let sc = WHITE.alpha(0.78);
-        let st = Style::new(11.0, 400).mono();
-        match (&v.sun_rise, &v.sun_set, &v.sun_text) {
-            (Some(a), b, _) => {
-                icons::draw_markup(cv, "wx-sunrise", SUNRISE, Rect::new(lx + 8.0, sun_y, 14.0, 14.0), sc, 1.7);
-                txt(cv, Rect::new(lx + 28.0, sun_y - 1.0, 60.0, 16.0), a, st, sc);
-                if let Some(b) = b {
-                    icons::draw_markup(cv, "wx-sunset", SUNSET, Rect::new(lx + 92.0, sun_y, 14.0, 14.0), sc, 1.7);
-                    txt(cv, Rect::new(lx + 112.0, sun_y - 1.0, 70.0, 16.0), b, st, sc);
-                }
-            }
-            (_, _, Some(t)) => txt(cv, Rect::new(lx + 8.0, sun_y - 1.0, 170.0, 16.0), t, st, sc),
-            _ => {}
-        }
+        self.draw_left(cv, v);
 
         // the right column scrolls: hours, days, then the summary and the tiles
         let right = self.right_rect();
@@ -665,12 +613,15 @@ impl View for WeatherView {
         self.model.set_os_reduce_motion(cx.reduced_motion);
         self.base.show(cx, &["settings:changed"], 250);
         self.tiles.rewind();
+        self.left.set_live(true);
+        self.left.rewind(cx.reduced_motion);
         self.scroll.state.scroll_to(0.0, false);
         let calls = self.model.on_show();
         self.pump(cx, calls);
     }
 
     fn on_hide(&mut self, cx: &mut Cx) {
+        self.left.set_live(false);
         self.model.on_hide();
         self.base.hide();
         if self.kbd {
@@ -709,6 +660,9 @@ impl View for WeatherView {
     fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
         let mut r = Response::NONE;
         let mut acts: Vec<Action> = Vec::new();
+        if self.kind == Kind::Ok {
+            self.left_event(ev);
+        }
         let pos_in = |rect: Rect| ev.pos().map_or(false, |p| rect.contains(p.0, p.1));
         match self.kind {
             Kind::Ok => {
@@ -829,6 +783,11 @@ impl View for WeatherView {
         busy |= self.step_tiles(dt_ms);
         busy |= self.contact.input.step(dt) & self.contact.focused();
         busy |= self.city.input.step(dt) & self.city.focused();
+        let (moving, ambient) = match &self.vw {
+            Vw::Ok(v) => self.left.step(dt_ms, Some(v), cx.reduced_motion),
+            _ => (false, false),
+        };
+        busy |= moving;
         // typed input is applied in `draw`; its events (Enter = search) are read here, on the frame after
         for e in self.city.take_events() {
             if e == EditEvent::Submit {
@@ -837,7 +796,13 @@ impl View for WeatherView {
             }
         }
         let _ = self.contact.take_events();
-        busy | self.city.pending() | self.contact.pending()
+        busy |= self.city.pending() | self.contact.pending();
+        if !busy && ambient && self.kind == Kind::Ok {
+            // only the sky is breathing: the host may pace these frames
+            cx.ambient_frame();
+            return true;
+        }
+        busy
     }
 
     fn draw(&mut self, cv: &Canvas, th: &Theme, rect: Rect, cx: &Cx) {

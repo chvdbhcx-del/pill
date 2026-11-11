@@ -121,6 +121,7 @@ fn merge(into: &mut Effects, fx: Effects) {
     into.opens.extend(fx.opens);
     into.ime_rect = fx.ime_rect.or(into.ime_rect);
     into.fps_cap = fx.fps_cap.or(into.fps_cap);
+    into.ambient |= fx.ambient;
 }
 
 /// A simulated host window around one view: delivers input / messages like the real loop and runs frames on the real scheduler.

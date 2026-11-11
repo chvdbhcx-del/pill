@@ -24,7 +24,7 @@ fn wheel(r: &mut Rig, dy: f32) {
 fn frames(r: &mut Rig, n: usize) {
     for _ in 0..n {
         r.cx.now_ms += 4.0;
-        if !r.v.step(4.0, &mut r.cx) {
+        if !r.step_real(4.0) {
             break;
         }
     }
@@ -50,13 +50,13 @@ fn the_tiles_wait_below_the_fold_and_rise_in_when_the_column_scrolls() {
     r.frame();
     assert_eq!(r.v.scroll.offset(), 0.0);
     assert!(!r.v.tiles.revealing(), "not in view yet");
-    assert!(!r.v.step(4.0, &mut r.cx), "an idle tab costs no frames");
+    assert!(!r.step_real(4.0), "an idle tab costs no real frames (the sky only breathes)");
     wheel(&mut r, 300.0);
     frames(&mut r, 400);
     assert!(r.v.scroll.offset() > 100.0, "the column scrolled: {}", r.v.scroll.offset());
     assert!(r.v.tiles.revealing(), "the tiles came into view");
     let mut n = 0;
-    while r.v.step(4.0, &mut r.cx) && n < 3000 {
+    while r.step_real(4.0) && n < 3000 {
         r.cx.now_ms += 4.0;
         n += 1;
     }

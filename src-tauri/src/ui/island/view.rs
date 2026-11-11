@@ -165,6 +165,8 @@ pub struct IslandView {
     amb: super::ambient::Ambient,
     /// one of them is only breathing / turning: frames may run at a calm rate
     amb_slow: bool,
+    /// the open tab asks for frames only for an ambient animation (the weather sky): paced like the other ambient frames
+    tab_amb: bool,
     /// springs behind `live_a` / `panel_a` / `flare_a`: they keep their velocity when the target flips half-way
     live_sp: Flow,
     panel_sp: Flow,
@@ -239,6 +241,7 @@ impl IslandView {
             fast_hz: 0.0,
             amb: Default::default(),
             amb_slow: false,
+            tab_amb: false,
             live_sp: Flow::new(1.0, Feel::FADE.within(mo::LIVE_FADE_MS as f32)),
             panel_sp: Flow::new(0.0, PANEL_OUT),
             flare_sp: Flow::new(1.0, Feel::FADE.within(200.0)),
@@ -789,6 +792,8 @@ impl View for IslandView {
         self.arm_alarm(now);
         self.update_window_requests(&v, cx);
         let host_busy = self.host.step(dt_ms, now, cx);
+        // a tab whose only motion is ambient (the weather sky) does not hold the window at the full rate
+        self.tab_amb = self.host.ambient();
         if self.drain_fx(cx) {
             self.exec(cx);
             cx.request_frame();
@@ -808,7 +813,7 @@ impl View for IslandView {
             ("fades", fades),
         ]);
         self.pace_ambient(&v, cx, now, hdr_busy || host_busy || fx_busy || phone_busy || fades || amb_busy);
-        v.wants_frames || phone_busy || self.pending_measure.is_some() || pets_busy || host_busy || hdr_busy || rows_busy || fx_busy || self.gpu.gliding() || fades || amb_busy || amb_loop
+        v.wants_frames || phone_busy || self.pending_measure.is_some() || pets_busy || host_busy || hdr_busy || rows_busy || fx_busy || self.gpu.gliding() || fades || amb_busy || amb_loop || self.tab_amb
     }
 
     fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
@@ -1150,10 +1155,10 @@ impl IslandView {
     /// half of it. Any transition or input brings the full rate back at once and keeps it for `CALM_AFTER_MS` after the last movement.
     fn pace_ambient(&mut self, v: &ShellView, cx: &mut Cx, now: f64, busy: bool) {
         let springs = self.core.shell.spring_state().iter().any(|(x, vel, t)| vel.abs() > 0.02 || (x - t).abs() > 0.02);
+        // an open panel counts as moving, unless its tab only breathes (ambient): then the panel has settled and 30 fps are plenty
         let moving = busy
             || springs
-            || v.panel.visible
-            || self.panel_a != 0.0
+            || ((v.panel.visible || self.panel_a != 0.0) && !self.tab_amb)
             || self.pending_measure.is_some()
             || self.gpu.gliding();
         if moving {
@@ -1161,7 +1166,9 @@ impl IslandView {
         }
         let hz = self.fast_hz.max(cx.refresh_hz);
         // a glow that breathes or a ring that turns is slow by nature: 30 frames a second are plenty, even on a 60 Hz screen
-        let want = if now - self.busy_at > CALM_AFTER_MS && hz > 100.0 {
+        let want = if now - self.busy_at > CALM_AFTER_MS && self.tab_amb {
+            Some(30)
+        } else if now - self.busy_at > CALM_AFTER_MS && hz > 100.0 {
             Some((hz / 2.0) as u32)
         } else if now - self.busy_at > CALM_AFTER_MS && self.amb_slow {
             Some(30)

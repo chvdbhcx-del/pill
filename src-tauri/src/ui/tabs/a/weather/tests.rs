@@ -83,11 +83,17 @@ impl Rig {
         let _ = render_view_cx(&mut self.v, &self.cx, (super::super::W, H), 1.0, &Theme::pill_dark());
         for _ in 0..2000 {
             self.cx.now_ms += 4.0;
-            if !self.v.step(4.0, &mut self.cx) {
+            if !self.step_real(4.0) {
                 break;
             }
         }
         self.pump();
+    }
+    /// One step; true while something REALLY moves (the ambient sky breathing is not counted, the host paces that).
+    fn step_real(&mut self, dt: f64) -> bool {
+        let more = self.v.step(dt, &mut self.cx);
+        let ambient = self.cx.take_ambient();
+        more && !ambient
     }
     fn calls(&self, name: &str) -> Vec<Value> {
         self.f.api.calls().into_iter().filter(|c| c.name == name).map(|c| c.args).collect()
@@ -248,4 +254,5 @@ fn snapshots_of_the_typical_states() {
     }
 }
 
+mod left;
 mod tile_scroll;
