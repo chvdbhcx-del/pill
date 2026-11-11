@@ -1,6 +1,8 @@
 package app.pill.phone.ui
 
 import androidx.compose.runtime.Immutable
+import app.pill.phone.net.RelayState
+import app.pill.phone.net.Route
 import app.pill.phone.protocol.Msg
 
 /** What the connection looks like to the user. */
@@ -50,6 +52,9 @@ data class HomeUi(
     val mirroredApps: Int? = null,
     /** The newest status snapshot (battery details, storage, memory, network, modes), for the "This phone" card. */
     val status: Msg.Status? = null,
+    /** Home network or internet, while connected. */
+    val route: Route? = null,
+    val relay: RelayState = RelayState.Standby,
 )
 
 @Immutable
@@ -66,6 +71,12 @@ data class SettingsUi(
     /** "Pixel 8" and "15": what the PC is told about this phone. */
     val model: String = "",
     val androidVersion: String = "",
+    /** "Use internet relay when away from home". */
+    val relayEnabled: Boolean = true,
+    val relay: RelayState = RelayState.Standby,
+    val route: Route? = null,
+    /** Cap of a file through the relay, MB. */
+    val relayMaxMb: Int = 100,
 )
 
 /** The pairing flow, one state at a time. */
@@ -78,4 +89,4 @@ sealed interface PairUi {
     data class Failed(val error: PairError, val address: String?) : PairUi
 }
 
-enum class PairError { BadCode, Unreachable, InvalidLink, Refused }
+enum class PairError { BadCode, Unreachable, InvalidLink, Refused, RelayMismatch }

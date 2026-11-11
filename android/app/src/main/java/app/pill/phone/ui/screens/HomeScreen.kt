@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.pill.phone.R
+import app.pill.phone.net.RelayState
 import app.pill.phone.ui.HomeUi
 import app.pill.phone.ui.LinkUi
 import app.pill.phone.ui.TransferPhase
@@ -64,6 +65,7 @@ import app.pill.phone.ui.components.NavBarSpacer
 import app.pill.phone.ui.components.PillBackground
 import app.pill.phone.ui.components.PillButton
 import app.pill.phone.ui.components.PillMark
+import app.pill.phone.ui.components.RouteBadge
 import app.pill.phone.ui.components.SectionLabel
 import app.pill.phone.ui.components.SmallButton
 import app.pill.phone.ui.components.SpringProgress
@@ -145,6 +147,7 @@ private fun Hero(ui: HomeUi, actions: HomeActions, modifier: Modifier) {
         LinkUi.NoNetwork, LinkUi.NotFound -> BlobState.Offline
         LinkUi.Revoked -> BlobState.Error
     }
+    val relayWaiting = ui.relay == RelayState.WaitingForPc
     GlassCard(modifier.animateContentSize(Motion.soft()), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp), accentBorder = ui.link == LinkUi.Connected) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             StateBlob(blob, size = 176.dp)
@@ -159,7 +162,8 @@ private fun Hero(ui: HomeUi, actions: HomeActions, modifier: Modifier) {
                     LinkUi.Connected -> stringResource(R.string.state_connected) to pc
                     LinkUi.Connecting -> stringResource(R.string.state_connecting) to stringResource(R.string.state_connecting_body, pc)
                     LinkUi.NoNetwork -> stringResource(R.string.state_nonetwork) to stringResource(R.string.state_nonetwork_body)
-                    LinkUi.NotFound -> stringResource(R.string.state_notfound) to stringResource(R.string.state_notfound_body)
+                    LinkUi.NotFound -> if (relayWaiting) stringResource(R.string.state_notfound_pc) to stringResource(R.string.state_notfound_relay_body)
+                    else stringResource(R.string.state_notfound) to stringResource(R.string.state_notfound_body)
                     LinkUi.Revoked -> stringResource(R.string.state_revoked) to stringResource(R.string.state_revoked_body)
                     LinkUi.Unpaired -> stringResource(R.string.state_unpaired) to stringResource(R.string.state_unpaired_body)
                 }
@@ -168,6 +172,9 @@ private fun Hero(ui: HomeUi, actions: HomeActions, modifier: Modifier) {
                     Spacer(Modifier.height(6.dp))
                     Text(body, style = MaterialTheme.typography.bodyLarge, color = c.textDim, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 6.dp))
                 }
+            }
+            AnimatedVisibility(ui.link != LinkUi.Unpaired && ui.link != LinkUi.Revoked, enter = Motion.enterItem, exit = Motion.exitItem) {
+                RouteBadge(ui.route, Modifier.padding(top = 14.dp), waitingForPc = relayWaiting)
             }
             // the battery and network chips are before an older app had a status; with the "This phone" card they live there
             AnimatedVisibility(ui.link == LinkUi.Connected && ui.status == null, enter = Motion.enterItem, exit = Motion.exitItem) {

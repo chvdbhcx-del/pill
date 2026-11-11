@@ -210,6 +210,7 @@ private fun errorTexts(e: PairError): Pair<String, String> = when (e) {
     PairError.Unreachable -> stringResource(R.string.pair_err_unreachable_title) to stringResource(R.string.pair_err_unreachable_body)
     PairError.InvalidLink -> stringResource(R.string.pair_err_link_title) to stringResource(R.string.pair_err_link_body)
     PairError.Refused -> stringResource(R.string.pair_err_refused_title) to stringResource(R.string.pair_err_refused_body)
+    PairError.RelayMismatch -> stringResource(R.string.pair_err_relay_title) to stringResource(R.string.pair_err_relay_body)
 }
 
 @Composable

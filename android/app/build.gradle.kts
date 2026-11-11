@@ -97,6 +97,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons)
     implementation(libs.androidx.security.crypto)
     implementation(libs.okhttp)
+    implementation(libs.tink)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.camera.core)
