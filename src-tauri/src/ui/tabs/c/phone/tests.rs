@@ -7,13 +7,13 @@ use glasskit::input::{Buttons, Modifiers, MouseButton};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-const WALL: i64 = 1_800_000_000_000;
+pub(super) const WALL: i64 = 1_800_000_000_000;
 
-struct Rig {
-    v: PhoneView,
-    cx: Cx,
+pub(super) struct Rig {
+    pub(super) v: PhoneView,
+    pub(super) cx: Cx,
     q: Arc<MsgQueue>,
-    fakes: Fakes,
+    pub(super) fakes: Fakes,
 }
 
 fn mv(p: Pt) -> InputEvent {
@@ -26,16 +26,16 @@ fn up(p: Pt) -> InputEvent {
     InputEvent::MouseUp { pos: p, button: MouseButton::Left, mods: Modifiers::NONE }
 }
 
-fn status(running: bool, devices: Value) -> Value {
+pub(super) fn status(running: bool, devices: Value) -> Value {
     json!({ "enabled": running, "running": running, "ip": "192.168.1.5", "port": 41717, "pcName": "PC", "devices": devices, "connected": 0, "error": null })
 }
 
-fn notif(key: &str, title: &str, can_reply: bool) -> Value {
+pub(super) fn notif(key: &str, title: &str, can_reply: bool) -> Value {
     json!({ "key": key, "device": "d1", "pkg": "org.t", "app": "Telegram", "title": title, "text": "привет, как дела?", "when": WALL - 300_000, "ongoing": false, "replay": false, "canReply": can_reply, "icon": null, "avatar": null, "fresh": true })
 }
 
 /// A shown tab whose backend answers are canned; the mount replies are already delivered.
-fn rig(running: bool, notifs: Value) -> Rig {
+pub(super) fn rig(running: bool, notifs: Value) -> Rig {
     let (svc, fakes) = Services::fake();
     fakes.api.reply("phone_status", Ok(status(running, json!([{ "id": "d1", "name": "Pixel 8", "connected": true, "battery": 87, "charging": true, "network": "wifi", "ssid": "Home", "dnd": false }]))));
     fakes.api.reply("phone_notifs", Ok(notifs));
@@ -51,7 +51,7 @@ fn rig(running: bool, notifs: Value) -> Rig {
 }
 
 impl Rig {
-    fn pump(&mut self) {
+    pub(super) fn pump(&mut self) {
         for _ in 0..4 {
             let msgs = self.q.drain();
             if msgs.is_empty() {
@@ -62,7 +62,7 @@ impl Rig {
             }
         }
     }
-    fn frames(&mut self, n: usize) -> bool {
+    pub(super) fn frames(&mut self, n: usize) -> bool {
         let mut busy = false;
         for _ in 0..n {
             self.cx.now_ms += 4.0;
@@ -72,23 +72,23 @@ impl Rig {
         busy
     }
     /// Frames until the tab is idle (at most 600).
-    fn settle(&mut self) {
+    pub(super) fn settle(&mut self) {
         let mut n = 0;
         while self.frames(1) && n < 600 {
             n += 1;
         }
     }
-    fn shoot(&mut self) {
+    pub(super) fn shoot(&mut self) {
         render_view_cx(&mut self.v, &self.cx, SIZE, 1.0, &Theme::pill_dark());
     }
-    fn feed(&mut self, name: &str, payload: Value) {
+    pub(super) fn feed(&mut self, name: &str, payload: Value) {
         self.v.message(Msg::Event { name: name.into(), payload, latest: false }, &mut self.cx);
         self.pump();
     }
-    fn calls(&self) -> Vec<(String, Value)> {
+    pub(super) fn calls(&self) -> Vec<(String, Value)> {
         self.fakes.api.calls().into_iter().map(|c| (c.name, c.args)).collect()
     }
-    fn click(&mut self, k: K) {
+    pub(super) fn click(&mut self, k: K) {
         self.shoot();
         let r = self.v.clicks.rect_of(&k).unwrap_or_else(|| panic!("no click target {k:?}"));
         let p = r.center();
@@ -260,7 +260,9 @@ fn the_drop_zone_lights_up_and_a_drop_sends_the_files_to_the_phone() {
 
 #[test]
 fn the_phone_tab_draws_the_qr_and_new_code_renews_it() {
+    // nobody paired: the QR card is the content
     let mut r = rig(true, json!([]));
+    r.feed("phone:state", status(true, json!([])));
     r.click(K::Sub(2));
     r.frames(2);
     r.shoot();
@@ -311,7 +313,7 @@ fn click_targets_scrolled_out_of_sight_are_not_registered() {
     assert_eq!((r.y, r.h), (50.0, 28.0));
 }
 
-fn rich(connected: bool, battery: i64, notifs: u64) -> Value {
+pub(super) fn rich(connected: bool, battery: i64, notifs: u64) -> Value {
     json!({ "id": "d1", "name": "Pixel 8", "model": "Pixel 8", "os": "Android 15", "appVersion": "1.1.0", "firstSeen": WALL - 20 * 86_400_000, "lastSeen": WALL - 300_000,
             "connected": connected, "battery": battery, "charging": true, "network": "wifi", "ssid": "Home-5G", "dnd": true, "ip": "192.168.1.23", "connectedAt": WALL - 134 * 60_000,
             "info": { "charge": "charging", "plug": "ac", "tempC": 31.5, "health": "good", "fullInMin": 42, "storage": { "free": 52_000_000_000u64, "total": 128_000_000_000u64 },
@@ -319,7 +321,7 @@ fn rich(connected: bool, battery: i64, notifs: u64) -> Value {
             "stats": { "notifs": notifs, "replies": 2, "filesIn": 1, "filesOut": 3, "bytesIn": 2_400_000, "bytesOut": 15_000_000 } })
 }
 
-fn state_with(d: Value) -> Value {
+pub(super) fn state_with(d: Value) -> Value {
     status(true, json!([d]))
 }
 
@@ -379,22 +381,6 @@ fn offline_keeps_the_last_known_values_dimmed_and_an_old_phone_still_draws() {
     assert!(r.v.card.detail_k.at01() < 0.01 && r.v.card.store_k.at01() < 0.01, "nothing to show for the missing fields");
 }
 
-#[test]
-fn the_left_card_scrolls_when_there_is_more_than_room() {
-    let mut r = rig(true, json!([]));
-    r.click(K::Sub(2));
-    r.feed("phone:state", state_with(rich(true, 87, 3)));
-    r.settle();
-    r.shoot();
-    let sv = &r.v.scroll[2];
-    assert!(sv.state.scrollable(), "content {} in view {}", sv.state.content(), sv.state.viewport());
-    let a = r.v.card_area();
-    assert!(a.h > 200.0 && a.w < 400.0, "{a:?}");
-    let ev = InputEvent::Wheel { pos: a.center(), delta: (0.0, 120.0), mods: Modifiers::NONE, precise: false };
-    assert!(r.v.event(&ev, &mut r.cx).consumed);
-    assert!(r.v.scroll[2].state.target() > 0.0);
-}
-
 /// Review pictures of the four states (only written when `PILL_SNAP_DIR` is set; the name keeps it out of the default run).
 #[test]
 fn snapshot_states() {
@@ -425,11 +411,7 @@ fn snapshot_states() {
     r.feed("phone:state", state_with(rich(true, 87, 12)));
     r.frames(400);
     save(&mut r, "phone-rich");
-    r.v.scroll[2].state.scroll_to(1000.0, false);
-    r.frames(60);
-    save(&mut r, "phone-rich-scrolled");
     r.feed("phone:state", state_with(rich(false, 87, 12)));
-    r.v.scroll[2].state.scroll_to(0.0, false);
     r.frames(400);
     save(&mut r, "phone-offline");
     let mut off = rig(false, json!([]));
