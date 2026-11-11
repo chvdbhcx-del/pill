@@ -348,6 +348,7 @@ impl PhoneView {
         let (spos, sh) = wrap(&sw, cw, 22.0);
         // facts: two columns
         let mut facts: Vec<(String, String, bool)> = Vec::new();
+        facts.push((l.t("Связь", "Route").into(), d.route_text(l).into(), false));
         if d.connected && d.connected_at > 0 {
             facts.push((l.t("На связи", "Connected for").into(), duration_text(wall - d.connected_at, l), false));
         } else if d.last_seen > 0 {
