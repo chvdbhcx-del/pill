@@ -146,8 +146,8 @@
     <string name="settings_permissions">Разрешения</string>
     <string name="settings_about">О приложении</string>
     <string name="settings_version">Версия %1$s</string>
-    <string name="settings_privacy">Только локальная сеть</string>
-    <string name="settings_privacy_body">Трафик идёт по вашему Wi-Fi и защищён ключом телефона. Ни облака, ни аккаунта.</string>
+    <string name="settings_privacy">Приватно по умолчанию</string>
+    <string name="settings_privacy_body">Дома всё идёт по вашему Wi-Fi. Вдали от дома трафик идёт через ретранслятор со сквозным шифрованием. Без аккаунта.</string>
     <string name="settings_proprietary">Проприетарное ПО. Все права защищены.</string>
     <string name="unpair_title">Отвязать от %1$s?</string>
     <string name="unpair_body">ПК забудет этот телефон, уведомления перестанут приходить, а для нового подключения понадобится новый код.</string>
@@ -234,5 +234,29 @@
     <string name="dev_screen_off">Экран выключен</string>
     <string name="dev_model_line">Android %1$s</string>
     <string name="dev_shared_title">Что видит ваш ПК</string>
-    <string name="dev_shared_body">Заряд, память, накопитель, сеть и уровень сигнала, режимы «без звука» и «Не беспокоить». Только пока есть связь и только по домашней сети. Для имени Wi-Fi нужно разрешение на геолокацию, для остального ничего не нужно.</string>
+    <string name="dev_shared_body">Заряд, память, накопитель, сеть и уровень сигнала, режимы «без звука» и «Не беспокоить». Только пока есть связь: по домашней сети или по зашифрованной связи через интернет. Для имени Wi-Fi нужно разрешение на геолокацию, для остального ничего не нужно.</string>
+
+    <!-- Интернет-ретранслятор (протокол v2) -->
+    <string name="route_home">Домашняя сеть</string>
+    <string name="route_internet">Интернет</string>
+    <string name="route_offline">Не на связи</string>
+    <string name="state_notfound_relay_body">Pill не запущен на ПК. Связь через интернет готова и подключится, как только он запустится.</string>
+    <string name="notif_connected_relay">Подключено к %1$s через интернет</string>
+    <string name="tr_err_relay_big">Слишком большой для связи через интернет (лимит %1$d МБ). Подключитесь к домашнему Wi-Fi, чтобы отправить.</string>
+    <string name="pair_err_relay_title">Не удалось настроить связь через интернет</string>
+    <string name="pair_err_relay_body">Ключи ПК не совпали с нашими. Покажите в Pill новый код и подключитесь снова.</string>
+    <string name="settings_relay_section">Интернет</string>
+    <string name="settings_relay">Связь через интернет вне дома</string>
+    <string name="settings_relay_short">Связь не пропадает вне вашего Wi-Fi</string>
+    <string name="settings_relay_body">Через ретранслятор данные защищены сквозным шифрованием; ретранслятор (ваш Cloudflare Worker) видит лишь то, что два устройства обмениваются данными, когда и сколько.</string>
+    <string name="relay_unavailable">Связь через интернет: недоступна, обновите Pill на ПК</string>
+    <string name="relay_disabled">Связь через интернет: выключена</string>
+    <string name="relay_standby">Связь через интернет: готова</string>
+    <string name="relay_connecting">Связь через интернет: подключение…</string>
+    <string name="relay_waiting">Связь через интернет: есть, ждём ваш ПК</string>
+    <string name="relay_active">Связь через интернет: используется</string>
+    <string name="relay_refused">Связь через интернет: отклонена, подключитесь заново</string>
+    <string name="relay_file_cap">Файлы через интернет: до %1$d МБ</string>
+    <string name="state_notfound_pc">Ваш ПК не запущен</string>
+    <string name="notif_pc_offline">Ждём ваш ПК · связь через интернет готова</string>
 </resources>

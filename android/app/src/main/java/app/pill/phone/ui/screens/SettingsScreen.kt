@@ -1,7 +1,23 @@
 package app.pill.phone.ui.screens
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.alpha
+import app.pill.phone.net.RelayState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -64,6 +80,7 @@ class SettingsActions(
     val onApps: () -> Unit = {},
     val onAutoReceive: (Boolean) -> Unit = {},
     val onOngoing: (Boolean) -> Unit = {},
+    val onRelay: (Boolean) -> Unit = {},
     val onUnpair: () -> Unit = {},
     val onPair: () -> Unit = {},
     val perms: PermissionActions = PermissionActions(),
@@ -91,6 +108,10 @@ fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: Boolean 
                         if (ui.pcName != null) PillButton(stringResource(R.string.btn_unpair), { onAskUnpair(true) }, Modifier.fillMaxWidth(), kind = ButtonKind.Danger, icon = Icons.Rounded.LinkOff)
                         else PillButton(stringResource(R.string.btn_scan_qr), actions.onPair, Modifier.fillMaxWidth(), icon = Icons.Rounded.QrCodeScanner)
                     }
+                }
+                if (ui.pcName != null) {
+                    item(key = "relay-label") { SectionLabel(stringResource(R.string.settings_relay_section)) }
+                    item(key = "relay") { RelayCard(ui, actions.onRelay, Modifier.staggerIn(1)) }
                 }
                 if (ui.model.isNotBlank()) {
                     item(key = "phone-label") { SectionLabel(stringResource(R.string.dev_section)) }
@@ -143,6 +164,54 @@ fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: Boolean 
             }
         }
         if (askUnpair) UnpairDialog(ui.pcName, onConfirm = { onAskUnpair(false); actions.onUnpair() }, onDismiss = { onAskUnpair(false) })
+    }
+}
+
+/** The internet link: the switch, the privacy note of the protocol, and where the link stands right now. */
+@Composable
+private fun RelayCard(ui: SettingsUi, onRelay: (Boolean) -> Unit, modifier: Modifier) {
+    val c = Pill.colors
+    val available = ui.relay != RelayState.Unavailable
+    GlassCard(modifier.animateContentSize(Motion.soft())) {
+        SettingRow(
+            stringResource(R.string.settings_relay),
+            subtitle = stringResource(R.string.settings_relay_short),
+            icon = Icons.Rounded.Public,
+        ) {
+            PillSwitch(ui.relayEnabled && available, { if (available) onRelay(it) }, Modifier.alpha(if (available) 1f else 0.4f))
+        }
+        Divider(Modifier.padding(vertical = 8.dp))
+        val (text, tint) = when (ui.relay) {
+            RelayState.Unavailable -> R.string.relay_unavailable to c.textDim
+            RelayState.Disabled -> R.string.relay_disabled to c.textDim
+            RelayState.Standby -> R.string.relay_standby to c.good
+            RelayState.Connecting -> R.string.relay_connecting to c.accentSoft
+            RelayState.WaitingForPc -> R.string.relay_waiting to c.accentSoft
+            RelayState.Active -> R.string.relay_active to c.accentSoft
+            RelayState.Refused -> R.string.relay_refused to c.bad
+        }
+        val tintNow by animateColorAsState(tint, Motion.calm(), label = "relayTint")
+        AnimatedContent(
+            text,
+            transitionSpec = { (fadeIn(Motion.calm()) + slideInVertically(Motion.soft()) { it / 3 }) togetherWith (fadeOut(Motion.calm()) + slideOutVertically(Motion.calm()) { -it / 3 }) },
+            label = "relayText",
+        ) { res ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(tintNow))
+                Spacer(Modifier.width(12.dp))
+                Text(stringResource(res), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = c.text)
+            }
+        }
+        AnimatedVisibility(available, enter = Motion.enterItem, exit = Motion.exitItem) {
+            Text(
+                stringResource(R.string.relay_file_cap, ui.relayMaxMb), Modifier.padding(top = 2.dp),
+                style = MaterialTheme.typography.bodySmall, color = c.textDim,
+            )
+        }
+        Text(
+            stringResource(R.string.settings_relay_body), Modifier.padding(top = 10.dp),
+            style = MaterialTheme.typography.bodySmall, color = c.textDim,
+        )
     }
 }
 

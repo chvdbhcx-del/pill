@@ -114,6 +114,7 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
                     onApps = { vm.push(Route.Apps) },
                     onAutoReceive = vm::setAutoReceive,
                     onOngoing = vm::setIncludeOngoing,
+                    onRelay = vm::setRelayEnabled,
                     onUnpair = vm::unpair,
                     onPair = { host.scanQr() },
                     perms = host.perms,

@@ -132,6 +132,37 @@ class ScreenshotTest {
         SettingsScreen(SettingsUi(null, null, false, false, PermissionsUi(true, true, true, true, true), "1.0.0"), SettingsActions())
     }
 
+    // ---- internet relay (protocol v2) ----
+    private val setupDone = PermissionsUi(true, true, true, true)
+    private val sNet = app.pill.phone.net.RelayState.values()
+
+    @Test fun homeOnHomeNetwork() = shoot("home-route-lan") {
+        HomeScreen(connected.copy(transfers = emptyList(), perms = setupDone, route = app.pill.phone.net.Route.Lan), HomeActions())
+    }
+    @Test fun homeOnInternet() = shoot("home-route-internet") {
+        HomeScreen(connected.copy(transfers = emptyList(), perms = setupDone, route = app.pill.phone.net.Route.Relay, relay = app.pill.phone.net.RelayState.Active), HomeActions())
+    }
+    @Test fun homePcOffline() = shoot("home-route-pcoffline") {
+        HomeScreen(connected.copy(link = LinkUi.NotFound, transfers = emptyList(), perms = setupDone, relay = app.pill.phone.net.RelayState.WaitingForPc), HomeActions())
+    }
+
+    @Config(qualifiers = "w360dp-h1450dp-xhdpi")
+    @Test fun settingsRelayActive() = shoot("settings-relay") {
+        SettingsScreen(
+            SettingsUi("DESKTOP-VADIM", "192.168.1.20:41717", true, false, PermissionsUi(true, true, true, false, true), "1.0.0", "Pixel 8", "15",
+                relayEnabled = true, relay = app.pill.phone.net.RelayState.Active, route = app.pill.phone.net.Route.Relay, relayMaxMb = 100),
+            SettingsActions(),
+        )
+    }
+    @Config(qualifiers = "w360dp-h1450dp-xhdpi")
+    @Test fun settingsRelayUnavailable() = shoot("settings-relay-old-pc") {
+        SettingsScreen(
+            SettingsUi("DESKTOP-VADIM", "192.168.1.20:41717", true, false, PermissionsUi(true, true, true, false, true), "1.0.0", "Pixel 8", "15",
+                relayEnabled = true, relay = app.pill.phone.net.RelayState.Unavailable),
+            SettingsActions(),
+        )
+    }
+
     @Test fun sendSheetSending() = shoot("send-sending") { SendSheet(SendUi.Sending(2), {}, {}) }
     @Test fun sendSheetNotConnected() = shoot("send-notconnected") { SendSheet(SendUi.NotConnected, {}, {}) }
 
