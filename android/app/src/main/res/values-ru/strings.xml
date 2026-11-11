@@ -240,7 +240,7 @@
     <string name="settings_relay_section">Интернет</string>
     <string name="settings_relay">Связь через интернет вне дома</string>
     <string name="settings_relay_short">Связь не пропадает вне вашего Wi-Fi</string>
-    <string name="settings_relay_body">Через ретранслятор данные защищены сквозным шифрованием; ретранслятор (ваш Cloudflare Worker) видит лишь то, что два устройства обмениваются данными, когда и сколько.</string>
+    <string name="settings_relay_body">Через ретранслятор данные защищены сквозным шифрованием; сам ретранслятор (небольшой сервис разработчика Pill на Cloudflare) видит лишь то, что два устройства обмениваются данными, когда и сколько, но не содержимое.</string>
     <string name="relay_unavailable">Связь через интернет: недоступна, обновите Pill на ПК</string>
     <string name="relay_disabled">Связь через интернет: выключена</string>
     <string name="relay_standby">Связь через интернет: готова</string>

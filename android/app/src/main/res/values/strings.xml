@@ -239,7 +239,7 @@
     <string name="settings_relay_section">Internet</string>
     <string name="settings_relay">Use internet relay when away from home</string>
     <string name="settings_relay_short">Keeps the link alive off your Wi-Fi</string>
-    <string name="settings_relay_body">Through the relay your data is end-to-end encrypted; the relay (a Cloudflare Worker you own) sees only that two devices exchange data, when, and how much.</string>
+    <string name="settings_relay_body">Through the relay your data is end-to-end encrypted; the relay itself (a small service run by the Pill developer on Cloudflare) sees only that two devices exchange data, when and how much, never the content.</string>
     <string name="relay_unavailable">Internet link: not available, update Pill on your PC</string>
     <string name="relay_disabled">Internet link: off</string>
     <string name="relay_standby">Internet link: ready</string>

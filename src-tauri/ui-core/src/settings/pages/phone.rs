@@ -71,8 +71,8 @@ pub fn phone() -> Page {
             group_note(
                 tr("Через интернет (ретранслятор)", "Over the internet (relay)"),
                 tr(
-                    "Через ретранслятор ваши данные сквозно зашифрованы; ретранслятор (Cloudflare Worker, который принадлежит вам) видит только то, что два устройства обмениваются данными, когда и сколько. Телефон, подключённый до этого обновления, нужно подключить заново, чтобы получить ключи.",
-                    "Through the relay your data is end-to-end encrypted; the relay (a Cloudflare Worker you own) sees only that two devices exchange data, when, and how much. A phone paired before this update has to be paired again to get its keys.",
+                    "Через ретранслятор ваши данные сквозно зашифрованы: сам ретранслятор (небольшой сервис разработчика Pill на Cloudflare) видит только то, что два устройства обмениваются данными, когда и сколько, но не содержимое. Телефон, подключённый до этого обновления, нужно подключить заново, чтобы получить ключи.",
+                    "Through the relay your data is end-to-end encrypted: the relay itself (a small service run by the Pill developer on Cloudflare) sees only that two devices exchange data, when and how much, never the content. A phone paired before this update has to be paired again to get its keys.",
                 ),
                 vec![
                     toggle(
@@ -86,9 +86,9 @@ pub fn phone() -> Page {
                     text(
                         "phone.relayUrl",
                         tr("Адрес ретранслятора", "Relay address"),
-                        tr("Например wss://pill-relay.ваш-аккаунт.workers.dev; новые подключения телефонов получают этот адрес", "For example wss://pill-relay.your-account.workers.dev; phones paired from now on are given this address"),
+                        tr("Менять не нужно: по умолчанию работает ретранслятор Pill. Свой ретранслятор (папка relay в репозитории) можно указать здесь; телефоны, подключённые после этого, получат ваш адрес", "No need to change it: Pill's own relay works by default. You can point it at a relay of your own (the relay folder of the repository); phones paired after that get your address"),
                         TextKind::Url,
-                        tr("wss://…", "wss://…"),
+                        tr("wss://pill-relay.chvdbhcx-pill.workers.dev", "wss://pill-relay.chvdbhcx-pill.workers.dev"),
                         "wss://pill-relay.chvdbhcx-pill.workers.dev",
                     )
                     .enabled(Cond::All(vec![on.clone(), Cond::On("phone.relay")]))
