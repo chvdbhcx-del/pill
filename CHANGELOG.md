@@ -2,6 +2,13 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.8.4] - 2026-11-12
+
+### Highlights
+- Clipboard sync between the PC and your phone (Settings, Phone, Clipboard; off by default): copy text on one device and paste on the other. Android sends from the app, a Quick Settings tile, a notification action or Share; the iPhone page has Send and Copy cards. Password managers are skipped.
+- Virtual desktops: the island flashes the desktop name or number when you switch, and a click or the mouse wheel on the desktop chip switches desktops. It no longer polls, Windows tells Pill when the desktop changes.
+- Fixes: the Updates page in Settings no longer stays washed out, the Steam download percent follows the real speed on big updates.
+
 ## [0.8.3] - 2026-11-11
 
 ### Highlights
