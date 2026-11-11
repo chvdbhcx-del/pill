@@ -231,7 +231,7 @@
     <string name="dev_screen_off">Screen off</string>
     <string name="dev_model_line">Android %1$s</string>
     <string name="dev_shared_title">What your PC sees</string>
-    <string name="dev_shared_body">Battery, storage, memory, network name and signal, silent and Do Not Disturb modes. Only while connected, only over your home network. The Wi-Fi name needs the location permission, nothing else does.</string>
+    <string name="dev_shared_body">Battery, storage, memory, network name and signal, silent and Do Not Disturb modes. Only while connected, over your home network or the encrypted internet link. The Wi-Fi name needs the location permission, nothing else does.</string>
 
     <!-- Internet relay (protocol v2) -->
     <string name="route_home">Home network</string>
@@ -244,6 +244,7 @@
     <string name="pair_err_relay_body">The PC\'s keys do not match ours. Show a new code in Pill and pair again.</string>
     <string name="settings_relay_section">Internet</string>
     <string name="settings_relay">Use internet relay when away from home</string>
+    <string name="settings_relay_short">Keeps the link alive off your Wi-Fi</string>
     <string name="settings_relay_body">Through the relay your data is end-to-end encrypted; the relay (a Cloudflare Worker you own) sees only that two devices exchange data, when, and how much.</string>
     <string name="relay_unavailable">Internet link: not available, update Pill on your PC</string>
     <string name="relay_disabled">Internet link: off</string>
@@ -254,4 +255,5 @@
     <string name="relay_refused">Internet link: rejected, pair again</string>
     <string name="relay_file_cap">Files over the internet: up to %1$d MB</string>
     <string name="state_notfound_pc">Your PC is not running</string>
+    <string name="notif_pc_offline">Waiting for your PC · internet link ready</string>
 </resources>

@@ -175,7 +175,7 @@ private fun RelayCard(ui: SettingsUi, onRelay: (Boolean) -> Unit, modifier: Modi
     GlassCard(modifier.animateContentSize(Motion.soft())) {
         SettingRow(
             stringResource(R.string.settings_relay),
-            subtitle = stringResource(R.string.settings_relay_body),
+            subtitle = stringResource(R.string.settings_relay_short),
             icon = Icons.Rounded.Public,
         ) {
             PillSwitch(ui.relayEnabled && available, { if (available) onRelay(it) }, Modifier.alpha(if (available) 1f else 0.4f))
@@ -208,6 +208,10 @@ private fun RelayCard(ui: SettingsUi, onRelay: (Boolean) -> Unit, modifier: Modi
                 style = MaterialTheme.typography.bodySmall, color = c.textDim,
             )
         }
+        Text(
+            stringResource(R.string.settings_relay_body), Modifier.padding(top = 10.dp),
+            style = MaterialTheme.typography.bodySmall, color = c.textDim,
+        )
     }
 }
 

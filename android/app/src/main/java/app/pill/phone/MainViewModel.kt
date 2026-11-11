@@ -81,7 +81,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 else -> when (link) {
                     is LinkState.Connected -> LinkUi.Connected
                     LinkState.NoNetwork -> LinkUi.NoNetwork
-                    LinkState.NotFound -> LinkUi.NotFound
+                    LinkState.NotFound, LinkState.PcOffline -> LinkUi.NotFound
                     LinkState.Revoked -> LinkUi.Revoked
                     LinkState.Connecting, LinkState.Unpaired -> LinkUi.Connecting
                 }

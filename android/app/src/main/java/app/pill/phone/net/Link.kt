@@ -54,8 +54,10 @@ sealed interface LinkState {
     /** [route] is the way the PC is reached right now: its home network or the internet relay. */
     data class Connected(val pcName: String, val route: Route = Route.Lan) : LinkState
     data object NoNetwork : LinkState
-    /** Network is up but the PC does not answer: wrong network, PC off, Pill closed. (Also: the relay is reachable, the PC is not.) */
+    /** Network is up but the PC does not answer: wrong network, PC off, Pill closed. */
     data object NotFound : LinkState
+    /** The relay is reachable and the phone is in its room, but the PC is not: it is off or Pill is closed. The phone reconnects the moment it starts. */
+    data object PcOffline : LinkState
     data object Revoked : LinkState
 }
 
@@ -340,7 +342,7 @@ object Link {
             conn.lastRx.set(now())
             if (_state.value !is LinkState.Connected) { _state.value = LinkState.Connecting; _relayDyn.value = RelayState.Connecting }
         } else {
-            _state.value = LinkState.NotFound
+            _state.value = LinkState.PcOffline
             _relayDyn.value = RelayState.WaitingForPc
         }
     }

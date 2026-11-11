@@ -57,6 +57,7 @@ object Notifs {
             LinkState.Connecting, LinkState.Unpaired -> ctx.getString(R.string.notif_connecting, pcName)
             LinkState.NoNetwork -> ctx.getString(R.string.notif_nonetwork)
             LinkState.NotFound -> ctx.getString(R.string.notif_notfound)
+            LinkState.PcOffline -> ctx.getString(R.string.notif_pc_offline)
             LinkState.Revoked -> ctx.getString(R.string.notif_revoked)
         }
         val b = NotificationCompat.Builder(ctx, CH_LINK)

@@ -234,7 +234,7 @@
     <string name="dev_screen_off">Экран выключен</string>
     <string name="dev_model_line">Android %1$s</string>
     <string name="dev_shared_title">Что видит ваш ПК</string>
-    <string name="dev_shared_body">Заряд, память, накопитель, сеть и уровень сигнала, режимы «без звука» и «Не беспокоить». Только пока есть связь и только по домашней сети. Для имени Wi-Fi нужно разрешение на геолокацию, для остального ничего не нужно.</string>
+    <string name="dev_shared_body">Заряд, память, накопитель, сеть и уровень сигнала, режимы «без звука» и «Не беспокоить». Только пока есть связь: по домашней сети или по зашифрованной связи через интернет. Для имени Wi-Fi нужно разрешение на геолокацию, для остального ничего не нужно.</string>
 
     <!-- Интернет-ретранслятор (протокол v2) -->
     <string name="route_home">Домашняя сеть</string>
@@ -247,6 +247,7 @@
     <string name="pair_err_relay_body">Ключи ПК не совпали с нашими. Покажите в Pill новый код и подключитесь снова.</string>
     <string name="settings_relay_section">Интернет</string>
     <string name="settings_relay">Связь через интернет вне дома</string>
+    <string name="settings_relay_short">Связь не пропадает вне вашего Wi-Fi</string>
     <string name="settings_relay_body">Через ретранслятор данные защищены сквозным шифрованием; ретранслятор (ваш Cloudflare Worker) видит лишь то, что два устройства обмениваются данными, когда и сколько.</string>
     <string name="relay_unavailable">Связь через интернет: недоступна, обновите Pill на ПК</string>
     <string name="relay_disabled">Связь через интернет: выключена</string>
@@ -257,4 +258,5 @@
     <string name="relay_refused">Связь через интернет: отклонена, подключитесь заново</string>
     <string name="relay_file_cap">Файлы через интернет: до %1$d МБ</string>
     <string name="state_notfound_pc">Ваш ПК не запущен</string>
+    <string name="notif_pc_offline">Ждём ваш ПК · связь через интернет готова</string>
 </resources>
