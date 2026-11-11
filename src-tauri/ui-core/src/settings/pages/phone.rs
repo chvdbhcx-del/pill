@@ -25,7 +25,7 @@ pub fn phone() -> Page {
                         false,
                     )
                     .kw(&["phone", "android", "pair", "qr", "link", "телефон", "андроид", "связь", "подключить"]),
-                    custom("phone.link", tr("Подключить телефон", "Pair a phone"), tr("Наведите камеру телефона на QR-код: откроется страница, где можно скачать приложение или открыть его", "Point the phone's camera at the QR code: a page opens where you can get the app or open it"), "phone.link")
+                    custom("phone.link", tr("Подключить телефон", "Pair a phone"), tr("Наведите камеру телефона на QR-код: откроется страница, где можно скачать приложение или открыть его (на iPhone: открыть в браузере)", "Point the phone's camera at the QR code: a page opens where you can get the app or open it (on iPhone: open in the browser)"), "phone.link")
                         .kw(&["qr", "code", "pair", "pairing", "код", "подключение", "приложение", "app"]),
                     custom("phone.devices", tr("Подключённые телефоны", "Paired phones"), tr("Когда телефон был на связи; «Отозвать» закрывает ему доступ сразу", "When each phone was last in touch; Revoke shuts it out at once"), "phone.devices")
                         .kw(&["revoke", "device", "paired", "отозвать", "устройство", "телефоны"]),

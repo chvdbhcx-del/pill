@@ -515,3 +515,155 @@ fn the_default_apk_url_in_the_settings_is_the_protocol_constant() {
     assert_eq!(crate::settings::defaults()["phone.apkUrl"], super::DEFAULT_APK_URL);
     assert_eq!(super::DEFAULT_APK_URL, "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk");
 }
+
+// ------------------------------------------------------------------------------------------------ the web client (`/w`, iPhone)
+
+fn header<'a>(h: &'a [String], name: &str) -> Option<&'a str> {
+    h.iter().find_map(|l| l.strip_prefix(&format!("{name}: ")))
+}
+
+#[test]
+fn web_client_routes_content_types_csp_and_install_meta() {
+    let r = Rig::new(true);
+    let (st, h, body) = http(r.addr(), "GET", "/w", &[("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)".into())], b"");
+    let html = String::from_utf8(body).unwrap();
+    assert_eq!(st, 200);
+    assert!(header(&h, "content-type").unwrap().starts_with("text/html"));
+    // a fresh nonce per request: the header lets exactly the one inline script of this response run
+    let csp = header(&h, "content-security-policy").unwrap().to_string();
+    let nonce = csp.split("'nonce-").nth(1).unwrap().split('\'').next().unwrap().to_string();
+    // (the test helper lower-cases header lines, so the nonce is compared case-insensitively)
+    assert!(nonce.len() >= 16 && html.to_ascii_lowercase().contains(&format!("<script nonce=\"{nonce}\">")) && !html.contains("__NONCE__"));
+    assert_eq!(html.matches("<script").count(), 1, "one inline script, nothing else");
+    assert!(csp.contains("default-src 'none'") && csp.contains("connect-src 'self' ws:") && !csp.contains("script-src 'unsafe-inline'"));
+    let (_, h2, _) = http(r.addr(), "GET", "/w", &[], b"");
+    assert_ne!(header(&h2, "content-security-policy").unwrap(), csp, "the nonce changes every time");
+    // self-contained: no external address anywhere, no external resource tags
+    assert!(!html.contains("http://") && !html.contains("https://") && !html.contains("<link rel=\"stylesheet\"") && !html.contains(" src=\"http"));
+    // installable on the Home Screen
+    for needle in [
+        "name=\"apple-mobile-web-app-capable\" content=\"yes\"",
+        "name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\"",
+        "name=\"apple-mobile-web-app-title\" content=\"Pill\"",
+        "viewport-fit=cover",
+        "rel=\"manifest\" href=\"/w/manifest.webmanifest\"",
+        "rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"/w/icon.png\"",
+        "env(safe-area-inset-top)",
+        "env(safe-area-inset-bottom)",
+        "overscroll-behavior:none",
+    ] {
+        assert!(html.contains(needle), "missing: {needle}");
+    }
+    // nothing that needs a secure context: the page is plain http on a LAN
+    for banned in ["serviceWorker", "navigator.clipboard", "randomUUID", "crypto.subtle", "wakeLock", "PushManager"] {
+        assert!(!html.contains(banned), "{banned} does not work over plain http");
+    }
+    // the token travels only in the Authorization header and in the WebSocket query the protocol defines
+    assert!(html.contains("/ws?token=") && html.matches("?token=").count() == 1);
+
+    // the manifest
+    let (st, h, body) = http(r.addr(), "GET", "/w/manifest.webmanifest", &[], b"");
+    assert_eq!(st, 200);
+    assert!(header(&h, "content-type").unwrap().starts_with("application/manifest+json"));
+    let m: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!((m["display"].as_str(), m["start_url"].as_str(), m["short_name"].as_str(), m["theme_color"].as_str(), m["background_color"].as_str()), (Some("standalone"), Some("/w"), Some("Pill"), Some("#0B0B0F"), Some("#0B0B0F")));
+    assert_eq!((m["icons"][0]["src"].as_str(), m["icons"][0]["sizes"].as_str(), m["icons"][0]["type"].as_str()), (Some("/w/icon.png"), Some("180x180"), Some("image/png")));
+
+    // the icon is a real 180x180 PNG
+    let (st, h, png) = http(r.addr(), "GET", "/w/icon.png", &[], b"");
+    assert_eq!(st, 200);
+    assert_eq!(header(&h, "content-type"), Some("image/png"));
+    assert_eq!(&png[..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
+    assert_eq!((u32::from_be_bytes(png[16..20].try_into().unwrap()), u32::from_be_bytes(png[20..24].try_into().unwrap())), (180, 180));
+
+    // wrong methods keep the 405 handling
+    for p in ["/w", "/w/manifest.webmanifest", "/w/icon.png"] {
+        assert_eq!(http(r.addr(), "POST", p, &[], b"x").0, 405, "{p}");
+    }
+    assert_eq!(http(r.addr(), "GET", "/w/nope", &[], b"").0, 404);
+    r.stop();
+}
+
+#[test]
+fn web_client_is_refused_from_outside_the_lan() {
+    let r = Rig::new(false);
+    for p in ["/w", "/w/manifest.webmanifest", "/w/icon.png"] {
+        assert_eq!(http(r.addr(), "GET", p, &[], b"").0, 403, "{p}");
+    }
+    r.stop();
+}
+
+#[test]
+fn landing_page_offers_the_browser_client_on_iphone_and_a_small_link_on_android() {
+    let r = Rig::new(true);
+    let c = r.sh().pair_code(false)["code"].as_str().unwrap().to_string();
+    let (_, _, b) = http(r.addr(), "GET", &format!("/p?c={c}"), &[("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) Safari".into())], b"");
+    let ios = String::from_utf8(b).unwrap();
+    assert!(ios.contains("Open in browser") && ios.contains(&format!("href=\"/w?c={c}&amp;h=127.0.0.1&amp;p={}\"", r.addr().port())));
+    assert!(!ios.contains("Download the app") && !ios.contains("intent://"));
+    let (_, _, b) = http(r.addr(), "GET", &format!("/p?c={c}"), &[("User-Agent", "Mozilla/5.0 (Linux; Android 15)".into())], b"");
+    let and = String::from_utf8(b).unwrap();
+    assert!(and.contains("Download the app") && and.contains("Open in Pill Phone") && and.contains("On iPhone or iPad? Open in browser"));
+    r.stop();
+}
+
+/// Everything the web client does, against the real server, in the order and with the headers the page's script uses.
+#[test]
+fn web_client_pairs_without_a_key_uploads_text_and_downloads() {
+    let r = Rig::new(true);
+    {
+        // the relay is on and configured, yet a client that sends no `pk` is offered none of it and stays LAN-only
+        let mut c = r.cfg.lock().unwrap();
+        c.relay_on = true;
+        c.relay_url = "wss://relay.example.org".into();
+    }
+    let code = r.sh().pair_code(false)["code"].as_str().unwrap().to_string();
+    let body = json!({ "code": code.to_ascii_lowercase(), "deviceId": "w0123456789abcdef0123456789abcd", "name": "iPhone (Pill)", "model": "iPhone", "os": "iOS 17.2", "appVersion": "web-1" }).to_string();
+    let (st, _, resp) = http(r.addr(), "POST", "/api/pair", &[("Content-Type", "application/json".into())], body.as_bytes());
+    assert_eq!(st, 200, "{}", String::from_utf8_lossy(&resp));
+    let v: Value = serde_json::from_slice(&resp).unwrap();
+    assert_eq!((v["token"].as_str().map(str::len), v["pcName"].as_str(), v["serverVersion"].as_u64()), (Some(43), Some("TEST-PC"), Some(1)));
+    assert!(v.get("pk").is_none() && v.get("relay").is_none(), "no relay offered to a client without a key: {v}");
+    let tok = v["token"].as_str().unwrap().to_string();
+    assert_eq!(r.sh().devices()[0]["relay"], false);
+    assert_eq!(r.sh().devices()[0]["name"], "iPhone (Pill)");
+
+    let mut p = Phone::connect(r.addr(), &tok);
+    assert_eq!(p.recv_t("hello")["pcName"], "TEST-PC");
+    // no `relay.config` follows for a device without keys: the next frame is the answer to our ping
+    p.send(json!({ "t": "ping" }));
+    p.recv_t("pong");
+
+    // a text snippet goes up as a plain-text file, exactly like the Android share (`Shared text.txt`)
+    let text = "hello from Safari \u{1F4A7}".as_bytes();
+    p.send(json!({ "t": "file.offer", "id": "a1b2c3", "name": "Shared text.txt", "size": text.len(), "mime": "text/plain" }));
+    assert_eq!(p.recv_t("file.accept")["id"], "a1b2c3");
+    let hdr = [("Authorization", format!("Bearer {tok}")), ("Origin", format!("http://{}", r.addr()))];
+    let (st, _, b) = http(r.addr(), "PUT", "/api/up/a1b2c3", &hdr, text);
+    assert_eq!(st, 200, "{}", String::from_utf8_lossy(&b));
+    let path = PathBuf::from(serde_json::from_slice::<Value>(&b).unwrap()["path"].as_str().unwrap());
+    assert_eq!(std::fs::read(&path).unwrap(), text);
+    assert_eq!(path.file_name().unwrap(), "Shared text.txt");
+    // errors the page maps to messages: not announced -> 404 unknown_file, over the cap -> rejected at the offer
+    assert_eq!(http(r.addr(), "PUT", "/api/up/never", &hdr, b"x").0, 404);
+    p.send(json!({ "t": "file.offer", "id": "huge", "name": "x.mov", "size": 99u64 * 1024 * 1024 }));
+    assert_eq!(p.recv_t("file.reject")["reason"], "too_big");
+
+    // a PC file reaches the page: offer over the socket, Bearer download, then file.done
+    let f = r.dir.join("From PC.txt");
+    std::fs::write(&f, b"from the pc").unwrap();
+    r.sh().send_file(&f, None).unwrap();
+    let offer = p.recv_t("file.offer");
+    let (st, h, b) = http(r.addr(), "GET", &format!("/api/down/{}", offer["id"].as_str().unwrap()), &bearer(&tok), b"");
+    assert_eq!((st, b.as_slice()), (200, &b"from the pc"[..]));
+    assert!(header(&h, "content-disposition").unwrap().contains("from%20pc.txt")); // header lines come back lower-cased
+    p.send(json!({ "t": "file.done", "id": offer["id"], "ok": true }));
+    r.wait("phone:files", |v| v["kind"] == "sent");
+
+    // Forget this PC: DELETE /api/device kills the token and closes the socket with 4001
+    assert_eq!(http(r.addr(), "DELETE", "/api/device", &bearer(&tok), b"").0, 200);
+    let (op, payload) = p.frame();
+    assert_eq!((op, u16::from_be_bytes([payload[0], payload[1]])), (8, 4001));
+    assert_eq!(http(r.addr(), "GET", "/api/state", &bearer(&tok), b"").0, 401);
+    r.stop();
+}

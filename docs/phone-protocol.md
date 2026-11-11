@@ -125,3 +125,33 @@ The PC sanitises all of it (whitelisted values, clamped numbers, clipped strings
 
 `info` (the sanitised object above, `{}` for an old app), `ip` (the address the WebSocket came from, kept after the phone left), `connectedAt` (ms, start of the current socket), `statusAt`, plus `model`, `os`, `appVersion`, `firstSeen`, `lastSeen` from pairing, and session counters `stats`: `{"notifs","replies","filesIn","filesOut","bytesIn","bytesOut"}`: new notifications mirrored (replays and repeats excluded), replies the phone confirmed, files and bytes received from / sent to the phone since the PC server started. The island's Phone tab renders all of it; it is in memory only and starts from zero when the link is switched off.
 
+## Web client (iPhone)
+
+iOS gives apps and web pages no access to other apps' notifications, so there is no iPhone app to build. Instead the PC serves a browser client of this same protocol. It adds **no new protocol, no new listener and no new setting**: it is an ordinary v1 phone that happens to run in Safari.
+
+### What it can and cannot do
+
+* **Can:** pair (one-time code), show the PC name and the connection state (Connected / Reconnecting, WebSocket ping every 20 s, back-off 1 s .. 30 s, close codes `4000` / `4001` handled as above), send files and photos to the PC (`file.offer` -> `file.accept` -> `PUT /api/up/<id>`, a progress bar and a cancel button per file, `too_big` / `declined` / `413` / `404` / `503 busy` shown as messages, retry with a new id), receive files the PC sends (`file.offer` from the PC -> a Download button -> `GET /api/down/<id>` with the bearer header -> Safari's save sheet, then `file.done`), send a text snippet, and "Forget this PC" (`DELETE /api/device`, then the local storage is cleared).
+* **Text** has no message of its own in the protocol, so a snippet goes up exactly like the Android "share text": as a file offer named `Shared text.txt` (`text/plain`). Text from the PC arrives the same way, as a file.
+* **Cannot:** mirror notifications, reply to them, report battery / network `status` (a page cannot read them), or work in the background. iOS suspends a web page when the screen locks or the app is switched; transfers and the socket only run while the page is on screen, and an offer the PC sends while the page is closed is not delivered later. The page says so.
+* **LAN only.** `/api/pair` is sent **without** `pk`, so the PC answers without `pk` and without a `relay` block and the device is stored without keys: `devices[].relay` is `false` and the relay never connects for it. (A v2 phone that does send `pk` is unaffected.) The relay would need crypto the page cannot do over plain `http` (no `crypto.subtle`), and it is out of scope.
+* Plain `http` on a LAN is not a secure context: the page uses no service worker, no Web Push, no clipboard API, no Web Share Target (iOS has none), no screen wake lock, no `crypto.randomUUID`. The device id comes from `crypto.getRandomValues` (`w` + 30 hex digits, valid by `[A-Za-z0-9_-]{1,64}`). Everything else (fetch, XHR upload progress, WebSocket, Blob download) works over `http`.
+* A file the PC sends is read into memory before Safari saves it; a very large file may not fit on an older iPhone.
+
+### Routes (no token; same private-peer rule and rate limit as `/p`)
+
+| Method + path | Purpose |
+|---|---|
+| `GET /w` | the client: one self-contained HTML document (inline CSS and script, no external request). The URL form of the QR link is `http://<pc-ip>:<port>/w?c=<code>&h=<ip>&p=<port>`; `/p` sends iPhone / iPad (User-Agent contains `iPhone` or `iPad`) here with an "Open in browser" button, and everything else keeps the Android buttons plus a small "On iPhone or iPad? Open in browser" link. `h` / `p` only pre-fill the address field; the page always talks to the host it was loaded from. |
+| `GET /w/manifest.webmanifest` | `application/manifest+json`: `display: standalone`, `start_url` `/w`, `short_name` `Pill`, background / theme `#0B0B0F` |
+| `GET /w/icon.png` | the 180x180 PNG apple-touch-icon (the droplet mark); iOS ignores SVG icons |
+
+Other methods on these paths answer `405`. The response carries `Content-Security-Policy: default-src 'none'; script-src 'nonce-<per-request>'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws:; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` and `Referrer-Policy: no-referrer`. Nothing from the PC is placed into the HTML: the PC name, file names and error texts reach the DOM through `textContent` only. The token is sent as `Authorization: Bearer` and, as the protocol already defines, in the `/ws?token=` query of the WebSocket; it is never put in a page URL. The pairing code is removed from the address bar (`history.replaceState`) as soon as the page has read it.
+
+### Home Screen app
+
+Add to Home Screen (Share -> Add to Home Screen) gives a standalone app: `apple-mobile-web-app-capable`, black-translucent status bar, `viewport-fit=cover` with safe-area insets, a dark background that also covers the overscroll bounce, no browser bars. A hint shows in Safari until the page runs standalone.
+
+* **Safari and the Home Screen app keep separate `localStorage`.** A token paired in Safari is invisible to the installed app, so the Safari page tells an iPhone user to install first and to pair inside the app: open the installed app, type the 8-character code (A-Z and 2-9, shown beside the QR code on the PC) and, if needed, the PC address. "Continue in Safari instead" pairs in Safari (no install).
+* **The PC address can change (DHCP).** A page served from `http://<ip>:<port>` cannot load at all when the PC has another address; the installed app then shows Safari's error and nothing can be done from the page (no service worker over `http`). When the page *does* load but the PC is unreachable (link switched off, other Wi-Fi) it shows "Cannot reach the PC at ..." with an address field; typing a new `ip[:port]` opens that PC's own `/w` (a different origin, so it pairs again there). If the address changed, remove the Home Screen icon and open the new QR code. The protocol offers no stable name, so none is invented.
+
