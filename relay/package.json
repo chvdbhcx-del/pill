@@ -1,0 +1,19 @@
+{
+  "name": "pill-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pill Phone internet relay: a Cloudflare Worker + one Durable Object per room",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.7.0",
+    "@cloudflare/workers-types": "^5.20261110.1",
+    "typescript": "^5.9.0",
+    "vitest": "^5.1.0",
+    "wrangler": "^4.160.0"
+  }
+}
