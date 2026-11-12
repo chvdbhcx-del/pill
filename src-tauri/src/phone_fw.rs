@@ -56,9 +56,10 @@ pub fn ensure_async() {
     }
     std::thread::spawn(|| {
         let Some(exe) = exe_path() else { return };
-        if rule_ok() {
+        if rule_ok() || asked_before(&exe) {
             return;
         }
+        remember_asked(&exe); // a declined prompt is an answer: do not show it again on every start
         eprintln!("phone: no firewall rule for the LAN yet, asking Windows to add one (UAC)");
         if !shell_runas("cmd.exe", &add_rule_cmd(&exe)) {
             eprintln!("phone: the firewall rule was not added (prompt declined)");
@@ -69,6 +70,20 @@ pub fn ensure_async() {
 /// "Phone link" was switched off: the next switch-on may ask again.
 pub fn reset() {
     ASKED.store(false, Ordering::SeqCst);
+    let _ = std::fs::remove_file(marker()); // switching the link off and on is a deliberate ask-again
+}
+
+/// %APPDATA%\pill\fw-asked.txt: the (lower-case) path of the pill.exe the prompt was already shown for.
+fn marker() -> std::path::PathBuf {
+    crate::store::dir().join("fw-asked.txt")
+}
+
+fn asked_before(exe: &str) -> bool {
+    std::fs::read_to_string(marker()).map(|s| s.trim() == exe.to_lowercase()).unwrap_or(false)
+}
+
+fn remember_asked(exe: &str) {
+    let _ = std::fs::write(marker(), exe.to_lowercase());
 }
 
 #[cfg(test)]
