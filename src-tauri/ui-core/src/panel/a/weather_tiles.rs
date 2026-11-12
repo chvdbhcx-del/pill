@@ -72,18 +72,32 @@ pub fn dew_point(t: f64, rh: f64) -> f64 {
     b * g / (a - g)
 }
 
+/// WHO exposure band of a UV index: 0 low (< 3), 1 moderate (< 6), 2 high (< 8), 3 very high (< 11), 4 extreme.
+pub fn uv_level(uv: f64) -> usize {
+    [3.0, 6.0, 8.0, 11.0].iter().take_while(|&&b| uv >= b).count()
+}
+
+/// The colour of each band (low .. extreme): the UV tile's gradient and the island card's chip both read these.
+pub const UV_COLORS: [[u8; 3]; 5] = [[0x6f, 0xcf, 0x7a], [0xf2, 0xd6, 0x4b], [0xf5, 0x9e, 0x42], [0xe5, 0x4d, 0x4d], [0x9b, 0x5d, 0xe5]];
+
+pub fn uv_color(uv: f64) -> [u8; 3] {
+    UV_COLORS[uv_level(uv)]
+}
+
 fn uv_word(tr: &dyn Tr, uv: f64) -> String {
-    if uv < 3.0 {
-        tr.t("Низкий", "Low")
-    } else if uv < 6.0 {
-        tr.t("Умеренный", "Moderate")
-    } else if uv < 8.0 {
-        tr.t("Высокий", "High")
-    } else if uv < 11.0 {
-        tr.t("Очень высокий", "Very high")
-    } else {
-        tr.t("Экстремальный", "Extreme")
+    match uv_level(uv) {
+        0 => tr.t("Низкий", "Low"),
+        1 => tr.t("Умеренный", "Moderate"),
+        2 => tr.t("Высокий", "High"),
+        3 => tr.t("Очень высокий", "Very high"),
+        _ => tr.t("Экстремальный", "Extreme"),
     }
+}
+
+/// The compact "UV 6" chip of the sky card on the island: the rounded index and the colour of its band. None while the index is unknown.
+pub fn uv_chip(tr: &dyn Tr, uv: Option<f64>) -> Option<(String, [u8; 3])> {
+    let uv = uv.filter(|u| u.is_finite())?;
+    Some((tr.t(&format!("УФ {}", uv.round()), &format!("UV {}", uv.round())), uv_color(uv)))
 }
 
 fn pressure_word(tr: &dyn Tr, hpa: f64) -> String {
@@ -303,6 +317,19 @@ mod tests {
         assert_eq!(summary(&now(), "Небольшой дождь", &ru), "Сейчас небольшой дождь, сегодня от 2° до 7°, ветер 5 м/с (ЮЗ), ожидается около 3,3 мм осадков.");
         let one = summary(&now(), "Light rain", &e);
         assert!(one.ends_with('.') && !one[..one.len() - 1].contains(". "), "one sentence: {one}");
+    }
+
+    #[test]
+    fn the_uv_chip_is_compact_coloured_by_band_and_absent_without_an_index() {
+        assert_eq!(uv_chip(&EnTr, Some(5.6)), Some(("UV 6".into(), UV_COLORS[1])), "5.6 rounds to 6 but stays moderate, like the tile's word");
+        assert_eq!(uv_chip(&RuTr, Some(6.0)), Some(("УФ 6".into(), UV_COLORS[2])));
+        assert_eq!(uv_chip(&EnTr, Some(0.0)), Some(("UV 0".into(), UV_COLORS[0])), "night: zero is a reading");
+        assert_eq!(uv_chip(&EnTr, None), None);
+        assert_eq!(uv_chip(&EnTr, Some(f64::NAN)), None);
+        for (uv, lvl) in [(0.0, 0), (2.99, 0), (3.0, 1), (5.9, 1), (6.0, 2), (7.9, 2), (8.0, 3), (10.9, 3), (11.0, 4), (15.0, 4)] {
+            assert_eq!(uv_level(uv), lvl, "{uv}");
+            assert_eq!(uv_color(uv), UV_COLORS[lvl]);
+        }
     }
 
     #[test]

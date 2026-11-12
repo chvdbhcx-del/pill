@@ -285,6 +285,8 @@ pub struct OkView {
     pub temp: String,
     pub condition: String,
     pub feels_line: String,
+    /// The compact UV chip of the card ("UV 6" and the colour of its band); None while the index is unknown.
+    pub uv: Option<(String, [u8; 3])>,
     pub stats: Vec<Stat>,
     /// Sunrise / sunset clock texts, or the polar text when the sun does not rise / set.
     pub sun_rise: Option<String>,
@@ -767,6 +769,7 @@ impl Weather {
             temp: self.temp(n.temp),
             condition: condition(tr, &n.symbol),
             feels_line: format!("{}{} · {}…{}", tr.t("Ощущается как ", "Feels like "), self.temp(n.feels), self.temp(n.min), self.temp(n.max)),
+            uv: super::weather_tiles::uv_chip(tr, n.uv),
             stats: vec![
                 Stat { icon: "wind", text: format!("{} {}", self.wind_text(tr, n.wind), dir) },
                 Stat { icon: "drop", text: format!("{}%", js_round(n.humidity)) },
@@ -883,6 +886,21 @@ mod tests {
         assert_eq!(c, vec![BackendCall::bare("settings_get")]);
         let c = w.on_result("settings_get", &Value::Null, &json!({ "net.weather": true }));
         assert_eq!(c[0].args["force"], true);
+    }
+
+    #[test]
+    fn the_card_carries_a_uv_chip_only_when_the_index_is_known() {
+        let w = loaded();
+        let View::Ok(v) = w.view(&EnTr) else { panic!() };
+        assert_eq!(v.uv, None, "the fixture has no UV");
+        let mut p = ok_payload();
+        p["now"]["uv"] = json!(5.6);
+        let mut w = loaded();
+        w.on_result("weather_get", &Value::Null, &p);
+        let View::Ok(v) = w.view(&EnTr) else { panic!() };
+        assert_eq!(v.uv, Some(("UV 6".into(), super::super::weather_tiles::UV_COLORS[1])));
+        let View::Ok(v) = w.view(&RuTr) else { panic!() };
+        assert_eq!(v.uv.map(|u| u.0), Some("УФ 6".into()));
     }
 
     #[test]

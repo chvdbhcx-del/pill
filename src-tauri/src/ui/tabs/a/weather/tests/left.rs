@@ -175,6 +175,72 @@ fn the_scene_and_the_number_follow_a_new_forecast() {
     assert_eq!(r.v.left.count_text(), "-4°");
 }
 
+#[test]
+fn the_uv_chip_appears_with_the_index_and_is_absent_without_it() {
+    use crate::ui::tabs::a::weather::leftcard::condition_row;
+    let _m = motion(false);
+    let mut with = forecast("lightrain", "rain", 8.0);
+    with["now"]["uv"] = json!(6.4);
+    let mut r = Rig::on(with);
+    run(&mut r, 3.0); // the entrance is over, drawing must not trip on the chip
+    r.frame();
+    let chip = ok_view(&r).uv.clone().expect("a known index gets a chip");
+    assert_eq!(chip.0, "UV 6");
+    assert_eq!(chip.1, pill_ui_core::panel::a::weather_tiles::uv_color(6.4), "the colour is the tile's band colour");
+    // night: zero is a reading and the card shows its other night readings, so the chip stays
+    let mut night = forecast("clearsky", "clear-night", 2.0);
+    night["now"]["uv"] = json!(0.0);
+    let r = Rig::on(night);
+    assert_eq!(ok_view(&r).uv.as_ref().map(|u| u.0.as_str()), Some("UV 0"));
+    // unknown: no chip, and the condition keeps the whole row
+    let r = Rig::on(forecast("lightrain", "rain", 8.0));
+    assert_eq!(ok_view(&r).uv, None);
+    let row = glasskit::geom::Rect::new(0.0, 0.0, 186.0, 20.0);
+    assert_eq!(condition_row(row, None), (row, None));
+}
+
+#[test]
+fn the_condition_row_gives_the_chip_its_measured_width_and_never_overlaps() {
+    use crate::ui::tabs::a::weather::leftcard::condition_row;
+    let row = glasskit::geom::Rect::new(10.0, 5.0, 186.0, 20.0);
+    for tw in [20.0, 31.0, 38.0, 60.0, 400.0] {
+        let (cond, chip) = condition_row(row, Some(tw));
+        let chip = chip.unwrap();
+        assert!(cond.right() + 8.0 <= chip.x + 0.001, "no overlap at {tw}: {cond:?} {chip:?}");
+        assert!((chip.right() - row.right()).abs() < 0.001, "flush with the row's right edge");
+        assert!(chip.x >= row.x && cond.w >= row.w / 2.0 - 8.0, "a narrow card still leaves the condition half the row");
+        if tw < 80.0 {
+            assert!((chip.w - (tw + 28.0)).abs() < 0.001, "measured, not fixed: {tw} -> {}", chip.w);
+        }
+    }
+    let wider = condition_row(row, Some(50.0)).1.unwrap().w;
+    assert!(wider > condition_row(row, Some(30.0)).1.unwrap().w);
+}
+
+#[test]
+fn the_uv_chip_rises_with_the_card_and_lands_at_once_under_reduced_motion() {
+    let mut with = forecast("lightrain", "rain", 8.0);
+    with["now"]["uv"] = json!(3.0);
+    let _m = motion(true);
+    let mut r = Rig::on(with);
+    r.frame();
+    run(&mut r, 1.0);
+    assert_eq!(r.v.left.rise_at(9), (1.0, 0.0));
+    // the still picture carries the chip's band colour (extreme purple), and a card without an index has none of it
+    let purple = |img: &glasskit::testkit::Image| img.count(None, |p| (p[0].abs_diff(0x9b) < 4 && p[2].abs_diff(0xe5) < 4 || p[0].abs_diff(0xe5) < 4 && p[2].abs_diff(0x9b) < 4) && p[1].abs_diff(0x5d) < 4);
+    let shot = |r: &mut Rig| render_view_cx(&mut r.v, &r.cx, (super::super::super::W, H), 1.0, &Theme::pill_dark());
+    let mut hot = forecast("lightrain", "rain", 8.0);
+    hot["now"]["uv"] = json!(12.0);
+    let mut a = Rig::on(hot);
+    a.frame();
+    run(&mut a, 1.0);
+    let mut b = Rig::on(forecast("lightrain", "rain", 8.0));
+    b.frame();
+    run(&mut b, 1.0);
+    let (pa, pb) = (purple(&shot(&mut a)), purple(&shot(&mut b)));
+    assert!(pa > pb + 10, "the dot of the extreme band is drawn: {pa} vs {pb}");
+}
+
 // ------------------------------------------------------------------------------------------------------------------ pictures
 
 #[test]
