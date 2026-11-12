@@ -201,12 +201,13 @@ impl SettingsView {
             "general" => calls.extend([BackendCall::AutostartGet, BackendCall::EverythingStatus]),
             "hotkeys" => calls.push(BackendCall::LauncherList),
             "appearance" => calls.push(BackendCall::PillMonitors),
-            // Sound and voice: the devices, plus everything the old Voice page asked for
+            // Sound and voice: the devices, everything the old Voice page asked for, and the local Whisper install (the "Voice to text" section holds it)
             "sound" => {
                 calls.push(BackendCall::MediaDevices);
                 calls.push(BackendCall::MediaCaptureDevices);
                 calls.push(BackendCall::VoiceHasKey { provider: Some(self.model.get_str("voice.provider")) });
                 calls.push(BackendCall::NetFeaturesStatus);
+                calls.push(BackendCall::AisetupStatus);
             }
             "clipboard" => calls.push(BackendCall::ClipStatus),
             // AI holds the old AI setup page
