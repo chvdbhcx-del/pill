@@ -30,26 +30,42 @@ the web UI is forced). Flag off = exactly the old code path. The window is the h
 
 ## Pages
 
-Ten sidebar pages, each a list of named sections (`Group` titles) in the order people reach for them; rarely needed or technical sections come last,
-flagged `advanced` and folded behind one "Advanced" header (see below). The rows are defined once (`ui-core/src/settings/pages/{base,system,phone,ai}.rs`,
+Ten sidebar pages. The pages are only themes: **inside them the settings are grouped by feature, not by kind.** Every feature (Weather, Media player,
+Clipboard history, Notes and timer, Phone, Calendar, Downloads, AI agents, Launcher, File shelf, Screen recording, Voice to text, Virtual desktops ...) is
+ONE named section (`Group` title = the feature's name, ru + en) on the page where it fits best. In the section, in this order: its on/off switch(es), its
+events (the `live.*` rows), its parameters. The rare and technical rows of a feature go to a trailing section named "<feature>: <what>" that is flagged
+`advanced` and folded behind the page's one "Advanced" header (see below). The rows are defined once (`ui-core/src/settings/pages/{base,system,phone,ai}.rs`,
 the old sixteen pages); `pages/layout.rs` takes them out of a pool by id and arranges them, and `Pool::finish` panics when a row is left over.
 
-| page (id) | what it holds | Advanced section |
+Where a feature stands is also decided by what a page fetches when it shows (`settings_view/nav.rs::page_shown`) and which page polls status lines:
+rows with a status (OBS, Steam, notifications, calendar, mail) stay on Events, the phone widgets on Phone, Everything and the autostart switch on General,
+the monitors on Appearance, the audio devices and the Whisper status on Sound and voice.
+
+| page (id) | sections (features) | Advanced section |
 |---|---|---|
-| Appearance (`appearance`) | island look, edge style and character, pet, what the folded island shows (the old Character + Appearance pages) | position and transparency, animation and smoothness |
-| General (`general`) | language, autostart, when to hide the island, Quiet hours, browser search engine (the old General + Behavior + Search pages) | hiding details, program lists, pass-through mode, capture visibility, Everything file search, settings backup, first-run wizard |
-| Hotkeys (`hotkeys`) | main keys, screen keys, launcher shortcuts | actions that have no key yet |
-| Modules (`modules`) | module switches (VPN included), profiles, weather (the old Weather page), tab strip, Home layout | VPN: your own client |
-| Events (`live`) | live events by kind: media and screen, downloads and drives, system, messages, calendar, mail, AI agents | cards and history, download details, chips by the clock, OBS connection |
-| Clipboard and screenshots (`clipboard`) | clipboard history, screenshots, screen recording | click-to-paste, exclusions and limits, encoder and reveal |
-| Sound and voice (`sound`) | devices, music, reminder sound, voice to text (the old Sound + Voice pages) | player sources, own reminder file, voice service address / model |
-| Phone (`phone`) | link and pairing, notifications, clipboard, files, relay switch | file cap and app address, relay address and cap |
-| AI (`ai`) | assistant, local AI install, Whisper (the old AI + AI setup pages) | - |
+| Appearance (`appearance`) | Island look, Island edge and character, Pet, Clock and date, Animation (Reduce motion) | Island look: colour, transparency, position; Animation: frame rate and GPU |
+| General (`general`) | Start and language, Hiding the pill, Quiet hours, Command bar search (file-search module + browser engine) | Hiding the pill: details and program lists; Pass-through mode; File search: Everything; Settings backup; First run |
+| Hotkeys (`hotkeys`) | one list of every key (one page on purpose: the recorder checks a combo against all others): island/command bar/chat/dictation/clipboard, screen, launcher shortcuts | Not assigned yet |
+| Modules (`modules`) | Weather, Notes and timer, Launcher, File shelf, Text tools, System controls, VPN; then the layout helpers Island tabs, What is on Home, Profiles | Notes and timer: own sound; VPN: your own client |
+| Events (`live`) | Notifications and cards (+ the Notification-centre module), Downloads (+ Steam), USB and removable drives, Battery, Keyboard layout, Virtual desktops, OBS, Calendar, Mail (IMAP) | Notifications and cards: display time and history; Downloads: details; OBS: connection |
+| Clipboard and screenshots (`clipboard`) | Clipboard history (module, copy reaction, limits, private mode, wipe), Screenshots, Screen recording (incl. the red-dot event) | Clipboard history: pasting, exclusions, limits; Screenshots and recording: details (encoder, reveal, pill in captures) |
+| Sound and voice (`sound`) | Volume and microphone (volume bar, devices, mic/camera dots), Media player (module, music event, pill view, lyrics, Home player), Voice to text (every dictation row + the local Whisper install) | Media player: sound sources; Voice to text: the service |
+| Phone (`phone`) | Phone link (link switch, tab, cards, pairing), notification apps, shared clipboard, files, relay | Files and the app: details; Relay: address and cap |
+| AI (`ai`) | AI assistant and chat (switch, tab, provider, key, model), AI agents in the terminal, Local AI chat on this computer | - |
 | Updates (`updates`) | version, what is new, report a problem | - |
+
+The overlapping switches are NOT merged, only placed side by side and labelled apart (`Pool::edit`, the ids are listed in `RELABELED` in `tests.rs`):
+Weather = "Forecast from the internet" (`net.weather`, asks the network, off by default) + "Weather tab" (`module.weather`); Phone = "Phone link"
+(`phone.enabled`, the main switch: the server on this PC) + "Phone tab" (`module.phone`) + "Cards from the phone" (`live.phone`); File shelf =
+"File shelf" (`module.shelf`) + "File-count badge" (`live.shelf`). The module switches are therefore spread over the pages (each is the first or
+second row of its feature); the wizard's step 2 collects all `module.*` rows from the schema in the old order (`wizard::MODULE_ORDER`), and the
+"Island tabs" note names the page of every module switch. Two key-less buttons that only jumped to a section right next to them are gone
+(`aisetup.cloud-chat`, `aisetup.cloud-voice`; `DROPPED` in `tests.rs`); no settings key was renamed, dropped or given another default.
 
 Old page ids keep working everywhere (`nav::LEGACY`): `character` -> Appearance, `behavior` / `search` -> General, `weather` -> Modules, `voice` -> Sound and
 voice, `aisetup` -> AI. The window opens the new page and scrolls to the start of the old section (no flash); Ctrl+F also matches the old page names
-(they are appended to the search keywords of every moved row).
+and, since sections are features, the section's name too (both are appended to the search keywords of every row: "weather" finds the units, the city
+and the folded-island chips alike).
 
 ### The Advanced section
 
