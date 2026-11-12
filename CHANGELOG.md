@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.8.5] - 2026-11-12
+
+### Highlights
+- UV index in the weather: the tile now takes the colour of its WHO band and the word always matches the number shown, and the sky card on the island has a small UV chip.
+- Pill no longer shows the Windows administrator prompt on every start: if you decline the firewall rule for the phone link it asks again only after you switch Phone link off and on.
+
 ## [0.8.4] - 2026-11-12
 
 ### Highlights
