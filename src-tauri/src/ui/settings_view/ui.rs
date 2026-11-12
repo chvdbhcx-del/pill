@@ -19,6 +19,9 @@ pub enum Act {
     Nav(String),
     Quit,
     SearchPick(usize),
+    // the live preview panel: hide it (settings.preview off), play the scene again
+    PvHide,
+    PvReplay,
     // rows
     RowButton(String),
     SecretSave(String),

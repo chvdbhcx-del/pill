@@ -1,6 +1,6 @@
 //! Input routing: recorder keys, shortcuts, popups, mouse (grab, hits, controls, scrollbars, wheel), keyboard focus.
 use super::page::*;
-use super::paint::{parts, TITLE_H};
+use super::paint::{parts_pv, TITLE_H};
 use super::ui::Act;
 use super::{Grab, SettingsView};
 use crate::ui::view::{Cx, CursorShape};
@@ -113,7 +113,7 @@ impl SettingsView {
 impl SettingsView {
     pub(super) fn content_rect(&self) -> Rect {
         let wiz = self.wiz.active() || self.page.wizard;
-        parts(Rect::new(0.0, 0.0, self.size.0, self.size.1), self.maximized, !wiz).content
+        parts_pv(Rect::new(0.0, 0.0, self.size.0, self.size.1), self.maximized, !wiz, self.pv.width()).content
     }
 
     fn mouse_event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {

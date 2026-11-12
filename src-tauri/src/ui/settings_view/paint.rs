@@ -19,16 +19,31 @@ pub struct Parts {
     pub title: Rect,
     pub side: Option<Rect>,
     pub content: Rect,
+    /// the live preview panel at the right edge (None while it is away)
+    pub preview: Option<Rect>,
 }
 
 pub fn parts(rect: Rect, maximized: bool, with_side: bool) -> Parts {
+    parts_pv(rect, maximized, with_side, 0.0)
+}
+
+/// `parts` with a preview panel of width `pv_w` taken off the right of the page area.
+pub fn parts_pv(rect: Rect, maximized: bool, with_side: bool, pv_w: f32) -> Parts {
     let inner = if maximized { rect } else { rect.inset(1.0) };
     let (title, body) = inner.cut_top(TITLE_H);
-    if with_side {
+    let (side, content) = if with_side {
         let (side, content) = body.cut_left(SIDE_W);
-        Parts { inner, title, side: Some(side), content }
+        (Some(side), content)
     } else {
-        Parts { inner, title, side: None, content: body }
+        (None, body)
+    };
+    if pv_w >= 1.0 {
+        let w = pv_w.min(content.w);
+        let preview = Rect::new(content.right() - w, content.y, w, content.h);
+        let content = Rect::new(content.x, content.y, content.w - w, content.h);
+        Parts { inner, title, side, content, preview: Some(preview) }
+    } else {
+        Parts { inner, title, side, content, preview: None }
     }
 }
 
@@ -62,7 +77,7 @@ impl SettingsView {
         let d = Dc { cv, th: theme, p, lang: self.lang(), now_ms: cx.now_ms, reduced: self.reduce() };
         self.ui.begin();
         let wizard = self.wiz.active() || self.page.wizard;
-        let parts = parts(rect, self.maximized, !wizard);
+        let parts = parts_pv(rect, self.maximized, !wizard, self.pv.width());
         let win_k = self.win_t.at01();
         let win_y = (1.0 - self.win_t.at()) * 14.0;
         cv.with_opacity(win_k, |cv| {
@@ -73,6 +88,9 @@ impl SettingsView {
                     self.paint_content(&d, &parts);
                     if let Some(side) = parts.side {
                         self.paint_side(&d, side);
+                    }
+                    if let Some(pv) = parts.preview {
+                        self.paint_preview(&d, pv, cx);
                     }
                 }
                 self.paint_title(&d, parts.title);

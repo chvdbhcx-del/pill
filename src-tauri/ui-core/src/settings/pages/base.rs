@@ -71,6 +71,13 @@ pub fn general() -> Page {
                     .kw(&["language", "язык", "русский", "english", "locale"]),
                     Row::new("general.autostart", "", tr("Запускать вместе с Windows", "Start with Windows"), Control::BackendToggle(BackendToggle::Autostart), Value::Null)
                         .kw(&["autostart", "startup", "автозапуск", "автозагрузка", "запуск", "boot"]),
+                    toggle(
+                        "settings.preview",
+                        tr("Живое превью справа", "Live preview on the right"),
+                        tr("Показывает остров с вашими настройками, пока вы их меняете. Нужно окно пошире", "Shows the island with your settings while you change them. Needs a wider window"),
+                        true,
+                    )
+                    .kw(&["preview", "live", "превью", "предпросмотр", "просмотр", "образец"]),
                     button("general.wizard", tr("Мастер первого запуска", "First-run wizard"), tr("Короткая настройка: язык, модули, клавиши", "A short setup: language, modules, hotkeys"), tr("Запустить снова", "Run again"), Action::RunWizard, ButtonStyle::Small)
                         .kw(&["wizard", "setup", "welcome", "мастер", "приветствие", "первый запуск"]),
                 ],

@@ -484,6 +484,21 @@ impl IslandView {
         }
     }
 
+    /// The settings window's preview island (settings_view/preview) parks itself once it has settled: the open tab stops its ticker
+    /// (`on_hide`) but stays drawn as it is. `preview_wake` starts it again.
+    pub fn preview_sleep(&mut self, cx: &mut Cx) {
+        if let Some(id) = self.host.cur.clone() {
+            self.host.hide(&id, cx);
+        }
+    }
+
+    pub fn preview_wake(&mut self, cx: &mut Cx) {
+        if let (Some(id), Some(dir)) = (self.host.cur.clone(), self.host.dir) {
+            let ru = self.core.ru();
+            self.host.show(&id, dir, ru, cx, cx.now_ms);
+        }
+    }
+
     // ------------------------------------------------------------------------------------------------ geometry / hit
 
     fn hit_region(&self, v: &ShellView) -> Vec<Rect> {

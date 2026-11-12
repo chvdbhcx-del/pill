@@ -4,6 +4,7 @@
 //! * `mod.rs`      the view struct and the `View` impl;  `open.rs` window creation, geometry memory, the `settingswin.rs` opener, the backend facade
 //! * `nav.rs`      building / switching pages;  `paint.rs` the frame;  `events.rs` input routing;  `acts.rs` clicks, calls and their replies
 //! * `page.rs`     page / row / control types;  `rows.rs` `cardpaint.rs` `ctlpaint.rs` `keys.rs` rows and their controls
+//! * `preview/`    the live preview panel on the right: a sandboxed copy of the island fed by the settings as they change
 //! * `chrome.rs`   title bar, sidebar, search;  `wizard.rs` first-run wizard;  `picker.rs` pet and island cards;  `custom.rs` the 12 `Custom` widgets
 #![allow(dead_code, unused_imports, unused_variables, unused_assignments, unused_mut)] // consumers (the settingswin.rs gate) arrive in a later commit; tidy-up pass at the end
 
@@ -33,6 +34,7 @@ mod cw3b;
 mod cw_phone;
 mod cw_home;
 mod customacts;
+mod preview;
 mod prim;
 mod replies;
 mod rows;
@@ -98,6 +100,8 @@ pub(crate) enum Local {
     Tick,
     /// the file the user picked for the settings import
     Picked(Result<String, String>),
+    /// the live preview's island has something for the window (a wake-up, nothing more)
+    Pv,
 }
 
 pub struct SettingsView {
@@ -148,6 +152,8 @@ pub struct SettingsView {
     pets: picker::Pickers,
     caption: Rect,
     pending_changes: Vec<events::Change>,
+    /// the live preview panel on the right (preview/)
+    pv: preview::Preview,
 }
 
 impl SettingsView {
@@ -195,6 +201,7 @@ impl SettingsView {
             pets: picker::Pickers::default(),
             caption: Rect::default(),
             pending_changes: Vec::new(),
+            pv: preview::Preview::new(),
         };
         v.start(cx, args);
         v

@@ -57,6 +57,7 @@ impl SettingsView {
                         }
                         Local::Tick => self.on_tick(cx),
                         Local::Picked(r) => self.on_picked(r, cx),
+                        Local::Pv => {}
                     }
                 }
             }
