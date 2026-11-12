@@ -83,6 +83,13 @@ pub fn uv_level(uv: f64) -> usize {
     }
 }
 
+/// The colour of each band (low .. extreme): the UV tile's gradient and the island card's chip both read these.
+pub const UV_COLORS: [[u8; 3]; 5] = [[0x6f, 0xcf, 0x7a], [0xf2, 0xd6, 0x4b], [0xf5, 0x9e, 0x42], [0xe5, 0x4d, 0x4d], [0x9b, 0x5d, 0xe5]];
+
+pub fn uv_color(uv: f64) -> [u8; 3] {
+    UV_COLORS[uv_level(uv)]
+}
+
 fn uv_word(tr: &dyn Tr, uv: f64) -> String {
     match uv_level(uv) {
         0 => tr.t("Низкий", "Low"),
@@ -91,6 +98,12 @@ fn uv_word(tr: &dyn Tr, uv: f64) -> String {
         3 => tr.t("Очень высокий", "Very high"),
         _ => tr.t("Экстремальный", "Extreme"),
     }
+}
+
+/// The compact "UV 6" chip of the sky card on the island: the rounded index and the colour of its band. None while the index is unknown.
+pub fn uv_chip(tr: &dyn Tr, uv: Option<f64>) -> Option<(String, [u8; 3])> {
+    let uv = uv.filter(|u| u.is_finite())?;
+    Some((tr.t(&format!("УФ {}", uv.round()), &format!("UV {}", uv.round())), uv_color(uv)))
 }
 
 fn pressure_word(tr: &dyn Tr, hpa: f64) -> String {
@@ -319,6 +332,20 @@ mod tests {
         assert_eq!(summary(&now(), "Небольшой дождь", &ru), "Сейчас небольшой дождь, сегодня от 2° до 7°, ветер 5 м/с (ЮЗ), ожидается около 3,3 мм осадков.");
         let one = summary(&now(), "Light rain", &e);
         assert!(one.ends_with('.') && !one[..one.len() - 1].contains(". "), "one sentence: {one}");
+    }
+
+    #[test]
+    fn the_uv_chip_is_compact_coloured_by_band_and_absent_without_an_index() {
+        assert_eq!(uv_chip(&EnTr, Some(5.6)), Some(("UV 6".into(), UV_COLORS[2])), "5.6 shows as 6, so it is High like the tile's word");
+        assert_eq!(uv_chip(&RuTr, Some(6.0)), Some(("УФ 6".into(), UV_COLORS[2])));
+        assert_eq!(uv_chip(&EnTr, Some(0.0)), Some(("UV 0".into(), UV_COLORS[0])), "night: zero is a reading");
+        assert_eq!(uv_chip(&EnTr, None), None);
+        assert_eq!(uv_chip(&EnTr, Some(f64::NAN)), None);
+        // the band follows the whole number shown (2.5 shows 3, 5.5 shows 6, ...)
+        for (uv, lvl) in [(0.0, 0), (2.4, 0), (2.5, 1), (5.4, 1), (5.5, 2), (7.4, 2), (7.5, 3), (10.4, 3), (10.5, 4), (15.0, 4)] {
+            assert_eq!(uv_level(uv), lvl, "{uv}");
+            assert_eq!(uv_color(uv), UV_COLORS[lvl]);
+        }
     }
 
     #[test]

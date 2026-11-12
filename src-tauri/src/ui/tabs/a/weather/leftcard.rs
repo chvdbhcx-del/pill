@@ -142,6 +142,10 @@ impl Left {
         self.counter.text()
     }
     #[cfg(test)]
+    pub fn rise_at(&self, i: usize) -> (f32, f32) {
+        self.rise.at(i)
+    }
+    #[cfg(test)]
     pub fn scene(&self) -> Scene {
         self.scene
     }
@@ -160,6 +164,19 @@ pub fn lean_for(p: Pt, card: Rect) -> Pt {
     let nx = ((p.0 - card.cx()) / (card.w / 2.0)).clamp(-1.0, 1.0);
     let ny = ((p.1 - card.cy()) / (card.h / 2.0)).clamp(-1.0, 1.0);
     (nx * LEAN, ny * LEAN)
+}
+
+/// Room the UV chip takes besides its text: padding, the band dot and the gap after it.
+const UV_CHIP_PAD: f32 = 28.0;
+/// Gap between the condition text and the UV chip.
+const UV_CHIP_GAP: f32 = 8.0;
+
+/// Splits the condition row: the UV chip (measured text width `tw`, none while the index is unknown) takes the right end, the condition
+/// keeps the rest and ellipsizes. The chip never takes more than half the row, so a long condition and a narrow card both stay readable.
+pub fn condition_row(row: Rect, tw: Option<f32>) -> (Rect, Option<Rect>) {
+    let Some(tw) = tw else { return (row, None) };
+    let w = (tw + UV_CHIP_PAD).min(row.w / 2.0);
+    (Rect::new(row.x, row.y, row.w - w - UV_CHIP_GAP, row.h), Some(Rect::new(row.right() - w, row.y, w, row.h)))
 }
 
 /// Colours of the two blobs behind the card and how strong they are.
@@ -306,7 +323,18 @@ impl WeatherView {
             t => t,
         };
         self.risen(cv, 2, |cv| txt(cv, Rect::new(lx + 60.0, by, 130.0, 56.0), shown, Style::new(56.0, 600).track(-1.12), WHITE));
-        self.risen(cv, 3, |cv| txt(cv, Rect::new(lx, by + 68.0, 186.0, 20.0), &v.condition, Style::new(14.0, 600).ellipsis(), WHITE));
+        // the condition, and the UV chip at the right end of its row (zero idle cost: it rises with the card, nothing runs after)
+        let chip_style = Style::new(11.0, 600);
+        let chip_tw = v.uv.as_ref().map(|(t, _)| cv.text_width(t, chip_style).ceil());
+        let (cond, chip) = condition_row(Rect::new(lx, by + 68.0, 186.0, 20.0), chip_tw);
+        self.risen(cv, 3, |cv| txt(cv, cond, &v.condition, Style::new(14.0, 600).ellipsis(), WHITE));
+        if let (Some(r), Some((t, c))) = (chip, &v.uv) {
+            self.risen(cv, 9, |cv| {
+                cv.fill_rr(r, 10.0, if day { Color::rgba(40.0 / 255.0, 50.0 / 255.0, 60.0 / 255.0, 0.38) } else { WHITE.alpha(0.09) });
+                cv.fill_circle((r.x + 10.0, r.cy()), 3.5, Color::rgb8(c[0], c[1], c[2]));
+                txt(cv, Rect::new(r.x + 18.0, r.y, r.w - 18.0 - 6.0, r.h), t, chip_style.ellipsis(), WHITE);
+            });
+        }
         self.risen(cv, 4, |cv| txt(cv, Rect::new(lx, by + 92.0, 186.0, 16.0), &v.feels_line, Style::new(11.0, 400).ellipsis(), WHITE.alpha(0.72)));
         // stats + sun, pinned to the bottom (14 px padding)
         let sun_y = left.bottom() - 14.0 - 15.0;

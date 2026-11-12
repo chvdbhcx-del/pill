@@ -330,7 +330,7 @@ impl Spin {
 // ------------------------------------------------------------------------------------------------------------------ entrance
 
 /// Elements of the card that rise in one after the other.
-pub const RISE_N: usize = 9;
+pub const RISE_N: usize = 10;
 const RISE_GAP_MS: f32 = 45.0;
 
 /// Short staggered rise of the card's texts and tiles: each element is a `Flow` 0 -> 1 that starts `i * 45 ms` after the card opened.

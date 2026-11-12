@@ -8,7 +8,7 @@ use glasskit::color::Color;
 use glasskit::geom::Rect;
 use glasskit::text::Style;
 use glasskit::theme::Theme;
-use pill_ui_core::panel::a::weather_tiles::{fmt_num, uv_level, Kind, WxTile};
+use pill_ui_core::panel::a::weather_tiles::{fmt_num, uv_level, Kind, WxTile, UV_COLORS};
 
 pub const COLS: usize = 3;
 pub const GAP: f32 = 10.0;
@@ -199,7 +199,8 @@ impl Tiles {
             }
             Kind::Pressure | Kind::Uv => {
                 if t.kind == Kind::Uv {
-                    let stops = [(0.0, Color::rgb8(0x6f, 0xcf, 0x7a)), (0.3, Color::rgb8(0xf2, 0xd6, 0x4b)), (0.55, Color::rgb8(0xf5, 0x9e, 0x42)), (0.8, Color::rgb8(0xe5, 0x4d, 0x4d)), (1.0, Color::rgb8(0x9b, 0x5d, 0xe5))];
+                    let at = [0.0, 0.3, 0.55, 0.8, 1.0];
+                    let stops: Vec<(f32, Color)> = UV_COLORS.iter().zip(at).map(|(c, p)| (p, Color::rgb8(c[0], c[1], c[2]))).collect();
                     draw::linear(cv, bar, 3.0, (bar.x, bar.cy()), (bar.right(), bar.cy()), &stops);
                 } else {
                     cv.fill_rr(bar, 3.0, track);
