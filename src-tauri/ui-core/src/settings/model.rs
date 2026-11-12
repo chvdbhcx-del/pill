@@ -912,8 +912,8 @@ mod tests {
         assert_eq!(m.begin(Map::new(), Some("welcome")), OpenTarget::Wizard);
         assert!(m.wizard.is_active() && m.lang() == Lang::Ru);
         let mut m = SettingsModel::new("ru-RU");
-        assert_eq!(m.begin(json!({"reduceMotion": true}).as_object().unwrap().clone(), Some("Weather")), OpenTarget::Page("weather"));
-        assert_eq!(m.current, "weather");
+        assert_eq!(m.begin(json!({"reduceMotion": true}).as_object().unwrap().clone(), Some("Weather")), OpenTarget::Page("modules"));
+        assert_eq!(m.current, "modules", "the old Weather page is a section of Modules now");
         m.recorder.start("toggle");
         let plan = m.show("sound", true);
         assert_eq!((plan.page, m.current, m.recorder.active()), ("sound", "sound", None), "leaving a page stops the key recorder");

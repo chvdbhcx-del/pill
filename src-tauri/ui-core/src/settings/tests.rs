@@ -48,7 +48,7 @@ fn ids_and_keys_are_unique() {
     for p in &schema().pages {
         assert!(pages.insert(p.id), "duplicate page {}", p.id);
     }
-    assert_eq!(schema().pages.len(), 16);
+    assert_eq!(schema().pages.len(), 10);
 }
 
 #[test]
@@ -267,10 +267,8 @@ fn no_row_needs_a_restart() {
 fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
-    let expect = [
-        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 22), ("live", 38), ("phone", 14), ("clipboard", 18), ("search", 4),
-        ("sound", 15), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
-    ];
+    // the 211 rows of the old 16 pages, minus the one dropped as a duplicate ("Set up a cloud AI" only jumped to the section above it)
+    let expect = [("appearance", 28), ("general", 24), ("hotkeys", 19), ("modules", 24), ("live", 40), ("clipboard", 18), ("sound", 26), ("phone", 14), ("ai", 12), ("updates", 5)];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");
     }
@@ -597,7 +595,7 @@ fn every_control_family_has_feedback_or_is_documented_static() {
 fn the_phone_page_has_the_link_widgets_and_gated_rows() {
     let p = schema().page("phone").expect("phone page");
     let ids: Vec<&str> = p.rows().map(|r| r.id).collect();
-    assert_eq!(ids, ["phone.enabled", "phone.link", "phone.devices", "phone.apps", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone", "phone.downloadDir", "phone.maxFileMB", "phone.autoAccept", "phone.apkUrl", "phone.relay", "phone.relayUrl", "phone.relayMaxFileMB"]);
+    assert_eq!(ids, ["phone.enabled", "phone.link", "phone.devices", "phone.apps", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone", "phone.downloadDir", "phone.autoAccept", "phone.relay", "phone.maxFileMB", "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB"]);
     let sw = schema().row("phone.enabled").unwrap();
     assert_eq!(sw.default, json!(false), "the server never starts by itself");
     let note = p.groups[0].footer;

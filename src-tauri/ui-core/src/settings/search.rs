@@ -155,7 +155,7 @@ pub fn build_index(lang: Lang) -> Vec<Entry> {
             kw.extend(r.search_keywords.iter().map(|s| s.to_string()));
             out.push(Entry { page: p.id.into(), page_name: page_name.into(), title: r.label.get(lang).into(), desc: r.hint.get(lang).into(), keywords: kw.join(" "), row: true, row_id: r.id.into() });
         }
-        if p.id == "character" {
+        if p.id == "appearance" {
             for c in pickers::STYLES.iter() {
                 out.push(Entry { page: p.id.into(), page_name: page_name.into(), title: c.name.get(lang).into(), desc: c.desc.get(lang).into(), keywords: c.name.get(other).into(), row: true, row_id: String::new() });
             }
@@ -405,7 +405,7 @@ mod tests {
             assert_eq!(pages, schema().pages.len());
             assert!(idx.iter().all(|e| !e.title.is_empty()));
             assert!(idx.iter().any(|e| e.row_id == "quiet.on"));
-            assert!(idx.iter().any(|e| e.page == "character" && e.row_id.is_empty() && e.row), "picker cards are indexed");
+            assert!(idx.iter().any(|e| e.page == "appearance" && e.row_id.is_empty() && e.row), "picker cards are indexed");
         }
         // a Russian UI finds rows by their English label and the other way round
         let ru = build_index(Lang::Ru);
