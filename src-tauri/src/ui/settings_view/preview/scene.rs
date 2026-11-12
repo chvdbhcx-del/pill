@@ -182,7 +182,7 @@ pub fn of_page(page: &str) -> Scene {
 /// Settings the preview island must not see: they would hide it, mute it or point at the user's machine.
 const BLOCKED: &[&str] = &[
     "autoHide", "autoHideKeepDesktop", "passThrough", "passThroughOpacity", "hideInFullscreen", "fullscreenPeek", "fullscreenPeekEdge", "hideInApps", "showInApps", "showInCapture", "monitor",
-    "offsetX", "underTaskbar", "firstRunDone", "quiet.",
+    "offsetX", "underTaskbar", "firstRunDone", "quiet.", "settings.",
 ];
 
 /// Free text that is safe to hand over: a colour.

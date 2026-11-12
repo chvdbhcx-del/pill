@@ -473,7 +473,7 @@ fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
     // the 211 rows of the old 16 pages, minus the one dropped as a duplicate ("Set up a cloud AI" only jumped to the section above it)
-    let expect = [("appearance", 28), ("general", 24), ("hotkeys", 19), ("modules", 24), ("live", 40), ("clipboard", 18), ("sound", 26), ("phone", 14), ("ai", 12), ("updates", 5)];
+    let expect = [("appearance", 28), ("general", 25), ("hotkeys", 19), ("modules", 24), ("live", 40), ("clipboard", 18), ("sound", 26), ("phone", 14), ("ai", 12), ("updates", 5)];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");
     }
@@ -592,6 +592,7 @@ fn rust_defaults() -> Map<String, Value> {
 /// Stored keys the schema shows whose default does not live in `settings.rs::defaults()`: each module reads them with its own
 /// default (the same value the page shows). Documented here so a new key cannot slip in unnoticed.
 const UI_ONLY: &[(&str, &str)] = &[
+    ("settings.preview", "the live preview panel of the settings window: absent = on, only the window reads it"),
     ("opacityCol", "pill.js S: default 0"),
     ("opacityExp", "pill.js S: default 0"),
     ("showTime", "pill.js S: default true"),

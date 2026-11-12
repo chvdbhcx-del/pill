@@ -26,6 +26,7 @@ the web UI is forced). Flag off = exactly the old code path. The window is the h
 | `custom.rs` `cw1.rs` `cw2.rs` `cw3.rs` `cw3b.rs` `customacts.rs` `prim.rs` | the 12 `Custom` widgets and their drawing primitives |
 | `picker*.rs` | pet cards and island-style cards with live previews |
 | `ui.rs` `fields.rs` `txt.rs` `pal.rs` `icons.rs` | hit registry, deferred text fields, text helpers, palettes, icons |
+| `preview/` | the live preview panel on the right (see "Live preview") |
 | `tests_adv.rs` | the collapsed "Advanced" section: default closed, spring, no events / Tab stops while closed, search and old page names |
 
 ## Pages
@@ -60,6 +61,63 @@ header sets `Flow` `t` (target set in the event handler, ticked in `step_all`; i
 and the divider gaps of the following blocks by `t`, `paint_card` multiplies every row's `vis` by it and keeps it in `RowRt::ak`; rows with `ak < 0.5` take
 no events and `focus_order` leaves them out while closed. A Ctrl+F hit inside a closed section calls `set_advanced(true, instant)` from `resolve_goto`
 and waits for the next layout before scrolling to the row and flashing it. Idle cost is nil: only the one `Flow` moves, and only for a moment.
+
+## Live preview (`preview/`)
+
+A panel on the right of the window (320 px) shows the real island, miniature, while a setting is being changed: `showSeconds` adds the seconds to the
+folded clock, `net.weather` opens the island on the weather tab, `live.copy` plays the "Copied" flash, `clipClickPaste` opens the clipboard tab. The setting
+is applied to the preview's own copy **at once** (it reads `SettingsModel::values()` every frame, not what the backend has saved), and the island animates
+the change itself. Caption under the stage says what is shown; **Replay** plays the scene again, **Hide** turns `settings.preview` off (General, "Live
+preview on the right"; default on, the only settings key that the preview added).
+
+| file | what |
+|---|---|
+| `preview/mod.rs` | `Preview` (state), `step_preview` (panel width, sync of the settings, sandbox step, camera), `paint_preview` (stage, caption, the two buttons) |
+| `preview/live.rs` | the sandbox: a second `IslandView` on a `Cx` of its own |
+| `preview/scene.rs` | key -> `Scene` lookup (`of_key`), page start (`of_page`), `shareable` filter, captions |
+| `preview/sample.rs` | `SampleApi` (the sandbox's backend), sample weather / clipboard, the payloads of the reactions |
+| `preview/tests.rs` | headless tests (see below) |
+
+**Reuse, not a copy.** The sandbox is the island's own `IslandView`, so every drawing path (pill, panel, tabs, cards, pets) is the real one. Its `Cx` is built
+by hand: its own `FakeBus` (nobody else publishes on it), its own `MsgQueue` (the queue's wake-up posts `Local::Pv` to the window), and `SampleApi` as the
+backend. Everything the island asks (`settings_get`, `weather_get`, `clip_list`, ...) is answered from sample data or with `null`; nothing is forwarded to the
+real backend, and the preview gets no mouse or key events, so it cannot touch the real island. The window's settings go in as `settings:changed` patches,
+filtered by `scene::shareable`: only switches, choices and sliders of the schema (no typed text such as the city, folders, addresses, mail user, device ids,
+hotkeys), and never the ones that would hide or mute it (`autoHide`, `passThrough`, `quiet.*`, `hideInApps`, ...). Weather is a "Sample City" forecast, the
+clipboard has invented lines, a notification is "Sample sender: ...".
+
+**Which setting shows what** (`scene::of_key`, keyed by the settings key, so regrouping the rows changes nothing):
+
+| setting(s) | scene |
+|---|---|
+| `shape` `theme` `island.color` `island.colorCustom` `size` `opacityCol` `opacityExp` `language` | the folded island |
+| `showTime` `showDate` `showWxIcon` `showTemp` `showSeconds` `clock24` `showBattery` | the folded clock row (weather and 76 % battery are samples) |
+| `pet` `pet.*` / `character` `character.liquid` | the folded island with the pet / the edge style |
+| `reduceMotion` `fps` `edgeIdleFps` | the folded island, Replay shows the motion |
+| `net.weather` `weather.units` | the weather tab with the sample forecast |
+| `clipboard.*` `clipClickPaste` | the clipboard tab with sample items |
+| `module.*` `home.*` `music.lyrics` | the open island on Home (the tab strip changes) |
+| `live.copy` `live.keyboardLayout` `live.virtualDesktop*` `live.volume` `live.notifications` `live.battery` `live.usb` `live.dlDone` `live.reminders` `sound.reminder*` `live.recording` `live.music` `musicPill` `live.micCam` `cards.duration` `capture.shotAction` | the folded island with that reaction played from sample events; with the switch off the caption says it will not appear |
+
+A setting that is not in the table keeps the scene on show; opening a page starts its own scene (`of_page`: Modules -> Home tab, Clipboard -> clipboard tab,
+Events -> a notification, Sound -> music, the rest -> the folded island).
+
+**Layout.** `parts_pv` takes `Preview::width()` off the right of the page area, so the page, its scrolling and its hit tests shrink with the panel. The panel is
+only wanted when `window - sidebar - 320 >= 580` (a card plus its margins), i.e. a window of about 1113 px (`MIN_WINDOW_W`); narrower, or with the switch off, it
+slides away (`vis` Flow) and the sandbox is dropped. The default window is now 1180 x 760 (`nav::DEFAULT_SIZE`); a saved geometry still wins, so a narrower
+saved window simply has no panel until it is widened or maximised. The stage is a desktop-coloured box that follows the island: the camera (`zoom`, `stage_h`
+Flows, targets set in `step`) looks at the island body of the sandbox window, so the folded island is shown big and the open one scaled down to fit.
+
+**Idle cost.** The sandbox runs `SETTLE_MS` (3 s) after the last change, longer only while something really moves (`MAX_MS` 9 s; a pet's idle loop or the
+weather sky do not count). Then `Live::sleep`: its queue stops waking the window (flag checked in the wake-up closure), the open tab stops its ticker
+(`IslandView::preview_sleep`), its clock stops (time spent parked does not count, so a card keeps its remaining life), and no frame is requested until the next
+change, Replay or page. A drawn re-measure posted while parked wakes it once. Reduce motion: the camera and the panel land at once and the island itself
+is told (`Cx::reduced_motion`).
+
+Tests (`preview/tests.rs`, all pixel tests run on one long-lived thread, see `gfx`): the panel follows `showSeconds` / `net.weather` / `live.copy` /
+`clipClickPaste` in the dark theme (PNG per step), light theme at 2x, Reduce motion, no panel below the threshold, Hide / the switch, Replay, parked and idle
+once settled, nothing typed by the user reaches the sandbox and the real backend is never called, no mouse / wheel effect, every reaction has a scene and
+sample events.
 
 ## How it works
 
