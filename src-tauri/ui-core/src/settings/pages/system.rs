@@ -328,7 +328,7 @@ pub fn clipboard() -> Page {
             group(
                 Tr::NONE,
                 vec![
-                    toggle("clipboard.clickPaste", tr("Клик по записи вставляет её", "A click on an entry pastes it"), tr("Иначе запись только копируется. Shift+клик всегда только копирует", "Otherwise the entry is only copied. Shift+click always only copies"), true).kw(&["clipboard", "paste", "буфер", "вставить"]),
+                    toggle("clipClickPaste", tr("Клик по записи вставляет её", "A click on an entry pastes it"), tr("Иначе запись только копируется. Shift+клик всегда только копирует", "Otherwise the entry is only copied. Shift+click always only copies"), true).kw(&["clipboard", "paste", "буфер", "вставить"]),
                     seg("clipboard.maxItems", tr("Размер истории", "History size"), tr("Закреплённые записи не считаются", "Pinned entries do not count"), no(&[(50, same("50")), (200, same("200")), (500, same("500")), (1000, same("1000"))]), json!(1000)).kw(&["history", "size", "история", "размер"]),
                     seg(
                         "clipboard.retentionDays",

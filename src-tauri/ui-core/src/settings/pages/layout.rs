@@ -192,7 +192,7 @@ pub(super) fn clipboard(p: &mut Pool) -> Page {
             p.sec(tr("История буфера", "Clipboard history"), &["clipboard.maxItems", "clipboard.retentionDays", "clipboard.private", "clipboard.skipSecrets", "clipboard.wipe"]),
             p.sec(tr("Скриншоты", "Screenshots"), &["capture.shotAction", "capture.annotate", "capture.folder"]),
             p.note(tr("Запись экрана", "Screen recording"), rec, &["capture.format", "capture.fps", "capture.recordSystemAudio", "capture.recordMic", "capture.videoFolder"]),
-            p.sec(tr("Буфер: вставка, исключения, лимиты", "Clipboard: pasting, exclusions, limits"), &["clipboard.clickPaste", "clipboard.denyList", "clipboard.maxImageMb"]).adv(),
+            p.sec(tr("Буфер: вставка, исключения, лимиты", "Clipboard: pasting, exclusions, limits"), &["clipClickPaste", "clipboard.denyList", "clipboard.maxImageMb"]).adv(),
             p.sec(tr("Скриншоты и запись: подробности", "Screenshots and recording: details"), &["capture.encoder", "capture.revealAfterSave"]).adv(),
         ],
     );
