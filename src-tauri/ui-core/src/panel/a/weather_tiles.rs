@@ -72,17 +72,24 @@ pub fn dew_point(t: f64, rh: f64) -> f64 {
     b * g / (a - g)
 }
 
+/// WHO category of a UV index (it is read as the whole number the tile shows): 0 Low 0-2, 1 Moderate 3-5, 2 High 6-7, 3 Very high 8-10, 4 Extreme 11+.
+pub fn uv_level(uv: f64) -> usize {
+    match uv.round() {
+        u if u < 3.0 => 0,
+        u if u < 6.0 => 1,
+        u if u < 8.0 => 2,
+        u if u < 11.0 => 3,
+        _ => 4,
+    }
+}
+
 fn uv_word(tr: &dyn Tr, uv: f64) -> String {
-    if uv < 3.0 {
-        tr.t("Низкий", "Low")
-    } else if uv < 6.0 {
-        tr.t("Умеренный", "Moderate")
-    } else if uv < 8.0 {
-        tr.t("Высокий", "High")
-    } else if uv < 11.0 {
-        tr.t("Очень высокий", "Very high")
-    } else {
-        tr.t("Экстремальный", "Extreme")
+    match uv_level(uv) {
+        0 => tr.t("Низкий", "Low"),
+        1 => tr.t("Умеренный", "Moderate"),
+        2 => tr.t("Высокий", "High"),
+        3 => tr.t("Очень высокий", "Very high"),
+        _ => tr.t("Экстремальный", "Extreme"),
     }
 }
 
@@ -260,6 +267,15 @@ mod tests {
         e.set = None;
         e.sun_text = Some("Midnight sun".into());
         assert_eq!(tiles(&n, None, &e).iter().find(|x| x.kind == Kind::Sun).unwrap().text, "Midnight sun");
+    }
+
+    #[test]
+    fn uv_categories_follow_who_at_the_boundaries() {
+        let lv: Vec<usize> = [0.0, 2.4, 2.6, 3.0, 5.4, 5.6, 7.4, 7.6, 10.4, 10.6, 15.0].iter().map(|&u| uv_level(u)).collect();
+        assert_eq!(lv, [0, 0, 1, 1, 1, 2, 2, 3, 3, 4, 4]);
+        assert_eq!((uv_word(&EnTr, 2.0), uv_word(&EnTr, 11.0)), ("Low".to_string(), "Extreme".to_string()));
+        let ru: Vec<String> = [1.0, 4.0, 7.0, 9.0, 12.0].iter().map(|&u| uv_word(&RuTr, u)).collect();
+        assert_eq!(ru, ["Низкий", "Умеренный", "Высокий", "Очень высокий", "Экстремальный"]);
     }
 
     #[test]

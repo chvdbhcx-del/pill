@@ -770,7 +770,7 @@ fn parse_met(body: &str) -> Result<(Vec<Entry>, Option<i64>), String> {
             rh: g("relative_humidity").unwrap_or(50.0),
             cloud: g("cloud_area_fraction").unwrap_or(0.0),
             pres: g("air_pressure_at_sea_level"),
-            uv: g("ultraviolet_index_clear_sky"),
+            uv: g("ultraviolet_index_clear_sky").map(|u| u.clamp(0.0, 15.0)),
             sym: sc(e, "next_1_hours").or_else(|| sc(e, "next_6_hours")).or_else(|| sc(e, "next_12_hours")),
             sym6: sc(e, "next_6_hours").or_else(|| sc(e, "next_12_hours")).or_else(|| sc(e, "next_1_hours")),
             p1: pr(e, "next_1_hours"),
@@ -1426,6 +1426,11 @@ mod tests {
         let bare = fixture().replace("air_pressure_at_sea_level", "x_a").replace("ultraviolet_index_clear_sky", "x_b");
         let w = build_weather(&bare, 50.45, 30.52, now, 180).unwrap();
         assert!(w["now"]["pressure"].is_null() && w["now"]["uv"].is_null() && w["now"]["uv_max"].is_null());
+        // an out-of-range reading is clamped to 0..=15, never passed on as is
+        let wild = fixture().replace("\"ultraviolet_index_clear_sky\":2.6", "\"ultraviolet_index_clear_sky\":99.0");
+        assert_eq!(build_weather(&wild, 50.45, 30.52, now, 180).unwrap()["now"]["uv"], 15.0);
+        let neg = fixture().replace("\"ultraviolet_index_clear_sky\":2.6", "\"ultraviolet_index_clear_sky\":-4.0");
+        assert_eq!(build_weather(&neg, 50.45, 30.52, now, 180).unwrap()["now"]["uv"], 0.0);
     }
 
     #[test]

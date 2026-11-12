@@ -8,7 +8,7 @@ use glasskit::color::Color;
 use glasskit::geom::Rect;
 use glasskit::text::Style;
 use glasskit::theme::Theme;
-use pill_ui_core::panel::a::weather_tiles::{fmt_num, Kind, WxTile};
+use pill_ui_core::panel::a::weather_tiles::{fmt_num, uv_level, Kind, WxTile};
 
 pub const COLS: usize = 3;
 pub const GAP: f32 = 10.0;
@@ -19,6 +19,13 @@ pub const SECTION_GAP: f32 = 12.0;
 
 const SKY: Color = Color::rgb8(0x7f, 0xb2, 0xff);
 const SUN: Color = Color::rgb8(0xff, 0xcc, 0x4d);
+
+/// The colour of a UV category (green, yellow, orange, red, violet); the light theme gets deeper tones so the number stays readable on the card.
+pub fn uv_color(level: usize, dark: bool) -> Color {
+    let (d, l) = [((0x6f, 0xcf, 0x7a), (0x2e, 0x8b, 0x3d)), ((0xf2, 0xd6, 0x4b), (0x9a, 0x7a, 0x00)), ((0xf5, 0x9e, 0x42), (0xc2, 0x62, 0x00)), ((0xe5, 0x4d, 0x4d), (0xc6, 0x28, 0x28)), ((0xb2, 0x84, 0xf0), (0x7b, 0x3f, 0xc9))][level.min(4)];
+    let (r, g, b) = if dark { d } else { l };
+    Color::rgb8(r, g, b)
+}
 
 /// Where the summary card and the grid of tiles sit below a daily list that ends at `days_bottom` (all relative to the right column's top),
 /// and how tall the whole column is for `n` tiles.
@@ -162,7 +169,11 @@ impl Tiles {
             Some(_) => format!("{}{}{}", t.lead, fmt_num((o.val.at() * p) as f64, t.decimals, ru), t.unit),
             None => t.text.clone(),
         };
-        cv.text(Rect::new(x, y + 26.0, iw, 28.0), &value, Style::new(21.0, 600).mono().ellipsis(), th.text);
+        let vc = match (t.kind, t.num) {
+            (Kind::Uv, Some(u)) => uv_color(uv_level(u), th.dark),
+            _ => th.text,
+        };
+        cv.text(Rect::new(x, y + 26.0, iw, 28.0), &value, Style::new(21.0, 600).mono().ellipsis(), vc);
         cv.text(Rect::new(x, y + 76.0, iw, 28.0), &t.sub, Style::new(11.0, 400).wrap(), th.dim);
         let track = if th.dark { Color::rgba(1.0, 1.0, 1.0, 0.12) } else { Color::rgba(0.0, 0.0, 0.0, 0.1) };
         let bar = Rect::new(x, y + 60.0, iw, 6.0);
@@ -275,6 +286,14 @@ mod tests {
         assert_eq!((s, g), (358.0, 434.0));
         assert_eq!(h6, 434.0 + 2.0 * 108.0 + 10.0 + 2.0);
         assert!(layout(346.0, 3).2 < h6 && layout(346.0, 0).2 == layout(346.0, 3).2);
+    }
+
+    #[test]
+    fn uv_colour_follows_the_category_and_differs_per_theme() {
+        let all: Vec<_> = (0..5).map(|l| uv_color(l, true)).collect();
+        assert!((0..5).all(|i| (0..i).all(|j| all[i] != all[j])), "five distinct colours");
+        assert!((0..5).all(|l| uv_color(l, true) != uv_color(l, false)));
+        assert_eq!(uv_color(99, true), uv_color(4, true));
     }
 
     #[test]
