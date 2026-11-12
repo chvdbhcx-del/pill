@@ -2,6 +2,13 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.8.6] - 2026-11-12
+
+### Highlights
+- Settings are easier to find: 10 pages, and inside them everything about one feature (Weather, Media player, Clipboard, Phone and more) sits in one section with its switch, its events and its options. Rare options are in a collapsed Advanced part, and search opens it for you.
+- Live preview: a mini island on the right of the Settings window shows the change as you make it, on sample data only. Switch it off in General.
+- Fix: the Click a clipboard entry to paste it switch now works.
+
 ## [0.8.5] - 2026-11-12
 
 ### Highlights
