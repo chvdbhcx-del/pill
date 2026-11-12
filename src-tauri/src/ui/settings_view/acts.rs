@@ -22,6 +22,12 @@ impl SettingsView {
             Act::CapMax => cx.window_cmd(WindowCmd::ToggleMaximize),
             Act::CapClose => cx.close_self(),
             Act::Nav(p) => self.show_page(&p, cx),
+            Act::PvHide => {
+                let calls = self.model.set("settings.preview", json!(false));
+                self.run(cx, calls);
+                self.sync_page();
+            }
+            Act::PvReplay => self.pv.replay(),
             Act::Quit => {
                 self.call(cx, BackendCall::SettingsQuit, "");
             }

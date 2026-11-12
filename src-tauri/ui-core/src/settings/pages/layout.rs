@@ -142,7 +142,7 @@ pub(super) fn general(p: &mut Pool) -> Page {
         "general",
         tr("Основные", "General"),
         vec![
-            p.sec(tr("Запуск и язык", "Start and language"), &["language", "general.autostart"]),
+            p.sec(tr("Запуск и язык", "Start and language"), &["language", "general.autostart", "settings.preview"]),
             p.sec(tr("Прятать остров", "Hiding the pill"), &["hideInFullscreen", "fullscreenPeek", "autoHide"]),
             p.sec(tr("Тихие часы", "Quiet hours"), &["quiet.on", "quiet.from", "quiet.to", "quiet.days"]),
             p.note(tr("Поиск в командной строке", "Command bar search"), browser, &["module.fileSearch", "search.engine", "search.customUrl"]),

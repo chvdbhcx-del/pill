@@ -264,7 +264,7 @@ fn no_row_needs_a_restart() {
 // ------------------------------------------------------------------------------------------------ the re-layout lost nothing
 
 // The settings.json keys of the 16-page schema this one replaced (a snapshot: none may be renamed, dropped or added by a re-layout).
-const OLD_KEYS: [&str; 174] = [
+const OLD_KEYS: [&str; 175] = [
     "shape", "theme", "island.color", "size",
     "monitor", "character", "character.liquid", "pet",
     "pet.side", "pet.size", "pet.keepDuringMusic", "showTime",
@@ -309,6 +309,8 @@ const OLD_KEYS: [&str; 174] = [
     "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB", "net.ai",
     "ai.provider", "ai.baseUrl", "ai.model", "aiSetupDone",
     "updateAuto", "whatsNew",
+    // added with the live preview panel (the only key since the re-layout)
+    "settings.preview",
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
@@ -565,8 +567,8 @@ fn the_old_page_names_still_find_their_rows() {
 fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
-    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them)
-    let expect = [("appearance", 25), ("general", 24), ("hotkeys", 19), ("modules", 28), ("live", 30), ("clipboard", 22), ("sound", 26), ("phone", 16), ("ai", 14), ("updates", 5)];
+    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch
+    let expect = [("appearance", 25), ("general", 25), ("hotkeys", 19), ("modules", 28), ("live", 30), ("clipboard", 22), ("sound", 26), ("phone", 16), ("ai", 14), ("updates", 5)];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");
     }
@@ -685,6 +687,7 @@ fn rust_defaults() -> Map<String, Value> {
 /// Stored keys the schema shows whose default does not live in `settings.rs::defaults()`: each module reads them with its own
 /// default (the same value the page shows). Documented here so a new key cannot slip in unnoticed.
 const UI_ONLY: &[(&str, &str)] = &[
+    ("settings.preview", "the live preview panel of the settings window: absent = on, only the window reads it"),
     ("opacityCol", "pill.js S: default 0"),
     ("opacityExp", "pill.js S: default 0"),
     ("showTime", "pill.js S: default true"),

@@ -130,11 +130,12 @@ pub fn show_plan(id: &str, lang: Lang, reduce: bool, wizard: bool, has_old: bool
 
 // ------------------------------------------------------------------------------------------------ window geometry
 
-pub const DEFAULT_SIZE: (f64, f64) = (840.0, 760.0);
+/// Wide enough for the page and the live preview panel next to it (a saved size always wins).
+pub const DEFAULT_SIZE: (f64, f64) = (1180.0, 760.0);
 pub const MIN_SIZE: (f64, f64) = (700.0, 520.0);
 pub const MAX_SIZE: f64 = 4000.0;
 
-/// `settingsWin.w` / `settingsWin.h` -> the creation size (default 840 x 760, clamped to 700..4000 / 520..4000).
+/// `settingsWin.w` / `settingsWin.h` -> the creation size (default 1180 x 760, clamped to 700..4000 / 520..4000).
 pub fn initial_size(w: Option<f64>, h: Option<f64>) -> (f64, f64) {
     (w.unwrap_or(DEFAULT_SIZE.0).clamp(MIN_SIZE.0, MAX_SIZE), h.unwrap_or(DEFAULT_SIZE.1).clamp(MIN_SIZE.1, MAX_SIZE))
 }
@@ -272,7 +273,7 @@ mod tests {
 
     #[test]
     fn window_size_and_position_memory() {
-        assert_eq!(initial_size(None, None), (840.0, 760.0));
+        assert_eq!(initial_size(None, None), (1180.0, 760.0));
         assert_eq!(initial_size(Some(100.0), Some(10.0)), (700.0, 520.0));
         assert_eq!(initial_size(Some(9000.0), Some(9000.0)), (4000.0, 4000.0));
         let mons = [(0, 0, 1920, 1080), (1920, 0, 2560, 1440)];

@@ -53,6 +53,7 @@ impl SettingsView {
         busy |= self.step_custom(dt);
         busy |= self.step_phone(dt, cx);
         busy |= self.step_pickers(dt);
+        busy |= self.step_preview(dt, cx);
         self.process_edits(cx);
         busy |= self.resolve_goto();
         if self.caption_dirty && self.loaded {
