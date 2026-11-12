@@ -36,7 +36,7 @@ Project page: <https://chvdbhcx-del.github.io/pill/> (source in `docs/index.html
 
 ## Live events
 
-The folded island shows the most important thing that is going on and falls back to the clock (with weather and battery) when nothing is. Each event has its own switch in *Settings → Live events*.
+The folded island shows the most important thing that is going on and falls back to the clock (with weather and battery) when nothing is. Each event has its own switch in *Settings → Events*.
 
 <div align="center">
 <img src="docs/images/live-chips.png" alt="Island chips: clock and weather, music, agent working, agent needs input, Steam download, browser download, timer, OBS recording" width="860">
@@ -113,7 +113,7 @@ Also built in: a first-run **AI setup** wizard (installs a local Ollama or Whisp
 The island can wear a **notch** (the default) or a floating **capsule**, and its edge can be a **liquid** line (default), a **tail**, **legs**, a soft **glow** or plain. Choose one of **28 small pets** that live inside the capsule and follow what the island does: they wake for music, think while an agent works, cheer when it finishes and fall asleep after five idle minutes. Pets come in S, M, L and a big XL (the capsule grows to hold it); the tail and legs stand on the liquid edge (switch it off with *Liquid edge under the character*), and a pet can step aside while music plays (*Stay while music plays*).
 
 <div align="center">
-<img src="docs/images/settings-pets.png" alt="Settings, Character page: the pet picker" width="560">
+<img src="docs/images/settings-pets.png" alt="Settings, Appearance page: the pet picker" width="560">
 </div>
 
 ## Hotkeys
@@ -138,7 +138,7 @@ All of these are defaults and can be changed or cleared in *Settings → Hotkeys
 
 ## Privacy
 
-Network features are **off by default**. Nothing is sent anywhere until you switch a feature on (weather, AI, voice, a calendar subscription link, new-mail notifications). *Settings → AI* and *Voice to text* show the hosts those features talk to and how many calls they made. Mail notifications connect only to the IMAP server you type in (TLS on port 993), read only the sender and subject of new messages, never mark anything as read and keep the password encrypted with Windows DPAPI; the calendar link is downloaded every 30 minutes and its address is never logged.
+Network features are **off by default**. Nothing is sent anywhere until you switch a feature on (weather, AI, voice, a calendar subscription link, new-mail notifications). *Settings → AI* and *Settings → Sound and voice* show the hosts those features talk to and how many calls they made. Mail notifications connect only to the IMAP server you type in (TLS on port 993), read only the sender and subject of new messages, never mark anything as read and keep the password encrypted with Windows DPAPI; the calendar link is downloaded every 30 minutes and its address is never logged.
 
 **The one exception is the update check, which is on by default:** about 20 seconds after launch Pill asks GitHub whether a newer release exists. It only checks; installing is always your click, and every update is signed and verified. Turn it off in *Settings → Updates → Check on start*.
 

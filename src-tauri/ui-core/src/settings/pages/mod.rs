@@ -15,9 +15,9 @@ pub(crate) fn leak(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
 }
 
-/// The ten pages of the sidebar. The rows are defined by the sixteen old page builders; `layout` arranges them (see there).
-pub fn build() -> Vec<Page> {
-    let mut pool = layout::Pool::new(vec![
+/// The sixteen pages of the old sidebar: the single place the rows are defined.
+fn old_pages() -> Vec<Page> {
+    vec![
         base::character(),
         base::general(),
         base::appearance(),
@@ -34,7 +34,18 @@ pub fn build() -> Vec<Page> {
         ai::aisetup(),
         ai::voice(),
         ai::updates(),
-    ]);
+    ]
+}
+
+/// The old pages as they were, for the tests that hold the new layout to them.
+#[cfg(test)]
+pub(crate) fn old_pages_for_tests() -> Vec<Page> {
+    old_pages()
+}
+
+/// The ten pages of the sidebar. The rows are defined by the sixteen old page builders; `layout` arranges them (see there).
+pub fn build() -> Vec<Page> {
+    let mut pool = layout::Pool::new(old_pages());
     let pages = vec![
         layout::appearance(&mut pool),
         layout::general(&mut pool),
