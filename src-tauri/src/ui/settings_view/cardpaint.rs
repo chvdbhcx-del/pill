@@ -12,13 +12,17 @@ use pill_ui_core::settings::schema::{ButtonStyle, Control};
 impl SettingsView {
     /// Paints a card at (`x`, `y`) of width `CARD_W` and returns its height (0 when every row is collapsed).
     /// `vp` is the visible band in content space: rows outside it are measured but not painted.
-    pub(super) fn paint_card(&mut self, d: &Dc, rows: &mut [RowRt], x: f32, y: f32, vp: (f32, f32)) -> f32 {
+    /// `k`: how far open the "Advanced" section is when this card is part of it (1 for every other card).
+    pub(super) fn paint_card(&mut self, d: &Dc, rows: &mut [RowRt], x: f32, y: f32, vp: (f32, f32), k: f32) -> f32 {
         let inner_w = CARD_W - 2.0 - 2.0 * PAD_X;
         let mut metrics: Vec<(RowM, f32)> = Vec::with_capacity(rows.len());
         let mut total = 0.0;
         for r in rows.iter_mut() {
+            if r.adv {
+                r.ak = k;
+            }
             // the row opens / closes on a spring: a little overshoot opens it a touch too far, never below nothing
-            let v = r.vis.at().max(0.0);
+            let v = r.vis.at().max(0.0) * k.max(0.0);
             let mut m = if v > 0.001 { self.row_metrics(d, r, inner_w) } else { RowM::default() };
             if v > 0.001 {
                 if !r.mh_seen || (r.kick == 0 && !r.mh.moving() && (r.mh.target() - m.msg_need).abs() > 0.01) {
@@ -65,7 +69,7 @@ impl SettingsView {
     fn paint_row(&mut self, d: &Dc, r: &mut RowRt, m: &RowM, h: f32, first: bool) {
         let (cv, p) = (d.cv, d.p);
         let full = r.rect;
-        let vis = r.vis.at01();
+        let vis = r.vis.at01() * r.ak.clamp(0.0, 1.0);
         let en = r.en.at().clamp(0.4, 1.0);
         let enabled = r.en_on;
         cv.with_clip(Rect::new(full.x, full.y, full.w, h), |cv| {

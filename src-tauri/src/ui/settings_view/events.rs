@@ -238,7 +238,7 @@ impl SettingsView {
         let mut changes: Vec<Change> = Vec::new();
         let left_down = matches!(ev, InputEvent::MouseDown { button: MouseButton::Left, .. });
         for r in self.page.rows_mut() {
-            if only.is_some_and(|f| f != r.fid) || r.vis.at() < 0.5 {
+            if only.is_some_and(|f| f != r.fid) || r.vis.at() * r.ak.clamp(0.0, 1.0) < 0.5 {
                 continue;
             }
             let rect = r.ctl_rect;
@@ -431,6 +431,12 @@ impl SettingsView {
 
     fn row_key(&mut self, fid: u32, ev: &InputEvent, activate: bool, cx: &mut Cx) -> Response {
         let rc = Response { consumed: true, redraw: true, ..Response::NONE };
+        if self.page.adv.as_ref().is_some_and(|a| a.fid == fid) {
+            if activate {
+                self.act(Act::Advanced, cx);
+            }
+            return rc;
+        }
         enum K {
             Hot(String),
             Btn(String),

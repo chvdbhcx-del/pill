@@ -12,26 +12,19 @@ pub enum NavItem {
     Sep,
 }
 
-/// Sidebar order (separators as in the JS `PAGES`).
-pub const NAV: [NavItem; 20] = [
-    NavItem::Page("character"),
-    NavItem::Sep,
-    NavItem::Page("general"),
+/// Sidebar order: how it looks, how it behaves and the keys; what the island shows; the phone; the AI; the update page.
+pub const NAV: [NavItem; 13] = [
     NavItem::Page("appearance"),
-    NavItem::Page("behavior"),
+    NavItem::Page("general"),
     NavItem::Page("hotkeys"),
     NavItem::Sep,
     NavItem::Page("modules"),
     NavItem::Page("live"),
     NavItem::Page("clipboard"),
-    NavItem::Page("search"),
     NavItem::Page("sound"),
-    NavItem::Page("weather"),
     NavItem::Page("phone"),
     NavItem::Sep,
     NavItem::Page("ai"),
-    NavItem::Page("aisetup"),
-    NavItem::Page("voice"),
     NavItem::Sep,
     NavItem::Page("updates"),
 ];
@@ -39,8 +32,30 @@ pub const NAV: [NavItem; 20] = [
 /// Icon ids of the sidebar (one per page, plus "power" for Quit); the renderer owns the drawings.
 pub const ICONS: [&str; 17] = ["character", "general", "hotkeys", "ai", "voice", "weather", "sound", "live", "clipboard", "modules", "updates", "aisetup", "appearance", "behavior", "search", "phone", "power"];
 
-/// The pages `settings_open` accepts (settingswin.rs `PAGES`); "welcome" starts the wizard.
+/// The pages `settings_open` accepts (settingswin.rs `PAGES`): the ten of the sidebar, the six that were merged into them
+/// (`LEGACY`; callers in other files, saved links and `--open` still use those names) and "welcome", which starts the wizard.
 pub const OPENABLE: [&str; 17] = ["character", "general", "appearance", "behavior", "search", "hotkeys", "ai", "voice", "weather", "sound", "live", "clipboard", "modules", "updates", "aisetup", "phone", "welcome"];
+
+/// Pages that are not in the sidebar any more: (old id, the page that holds their rows now, a row at the start of the old section there).
+pub const LEGACY: [(&str, &str, &str); 6] = [
+    ("character", "appearance", "character.liquid"),
+    ("behavior", "general", "hideInFullscreen"),
+    ("search", "general", "search.engine"),
+    ("weather", "modules", "net.weather"),
+    ("voice", "sound", "voice.enabled"),
+    ("aisetup", "ai", "aisetup.intro"),
+];
+
+/// Where a page name leads: (the sidebar page, the row to scroll to when the name was an old page). Case is the caller's business.
+pub fn route(id: &str) -> Option<(&'static str, Option<&'static str>)> {
+    if let Some((_, page, anchor)) = LEGACY.iter().find(|(old, _, _)| *old == id) {
+        return Some((page, Some(anchor)));
+    }
+    NAV.iter().find_map(|n| match n {
+        NavItem::Page(p) if *p == id => Some((*p, None)),
+        _ => None,
+    })
+}
 
 pub const SAVED_NOTE: Tr = tr("Изменения сохраняются сразу", "Changes are saved instantly");
 pub const QUIT: Tr = tr("Выйти из Pill", "Quit Pill");
@@ -54,8 +69,8 @@ pub fn version_line(lang: Lang, version: &str) -> String {
     }
 }
 
-/// The page opened when nothing (or something unknown) is asked for: the first one, Character.
-pub const DEFAULT_PAGE: &str = "character";
+/// The page opened when nothing (or something unknown) is asked for: the first one, Appearance.
+pub const DEFAULT_PAGE: &str = "appearance";
 
 /// What a request to open a page resolves to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,17 +83,22 @@ pub enum OpenTarget {
 pub fn resolve_open(page: Option<&str>) -> Option<OpenTarget> {
     let p = page?.to_ascii_lowercase();
     let id = OPENABLE.iter().find(|x| **x == p)?;
-    Some(if *id == "welcome" { OpenTarget::Wizard } else { OpenTarget::Page(id) })
+    Some(if *id == "welcome" { OpenTarget::Wizard } else { OpenTarget::Page(route(id)?.0) })
 }
 
-/// What the window shows first: the requested page, else Character; the wizard for "welcome".
+/// What the window shows first: the requested page, else Appearance; the wizard for "welcome".
 pub fn initial(page: Option<&str>) -> OpenTarget {
     resolve_open(page).unwrap_or(OpenTarget::Page(DEFAULT_PAGE))
 }
 
-/// `show(id)` for an id that is not a page falls back to the first page.
+/// `show(id)` for an id that is not a page falls back to the first page; an old page name leads to the page that holds its rows now.
 pub fn page_or_default(id: &str) -> &'static str {
-    schema().pages.iter().find(|p| p.id == id).map(|p| p.id).unwrap_or(DEFAULT_PAGE)
+    route(id).map(|r| r.0).unwrap_or(DEFAULT_PAGE)
+}
+
+/// The row to scroll to when a window is asked for an old page (`behavior` -> the start of the hiding rows on General), if `id` is one.
+pub fn legacy_anchor(id: &str) -> Option<&'static str> {
+    route(&id.to_ascii_lowercase()).and_then(|r| r.1)
 }
 
 /// What the window does when a page is shown.
@@ -193,8 +213,9 @@ mod tests {
         let mut sorted_ids = ids.clone();
         sorted_ids.sort();
         assert_eq!(sorted_nav, sorted_ids, "every page is in the sidebar exactly once");
-        assert_eq!(pages.len(), 16);
-        assert_eq!(NAV.iter().filter(|n| **n == NavItem::Sep).count(), 4);
+        assert_eq!(pages.len(), 10);
+        assert!(pages.len() <= 11, "the sidebar stays short");
+        assert_eq!(NAV.iter().filter(|n| **n == NavItem::Sep).count(), 3);
         for pg in &schema().pages {
             assert!(ICONS.contains(&pg.icon), "icon {}", pg.icon);
             assert!(OPENABLE.contains(&pg.id), "settings_open must accept {}", pg.id);
@@ -208,9 +229,33 @@ mod tests {
         assert_eq!(resolve_open(Some("WELCOME")), Some(OpenTarget::Wizard));
         assert_eq!(resolve_open(Some("calc.exe")), None);
         assert_eq!(resolve_open(None), None);
-        assert_eq!(initial(Some("bogus")), OpenTarget::Page("character"));
+        assert_eq!(initial(Some("bogus")), OpenTarget::Page("appearance"));
         assert_eq!(initial(Some("updates")), OpenTarget::Page("updates"));
-        assert_eq!(page_or_default("nope"), "character");
+        assert_eq!(page_or_default("nope"), "appearance");
+    }
+
+    #[test]
+    fn every_old_page_name_still_opens_the_page_that_holds_its_rows() {
+        // the sixteen ids of the old sidebar (+ the wizard): each resolves, none to a page that does not exist
+        let old = ["character", "general", "appearance", "behavior", "search", "hotkeys", "ai", "voice", "weather", "sound", "live", "clipboard", "modules", "updates", "aisetup", "phone"];
+        for id in old {
+            let Some(OpenTarget::Page(p)) = resolve_open(Some(id)) else { panic!("{id} does not open") };
+            assert!(schema().page(p).is_some(), "{id} -> {p} is not a page");
+            assert_eq!(page_or_default(id), p);
+            assert_eq!(show_plan(id, Lang::En, true, false, false).page, p);
+        }
+        assert_eq!(resolve_open(Some("WELCOME")), Some(OpenTarget::Wizard));
+        for (id, page) in [("character", "appearance"), ("behavior", "general"), ("search", "general"), ("weather", "modules"), ("voice", "sound"), ("aisetup", "ai"), ("live", "live")] {
+            assert_eq!(resolve_open(Some(id)), Some(OpenTarget::Page(page)), "{id}");
+        }
+        // an old name also names the row to scroll to; a page that is still there does not
+        assert_eq!(legacy_anchor("Behavior"), Some("hideInFullscreen"));
+        assert_eq!(legacy_anchor("hotkeys"), None);
+        for (old, page, anchor) in LEGACY {
+            assert!(!NAV.contains(&NavItem::Page(old)), "{old} is not in the sidebar any more");
+            let row = schema().row(anchor).unwrap_or_else(|| panic!("anchor {anchor} of {old}"));
+            assert_eq!(schema().page_of(row.id).map(|p| p.id), Some(page), "anchor {anchor} of {old} lives on {page}");
+        }
     }
 
     #[test]

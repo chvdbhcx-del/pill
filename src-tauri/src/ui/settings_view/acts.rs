@@ -55,6 +55,12 @@ impl SettingsView {
                 let calls = self.model.wizard.finish_to(p);
                 self.run(cx, calls);
             }
+            Act::Advanced => {
+                let to = self.page.adv.as_ref().map(|a| !a.on);
+                if let Some(on) = to {
+                    self.set_advanced(on, false);
+                }
+            }
             Act::Recorder(action) => {
                 if self.model.recorder.start(&action).is_some() || self.model.recorder.is_recording(&action) {
                     self.rec_live.clear();
@@ -132,7 +138,7 @@ impl SettingsView {
                     self.show_page(&t.page, cx);
                 }
                 if t.row {
-                    self.goto = Some(super::Goto { row_id: t.row_id, title: t.title });
+                    self.goto = Some(super::Goto { row_id: t.row_id, title: t.title, quiet: false });
                 }
             }
         }

@@ -270,7 +270,20 @@ pub struct Group {
     /// A small note under the card.
     pub footer: Tr,
     pub rows: Vec<Row>,
+    /// Rarely needed / technical: the trailing `advanced` groups of a page sit behind one collapsed "Advanced" disclosure.
+    pub advanced: bool,
 }
+
+impl Group {
+    pub fn adv(mut self) -> Group {
+        self.advanced = true;
+        self
+    }
+}
+
+/// The caption of the collapsed section at the end of a page and the line under it when the page has no group titles to list.
+pub const ADVANCED: Tr = crate::settings::tr::tr("Дополнительно", "Advanced");
+pub const ADVANCED_HINT: Tr = crate::settings::tr::tr("Редко нужные и технические настройки", "Rarely needed and technical settings");
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Page {
@@ -285,6 +298,10 @@ pub struct Page {
 }
 
 impl Page {
+    /// The trailing groups behind the "Advanced" disclosure (empty when the page has none).
+    pub fn advanced_groups(&self) -> impl Iterator<Item = &Group> {
+        self.groups.iter().filter(|g| g.advanced)
+    }
     pub fn heading(&self) -> Tr {
         if self.head.is_blank() {
             self.title
@@ -300,10 +317,10 @@ impl Page {
 // ------------------------------------------------------------------------------------------------ constructors for the data
 
 pub fn group(title: Tr, rows: Vec<Row>) -> Group {
-    Group { title, footer: Tr::NONE, rows }
+    Group { title, footer: Tr::NONE, rows, advanced: false }
 }
 pub fn group_note(title: Tr, footer: Tr, rows: Vec<Row>) -> Group {
-    Group { title, footer, rows }
+    Group { title, footer, rows, advanced: false }
 }
 pub fn page(id: &'static str, icon: &'static str, title: Tr, groups: Vec<Group>) -> Page {
     Page { id, icon, title, head: Tr::NONE, footnote: Tr::NONE, groups }

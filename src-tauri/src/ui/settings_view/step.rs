@@ -44,6 +44,9 @@ impl SettingsView {
         busy |= self.side.bar.step(dt);
         busy |= self.page.scroll.step(dt);
         busy |= self.page.bar.step(dt);
+        if let Some(a) = &mut self.page.adv {
+            busy |= tick(&mut a.t, dt);
+        }
         busy |= self.ui.step(dt);
         busy |= self.step_rows(dt);
         busy |= self.search.field.step(dt);
@@ -51,7 +54,7 @@ impl SettingsView {
         busy |= self.step_phone(dt, cx);
         busy |= self.step_pickers(dt);
         self.process_edits(cx);
-        self.resolve_goto();
+        busy |= self.resolve_goto();
         if self.caption_dirty && self.loaded {
             self.caption_dirty = false;
             let w = self.size.0 - if self.maximized { 0.0 } else { 2.0 } - 138.0;
@@ -184,14 +187,32 @@ impl SettingsView {
     }
 
     /// Scrolls a search / URL target into the middle of the window and flashes it, once the page has been laid out.
-    fn resolve_goto(&mut self) {
-        let Some(g) = self.goto.clone() else { return };
+    /// A target inside a closed "Advanced" section opens it first (at once: the scroll target must hold still) and waits for the layout.
+    /// An old page name (`quiet`) scrolls to the caption of its section instead and flashes nothing. True while it still has to wait.
+    fn resolve_goto(&mut self) -> bool {
+        let Some(g) = self.goto.clone() else { return false };
         if self.page.rects.is_empty() || self.leaving.is_some() {
-            return;
+            return false;
+        }
+        if !g.row_id.is_empty() && self.page.rows().any(|r| r.row.id == g.row_id && r.adv) && self.page.adv.as_ref().is_some_and(|a| !a.on) {
+            self.set_advanced(true, true);
+        }
+        if !self.page.laid_out {
+            return true;
         }
         let reduce = self.reduce();
         let view = self.content_rect().h;
         let mut target = None;
+        if g.quiet {
+            // the top of the section: the caption above the card that holds the row
+            let at = self.page.blocks.iter().position(|b| matches!(b, Block::Card(rows) if rows.iter().any(|r| r.row.id == g.row_id)));
+            let top = at.and_then(|i| (0..i).rev().find(|j| matches!(self.page.blocks[*j], Block::Cap(_))).and_then(|j| self.page.rects.get(j)).map(|r| r.y));
+            self.goto = None;
+            if let Some(y) = top.or(at.and_then(|i| self.page.rects.get(i)).map(|r| r.y)) {
+                self.page.scroll.scroll_to((y - 16.0).max(0.0), !reduce);
+            }
+            return false;
+        }
         if !g.row_id.is_empty() {
             if let Some(r) = self.page.row_mut(&g.row_id) {
                 r.hl = Some(Pulse::new());
@@ -205,6 +226,7 @@ impl SettingsView {
         if let Some(r) = target {
             self.page.scroll.scroll_to((r.cy() - view / 2.0).max(0.0), !reduce);
         }
+        false
     }
 }
 

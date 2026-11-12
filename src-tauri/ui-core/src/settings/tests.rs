@@ -48,7 +48,7 @@ fn ids_and_keys_are_unique() {
     for p in &schema().pages {
         assert!(pages.insert(p.id), "duplicate page {}", p.id);
     }
-    assert_eq!(schema().pages.len(), 16);
+    assert_eq!(schema().pages.len(), 10);
 }
 
 #[test]
@@ -261,16 +261,217 @@ fn no_row_needs_a_restart() {
     assert!(hint.get(Lang::En).contains("restarts") && hint.get(Lang::Ru).contains("перезапуска"), "the hint tells when it applies");
 }
 
+// ------------------------------------------------------------------------------------------------ the re-layout lost nothing
+
+// The settings.json keys of the 16-page schema this one replaced (a snapshot: none may be renamed, dropped or added by a re-layout).
+const OLD_KEYS: [&str; 174] = [
+    "shape", "theme", "island.color", "size",
+    "monitor", "character", "character.liquid", "pet",
+    "pet.side", "pet.size", "pet.keepDuringMusic", "showTime",
+    "showDate", "showWxIcon", "showTemp", "showSeconds",
+    "clock24", "showBattery", "island.colorCustom", "opacityCol",
+    "opacityExp", "offsetX", "underTaskbar", "reduceMotion",
+    "fps", "edgeIdleFps", "ui.gpu", "language",
+    "hideInFullscreen", "fullscreenPeek", "autoHide", "quiet.on",
+    "quiet.from", "quiet.to", "quiet.days", "search.engine",
+    "search.customUrl", "fullscreenPeekEdge", "autoHideKeepDesktop", "hideInApps",
+    "showInApps", "passThrough", "passThroughOpacity", "showInCapture",
+    "everything.autostart", "hotkey.toggle", "hotkey.command", "hotkey.chat",
+    "hotkey.voice", "hotkey.clipboard", "hotkey.pastePlain", "hotkey.mic",
+    "hotkey.record", "hotkey.shotArea", "hotkey.shotFull", "hotkey.ocr",
+    "hotkey.pipette", "hotkey.qr", "hotkey.uninstall", "hotkey.passThrough",
+    "hotkey.theme", "hotkey.musicView", "hotkey.vpn", "module.media",
+    "module.shelf", "module.launcher", "module.fileSearch", "module.clipboard",
+    "module.text", "module.chat", "module.note", "module.weather",
+    "module.controls", "module.phone", "module.notifs", "module.vpn",
+    "net.weather", "weather.city", "weather.units", "vpn.own.name",
+    "vpn.own.connect", "vpn.own.disconnect", "vpn.admin", "live.volume",
+    "live.music", "live.micCam", "live.recording", "live.obs",
+    "live.downloads", "live.dlDone", "live.steam", "live.usb",
+    "live.battery", "live.sysmon", "live.keyboardLayout", "live.virtualDesktopFlash",
+    "live.copy", "live.shelf", "live.notifications", "live.reminders",
+    "live.phone", "live.calendar", "live.calendar.path", "live.mail",
+    "mail.host", "mail.port", "mail.user", "mail.mailbox",
+    "live.agents", "agents.answerFromIsland", "cards.duration", "history.keep",
+    "history.mail", "live.downloadRing", "live.dlIgnoreExt", "live.keyboardLayoutAlways",
+    "live.virtualDesktop", "live.obs.port", "clipboard.maxItems", "clipboard.retentionDays",
+    "clipboard.skipSecrets", "capture.shotAction", "capture.annotate", "capture.folder",
+    "capture.format", "capture.fps", "capture.recordSystemAudio", "capture.recordMic",
+    "capture.videoFolder", "clipboard.clickPaste", "clipboard.denyList", "clipboard.maxImageMb",
+    "capture.encoder", "capture.revealAfterSave", "sound.volumeDevice", "sound.micDevice",
+    "audio.volumeTarget", "musicPill", "audio.reactive", "music.lyrics",
+    "home.player", "home.lyrics", "sound.reminders", "sound.reminderTone",
+    "voice.enabled", "voice.provider", "voice.language", "voice.mode",
+    "voice.paste", "audio.perApp", "media.legacyPlayers", "timer.sound",
+    "timer.soundFile", "voice.endpoint", "voice.model", "voice.autostop",
+    "phone.enabled", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone",
+    "phone.downloadDir", "phone.autoAccept", "phone.relay", "phone.maxFileMB",
+    "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB", "net.ai",
+    "ai.provider", "ai.baseUrl", "ai.model", "aiSetupDone",
+    "updateAuto", "whatsNew",
+];
+
+// The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
+const OLD_UNSTORED: [&str; 36] = [
+    "character.reactions", "general.autostart", "behavior.hideAddActive",
+    "behavior.showAddActive", "search.everything", "general.backup",
+    "general.wizard", "hotkeys.launcher", "modules.profiles",
+    "weather.refresh", "modules.tabs", "modules.home",
+    "live.notifications.allow", "mail.password", "live.mail.test",
+    "live.agents.snippets", "live.obs.password", "clipboard.private",
+    "clipboard.wipe", "sound.play", "voice.key",
+    "voice.test-mic", "voice.test-service", "phone.link",
+    "phone.devices", "phone.apps", "ai.key",
+    "ai.list", "ai.test", "aisetup.intro",
+    "aisetup.whisper", "aisetup.cloud-voice", "aisetup.chat",
+    "updates.check", "updates.whatsnew", "updates.report",
+];
+
+/// Ids of rows that are gone on purpose (and why): "Set up a cloud AI" only jumped to the assistant section that now stands right above it.
+const DROPPED: [&str; 1] = ["aisetup.cloud-chat"];
+
+#[test]
+fn no_key_changed_and_every_old_row_is_on_exactly_one_new_page() {
+    // the keys: the snapshot above is the whole set, nothing renamed, nothing dropped, nothing invented
+    let now: BTreeSet<&str> = schema().all_rows().filter(|(_, r)| r.is_stored()).map(|(_, r)| r.key).collect();
+    let old: BTreeSet<&str> = OLD_KEYS.iter().copied().collect();
+    assert_eq!(old.len(), OLD_KEYS.len(), "the snapshot has no duplicates");
+    assert_eq!(now.difference(&old).collect::<Vec<_>>(), Vec::<&&str>::new(), "keys that were not there before");
+    assert_eq!(old.difference(&now).collect::<Vec<_>>(), Vec::<&&str>::new(), "keys that are gone");
+    // the rows without a key: the same set, minus the dropped ones
+    let now_unstored: BTreeSet<&str> = schema().all_rows().filter(|(_, r)| !r.is_stored()).map(|(_, r)| r.id).collect();
+    let old_unstored: BTreeSet<&str> = OLD_UNSTORED.iter().copied().filter(|i| !DROPPED.contains(i)).collect();
+    assert_eq!(now_unstored, old_unstored);
+    // exactly one place each (a row stands in one page, one section)
+    let mut seen = BTreeSet::new();
+    for p in &schema().pages {
+        for (gi, g) in p.groups.iter().enumerate() {
+            for r in &g.rows {
+                assert!(seen.insert(r.id), "{} stands twice (page {} section {gi})", r.id, p.id);
+            }
+        }
+    }
+    // and each is the very row it was: label, hint, control, default, gating (only the search keywords grew)
+    let old_pages = super::pages::old_pages_for_tests();
+    let mut checked = 0;
+    for op in &old_pages {
+        for o in op.rows() {
+            if DROPPED.contains(&o.id) {
+                assert!(schema().row(o.id).is_none(), "{} was dropped", o.id);
+                continue;
+            }
+            let n = schema().row(o.id).unwrap_or_else(|| panic!("{} (page {}) is gone", o.id, op.id));
+            assert_eq!((n.id, n.key, n.label, n.hint), (o.id, o.key, o.label, o.hint), "{}", o.id);
+            assert_eq!((&n.control, &n.default, &n.visible_if, &n.enabled_if, n.restart_needed, n.status, n.block), (&o.control, &o.default, &o.visible_if, &o.enabled_if, o.restart_needed, o.status, o.block), "{}", o.id);
+            assert!(o.search_keywords.iter().all(|k| n.search_keywords.contains(k)), "{} keeps its keywords", o.id);
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, schema().all_rows().count());
+}
+
+#[test]
+fn the_advanced_groups_are_a_titled_trailing_run() {
+    let mut with = 0;
+    for p in &schema().pages {
+        let flags: Vec<bool> = p.groups.iter().map(|g| g.advanced).collect();
+        if let Some(i) = flags.iter().position(|a| *a) {
+            with += 1;
+            assert!(flags[i..].iter().all(|a| *a), "{}: the advanced groups come last, one run: {flags:?}", p.id);
+            assert!(i >= 1, "{}: something stays outside the section", p.id);
+            for g in &p.groups[i..] {
+                assert!(!g.title.is_blank(), "{}: the closed header lists the section names, so each has one", p.id);
+                assert!(g.rows.iter().all(|r| !matches!(r.control, Control::PetsPicker | Control::CharacterPicker)), "{}: pickers stay in view", p.id);
+            }
+        }
+    }
+    assert!(with >= 8, "{with} pages keep rare rows behind the section");
+    // the texts of the header exist in both languages
+    assert!(complete(super::schema::ADVANCED) && complete(super::schema::ADVANCED_HINT));
+    // the section is a view state only: no row, key or default stands for it, so nothing can be stored or exported
+    assert!(schema().all_rows().all(|(_, r)| !r.key.to_lowercase().contains("advanced")));
+}
+
+#[test]
+fn first_choice_rows_stand_outside_the_section_and_technical_ones_inside() {
+    let in_advanced = |id: &str| {
+        let p = schema().page_of(id).unwrap_or_else(|| panic!("no row {id}"));
+        p.groups.iter().find(|g| g.rows.iter().any(|r| r.id == id)).unwrap().advanced
+    };
+    for id in ["quiet.on", "language", "hotkey.toggle", "module.chat", "live.volume", "clipboard.maxItems", "sound.volumeDevice", "phone.enabled", "net.ai", "updates.check", "shape"] {
+        assert!(!in_advanced(id), "{id} is a first-choice row");
+    }
+    for id in ["capture.encoder", "ui.gpu", "phone.relayUrl", "voice.endpoint", "vpn.own.connect", "live.obs.port", "fullscreenPeekEdge", "hotkey.uninstall", "timer.soundFile"] {
+        assert!(in_advanced(id), "{id} is technical");
+    }
+    // the biggest page of the old schema (38 rows) is now headed sections of a handful each
+    let live = schema().page("live").unwrap();
+    assert!(live.groups.iter().all(|g| !g.title.is_blank()), "every section of Events has a name");
+    let main: Vec<usize> = live.groups.iter().filter(|g| !g.advanced).map(|g| g.rows.len()).collect();
+    assert!(main.iter().all(|n| *n <= 7), "no long unbroken list on Events: {main:?}");
+}
+
+// ------------------------------------------------------------------------------------------------ search over the new layout
+
+#[test]
+fn search_finds_rows_inside_the_advanced_sections_on_the_page_that_holds_them() {
+    for lang in Lang::ALL {
+        let idx = search::build_index(lang);
+        for p in &schema().pages {
+            for g in p.advanced_groups() {
+                for r in &g.rows {
+                    let e = idx.iter().find(|e| e.row_id == r.id).unwrap_or_else(|| panic!("{} is not searchable", r.id));
+                    assert_eq!(e.page, p.id, "{}", r.id);
+                }
+            }
+        }
+    }
+    // picking such a hit goes to its page and row (the window then opens the section)
+    let mut m = SettingsModel::new("en-US");
+    m.begin(Map::new(), None);
+    assert!(matches!(m.search_input("video encoder"), search::SearchStep::Paint { .. }));
+    match m.search_key(search::SearchKey::Enter) {
+        search::SearchStep::Go(t) => assert_eq!((t.page.as_str(), t.row_id.as_str(), t.row), ("clipboard", "capture.encoder", true)),
+        s => panic!("{s:?}"),
+    }
+}
+
+#[test]
+fn the_old_page_names_still_find_their_rows() {
+    // (an old page name, in either language) -> a row that is on `page` now
+    let cases = [
+        ("behavior", "general", "hideInFullscreen"),
+        ("Поведение", "general", "quiet.on"),
+        ("character", "appearance", "pet.size"),
+        ("Персонаж", "appearance", "character.liquid"),
+        ("weather", "modules", "weather.city"),
+        ("voice", "sound", "voice.enabled"),
+        ("Голос в текст", "sound", "voice.provider"),
+        ("aisetup", "ai", "aisetup.whisper"),
+        ("Установка ИИ", "ai", "aisetup.chat"),
+        ("search", "general", "search.engine"),
+        ("Поиск файлов", "general", "everything.autostart"),
+        ("Живые события", "live", "live.steam"),
+        ("live events", "live", "live.usb"),
+        ("hotkeys", "hotkeys", "hotkey.qr"),
+    ];
+    for (q, page, row) in cases {
+        for lang in Lang::ALL {
+            let idx = search::build_index(lang);
+            let hits = search::search(&idx, q, 300);
+            assert!(hits.iter().any(|e| e.page == page && e.row_id == row), "{q:?} ({lang:?}) finds {row} on {page}");
+        }
+    }
+}
+
 // ------------------------------------------------------------------------------------------------ rows per page
 
 #[test]
 fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
-    let expect = [
-        ("character", 7), ("general", 4), ("appearance", 21), ("behavior", 16), ("hotkeys", 19), ("modules", 22), ("live", 38), ("phone", 14), ("clipboard", 18), ("search", 4),
-        ("sound", 15), ("weather", 4), ("ai", 7), ("aisetup", 6), ("voice", 11), ("updates", 5),
-    ];
+    // the 211 rows of the old 16 pages, minus the one dropped as a duplicate ("Set up a cloud AI" only jumped to the section above it)
+    let expect = [("appearance", 28), ("general", 24), ("hotkeys", 19), ("modules", 24), ("live", 40), ("clipboard", 18), ("sound", 26), ("phone", 14), ("ai", 12), ("updates", 5)];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");
     }
@@ -597,7 +798,7 @@ fn every_control_family_has_feedback_or_is_documented_static() {
 fn the_phone_page_has_the_link_widgets_and_gated_rows() {
     let p = schema().page("phone").expect("phone page");
     let ids: Vec<&str> = p.rows().map(|r| r.id).collect();
-    assert_eq!(ids, ["phone.enabled", "phone.link", "phone.devices", "phone.apps", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone", "phone.downloadDir", "phone.maxFileMB", "phone.autoAccept", "phone.apkUrl", "phone.relay", "phone.relayUrl", "phone.relayMaxFileMB"]);
+    assert_eq!(ids, ["phone.enabled", "phone.link", "phone.devices", "phone.apps", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone", "phone.downloadDir", "phone.autoAccept", "phone.relay", "phone.maxFileMB", "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB"]);
     let sw = schema().row("phone.enabled").unwrap();
     assert_eq!(sw.default, json!(false), "the server never starts by itself");
     let note = p.groups[0].footer;

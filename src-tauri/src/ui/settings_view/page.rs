@@ -76,6 +76,10 @@ pub struct RowRt {
     pub fid: u32,
     /// labels / values of a segmented control or select, parallel
     pub opts: Vec<(String, Value)>,
+    /// the row stands in the page's "Advanced" section
+    pub adv: bool,
+    /// how open that section was at the last paint (1 for every other row): below a half the row takes no events
+    pub ak: f32,
 }
 
 impl RowRt {
@@ -99,13 +103,28 @@ pub enum Block {
     Card(Vec<RowRt>),
     Pets(u32),
     Chars(u32),
+    /// The "Advanced" header; the next `n` blocks are the section it opens and closes.
+    Adv(usize),
     WizTop,
     WizNav,
     Spacer,
 }
 
+/// The "Advanced" disclosure of a page: closed when the page is built unless it was opened earlier in this window.
+pub struct Adv {
+    /// 0 closed .. 1 open
+    pub t: Flow,
+    pub on: bool,
+    /// what the header says under its name: the titles of the sections inside
+    pub sub: String,
+    pub fid: u32,
+}
+
 pub struct Page {
     pub id: String,
+    /// the page was laid out since the section last opened or closed (a "go to row" inside it waits for that)
+    pub laid_out: bool,
+    pub adv: Option<Adv>,
     pub blocks: Vec<Block>,
     pub rects: Vec<Rect>,
     pub scroll: ScrollState,
@@ -117,7 +136,7 @@ pub struct Page {
 
 impl Page {
     pub fn empty() -> Page {
-        Page { id: String::new(), blocks: Vec::new(), rects: Vec::new(), scroll: ScrollState::new(), bar: Scrollbar::new(Axis::Vertical), content_h: 0.0, fids: Vec::new(), wizard: false }
+        Page { id: String::new(), laid_out: true, adv: None, blocks: Vec::new(), rects: Vec::new(), scroll: ScrollState::new(), bar: Scrollbar::new(Axis::Vertical), content_h: 0.0, fids: Vec::new(), wizard: false }
     }
 
     pub fn rows(&self) -> impl Iterator<Item = &RowRt> {
@@ -295,6 +314,8 @@ pub fn new_row(row: &'static Row, m: &SettingsModel, th: &Theme, dy: &Dyn, lang:
         ctl_rect: Rect::default(),
         fid,
         opts,
+        adv: false,
+        ak: 1.0,
     }
 }
 

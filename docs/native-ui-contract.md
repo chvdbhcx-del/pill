@@ -274,3 +274,11 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `phone_open_file` | `id: String, reveal: Option<bool>` | `bool` | phone.rs |
 | `notif_history_remove` | `id: i64` | `()` | notifhist.rs |
 
+
+## Settings pages
+
+`settings_open { page }` (the island, the command bar, the cards, `settingswin::open`), the `settings:page` event and the `Open` message of the window take one of these names (`pill.exe --open settings` takes no page: it opens the default one) (case-insensitive; anything else is ignored; no name opens Appearance). Unknown names never run anything.
+
+- The ten pages of the sidebar: `appearance`, `general`, `hotkeys`, `modules`, `live` (shown as "Events"), `clipboard`, `sound`, `phone`, `ai`, `updates`.
+- The six names of the old sixteen-page sidebar keep working. Each opens the page that holds its rows now and scrolls to the start of their section (a section inside a collapsed "Advanced" part opens first): `character` -> `appearance`, `behavior` and `search` -> `general`, `weather` -> `modules`, `voice` -> `sound`, `aisetup` -> `ai`. The map is `LEGACY` in `ui-core/src/settings/nav.rs`.
+- `welcome` starts the first-run wizard instead of showing a page.

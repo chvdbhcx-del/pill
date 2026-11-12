@@ -43,7 +43,8 @@ impl SettingsView {
                 let page = args.get("page").and_then(Value::as_str);
                 match nav::resolve_open(page) {
                     Some(OpenTarget::Wizard) => self.start_wizard(cx),
-                    Some(OpenTarget::Page(p)) => self.show_page(p, cx),
+                    // the name as asked: an old page name also scrolls to where its rows stand now
+                    Some(OpenTarget::Page(_)) => self.show_page(&page.unwrap_or_default().to_ascii_lowercase(), cx),
                     None => {}
                 }
             }

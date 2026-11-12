@@ -6,7 +6,8 @@ use super::flow::{from_to, go};
 use pill_ui_core::settings::anim::AnimKind;
 use pill_ui_core::settings::calls::BackendCall;
 use pill_ui_core::settings::nav::OpenTarget;
-use pill_ui_core::settings::schema::{schema, Control};
+use crate::ui::liquid::{Feel, Flow};
+use pill_ui_core::settings::schema::{self, schema, Control};
 use serde_json::Value;
 
 impl SettingsView {
@@ -18,6 +19,7 @@ impl SettingsView {
     /// The first answer of `settings_get`: the model, the page asked for, the first frame.
     pub(super) fn begin(&mut self, merged: serde_json::Map<String, Value>, cx: &mut Cx) {
         let want = self.data.open_page.take();
+        let anchor = want.as_deref().and_then(pill_ui_core::settings::nav::legacy_anchor);
         let target = self.model.begin(merged, want.as_deref());
         self.loaded = true;
         let rm = self.model.get_bool("reduceMotion");
@@ -31,9 +33,45 @@ impl SettingsView {
                 self.enter_t.jump(1.0);
                 self.focus.set_order(&self.focus_order());
                 self.page_shown(p, cx);
+                self.goto_anchor(anchor);
             }
         }
         cx.request_frame();
+    }
+
+    /// Opens or closes the "Advanced" section of the page on screen (animated; at once with `instant` or Reduce motion).
+    /// Remembered until the window closes, never stored.
+    pub(super) fn set_advanced(&mut self, on: bool, instant: bool) {
+        let reduce = self.reduce() || instant;
+        let id = self.model.current;
+        let header = {
+            let Some(a) = self.page.adv.as_mut() else { return };
+            if a.on == on {
+                return;
+            }
+            a.on = on;
+            go(&mut a.t, on as u8 as f32, reduce);
+            a.fid
+        };
+        if on {
+            self.adv_open.insert(id);
+        } else {
+            self.adv_open.remove(id);
+        }
+        self.page.laid_out = false;
+        // a row that folds away cannot keep the focus: it goes to the header
+        let lost = !on && self.focus.focused().is_some_and(|f| self.page.rows().any(|r| r.adv && r.fid == f));
+        self.focus.set_order(&self.focus_order());
+        if lost {
+            self.set_focus_id(Some(header), false);
+        }
+    }
+
+    /// An old page name was asked for: scroll to where its rows stand now (no flash; a collapsed section opens for it).
+    pub(super) fn goto_anchor(&mut self, anchor: Option<&'static str>) {
+        if let Some(row_id) = anchor {
+            self.goto = Some(super::Goto { row_id: row_id.to_string(), title: String::new(), quiet: true });
+        }
     }
 
     pub(super) fn apply_reduce(&mut self, on: bool, cx: &Cx) {
@@ -50,7 +88,19 @@ impl SettingsView {
         pg.id = id.to_string();
         let Some(p) = sc.page(id) else { return pg };
         pg.blocks.push(Block::H1(p.heading().get(lang).to_string()));
+        // the trailing `advanced` groups sit behind one disclosure: closed unless it was opened earlier in this window
+        let open = self.adv_open.contains(id);
+        let mut adv_at = None;
         for g in &p.groups {
+            if g.advanced && adv_at.is_none() {
+                let titles: Vec<&str> = p.advanced_groups().map(|g| g.title.get(lang)).filter(|t| !t.is_empty()).collect();
+                let sub = if titles.is_empty() { schema::ADVANCED_HINT.get(lang).to_string() } else { titles.join(" · ") };
+                let f = self.fid();
+                pg.fids.push(f);
+                pg.adv = Some(Adv { t: Flow::new(open as u8 as f32, Feel::FLOW), on: open, sub, fid: f });
+                adv_at = Some(pg.blocks.len());
+                pg.blocks.push(Block::Adv(0));
+            }
             let picker_only = g.rows.len() == 1 && matches!(g.rows[0].control, Control::PetsPicker);
             if !g.title.is_blank() && !picker_only {
                 pg.blocks.push(Block::Cap(g.title.get(lang).to_string()));
@@ -68,7 +118,9 @@ impl SettingsView {
                     }
                     _ => {
                         let f = self.fid();
-                        let rt = new_row(r, &self.model, &self.th, &self.dy, lang, f);
+                        let mut rt = new_row(r, &self.model, &self.th, &self.dy, lang, f);
+                        rt.adv = g.advanced;
+                        rt.ak = if g.advanced { open as u8 as f32 } else { 1.0 };
                         if focusable(&rt.ctl) && !matches!(rt.ctl, Ctl::Custom("aisetup.intro")) {
                             pg.fids.push(f);
                         }
@@ -82,6 +134,9 @@ impl SettingsView {
             if !g.footer.is_blank() {
                 pg.blocks.push(Block::Foot(g.footer.get(lang).to_string()));
             }
+        }
+        if let Some(i) = adv_at {
+            pg.blocks[i] = Block::Adv(pg.blocks.len() - i - 1);
         }
         if !p.footnote.is_blank() {
             pg.blocks.push(Block::Foot(p.footnote.get(lang).to_string()));
@@ -99,6 +154,7 @@ impl SettingsView {
             return;
         }
         let has_old = !self.page.id.is_empty() && self.leaving.is_none();
+        let anchor = pill_ui_core::settings::nav::legacy_anchor(id);
         let plan = self.model.show(id, has_old);
         self.search_close_silently();
         self.side.move_to(plan.page, self.reduce());
@@ -117,6 +173,7 @@ impl SettingsView {
         } else {
             self.install_page(plan.page, cx);
         }
+        self.goto_anchor(anchor);
         cx.request_frame();
     }
 
@@ -140,33 +197,29 @@ impl SettingsView {
         self.stop_ticker();
         let mut calls: Vec<BackendCall> = Vec::new();
         match id {
-            "general" => calls.push(BackendCall::AutostartGet),
+            // General holds the file search (Everything) of the old Search page
+            "general" => calls.extend([BackendCall::AutostartGet, BackendCall::EverythingStatus]),
             "hotkeys" => calls.push(BackendCall::LauncherList),
             "appearance" => calls.push(BackendCall::PillMonitors),
+            // Sound and voice: the devices, plus everything the old Voice page asked for
             "sound" => {
                 calls.push(BackendCall::MediaDevices);
                 calls.push(BackendCall::MediaCaptureDevices);
-            }
-            "clipboard" => calls.push(BackendCall::ClipStatus),
-            "search" => calls.push(BackendCall::EverythingStatus),
-            "ai" => {
-                calls.push(BackendCall::AiConfig);
-                calls.push(BackendCall::NetFeaturesStatus);
-            }
-            "voice" => {
                 calls.push(BackendCall::VoiceHasKey { provider: Some(self.model.get_str("voice.provider")) });
                 calls.push(BackendCall::NetFeaturesStatus);
             }
-            "aisetup" => {
-                calls.push(BackendCall::AisetupStatus);
+            "clipboard" => calls.push(BackendCall::ClipStatus),
+            // AI holds the old AI setup page
+            "ai" => {
                 calls.push(BackendCall::AiConfig);
+                calls.push(BackendCall::NetFeaturesStatus);
+                calls.push(BackendCall::AisetupStatus);
             }
             "updates" => calls.push(BackendCall::SettingsInfo),
             "live" => {
                 calls.extend([BackendCall::ObsStatus, BackendCall::SteamStatus, BackendCall::NotifStatus, BackendCall::LiveplusIcsStatus, BackendCall::MailStatus]);
                 self.ensure_ticker(cx, 1000);
             }
-            "weather" => {}
             "phone" => {
                 calls.extend([BackendCall::PhoneStatus, BackendCall::PhoneApps]);
                 if self.model.get_bool("phone.enabled") {
@@ -182,7 +235,9 @@ impl SettingsView {
     pub(super) fn focus_order(&self) -> Vec<u32> {
         let mut v = vec![chrome::FID_SEARCH];
         v.extend(self.side.fids());
-        v.extend(self.page.fids.iter().copied());
+        // Tab does not stop on rows folded away in a closed "Advanced" section
+        let folded: Vec<u32> = if self.page.adv.as_ref().is_some_and(|a| !a.on) { self.page.rows().filter(|r| r.adv).map(|r| r.fid).collect() } else { Vec::new() };
+        v.extend(self.page.fids.iter().copied().filter(|f| !folded.contains(f)));
         v
     }
 }

@@ -55,7 +55,7 @@ use glasskit::input::{FocusChain, InputEvent, Response};
 use glasskit::theme::Theme;
 use pill_ui_core::settings::calls::BackendCall;
 use pill_ui_core::settings::SettingsModel;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use custom::Data;
 use icons::Icons;
@@ -86,6 +86,8 @@ enum Grab {
 pub(crate) struct Goto {
     row_id: String,
     title: String,
+    /// an old page name led here: scroll to the start of its section, no flash
+    quiet: bool,
 }
 
 /// Messages from the window hook / own workers, delivered as `Msg::Custom`.
@@ -135,6 +137,8 @@ pub struct SettingsView {
     search: chrome::SearchUi,
     grab: Option<Grab>,
     goto: Option<Goto>,
+    /// pages whose "Advanced" section was opened since this window was created (never stored: every window starts with them closed)
+    adv_open: HashSet<&'static str>,
     hl_card: Option<(String, flow::Pulse)>,
     wiz: wizard::WizState,
     open_select: Option<u32>,
@@ -181,6 +185,7 @@ impl SettingsView {
             search: chrome::SearchUi::new(&th),
             grab: None,
             goto: None,
+            adv_open: HashSet::new(),
             hl_card: None,
             wiz: wizard::WizState::default(),
             open_select: None,
@@ -282,3 +287,5 @@ mod tests_motion;
 mod tests_home;
 #[cfg(test)]
 mod tests_phone;
+#[cfg(test)]
+mod tests_adv;

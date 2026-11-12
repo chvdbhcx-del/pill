@@ -8,6 +8,8 @@ use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
 use windows::Win32::System::Registry::{RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ};
 use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT};
 
+// The ten sidebar pages plus the six names of the old sidebar (character, behavior, search, weather, voice, aisetup), which the window maps to the page
+// that holds their rows now (`pill_ui_core::settings::nav::LEGACY`), and "welcome" (the wizard).
 const PAGES: &[&str] = &["character", "general", "appearance", "behavior", "search", "hotkeys", "ai", "voice", "weather", "sound", "live", "clipboard", "modules", "updates", "aisetup", "phone", "welcome"];
 
 pub fn init(_app: &tauri::App) {

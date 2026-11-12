@@ -175,7 +175,7 @@ pub fn updates() -> Page {
                     Action::UpdateCheck,
                     ButtonStyle::Normal,
                 )
-                .kw(&["update", "version", "upgrade", "обновление", "версия", "обновить"]),
+                .kw(&["update", "version", "upgrade", "about", "обновление", "версия", "обновить", "о программе"]),
                 toggle("updateAuto", tr("Проверять при запуске", "Check on start"), tr("Через ~20 секунд после старта один запрос к GitHub. Установить обновление всё равно нужно вручную.", "One request to GitHub ~20 s after launch. Installing is still up to you."), true).kw(&["update", "github", "network", "обновление", "сеть"]),
                 toggle("whatsNew", tr("Показывать «Что нового» после обновления", "Show the what is new card after an update"), tr("Карточка с заметками версии один раз после обновления; сеть не используется", "A card with the version notes, once after an update; no network"), true).kw(&["changelog", "what's new", "что нового", "заметки"]),
                 button(

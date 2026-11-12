@@ -1,4 +1,4 @@
-//! The data of every settings page, in sidebar order. `build()` is called once by `schema::schema()`.
+//! The data of every settings page, in sidebar order (`layout` arranges the rows the old page builders define). `build()` is called once by `schema::schema()`.
 //!
 //! Row counts and wording come from `src/settings.js` (+ `ai-setup.js`, `voice-ui.js`, `settings-live-ext.js`); defaults from the
 //! JS `DEF` table, which equals `settings.rs::defaults()` wherever the latter has the key (checked in `tests.rs`).
@@ -6,6 +6,7 @@ use crate::settings::schema::Page;
 
 mod ai;
 mod base;
+mod layout;
 mod phone;
 mod system;
 
@@ -14,7 +15,8 @@ pub(crate) fn leak(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
 }
 
-pub fn build() -> Vec<Page> {
+/// The sixteen pages of the old sidebar: the single place the rows are defined.
+fn old_pages() -> Vec<Page> {
     vec![
         base::character(),
         base::general(),
@@ -33,4 +35,29 @@ pub fn build() -> Vec<Page> {
         ai::voice(),
         ai::updates(),
     ]
+}
+
+/// The old pages as they were, for the tests that hold the new layout to them.
+#[cfg(test)]
+pub(crate) fn old_pages_for_tests() -> Vec<Page> {
+    old_pages()
+}
+
+/// The ten pages of the sidebar. The rows are defined by the sixteen old page builders; `layout` arranges them (see there).
+pub fn build() -> Vec<Page> {
+    let mut pool = layout::Pool::new(old_pages());
+    let pages = vec![
+        layout::appearance(&mut pool),
+        layout::general(&mut pool),
+        layout::hotkeys(&mut pool),
+        layout::modules(&mut pool),
+        layout::live(&mut pool),
+        layout::clipboard(&mut pool),
+        layout::sound(&mut pool),
+        layout::phone(&mut pool),
+        layout::ai(&mut pool),
+        layout::updates(&mut pool),
+    ];
+    pool.finish();
+    pages
 }

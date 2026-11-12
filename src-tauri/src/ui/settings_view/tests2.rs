@@ -101,11 +101,11 @@ impl T {
 #[test]
 fn toggle_click_writes_the_setting() {
     let _g = motion_lock();
-    let mut t = boot(json!({}), "appearance");
-    let r = t.v.borrow().ctl_rect_of("underTaskbar").expect("row");
+    let mut t = boot(json!({}), "general");
+    let r = t.v.borrow().ctl_rect_of("hideInFullscreen").expect("row");
     t.click_at(r);
-    assert!(t.calls("settings_set").iter().any(|a| a["patch"]["underTaskbar"] == json!(false)), "{:?}", t.calls("settings_set"));
-    assert!(t.v.borrow().model.get_bool("underTaskbar") == false);
+    assert!(t.calls("settings_set").iter().any(|a| a["patch"]["hideInFullscreen"] == json!(false)), "{:?}", t.calls("settings_set"));
+    assert!(t.v.borrow().model.get_bool("hideInFullscreen") == false);
 }
 
 #[test]
@@ -178,11 +178,11 @@ fn sidebar_click_switches_the_page_and_fetches_its_data() {
 fn reduced_motion_switches_pages_at_once() {
     let _g = motion_lock();
     let mut t = boot(json!({"language": "en", "reduceMotion": true}), "general");
-    let r = t.v.borrow().hit_rect(&Act::Nav("appearance".into())).unwrap();
+    let r = t.v.borrow().hit_rect(&Act::Nav("hotkeys".into())).unwrap();
     click(&mut t.sim, r.cx(), r.cy());
     t.sim.pump();
     assert!(t.v.borrow().leaving.is_none(), "no exit slide under reduced motion");
-    assert_eq!(t.current(), "appearance");
+    assert_eq!(t.current(), "hotkeys");
     assert!(!t.v.borrow().enter_t.moving(), "the page is in place at once");
 }
 
@@ -196,7 +196,7 @@ fn ctrl_f_search_jumps_to_a_row_and_flashes_it() {
     assert!(t.v.borrow().model.search.open, "results are open");
     assert!(!t.v.borrow().search.rows.is_empty());
     t.key(KeyCode::Enter, Modifiers::NONE);
-    assert_eq!(t.current(), "behavior");
+    assert_eq!(t.current(), "general");
     // the highlight plays for 1.7 s: look right after the jump
     t.sim.run(3);
     let _ = t.sim.render((840.0, 760.0), &Theme::settings_dark());
@@ -269,12 +269,16 @@ fn the_page_content_scrolls_with_the_wheel_too() {
 fn keyboard_focus_scrolls_a_sidebar_item_into_view() {
     let _g = motion_lock();
     let mut t = boot(json!({"language": "en"}), "general");
-    render_size(&mut t, 840.0, 640.0);
-    let mut last = 0.0;
-    for _ in 0..17 {
-        t.key(KeyCode::Tab, Modifiers::NONE);
-        render_size(&mut t, 840.0, 640.0);
-        last = t.v.borrow().side.scroll.offset();
+    // the smallest window the sidebar of ten pages still has to scroll in
+    render_size(&mut t, 840.0, 520.0);
+    let mut last = 0.0f32;
+    for _ in 0..12 {
+        // not `t.key`: its settling frames render the default 760 px window, in which all ten pages fit and the list snaps back to 0
+        for down in [true, false] {
+            t.sim.send(&InputEvent::Key { code: KeyCode::Tab, mods: Modifiers::NONE, down, repeat: false });
+        }
+        render_size(&mut t, 840.0, 520.0);
+        last = last.max(t.v.borrow().side.scroll.offset());
     }
     assert!(last > 10.0, "Tab through the list scrolled it ({last})");
 }

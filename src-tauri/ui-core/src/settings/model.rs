@@ -540,13 +540,14 @@ impl SettingsModel {
                     self.start_wizard();
                     vec![BackendCall::UiStartWizard]
                 }
-                Some(OpenTarget::Page(p)) => {
+                Some(OpenTarget::Page(_)) => {
                     let mut out = Vec::new();
                     if self.wizard.is_active() {
                         self.wizard.abandon();
                         out.push(BackendCall::UiEndWizardChrome);
                     }
-                    out.push(BackendCall::UiShowPage { page: p.to_string() });
+                    // the name as asked (lower case): the window turns an old page name into its page and the row to scroll to
+                    out.push(BackendCall::UiShowPage { page: payload.as_str().unwrap_or_default().to_ascii_lowercase() });
                     out
                 }
                 None => vec![],
@@ -912,8 +913,8 @@ mod tests {
         assert_eq!(m.begin(Map::new(), Some("welcome")), OpenTarget::Wizard);
         assert!(m.wizard.is_active() && m.lang() == Lang::Ru);
         let mut m = SettingsModel::new("ru-RU");
-        assert_eq!(m.begin(json!({"reduceMotion": true}).as_object().unwrap().clone(), Some("Weather")), OpenTarget::Page("weather"));
-        assert_eq!(m.current, "weather");
+        assert_eq!(m.begin(json!({"reduceMotion": true}).as_object().unwrap().clone(), Some("Weather")), OpenTarget::Page("modules"));
+        assert_eq!(m.current, "modules", "the old Weather page is a section of Modules now");
         m.recorder.start("toggle");
         let plan = m.show("sound", true);
         assert_eq!((plan.page, m.current, m.recorder.active()), ("sound", "sound", None), "leaving a page stops the key recorder");

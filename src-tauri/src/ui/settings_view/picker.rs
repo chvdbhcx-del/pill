@@ -50,7 +50,7 @@ impl SettingsView {
         for t in self.pets.sel.values_mut() {
             busy |= tick(t, dt);
         }
-        if self.model.current != "character" || self.wiz.active() {
+        if self.model.current != "appearance" || self.wiz.active() {
             return busy;
         }
         let reduce = self.reduce();
