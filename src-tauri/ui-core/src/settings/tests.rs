@@ -327,8 +327,14 @@ const OLD_UNSTORED: [&str; 36] = [
     "updates.check", "updates.whatsnew", "updates.report",
 ];
 
-/// Ids of rows that are gone on purpose (and why): "Set up a cloud AI" only jumped to the assistant section that now stands right above it.
-const DROPPED: [&str; 1] = ["aisetup.cloud-chat"];
+/// Ids of rows that are gone on purpose (and why): "Set up a cloud AI" only jumped to the assistant section that now stands right above it,
+/// and "Choose service and key" (voice) only jumped to the recognition-service chips that now stand in the same Voice to text section.
+/// Both were buttons without a key, so no setting is lost.
+const DROPPED: [&str; 2] = ["aisetup.cloud-chat", "aisetup.cloud-voice"];
+
+/// Rows whose label and/or hint were reworded because their neighbours (the overlapping switches of one feature) made the old words
+/// ambiguous, or because the page they pointed to changed. Their key, control, default and gating are still held to the old ones.
+const RELABELED: [&str; 8] = ["net.weather", "module.weather", "live.shelf", "phone.enabled", "module.phone", "live.phone", "aisetup.intro", "aiSetupDone"];
 
 #[test]
 fn no_key_changed_and_every_old_row_is_on_exactly_one_new_page() {
@@ -361,7 +367,13 @@ fn no_key_changed_and_every_old_row_is_on_exactly_one_new_page() {
                 continue;
             }
             let n = schema().row(o.id).unwrap_or_else(|| panic!("{} (page {}) is gone", o.id, op.id));
-            assert_eq!((n.id, n.key, n.label, n.hint), (o.id, o.key, o.label, o.hint), "{}", o.id);
+            if RELABELED.contains(&o.id) {
+                assert_eq!((n.id, n.key), (o.id, o.key), "{}", o.id);
+                assert!(n.label != o.label || n.hint != o.hint, "{} is listed as reworded but is not", o.id);
+                assert!(!n.label.is_blank() && complete(n.label) && (n.hint.is_blank() || complete(n.hint)), "{} keeps both languages", o.id);
+            } else {
+                assert_eq!((n.id, n.key, n.label, n.hint), (o.id, o.key, o.label, o.hint), "{}", o.id);
+            }
             assert_eq!((&n.control, &n.default, &n.visible_if, &n.enabled_if, n.restart_needed, n.status, n.block), (&o.control, &o.default, &o.visible_if, &o.enabled_if, o.restart_needed, o.status, o.block), "{}", o.id);
             assert!(o.search_keywords.iter().all(|k| n.search_keywords.contains(k)), "{} keeps its keywords", o.id);
             checked += 1;
@@ -411,6 +423,88 @@ fn first_choice_rows_stand_outside_the_section_and_technical_ones_inside() {
     assert!(main.iter().all(|n| *n <= 7), "no long unbroken list on Events: {main:?}");
 }
 
+// ------------------------------------------------------------------------------------------------ one section per feature
+
+/// (feature, page, the ids that stand together in ONE section, switch first). Advanced parts of a feature are in `ADVANCED_PARTS`.
+const FEATURES: [(&str, &str, &[&str]); 21] = [
+    ("Weather", "modules", &["net.weather", "module.weather", "weather.city", "weather.units", "weather.refresh", "showWxIcon", "showTemp"]),
+    ("Notes and timer", "modules", &["module.note", "live.reminders", "sound.reminders", "sound.reminderTone", "sound.play"]),
+    ("File shelf", "modules", &["module.shelf", "live.shelf"]),
+    ("System controls", "modules", &["module.controls", "live.sysmon"]),
+    ("Media player", "sound", &["module.media", "live.music", "musicPill", "audio.reactive", "music.lyrics", "home.player", "home.lyrics"]),
+    ("Volume and microphone", "sound", &["live.volume", "sound.volumeDevice", "audio.volumeTarget", "sound.micDevice", "live.micCam"]),
+    ("Voice to text", "sound", &["voice.enabled", "voice.mode", "voice.language", "voice.paste", "voice.provider", "voice.key", "aisetup.whisper", "voice.test-mic", "voice.test-service"]),
+    ("Clipboard history", "clipboard", &["module.clipboard", "live.copy", "clipboard.maxItems", "clipboard.retentionDays", "clipboard.private", "clipboard.skipSecrets", "clipboard.wipe"]),
+    ("Screen recording", "clipboard", &["live.recording", "capture.format", "capture.fps", "capture.recordSystemAudio", "capture.recordMic", "capture.videoFolder"]),
+    ("Phone link", "phone", &["phone.enabled", "module.phone", "live.phone", "phone.link", "phone.devices"]),
+    ("AI assistant and chat", "ai", &["net.ai", "module.chat", "ai.provider", "ai.key", "ai.baseUrl", "ai.model", "ai.list", "ai.test"]),
+    ("AI agents", "ai", &["live.agents", "live.agents.snippets", "agents.answerFromIsland"]),
+    ("Notifications", "live", &["module.notifs", "live.notifications", "live.notifications.allow"]),
+    ("Downloads", "live", &["live.downloads", "live.dlDone", "live.steam"]),
+    ("Battery", "live", &["live.battery", "showBattery"]),
+    ("Keyboard layout", "live", &["live.keyboardLayout", "live.keyboardLayoutAlways"]),
+    ("Virtual desktops", "live", &["live.virtualDesktopFlash", "live.virtualDesktop"]),
+    ("Calendar", "live", &["live.calendar", "live.calendar.path"]),
+    ("Mail", "live", &["live.mail", "mail.host", "mail.port", "mail.user", "mail.mailbox", "mail.password", "live.mail.test"]),
+    ("Command bar search", "general", &["module.fileSearch", "search.engine", "search.customUrl"]),
+    ("Hiding the pill", "general", &["hideInFullscreen", "fullscreenPeek", "autoHide"]),
+];
+
+/// The rare rows of a feature: they stand together in one `.adv()` section of the same page as the feature.
+const ADVANCED_PARTS: [(&str, &str, &[&str]); 10] = [
+    ("Notes and timer", "modules", &["timer.sound", "timer.soundFile"]),
+    ("VPN", "modules", &["vpn.own.name", "vpn.own.connect", "vpn.own.disconnect", "vpn.admin"]),
+    ("Media player", "sound", &["audio.perApp", "media.legacyPlayers"]),
+    ("Voice to text", "sound", &["voice.endpoint", "voice.model", "voice.autostop"]),
+    ("Clipboard history", "clipboard", &["clipClickPaste", "clipboard.denyList", "clipboard.maxImageMb"]),
+    ("Screenshots", "clipboard", &["capture.encoder", "capture.revealAfterSave", "showInCapture"]),
+    ("Notifications", "live", &["cards.duration", "history.keep", "history.mail"]),
+    ("Downloads", "live", &["live.downloadRing", "live.dlIgnoreExt"]),
+    ("OBS", "live", &["live.obs.port", "live.obs.password"]),
+    ("Phone files", "phone", &["phone.maxFileMB", "phone.apkUrl"]),
+];
+
+#[test]
+fn every_feature_is_one_section_with_its_switch_first() {
+    let section_of = |id: &str| {
+        let p = schema().page_of(id).unwrap_or_else(|| panic!("no row {id}"));
+        let g = p.groups.iter().find(|g| g.rows.iter().any(|r| r.id == id)).unwrap();
+        (p.id, g)
+    };
+    for (name, page, ids) in FEATURES {
+        let (_, g) = section_of(ids[0]);
+        assert!(!g.advanced, "{name}: the switch is in view");
+        assert_eq!(g.rows.iter().map(|r| r.id).collect::<Vec<_>>(), ids, "{name}: one section, in this order");
+        assert_eq!(section_of(ids[0]).0, page, "{name} stands on {page}");
+        assert!(!g.title.is_blank() && complete(g.title), "{name}: the section is named");
+    }
+    for (name, page, ids) in ADVANCED_PARTS {
+        let (pg, g) = section_of(ids[0]);
+        assert!(g.advanced && pg == page, "{name}: the rare rows are in the Advanced part of {page}");
+        for id in ids {
+            assert!(g.rows.iter().any(|r| r.id == *id), "{name}: {id} is in the same advanced section");
+        }
+    }
+    // the three overlapping groups of switches are told apart by words, and none of them was merged
+    for (a, b) in [("net.weather", "module.weather"), ("phone.enabled", "module.phone"), ("phone.enabled", "live.phone"), ("module.shelf", "live.shelf")] {
+        let (ra, rb) = (schema().row(a).unwrap(), schema().row(b).unwrap());
+        assert!(ra.label != rb.label && ra.key != rb.key, "{a} and {b} are two switches with two names");
+    }
+}
+
+#[test]
+fn the_feature_name_finds_every_row_of_the_feature() {
+    for lang in Lang::ALL {
+        let idx = search::build_index(lang);
+        for (q, ids) in [("weather", &["weather.units", "showTemp", "module.weather"][..]), ("погода", &["weather.city", "net.weather"]), ("media player", &["musicPill", "live.music"]), ("battery", &["showBattery"])] {
+            let hits = search::search(&idx, q, 300);
+            for id in ids {
+                assert!(hits.iter().any(|e| e.row_id == *id), "{q:?} ({lang:?}) finds {id}");
+            }
+        }
+    }
+}
+
 // ------------------------------------------------------------------------------------------------ search over the new layout
 
 #[test]
@@ -447,7 +541,8 @@ fn the_old_page_names_still_find_their_rows() {
         ("weather", "modules", "weather.city"),
         ("voice", "sound", "voice.enabled"),
         ("Голос в текст", "sound", "voice.provider"),
-        ("aisetup", "ai", "aisetup.whisper"),
+        ("aisetup", "sound", "aisetup.whisper"),
+        ("aisetup", "ai", "aisetup.chat"),
         ("Установка ИИ", "ai", "aisetup.chat"),
         ("search", "general", "search.engine"),
         ("Поиск файлов", "general", "everything.autostart"),
@@ -470,8 +565,8 @@ fn the_old_page_names_still_find_their_rows() {
 fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
-    // the 211 rows of the old 16 pages, minus the one dropped as a duplicate ("Set up a cloud AI" only jumped to the section above it)
-    let expect = [("appearance", 28), ("general", 24), ("hotkeys", 19), ("modules", 24), ("live", 40), ("clipboard", 18), ("sound", 26), ("phone", 14), ("ai", 12), ("updates", 5)];
+    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them)
+    let expect = [("appearance", 25), ("general", 24), ("hotkeys", 19), ("modules", 28), ("live", 30), ("clipboard", 22), ("sound", 26), ("phone", 16), ("ai", 14), ("updates", 5)];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");
     }
@@ -798,7 +893,7 @@ fn every_control_family_has_feedback_or_is_documented_static() {
 fn the_phone_page_has_the_link_widgets_and_gated_rows() {
     let p = schema().page("phone").expect("phone page");
     let ids: Vec<&str> = p.rows().map(|r| r.id).collect();
-    assert_eq!(ids, ["phone.enabled", "phone.link", "phone.devices", "phone.apps", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone", "phone.downloadDir", "phone.autoAccept", "phone.relay", "phone.maxFileMB", "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB"]);
+    assert_eq!(ids, ["phone.enabled", "module.phone", "live.phone", "phone.link", "phone.devices", "phone.apps", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone", "phone.downloadDir", "phone.autoAccept", "phone.relay", "phone.maxFileMB", "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB"]);
     let sw = schema().row("phone.enabled").unwrap();
     assert_eq!(sw.default, json!(false), "the server never starts by itself");
     let note = p.groups[0].footer;

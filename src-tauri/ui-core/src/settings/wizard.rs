@@ -84,9 +84,15 @@ pub fn content(step: u8) -> Content {
     }
 }
 
-/// The ids of the module rows step 2 shows (`module.<id>` rows of the Modules page, in order; the VPN switch is left for Settings).
+/// The order of step 2: the `module.<id>` rows no longer stand together (each is a switch of its feature's section, on whichever page that
+/// feature lives), so the wizard keeps the order the Modules page used to have. A module that is not listed here comes last.
+const MODULE_ORDER: [&str; 12] = ["module.media", "module.shelf", "module.launcher", "module.fileSearch", "module.clipboard", "module.text", "module.chat", "module.note", "module.weather", "module.controls", "module.phone", "module.notifs"];
+
+/// The ids of the module rows step 2 shows (every `module.<id>` row of the schema except VPN, which is left for Settings).
 pub fn module_row_ids() -> Vec<&'static str> {
-    schema().page("modules").map(|p| p.rows().filter(|r| r.key.starts_with("module.") && r.key != "module.vpn").map(|r| r.id).collect()).unwrap_or_default()
+    let mut ids: Vec<&'static str> = schema().all_rows().filter(|(_, r)| r.key.starts_with("module.") && r.key != "module.vpn").map(|(_, r)| r.id).collect();
+    ids.sort_by_key(|id| MODULE_ORDER.iter().position(|o| o == id).unwrap_or(usize::MAX));
+    ids
 }
 
 /// The `(action, title, default)` triples step 3 shows.
@@ -298,7 +304,7 @@ mod tests {
     #[test]
     fn step_contents_come_from_the_schema() {
         assert!(matches!(content(1), Content::Language));
-        assert_eq!(module_row_ids().len(), 12);
+        assert_eq!(module_row_ids(), MODULE_ORDER, "the wizard lists the modules in the order of the old Modules page");
         assert!(module_row_ids().iter().all(|id| schema().row(id).is_some_and(|r| r.default == json!(true))));
         let hk = hotkey_rows();
         assert_eq!(hk.len(), 6);
