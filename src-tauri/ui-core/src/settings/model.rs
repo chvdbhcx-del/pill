@@ -540,13 +540,14 @@ impl SettingsModel {
                     self.start_wizard();
                     vec![BackendCall::UiStartWizard]
                 }
-                Some(OpenTarget::Page(p)) => {
+                Some(OpenTarget::Page(_)) => {
                     let mut out = Vec::new();
                     if self.wizard.is_active() {
                         self.wizard.abandon();
                         out.push(BackendCall::UiEndWizardChrome);
                     }
-                    out.push(BackendCall::UiShowPage { page: p.to_string() });
+                    // the name as asked (lower case): the window turns an old page name into its page and the row to scroll to
+                    out.push(BackendCall::UiShowPage { page: payload.as_str().unwrap_or_default().to_ascii_lowercase() });
                     out
                 }
                 None => vec![],

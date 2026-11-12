@@ -68,6 +68,8 @@ pub enum Act {
     Import,
     Update,
     Disclosure,
+    /// the "Advanced" header of a page
+    Advanced,
     // hotkeys
     Recorder(String),
     // phone page: a new pairing code, Revoke (second click confirms), mute / unmute an app (package name)

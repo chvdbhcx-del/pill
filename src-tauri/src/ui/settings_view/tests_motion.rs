@@ -26,7 +26,7 @@ fn paint(t: &mut T) {
 fn a_page_change_slides_out_and_rises_in_without_jumps_and_idles() {
     let _m = motion_on();
     let mut t = boot(json!({"language": "en"}), "general");
-    t.v.borrow_mut().show_page("appearance", &mut t.sim.cx);
+    t.v.borrow_mut().show_page("hotkeys", &mut t.sim.cx);
     t.sim.frame.request();
     let (mut last_leave, mut leave_frames, mut peak_enter) = (0.0f32, 0, 0.0f32);
     for _ in 0..400 {
@@ -47,7 +47,7 @@ fn a_page_change_slides_out_and_rises_in_without_jumps_and_idles() {
     assert!(peak_enter > 0.9 && peak_enter < 1.3, "the new page rises to its place with at most a small overshoot: {peak_enter}");
     idle_within(&mut t, 1500.0);
     let v = t.v.borrow();
-    assert_eq!(v.model.current, "appearance");
+    assert_eq!(v.model.current, "hotkeys");
     assert!(v.leaving.is_none() && (v.enter_t.at() - 1.0).abs() < 0.01);
 }
 
@@ -55,7 +55,7 @@ fn a_page_change_slides_out_and_rises_in_without_jumps_and_idles() {
 fn a_page_cancelled_while_rising_turns_around_where_it_is() {
     let _m = motion_on();
     let mut t = boot(json!({"language": "en"}), "general");
-    t.v.borrow_mut().show_page("appearance", &mut t.sim.cx);
+    t.v.borrow_mut().show_page("hotkeys", &mut t.sim.cx);
     t.sim.frame.request();
     for _ in 0..600 {
         t.sim.step_frame();
@@ -129,7 +129,7 @@ fn the_search_popup_flows_shut_keeping_its_rows_and_then_lets_the_window_idle() 
 #[test]
 fn a_row_message_opens_its_room_smoothly_and_closes_it_again() {
     let _m = motion_on();
-    let mut t = boot(json!({"language": "en"}), "behavior");
+    let mut t = boot(json!({"language": "en"}), "general");
     paint(&mut t);
     let id = t.v.borrow().page.rows().find(|r| matches!(r.ctl, page::Ctl::Toggle(_))).map(|r| r.row.id).expect("a toggle row");
     let h0 = |t: &T| t.v.borrow().page.rows().find(|r| r.row.id == id).map(|r| r.mh.at()).unwrap();

@@ -208,5 +208,5 @@ impl SettingsView {
 }
 
 fn clone_shell(r: &RowRt) -> RowRt {
-    RowRt { row: r.row, ctl: Ctl::None, vis: Flow::new(1.0, Feel::FLOW), vis_on: true, en: Flow::new(1.0, Feel::FADE), en_on: true, msg: None, status: None, mh: Flow::px(0.0, Feel::FLOW), mh_seen: true, kick: 0, hl: None, rect: Rect::default(), ctl_rect: Rect::default(), fid: r.fid, opts: Vec::new() }
+    RowRt { row: r.row, ctl: Ctl::None, vis: Flow::new(1.0, Feel::FLOW), vis_on: true, en: Flow::new(1.0, Feel::FADE), en_on: true, msg: None, status: None, mh: Flow::px(0.0, Feel::FLOW), mh_seen: true, kick: 0, hl: None, rect: Rect::default(), ctl_rect: Rect::default(), fid: r.fid, opts: Vec::new(), adv: r.adv, ak: 1.0 }
 }

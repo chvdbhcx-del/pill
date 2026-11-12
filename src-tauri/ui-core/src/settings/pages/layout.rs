@@ -184,10 +184,10 @@ pub(super) fn live(p: &mut Pool) -> Page {
 
 pub(super) fn clipboard(p: &mut Pool) -> Page {
     let rec = p.footer("clipboard", 1);
-    page(
+    let mut pg = page(
         "clipboard",
         "clipboard",
-        tr("Буфер и скриншоты", "Clipboard and screenshots"),
+        tr("Буфер и скриншоты", "Clipboard"),
         vec![
             p.sec(tr("История буфера", "Clipboard history"), &["clipboard.maxItems", "clipboard.retentionDays", "clipboard.private", "clipboard.skipSecrets", "clipboard.wipe"]),
             p.sec(tr("Скриншоты", "Screenshots"), &["capture.shotAction", "capture.annotate", "capture.folder"]),
@@ -195,7 +195,10 @@ pub(super) fn clipboard(p: &mut Pool) -> Page {
             p.sec(tr("Буфер: вставка, исключения, лимиты", "Clipboard: pasting, exclusions, limits"), &["clipboard.clickPaste", "clipboard.denyList", "clipboard.maxImageMb"]).adv(),
             p.sec(tr("Скриншоты и запись: подробности", "Screenshots and recording: details"), &["capture.encoder", "capture.revealAfterSave"]).adv(),
         ],
-    )
+    );
+    // the sidebar has room for a short name only
+    pg.head = tr("Буфер и скриншоты", "Clipboard and screenshots");
+    pg
 }
 
 pub(super) fn sound(p: &mut Pool) -> Page {
@@ -251,14 +254,16 @@ pub(super) fn ai(p: &mut Pool) -> Page {
 }
 
 pub(super) fn updates(p: &mut Pool) -> Page {
-    page(
+    let mut pg = page(
         "updates",
         "updates",
-        tr("Обновления и о программе", "Updates and about"),
+        tr("Обновления", "Updates"),
         vec![
             p.sec(tr("Версия и обновления", "Version and updates"), &["updates.check", "updateAuto"]),
             p.sec(tr("Что нового", "What is new"), &["whatsNew", "updates.whatsnew"]),
             p.sec(tr("Помощь", "Help"), &["updates.report"]),
         ],
-    )
+    );
+    pg.head = tr("Обновления и о программе", "Updates and about");
+    pg
 }
