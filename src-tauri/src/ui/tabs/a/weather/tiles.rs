@@ -1,4 +1,4 @@
-//! The weather tiles under the daily list (wind, humidity, pressure, sun, precipitation, UV index) and the one-sentence summary above them.
+//! The weather tiles under the daily list (wind, humidity, UV index, pressure, sun, precipitation) and the one-sentence summary above them.
 //! The data is `pill_ui_core::panel::a::weather_tiles`; this file gives it motion and pixels: the tiles rise in one after another when they
 //! scroll into view (the numbers count up while they appear), a new reading eases from the old one, the compass turns the short way round.
 use crate::ui::liquid::{Feel, Flow};
@@ -287,6 +287,14 @@ mod tests {
         assert_eq!((s, g), (358.0, 434.0));
         assert_eq!(h6, 434.0 + 2.0 * 108.0 + 10.0 + 2.0);
         assert!(layout(346.0, 3).2 < h6 && layout(346.0, 0).2 == layout(346.0, 3).2);
+    }
+
+    #[test]
+    fn five_or_four_tiles_stand_in_the_same_two_rows_as_six() {
+        // without a UV index (or without pressure) the column is exactly as tall as with six: the last cell is just empty, nothing shifts
+        assert_eq!(layout(346.0, 5), layout(346.0, 6));
+        assert_eq!(layout(346.0, 4), layout(346.0, 6));
+        assert!(layout(346.0, 3).2 < layout(346.0, 4).2);
     }
 
     #[test]

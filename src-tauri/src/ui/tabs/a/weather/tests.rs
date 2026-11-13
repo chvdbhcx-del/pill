@@ -47,12 +47,16 @@ struct Rig {
 
 impl Rig {
     fn open(settings: Value, weather: Option<Value>) -> Rig {
+        Rig::open_in(settings, weather, glasskit::lang::Lang::En)
+    }
+    fn open_in(settings: Value, weather: Option<Value>, lang: glasskit::lang::Lang) -> Rig {
         let (svc, f) = Services::fake();
         f.api.reply("settings_get", Ok(settings));
         if let Some(w) = weather {
             f.api.reply("weather_get", Ok(w));
         }
-        let (cx, q) = Cx::headless_queue(svc);
+        let (mut cx, q) = Cx::headless_queue(svc);
+        cx.lang = lang;
         let mut r = Rig { v: WeatherView::new(), cx, q, f, fx: vec![] };
         r.v.on_show(&mut r.cx);
         r.pump();

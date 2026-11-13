@@ -1,4 +1,4 @@
-//! The weather tiles of the Weather tab (like the iPhone Weather app): wind, humidity, pressure, sun, precipitation and UV index, plus one
+//! The weather tiles of the Weather tab (like the iPhone Weather app): wind, humidity, UV index, pressure, sun and precipitation, plus one
 //! sentence that sums the day up. Everything is derived from the MET Norway forecast the tab already has (instant details of the
 //! locationforecast: wind, relative humidity, pressure at sea level, clear-sky UV index; the sunrise / sunset of `net.rs`), nothing is fetched here.
 //!
@@ -138,6 +138,16 @@ pub fn tiles(n: &Now, today: Option<&Day>, e: &Env) -> Vec<WxTile> {
     h.frac = (n.humidity / 100.0).clamp(0.0, 1.0) as f32;
     out.push(h);
 
+    // the UV index is the third tile: it ends the first row, so the first scroll notch shows it (it used to be the sixth, a whole screen down)
+    if let Some(uv) = n.uv.filter(|u| u.is_finite()) {
+        let mut u = tile(Kind::Uv, tr.t("УФ-индекс", "UV index"));
+        u.num = Some(uv.round());
+        let peak = n.uv_max.map(|m| tr.t(&format!(" · максимум {}", m.round()), &format!(" · peak {}", m.round()))).unwrap_or_default();
+        u.sub = format!("{}{}", uv_word(tr, uv), peak);
+        u.frac = (uv / 11.0).clamp(0.0, 1.0) as f32;
+        out.push(u);
+    }
+
     if n.pressure > 100.0 {
         let mut p = tile(Kind::Pressure, tr.t("Давление", "Pressure"));
         if e.metric {
@@ -188,15 +198,6 @@ pub fn tiles(n: &Now, today: Option<&Day>, e: &Env) -> Vec<WxTile> {
     p.sub = if e.hour_mm.is_empty() { tr.t("В ближайший час сухо", "Dry for the next hour") } else { tr.t(&format!("В ближайший час: {}", e.hour_mm), &format!("Next hour: {}", e.hour_mm)) };
     p.frac = (mm / 10.0).clamp(0.0, 1.0) as f32;
     out.push(p);
-
-    if let Some(uv) = n.uv {
-        let mut u = tile(Kind::Uv, tr.t("УФ-индекс", "UV index"));
-        u.num = Some(uv.round());
-        let peak = n.uv_max.map(|m| tr.t(&format!(" · максимум {}", m.round()), &format!(" · peak {}", m.round()))).unwrap_or_default();
-        u.sub = format!("{}{}", uv_word(tr, uv), peak);
-        u.frac = (uv / 11.0).clamp(0.0, 1.0) as f32;
-        out.push(u);
-    }
     out
 }
 
@@ -243,22 +244,22 @@ mod tests {
     }
 
     #[test]
-    fn six_tiles_in_the_iphone_order_with_real_numbers() {
+    fn six_tiles_with_the_uv_index_ending_the_first_row_and_real_numbers() {
         let t = |c: f64| format!("{}°", c.round());
         let e = env(&EnTr, true, &t);
         let day = Day { dow: 5, min: 2.0, max: 7.0, icon: "rain".into(), precip: 3.25 };
         let v = tiles(&now(), Some(&day), &e);
         let kinds: Vec<Kind> = v.iter().map(|x| x.kind).collect();
-        assert_eq!(kinds, [Kind::Wind, Kind::Humidity, Kind::Pressure, Kind::Sun, Kind::Precip, Kind::Uv]);
+        assert_eq!(kinds, [Kind::Wind, Kind::Humidity, Kind::Uv, Kind::Pressure, Kind::Sun, Kind::Precip]);
         assert_eq!((v[0].num, v[0].unit.as_str(), v[0].sub.as_str()), (Some(5.0), " m/s", "From SW"));
         assert_eq!(v[0].toward, 45.0, "the arrow points where the wind goes, the opposite of where it comes from");
         assert_eq!((v[1].num, v[1].unit.as_str()), (Some(81.0), "%"));
         assert!(v[1].sub.starts_with("Dew point ") && v[1].sub.ends_with('°'));
-        assert_eq!((v[2].num, v[2].sub.as_str()), (Some(1013.0), "Normal"));
-        assert_eq!((v[3].title.as_str(), v[3].text.as_str(), v[3].sub.as_str()), ("Sunset", "14:30", "Sunrise: 05:30"));
-        assert!((v[3].frac - 0.5).abs() < 1e-6, "the sun is half way between rise and set");
-        assert_eq!((v[4].num, v[4].decimals, v[4].sub.as_str()), (Some(3.3), 1, "Next hour: 0.4 mm"));
-        assert_eq!((v[5].num, v[5].sub.as_str()), (Some(3.0), "Moderate · peak 6"));
+        assert_eq!((v[2].num, v[2].sub.as_str()), (Some(3.0), "Moderate · peak 6"));
+        assert_eq!((v[3].num, v[3].sub.as_str()), (Some(1013.0), "Normal"));
+        assert_eq!((v[4].title.as_str(), v[4].text.as_str(), v[4].sub.as_str()), ("Sunset", "14:30", "Sunrise: 05:30"));
+        assert!((v[4].frac - 0.5).abs() < 1e-6, "the sun is half way between rise and set");
+        assert_eq!((v[5].num, v[5].decimals, v[5].sub.as_str()), (Some(3.3), 1, "Next hour: 0.4 mm"));
     }
 
     #[test]
@@ -283,6 +284,32 @@ mod tests {
     }
 
     #[test]
+    fn the_uv_tile_keeps_its_place_in_the_first_row_whatever_else_is_missing() {
+        let t = |c: f64| format!("{}°", c.round());
+        let e = env(&EnTr, true, &t);
+        let kinds = |n: &Now| tiles(n, None, &e).iter().map(|x| x.kind).collect::<Vec<_>>();
+        // no UV: five tiles, the rest close ranks (no hole where it would stand)
+        let mut n = now();
+        n.uv = None;
+        assert_eq!(kinds(&n), [Kind::Wind, Kind::Humidity, Kind::Pressure, Kind::Sun, Kind::Precip]);
+        // no pressure: five tiles, UV still ends the first row
+        let mut n = now();
+        n.pressure = 0.0;
+        assert_eq!(kinds(&n), [Kind::Wind, Kind::Humidity, Kind::Uv, Kind::Sun, Kind::Precip]);
+        // neither: four
+        n.uv = None;
+        assert_eq!(kinds(&n), [Kind::Wind, Kind::Humidity, Kind::Sun, Kind::Precip]);
+        // night: 0 is a reading, the tile stays; a non-finite / absent index is not
+        let mut n = now();
+        n.uv = Some(0.0);
+        assert_eq!(kinds(&n)[2], Kind::Uv);
+        let v = tiles(&n, None, &e);
+        assert_eq!((v[2].num, v[2].sub.as_str()), (Some(0.0), "Low · peak 6"));
+        n.uv = Some(f64::NAN);
+        assert_eq!(kinds(&n), [Kind::Wind, Kind::Humidity, Kind::Pressure, Kind::Sun, Kind::Precip]);
+    }
+
+    #[test]
     fn uv_categories_follow_who_at_the_boundaries() {
         let lv: Vec<usize> = [0.0, 2.4, 2.6, 3.0, 5.4, 5.6, 7.4, 7.6, 10.4, 10.6, 15.0].iter().map(|&u| uv_level(u)).collect();
         assert_eq!(lv, [0, 0, 1, 1, 1, 2, 2, 3, 3, 4, 4]);
@@ -298,9 +325,9 @@ mod tests {
         let day = Day { dow: 5, min: 2.0, max: 7.0, icon: "rain".into(), precip: 2.54 };
         let v = tiles(&now(), Some(&day), &e);
         assert_eq!((v[0].num, v[0].unit.as_str()), (Some(12.0), " mph"));
-        assert_eq!((v[2].decimals, v[2].unit.as_str()), (2, " inHg"));
-        assert!((v[2].num.unwrap() - 29.93).abs() < 0.01);
-        assert!((v[4].num.unwrap() - 0.1).abs() < 1e-9 && v[4].unit == " in");
+        assert_eq!((v[3].decimals, v[3].unit.as_str()), (2, " inHg"));
+        assert!((v[3].num.unwrap() - 29.93).abs() < 0.01);
+        assert!((v[5].num.unwrap() - 0.1).abs() < 1e-9 && v[5].unit == " in");
     }
 
     #[test]

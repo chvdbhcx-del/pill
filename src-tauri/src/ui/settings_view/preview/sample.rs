@@ -69,7 +69,7 @@ pub fn weather(on: bool) -> Value {
         .collect();
     json!({
         "status": "ok", "city": "Sample City", "lat": 0.0, "lon": 0.0, "fetched": now, "stale": false, "warning": null, "tz": crate::ui::island::sys::local_offset_min(),
-        "now": { "temp": 18.4, "feels": 17.2, "symbol": "partlycloudy_day", "icon": "partly-day", "text": "Partly cloudy", "wind": 3.6, "dir": 225.0, "humidity": 62.0, "cloud": 40.0, "precip": 0.0, "min": 12.0, "max": 21.0 },
+        "now": { "temp": 18.4, "feels": 17.2, "symbol": "partlycloudy_day", "icon": "partly-day", "text": "Partly cloudy", "wind": 3.6, "dir": 225.0, "humidity": 62.0, "cloud": 40.0, "precip": 0.0, "min": 12.0, "max": 21.0, "pressure": 1014.0, "uv": 4.0, "uv_max": 6.0 },
         "hourly": hourly, "daily": daily,
         "sun": { "state": "normal", "rise": hour - 6 * 3_600_000, "set": hour + 6 * 3_600_000 }
     })

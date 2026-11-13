@@ -99,7 +99,7 @@ Hover the island (or press `Ctrl+Alt+I`) and it expands into a panel. Every tab 
 | **Text** | Text tools (case, RU/EN layout fix, transliteration, JSON, Base64, URL, sort, dedupe, word count, QR) and, with an AI endpoint, translate / fix errors / shorten / summarise / formal or friendly tone; dictation |
 | **Chat** | AI chat with threads and attachments: local models (Ollama, LM Studio, llama.cpp, FreeLLMAPI) or a cloud provider; answers stream in |
 | **Notes** | Notes, reminders and a timer |
-| **Weather** | Current conditions, hourly slots, a 7-day forecast and tiles for wind, humidity, pressure, sun, precipitation and UV index with a one-sentence summary (MET Norway, off until you switch it on) |
+| **Weather** | Current conditions, hourly slots, a 7-day forecast and tiles for wind, humidity, UV index, pressure, sun and precipitation with a one-sentence summary (MET Norway, off until you switch it on) |
 | **Controls** | Wi-Fi (with a network list: connect, password for a new network, disconnect), Ethernet, Bluetooth (with the device list), dark theme, a VPN tile for your own client (Settings → Modules → VPN), CPU / RAM, and lock / sleep / restart / shut down (press twice) |
 
 | Clipboard | Chat | Controls |
