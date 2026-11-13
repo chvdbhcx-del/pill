@@ -2,6 +2,13 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.8.7] - 2026-11-13
+
+### Highlights
+- Settings are rebuilt around functions: the sidebar is a list of 38 short pages (Weather, Media player, Clipboard, Phone, Notifications and more) under group headings, each with its switch first, then its events and options, and a collapsed Advanced part at the bottom.
+- The edge and character picker is a compact list instead of huge tiles, spacing is even, and the search box follows the language.
+- The live preview on the right opens the scene that matches the page you are on.
+
 ## [0.8.6] - 2026-11-12
 
 ### Highlights
