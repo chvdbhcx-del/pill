@@ -22,17 +22,17 @@ pub const FID_SEARCH: u32 = 1;
 const FID_NAV: u32 = 1000;
 pub const FID_QUIT: u32 = 1999;
 /// One function in the list: its box and the step to the next one.
-pub const ITEM_H: f32 = 30.0;
-const STRIDE: f32 = 31.0;
+pub const ITEM_H: f32 = 27.0;
+const STRIDE: f32 = 28.0;
 /// A group heading: the first one hugs the top, the others have a gap above.
 const GROUP_H0: f32 = 22.0;
-const GROUP_H: f32 = 34.0;
-const HEAD_H: f32 = 64.0;
+const GROUP_H: f32 = 27.0;
+const HEAD_H: f32 = 58.0;
 /// Left edge of an item's icon and of a group heading inside the list item; the icon box (a 24 grid drawn at 16 px) and the gap to the name.
 const NAV_X: f32 = 14.0;
 const NAV_ICON: f32 = 16.0;
 const SEARCH_H: f32 = 36.0;
-const FOOT_H: f32 = 84.0;
+const FOOT_H: f32 = 70.0;
 
 pub fn cap_label(c: &str) -> &str {
     pill_ui_core::settings::hotkey::cap_text(c)

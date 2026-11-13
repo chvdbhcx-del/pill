@@ -12,10 +12,10 @@ pub enum NavItem {
     Head(Tr),
 }
 
-/// Sidebar order: FIFTEEN pages under five small group headings. Island: how it looks (Look, Edge and character, Tabs and Home); Features: what the
-/// island can do (Weather, Media and sound, Clipboard, Screen capture, Tools); Events: what it reacts to (Notifications and cards, Calendar and mail);
-/// Phone and AI; App: General (start, hiding, quiet hours, command bar search, the settings window), Hotkeys, Updates. Every page is one family of
-/// functions, each function a titled section of it (see `pages::layout`).
+/// Sidebar order: SIXTEEN pages under four small group headings. Island: how it looks (Look, Edge and character, Tabs and Home); Features: what the
+/// island can do (Weather, Media and sound, Voice to text, Clipboard, Screen capture, Tools, Phone link, AI); Events: what it reacts to (Notifications and cards,
+/// Calendar and mail); App: General (start, hiding, quiet hours, command bar search, the settings window), Hotkeys, Updates. Every page is one family
+/// of functions, each function a titled section of it (see `pages::layout`). The whole list fits a 760 px window (`chrome::Side`).
 pub const NAV: [NavItem; 20] = [
     NavItem::Head(tr("Остров", "Island")),
     NavItem::Page("look"),
@@ -24,15 +24,15 @@ pub const NAV: [NavItem; 20] = [
     NavItem::Head(tr("Функции", "Features")),
     NavItem::Page("weather"),
     NavItem::Page("media"),
+    NavItem::Page("voice"),
     NavItem::Page("clipboard"),
     NavItem::Page("capture"),
     NavItem::Page("tools"),
+    NavItem::Page("phone"),
+    NavItem::Page("ai"),
     NavItem::Head(tr("События", "Events")),
     NavItem::Page("notifications"),
     NavItem::Page("calendar"),
-    NavItem::Head(tr("Телефон и ИИ", "Phone and AI")),
-    NavItem::Page("phone"),
-    NavItem::Page("ai"),
     NavItem::Head(tr("Приложение", "App")),
     NavItem::Page("general"),
     NavItem::Page("hotkeys"),
@@ -41,21 +41,21 @@ pub const NAV: [NavItem; 20] = [
 
 /// Icon ids of the sidebar pages' `Page::icon` (the sidebar draws one left of each title; `settings_view/icons.rs` resolves them: its own
 /// glyphs first, then the island's line-icon set) plus "power" for Quit. Every page has one; the test below keeps the two lists in step.
-pub const ICONS: [&str; 16] = ["palette", "character", "home", "weather", "note2", "clipboard", "area", "apps", "bell", "calendar", "phone", "sparkles", "general", "keyboard", "updates", "power"];
+pub const ICONS: [&str; 17] = ["palette", "character", "home", "weather", "note2", "mic", "clipboard", "area", "apps", "phone", "sparkles", "bell", "calendar", "general", "keyboard", "updates", "power"];
 
 /// The pages `settings_open` accepts (settingswin.rs `PAGES`): every page of the sidebar, the ids of the old sidebars (`LEGACY`; callers in
 /// other files, saved links and `--open` still use those names) and "welcome", which starts the wizard.
 pub const OPENABLE: [&str; 49] = [
-    "look", "edge", "tabs", "weather", "media", "clipboard", "capture", "tools", "notifications", "calendar", "phone", "ai", "general", "hotkeys", "updates", "pet", "clock", "animation", "volume", "voice", "screenshots", "recording", "notes", "launcher", "shelf", "text",
+    "look", "edge", "tabs", "weather", "media", "voice", "clipboard", "capture", "tools", "phone", "ai", "notifications", "calendar", "general", "hotkeys", "updates", "pet", "clock", "animation", "volume", "screenshots", "recording", "notes", "launcher", "shelf", "text",
     "controls", "vpn", "downloads", "battery", "keyboard", "desktops", "usb", "obs", "mail", "agents", "localai", "character", "appearance", "behavior", "sound", "live", "modules", "aisetup", "start", "hiding", "quiet", "search", "welcome",
 ];
 
 /// Old page ids that are not in the sidebar any more: (old id, the page that holds their rows now, the first row of the old page / function there:
 /// the window scrolls to the caption of that section). Three sidebars lie behind this list: the 16 pages of 0.8.5 (`character`, `appearance`,
 /// `behavior`, `search`, `voice`, `sound`, `live`, `modules`, `aisetup`; the others are pages of today's sidebar too), the 10 of 0.8.6 (nothing new)
-/// and the 35 / 38 pages of 0.8.7 and 0.8.8, one per function: their functions are sections of the 15 pages now. An id that is a page of the
-/// sidebar (look, edge, tabs, weather, media, clipboard, notifications, calendar, phone, ai, general, hotkeys, updates, capture, tools) needs no entry.
-pub const LEGACY: [(&str, &str, &str); 33] = [
+/// and the 35 / 38 pages of 0.8.7 and 0.8.8, one per function: their functions are sections of the 16 pages now. An id that is a page of the
+/// sidebar (look, edge, tabs, weather, media, voice, clipboard, capture, tools, phone, ai, notifications, calendar, general, hotkeys, updates) needs no entry.
+pub const LEGACY: [(&str, &str, &str); 32] = [
     ("character", "edge", "character.liquid"),
     ("appearance", "look", "shape"),
     ("behavior", "general", "hideInFullscreen"),
@@ -67,11 +67,10 @@ pub const LEGACY: [(&str, &str, &str); 33] = [
     ("hiding", "general", "hideInFullscreen"),
     ("quiet", "general", "quiet.on"),
     ("search", "general", "module.fileSearch"),
-    ("pet", "edge", "pet"),
+    ("pet", "edge", "pet.side"),
     ("clock", "look", "showTime"),
     ("animation", "look", "reduceMotion"),
     ("volume", "media", "live.volume"),
-    ("voice", "media", "voice.enabled"),
     ("screenshots", "capture", "capture.shotAction"),
     ("recording", "capture", "live.recording"),
     ("notes", "tools", "module.note"),
@@ -255,14 +254,14 @@ mod tests {
         let pages: Vec<&str> = NAV.iter().filter_map(|n| if let NavItem::Page(p) = n { Some(*p) } else { None }).collect();
         let ids: Vec<&str> = schema().pages.iter().map(|p| p.id).collect();
         assert_eq!(pages, ids, "every page is in the sidebar exactly once, in the order of the schema");
-        assert_eq!(pages.len(), 15, "fifteen pages, not thirty-eight");
+        assert_eq!(pages.len(), 16, "sixteen pages, not thirty-eight");
         // headings: the list starts with one, none follows another (no empty group), the list ends with a page
         assert!(matches!(NAV[0], NavItem::Head(_)));
         for w in NAV.windows(2) {
             assert!(!(matches!(w[0], NavItem::Head(_)) && matches!(w[1], NavItem::Head(_))), "an empty group");
         }
         assert!(matches!(NAV[NAV.len() - 1], NavItem::Page(_)));
-        assert_eq!(NAV.iter().filter(|n| matches!(n, NavItem::Head(_))).count(), 5, "at most five group headings");
+        assert_eq!(NAV.iter().filter(|n| matches!(n, NavItem::Head(_))).count(), 4, "four group headings");
         for n in NAV {
             if let NavItem::Head(t) = n {
                 assert!(t.is_complete(), "a heading has both languages");
@@ -331,7 +330,7 @@ mod tests {
             ("pet", "edge"),
             ("clock", "look"),
             ("animation", "look"),
-            ("voice", "media"),
+            ("voice", "voice"),
             ("volume", "media"),
             ("recording", "capture"),
             ("vpn", "tools"),
@@ -363,7 +362,7 @@ mod tests {
         assert_eq!(legacy_anchor("general"), None);
         assert_eq!(legacy_anchor("hotkeys"), None);
         assert_eq!(legacy_anchor("Battery"), Some("live.battery"));
-        assert_eq!(legacy_anchor("pet"), Some("pet"));
+        assert_eq!(legacy_anchor("pet"), Some("pet.side"));
         for (old, page, anchor) in LEGACY {
             assert!(!NAV.contains(&NavItem::Page(old)), "{old} is not in the sidebar any more");
             let row = schema().row(anchor).unwrap_or_else(|| panic!("anchor {anchor} of {old}"));

@@ -57,15 +57,15 @@ pub fn build() -> Vec<Page> {
         // Features
         l::weather(p),
         l::media(p),
+        l::voice(p),
         l::clipboard(p),
         l::capture(p),
         l::tools(p),
+        l::phone(p),
+        l::ai(p),
         // Events
         l::notifications(p),
         l::calendar(p),
-        // Phone and AI
-        l::phone(p),
-        l::ai(p),
         // App
         l::general(p),
         l::hotkeys(p),

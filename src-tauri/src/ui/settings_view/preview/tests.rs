@@ -145,7 +145,7 @@ fn a_page_opens_with_its_own_scene_and_an_unmapped_setting_keeps_the_scene() {
         let th = Theme::settings_dark();
         let mut t = wide("clipboard", json!({"language": "en"}));
         assert_eq!(t.v.borrow().pv.scene(), Scene::Panel(Tab::Clipboard));
-        set(&mut t, "capture.fps", json!(60)); // a setting with nothing to show
+        set(&mut t, "phone.autoAccept", json!(true)); // a setting with nothing to show
         settle(&mut t, WIDE, &th);
         assert_eq!(t.v.borrow().pv.scene(), Scene::Panel(Tab::Clipboard), "an unmapped row keeps the last preview");
         let mut t = wide("live", json!({"language": "en"}));
@@ -432,25 +432,38 @@ fn every_function_page_opens_the_matching_scene() {
         let cases = [
             ("look", Scene::Pill(Look::Island)),
             ("edge", Scene::Pill(Look::Edge)),
-            ("pet", Scene::Pill(Look::Pet)),
-            ("clock", Scene::Pill(Look::Clock)),
-            ("animation", Scene::Pill(Look::Motion)),
             ("tabs", Scene::Panel(Tab::Home)),
+            ("tools", Scene::Panel(Tab::Home)),
             ("weather", Scene::Panel(Tab::Weather)),
             ("clipboard", Scene::Panel(Tab::Clipboard)),
             ("notifications", Scene::Flash(Flash::Notif)),
             ("media", Scene::Flash(Flash::Music)),
-            ("volume", Scene::Flash(Flash::Volume)),
-            ("recording", Scene::Flash(Flash::Recording)),
-            ("downloads", Scene::Flash(Flash::Download)),
+            ("capture", Scene::Flash(Flash::Toast)),
             ("hotkeys", Scene::DEFAULT),
             ("phone", Scene::DEFAULT),
+            ("calendar", Scene::DEFAULT),
+            ("ai", Scene::DEFAULT),
         ];
         for (page, scene) in cases {
             assert_eq!(of_page(page), scene, "{page}");
         }
         // opened for real, and the old names land on the same scenes
-        for (page, scene) in [("weather", Scene::Panel(Tab::Weather)), ("live", Scene::Flash(Flash::Notif)), ("sound", Scene::Flash(Flash::Volume)), ("modules", Scene::Panel(Tab::Home)), ("appearance", Scene::Pill(Look::Island))] {
+        // (an old page name opens the page scrolled to its function, and the panel opens with that function's scene)
+        for (page, scene) in [
+            ("weather", Scene::Panel(Tab::Weather)),
+            ("live", Scene::Flash(Flash::Notif)),
+            ("sound", Scene::Flash(Flash::Volume)),
+            ("modules", Scene::Panel(Tab::Home)),
+            ("appearance", Scene::Pill(Look::Island)),
+            ("pet", Scene::Pill(Look::Pet)),
+            ("clock", Scene::Pill(Look::Clock)),
+            ("animation", Scene::Pill(Look::Motion)),
+            ("volume", Scene::Flash(Flash::Volume)),
+            ("recording", Scene::Flash(Flash::Recording)),
+            ("downloads", Scene::Flash(Flash::Download)),
+            ("battery", Scene::Flash(Flash::Battery)),
+            ("notes", Scene::Panel(Tab::Home)),
+        ] {
             let t = wide(page, json!({"language": "en"}));
             assert_eq!(t.v.borrow().pv.scene(), scene, "{page}");
         }
@@ -461,23 +474,58 @@ fn every_function_page_opens_the_matching_scene() {
     });
 }
 
-/// `PILL_SNAP_DIR=<dir> cargo test --release --locked -p pill the_function_pages_with_the_panel` writes the pages as PNGs (1180 x 760, dark and light).
+/// The sixteen pages of the sidebar, in order.
+const PAGES16: [&str; 16] = ["look", "edge", "tabs", "weather", "media", "voice", "clipboard", "capture", "tools", "phone", "ai", "notifications", "calendar", "general", "hotkeys", "updates"];
+
+fn pages_with_the_panel(lang: &str, themes: &[(&str, Theme)]) {
+    const SIZE: (f32, f32) = (1180.0, 760.0);
+    for (tn, th) in themes {
+        for page in PAGES16 {
+            let mut t = boot(json!({ "language": lang }), page);
+            settle(&mut t, SIZE, th);
+            assert!(t.v.borrow().pv.width() > PV_W - 0.5, "{page}: the panel is open at 1180");
+            let c = t.v.borrow().content_rect();
+            assert!(c.w >= MIN_PAGE_W - 0.01, "{page}: the cards fit next to the panel");
+            let img = snap(&mut t.sim, &format!("fn-{page}-{lang}-{tn}-1180"), th, SIZE);
+            assert!(img.count(None, |p| p[3] == 255) > 100_000, "{page} {tn}");
+        }
+    }
+}
+
+/// `PILL_SNAP_DIR=<dir> cargo test --release --locked -p pill the_function_pages_with_the_panel` writes the sixteen pages as PNGs (1180 x 760, English, dark and light).
 #[test]
 fn the_function_pages_with_the_panel() {
     gfx(|| {
         let _g = motion_on();
-        const SIZE: (f32, f32) = (1180.0, 760.0);
-        for (tn, th) in [("dark", Theme::settings_dark()), ("light", settings_light())] {
-            for page in ["look", "edge", "pet", "clock", "weather", "clipboard", "notifications", "phone", "voice", "hotkeys", "updates"] {
-                let mut t = boot(json!({"language": "en"}), page);
-                settle(&mut t, SIZE, &th);
-                assert!(t.v.borrow().pv.width() > PV_W - 0.5, "{page}: the panel is open at 1180");
-                let c = t.v.borrow().content_rect();
-                assert!(c.w >= MIN_PAGE_W - 0.01, "{page}: the cards fit next to the panel");
-                let img = snap(&mut t.sim, &format!("fn-{page}-{tn}-1180"), &th, SIZE);
-                assert!(img.count(None, |p| p[3] == 255) > 100_000, "{page} {tn}");
+        pages_with_the_panel("en", &[("dark", Theme::settings_dark()), ("light", settings_light())]);
+    });
+}
+
+/// Every page in one picture, as tall as it is (a 1180 x 2600 window: no scrolling; the page's real length shows), English dark; the Advanced
+/// section opened. `PILL_SNAP_DIR=<dir> cargo test --release --locked -p pill the_whole_pages_tall`.
+#[test]
+fn the_whole_pages_tall() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        const SIZE: (f32, f32) = (1180.0, 2600.0);
+        for page in PAGES16 {
+            let mut t = boot(json!({"language": "en"}), page);
+            if t.v.borrow().page.adv.is_some() {
+                t.v.borrow_mut().set_advanced(true, true);
             }
+            settle(&mut t, SIZE, &th);
+            snap(&mut t.sim, &format!("tall-{page}-en-dark"), &th, SIZE);
         }
+    });
+}
+
+/// The same in Russian (long titles), dark.
+#[test]
+fn the_function_pages_in_russian() {
+    gfx(|| {
+        let _g = motion_on();
+        pages_with_the_panel("ru", &[("dark", Theme::settings_dark())]);
     });
 }
 
@@ -496,26 +544,26 @@ fn the_function_pages_narrow_2x_scrolled_and_advanced() {
         settle(&mut t, (900.0, 760.0), &th);
         snap(&mut t.sim, "fn-sidebar-bottom-ru-900", &th, (900.0, 760.0));
         // Advanced closed, then open
-        let mut t = boot(json!({"language": "en"}), "voice");
+        let mut t = boot(json!({"language": "en"}), "media");
         settle(&mut t, (1180.0, 760.0), &th);
         t.v.borrow_mut().page.scroll.scroll_to(99999.0, false);
         settle(&mut t, (1180.0, 760.0), &th);
-        snap(&mut t.sim, "fn-voice-adv-closed", &th, (1180.0, 760.0));
+        snap(&mut t.sim, "fn-media-adv-closed", &th, (1180.0, 760.0));
         t.v.borrow_mut().set_advanced(true, true);
         settle(&mut t, (1180.0, 760.0), &th);
         t.v.borrow_mut().page.scroll.scroll_to(99999.0, false);
         settle(&mut t, (1180.0, 760.0), &th);
-        snap(&mut t.sim, "fn-voice-adv-open", &th, (1180.0, 760.0));
+        snap(&mut t.sim, "fn-media-adv-open", &th, (1180.0, 760.0));
         // double scale, light, a long Russian title
         let mut t = boot(json!({"language": "ru"}), "edge");
         t.sim.set_scale(2.0);
         let light = settings_light();
         settle(&mut t, (1180.0, 760.0), &light);
         snap(&mut t.sim, "fn-edge-ru-light-2x", &light, (1180.0, 760.0));
-        let mut t = boot(json!({"language": "ru"}), "mail");
+        let mut t = boot(json!({"language": "ru"}), "calendar");
         t.sim.set_scale(2.0);
         settle(&mut t, (1180.0, 760.0), &th);
-        snap(&mut t.sim, "fn-mail-ru-dark-2x", &th, (1180.0, 760.0));
+        snap(&mut t.sim, "fn-calendar-ru-dark-2x", &th, (1180.0, 760.0));
     });
 }
 

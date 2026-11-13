@@ -31,27 +31,28 @@ the web UI is forced). Flag off = exactly the old code path. The window is the h
 
 ## Pages
 
-**The sidebar is a list of functions: one short page per function** (35 pages, typically 3-12 rows; General is the one long page), under seven small non-clickable group headings
-(`nav::NAV`: `NavItem::Head` / `NavItem::Page`). The list scrolls when it does not fit (wheel, scrollbar, keyboard; the chosen page is scrolled into view
-when it is opened from search or from outside, and again when the window is resized), the selected item has the glide background plus an accent bar, and
-every item has a small monoline icon left of its name (below). On a page, in this order: the function's on/off switch, its events (the `live.*` rows), its options, then (if any) a
-trailing `advanced` section folded behind the page's own "Advanced" header (see below). The rows are defined once (`ui-core/src/settings/pages/{base,system,phone,ai}.rs`,
-the old sixteen pages); `pages/layout.rs` takes them out of a pool by id and arranges them (`Pool::main` is the unnamed main card of a function page; `Pool::finish`
-panics when a row is left over). No settings key was renamed, dropped or given another default.
+**The sidebar is a short list of sixteen pages, each page one family of functions, each function a titled section of its page** (a first cut of ten long pages was a long mixed scroll, a second of 38
+one-function pages had far too many entries and pages of a single row: both were rejected), under four small non-clickable group headings (`nav::NAV`: `NavItem::Head` / `NavItem::Page`). At the
+default window height (760 px) the whole list fits without scrolling (`chrome.rs`: item 27 px, step 28, heading 27, head 58, foot 70); in a shorter window it scrolls (wheel,
+scrollbar, keyboard; the chosen page is scrolled into view when it is opened from search or from outside, and again when the window is resized). The selected item has the
+glide background plus an accent bar, and every item has a small monoline icon left of its name (below). On a page, in this order: a titled section per function (`Pool::sec`;
+a page of one function, like Weather, Clipboard or Phone link, has its one section unnamed under the heading), each section with the function's on/off switch first, then its
+events (the `live.*` rows), then its options; then (if any) the rare rows of ALL its functions as trailing `advanced` sections folded behind the page's one "Advanced" header
+(see below; `layout.rs`: `Part` = a function's sections in view + its advanced ones, `pg` gathers them). The rows are defined once
+(`ui-core/src/settings/pages/{base,system,phone,ai}.rs`, the old sixteen pages); `pages/layout.rs` takes them out of a pool by id and arranges them (`Pool::finish`
+panics when a row is left over). No settings key was renamed, dropped or given another default. At most 18 rows are in view on a page, 26 with its Advanced section (General is the longest).
 
-| group | pages (id: what) |
+| group | pages (id: sections) |
 |---|---|
-| Island | `look`: shape, theme, colour, size, monitor (Advanced: custom colour, transparency, position) / `edge`: edge style list + reactions / `pet`: pet gallery, side, size / `clock`: time, date, seconds, 12/24 h / `tabs`: island tabs, what is on Home, profiles / `animation`: Reduce motion (Advanced: frame rate, GPU) |
-| Behaviour | `general`: ONE page of the general settings, in this order: Start and language (`language`, autostart), Hiding the pill (fullscreen, peek, auto-hide), Quiet hours, Command bar search (file search + browser engine), Settings window (the live-preview switch `settings.preview`); Advanced: hiding details and program lists, pass-through, Everything, settings backup (+ the data folder note), first run / `hotkeys`: every key on ONE page (the recorder checks a combo against all others) |
-| Features | `weather` / `media` (Advanced: sound sources) / `volume`: volume, devices, mic and camera dots / `clipboard` (Advanced: pasting, exclusions, limits) / `screenshots` / `recording` (Advanced: encoder) / `notes`: notes and timer (Advanced: own sound) / `launcher` / `shelf` / `text` / `controls` / `vpn` (Advanced: your own client) / `voice`: voice to text + local Whisper (Advanced: recognition service) |
-| Events | `notifications` (Advanced: display time, history) / `downloads` (+ Steam) / `battery` / `keyboard` / `desktops` / `usb` / `obs` / `calendar` / `mail` |
-| Phone | `phone`: Phone link, apps, shared clipboard, files, relay as sections (Advanced: file details, relay address and cap) |
-| AI | `ai`: assistant and chat / `agents`: AI agents in the terminal / `localai`: local AI chat on this computer |
-| App | `updates`: version and updates, what is new, help |
+| Island | `look`: Island look (shape, theme, colour, size, monitor), Clock and date, Animation (Reduce motion); Advanced: colour / transparency / position, frame rate and GPU / `edge`: Island edge (style list + reactions), Pet (gallery, side, size) / `tabs`: island tabs, what is on Home, profiles |
+| Features | `weather` / `media`: Media player, Volume and microphone (devices, mic and camera dots); Advanced: sound sources / `voice`: Voice to text (+ local Whisper; one function, one page: its provider chips and installer are long); Advanced: recognition service / `clipboard`; Advanced: pasting, exclusions, limits / `capture`: Screenshots, Screen recording; Advanced: details, encoder / `tools`: Notes and timer, Launcher, File shelf, Text tools, System controls, VPN; Advanced: own sound, your own VPN client / `phone`: Phone link, apps, shared clipboard, files, relay; Advanced: file details, relay address and cap / `ai`: AI assistant and chat, AI agents in the terminal, Local AI chat on this computer |
+| Events | `notifications`: Notifications, Downloads (+ Steam), Battery, Keyboard layout, Virtual desktops, USB drives; Advanced: display time and history, download details / `calendar`: Calendar, Mail (IMAP), OBS; Advanced: OBS connection |
+| App | `general`: ONE page of the general settings, in this order: Start and language (`language`, autostart), Hiding the pill (fullscreen, peek, auto-hide), Quiet hours, Command bar search (file search + browser engine), Settings window (the live-preview switch `settings.preview`); Advanced: hiding details and program lists, pass-through, Everything, settings backup (+ the data folder note), first run / `hotkeys`: every key on ONE page (the recorder checks a combo against all others) / `updates`: version and updates, what is new, help |
 
-Where a page fetches data when it shows up and which pages poll status lines is decided per page id (`settings_view/nav.rs::page_shown`, `live_status`): `start`
-autostart, `search` Everything, `hotkeys` launcher list, `look` monitors, `volume` audio devices, `voice` key / Whisper, `clipboard` status, `ai` / `localai` setup,
-`updates` info, and the polled lines of `notifications`, `downloads`, `obs`, `calendar`, `mail` (1 s ticker) and `phone` (2 s). The pet / edge previews loop only on `edge` and `pet`.
+Where a page fetches data when it shows up and which pages poll status lines is decided per page id (`settings_view/nav.rs::page_shown`, `live_status`): `general`
+autostart, backup info and Everything, `hotkeys` launcher list, `look` monitors, `media` audio devices, `voice` the key and Whisper status, `clipboard` status, `ai` assistant
+config + local AI setup, `updates` info, and the polled lines of `notifications` (Notifications, Steam downloads), `calendar` (OBS, Calendar, Mail) (1 s ticker; the lines are asked
+every 3rd tick, on Calendar and mail every 2nd because of OBS) and `phone` (2 s). The pet / edge previews loop only on `edge`.
 
 The overlapping switches are NOT merged, only placed side by side and labelled apart (`Pool::edit`, the ids are listed in `RELABELED` in `tests.rs`):
 Weather = "Forecast from the internet" (`net.weather`, asks the network, off by default) + "Weather tab" (`module.weather`); Phone = "Phone link"
@@ -60,22 +61,25 @@ Weather = "Forecast from the internet" (`net.weather`, asks the network, off by 
 (`wizard::MODULE_ORDER`). Two key-less buttons that only jumped to a section right next to them are gone (`aisetup.cloud-chat`, `aisetup.cloud-voice`;
 `DROPPED` in `tests.rs`).
 
-**Old page ids keep working everywhere** (`nav::LEGACY`, `OPENABLE`, `settingswin.rs::PAGES`; a test holds the last two equal). The sixteen ids of the oldest
-sidebar and the ten of the previous one: `appearance` -> `look`, `character` -> `edge`, `behavior` -> `general`, `sound` -> `volume`,
-`live` -> `notifications`, `modules` -> `tabs`, `aisetup` -> `localai`; the ids of the 38-page sidebar `start`, `hiding`, `quiet`, `search` -> `general` (scrolled to their first row: `language`, `hideInFullscreen`, `quiet.on`, `module.fileSearch`); `general`, `hotkeys`, `weather`, `voice`, `clipboard`, `phone`, `ai`, `updates` are pages
-of the new sidebar too. The window opens the new page and scrolls to the start of the old section (no flash). Ctrl+F finds every row, jumps to its page (and
-opens the Advanced section when the row is in it); it also matches the old page names and the name of the function page (both are appended to the search
-keywords of every row: "weather" finds the units, the city and the folded-island chips alike).
+**Old page ids keep working everywhere** (`nav::LEGACY`, `OPENABLE`, `settingswin.rs::PAGES`; a test holds the last two equal, another that every old id opens a page). Three sidebars
+lie behind the list: the 16 pages of the first one (`character`, `appearance`, `behavior`, `search`, `sound`, `live`, `modules`, `aisetup`; the others are pages today), the 10 of
+the second (nothing new), and the 38 / 35 one-function pages of the third. Each old id opens the page that holds its rows now, scrolled to the caption of the section of its first row
+(no flash; a collapsed Advanced section opens for it): `appearance` -> `look` (`shape`), `clock` / `animation` -> `look` (`showTime` / `reduceMotion`), `character` -> `edge`
+(`character.liquid`), `pet` -> `edge` (`pet.side`, the row under the gallery), `behavior`, `hiding` -> `general` (`hideInFullscreen`), `start` (`language`), `quiet` (`quiet.on`), `search` (`module.fileSearch`), `modules` -> `tabs`,
+`sound` / `volume` -> `media` (`live.volume`), `screenshots` / `recording` -> `capture`, `notes` / `launcher` / `shelf` / `text` / `controls` / `vpn` -> `tools`
+(their `module.*` switch), `live` -> `notifications` (`module.notifs`), `downloads` / `battery` / `keyboard` / `desktops` / `usb` -> `notifications` (their first row), `obs` / `mail` -> `calendar`,
+`aisetup` / `localai` -> `ai` (`aisetup.intro`), `agents` -> `ai` (`live.agents`). Pages of today that were pages before too (`general`, `hotkeys`, `weather`, `media`, `voice`, `clipboard`, `phone`, `ai`,
+`updates`, `look`, `edge`, `tabs`, `notifications`, `calendar`) open as themselves. Ctrl+F finds every row, jumps to its page (and
+opens the Advanced section when the row is in it); it also matches the old page names and the name of the function section (both are appended to the search
+keywords of every row: "weather" finds the units, the city and the folded-island chips alike, "pet" every pet row and card).
 
 **Sidebar icons.** Each page has one icon id (`Page::icon`, all listed in `nav::ICONS`, a test keeps page icons and the list equal and unique). `settings_view/icons.rs::glyph`
 resolves an id to a 24-grid monoline glyph: the window's own few (`IC`: general, character, weather, updates, clipboard, phone, power, palette, paw, clock, motion,
 desktops, obs, chip) first, then the island's line-icon set (`island::gpu::Gpu::glyph`: bell, download, battery, globe, usb, calendar, mail, keyboard, shield, mic, ...);
 drawn with `glasskit::svgpath` at 16 px, stroke 1.6, left of the name (14 px in, name 10 px after the icon; long names get an ellipsis). Colour: dim idle, text colour
 while hovered, accent while selected; the mix reads the hover flow and the glide of the selection indicator (`chrome.rs::paint_nav_item`), so nothing new is stepped and
-Reduce motion makes it instant. Group headings stay text only. Icons per page: look palette, edge smiley, pet paw, clock clock, tabs home, animation easing curve, general
-sliders, hotkeys keyboard, weather sun+cloud, media note, volume speaker, clipboard clipboard, screenshots dashed area, recording camera, notes note, launcher grid,
-shelf tray, text text, controls sliders, vpn shield, voice mic, notifications bell, downloads arrow, battery battery, keyboard globe, desktops two windows, usb plug, obs
-broadcast, calendar calendar, mail envelope, phone phone, ai sparkles, agents terminal prompt, localai chip, updates refresh.
+Reduce motion makes it instant. Group headings stay text only. Icons per page: look palette, edge smiley, tabs home, weather sun+cloud, media note, voice mic, clipboard clipboard, capture dashed area, tools grid, phone phone,
+ai sparkles, notifications bell, calendar calendar, general sliders, hotkeys keyboard, updates refresh (the glyphs of the retired pages - paw, clock, motion, desktops, obs, chip - stay in `IC`, unused).
 
 **Pickers.** The edge styles are a compact list (a 112 x 48 live pictogram, the name and one or two lines of text per row); the pets are tiles, three per row,
 a 62 px stage and at most three lines of text. Page heading to first card: 20 px; sections 24 px apart.
@@ -128,8 +132,10 @@ clipboard has invented lines, a notification is "Sample sender: ...".
 | `module.*` `home.*` `music.lyrics` | the open island on Home (the tab strip changes) |
 | `live.copy` `live.keyboardLayout` `live.virtualDesktop*` `live.volume` `live.notifications` `live.battery` `live.usb` `live.dlDone` `live.reminders` `sound.reminder*` `live.recording` `live.music` `musicPill` `live.micCam` `cards.duration` `capture.shotAction` | the folded island with that reaction played from sample events; with the switch off the caption says it will not appear |
 
-A setting that is not in the table keeps the scene on show; opening a page starts its own scene (`of_page`: Weather -> weather tab, Tabs and Home, Launcher, Shelf ... -> Home tab, Clipboard -> clipboard tab,
-Notifications -> a notification, Media player -> music, Volume, Recording, Downloads, Battery ... -> their own reaction, Look, Edge, Pet, Clock, Animation -> the matching look of the folded island, the rest -> the folded island).
+A setting that is not in the table keeps the scene on show; opening a page starts the scene of its FIRST function (`of_page`: Weather -> weather tab, Tabs and Home, Tools -> Home tab, Clipboard ->
+clipboard tab, Notifications and cards -> a notification, Media and sound -> music, Voice to text -> the folded island, Screen capture -> a toast, Look, Edge and character -> the look of the folded island, the rest -> the folded island). On a merged page the scene follows the
+function the user works in: a change brings its scene (`of_key`), so does the keyboard / click focus landing on a row (`of_focus`: the same table without the `module.*` fallback; Tab through Notifications and cards plays Downloads, Battery,
+Keyboard layout ... in turn), and an old page name opens the page with the scene of its function (`pet` -> the pet, `battery` -> the battery reaction; `Preview::hint`).
 
 **Layout.** `parts_pv` takes `Preview::width()` off the right of the page area, so the page, its scrolling and its hit tests shrink with the panel. The panel is
 only wanted when `window - sidebar - 320 >= 580` (a card plus its margins), i.e. a window of about 1113 px (`MIN_WINDOW_W`); narrower, or with the switch off, it
@@ -158,8 +164,8 @@ sample events.
 * Animations (all collapse to instant under Reduce motion): page exit slide 120 ms + enter rise 240 ms, row expand / collapse 340 / 300 ms and the
   disabled fade, switch spring, segment pill, chip pop (weekdays, providers), message line rise, search popup pop + 26 ms stagger + jump glide +
   1.6 s wash, sidebar indicator spring, wizard step slide, picker card selection, key-capture look, window entrance 140 ms.
-* Frames run only while something moves; the Edge and character and Pet pages loop its previews (per-card `PetEngine` / `Characters`). A ticker thread runs only
-  on Notifications, Downloads, OBS, Calendar, Mail (status polling) and Phone, while Everything is being installed and so on.
+* Frames run only while something moves; the Edge and character page loops its previews (per-card `PetEngine` / `Characters`). A ticker thread runs only
+  on Notifications and cards, Calendar and mail (status polling) and Phone link, while Everything is being installed and so on.
 
 ## The 12 `Custom` widgets
 
@@ -184,7 +190,7 @@ screen-reader tree (host limit); scale-2 and web-vs-native pixel comparisons wer
 
 ## Lead's on-screen checklist (flag on: `ui.native.settings` = true in settings.json, run `pill.exe`)
 
-1. Tray -> Settings opens the native window on Look; `pill.exe --open settings` focuses it; with `--web-ui` the old window opens.
+1. Tray -> Settings opens the native window on Look (sixteen pages in the sidebar, no scrolling at 760 px); `pill.exe --open settings` focuses it; with `--web-ui` the old window opens.
 2. Drag by the title bar, double-click maximizes, resize from every edge, snap (Win+arrows), minimum 700x520; close, reopen: same place / size.
 3. Move between monitors of different DPI: text stays crisp, window keeps its logical size.
 4. Switch pages (click and Ctrl+F search incl. a row on another page: scrolls to the middle and flashes); the indicator glides.
@@ -192,6 +198,6 @@ screen-reader tree (host limit); scale-2 and web-vs-native pixel comparisons wer
 6. Hotkeys: click a box, hold Ctrl+Alt, press a letter -> saved; a used / reserved / taken combo shows the red reason; Esc cancels; Backspace clears.
 7. Autostart switch writes / removes the Run value; Reduce motion setting makes every animation instant.
 8. General -> Advanced -> First run -> Run again shows the wizard (Skip, Back, Next, dots, language change inside it); first start shows it once.
-9. AI (with the install part) / Voice to text / Updates / Notifications pages: buttons, progress boxes, status lines; nothing downloads without a click.
-10. Advanced: on a page with the header at the end (General, Clipboard...) it is closed; click it, the section opens on a spring, click again, it closes; Ctrl+F "video encoder" opens Screen recording, opens the section and flashes the row.
-11. Idle: window at 0 % CPU (Task Manager) on every page except Edge and character and Pet (previews loop); Reduce motion stops those too.
+9. AI (with the install part) / Voice to text / Updates / Notifications and cards pages: buttons, progress boxes, status lines; nothing downloads without a click.
+10. Advanced: on a page with the header at the end (General, Clipboard...) it is closed; click it, the section opens on a spring, click again, it closes; Ctrl+F "video encoder" opens Screen capture, opens the section and flashes the row.
+11. Idle: window at 0 % CPU (Task Manager) on every page except Edge and character (previews loop); Reduce motion stops those too.

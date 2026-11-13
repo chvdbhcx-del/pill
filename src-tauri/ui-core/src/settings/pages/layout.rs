@@ -3,11 +3,11 @@
 //! The rows themselves (label, hint, control, default, key) are defined once in `base.rs`, `system.rs`, `phone.rs` and `ai.rs` as the old
 //! 16 pages. This file only takes them out of a pool by id and arranges them into the pages of the sidebar.
 //!
-//! FIFTEEN pages, each one coherent family (`nav::NAV`, under five small group headings): Island (Look = look + clock and date + animation;
-//! Edge and character = edge + pet; Tabs and Home), Features (Weather; Media and sound = media player + volume and microphone + voice to
-//! text; Clipboard; Screen capture = screenshots + recording; Tools = notes and timer, launcher, file shelf, text tools, system controls,
-//! VPN), Events (Notifications and cards = notifications, downloads, battery, keyboard layout, virtual desktops, USB drives; Calendar and
-//! mail = calendar, mail, OBS), Phone and AI (Phone link; AI = assistant, agents, local AI), App (General, Hotkeys, Updates).
+//! SIXTEEN pages, each one coherent family (`nav::NAV`, under four small group headings): Island (Look = look + clock and date + animation;
+//! Edge and character = edge + pet; Tabs and Home), Features (Weather; Media and sound = media player + volume and microphone;
+//! Voice to text; Clipboard; Screen capture = screenshots + recording; Tools = notes and timer, launcher, file shelf, text tools, system controls,
+//! VPN; Phone link; AI = assistant, agents, local AI), Events (Notifications and cards = notifications, downloads, battery, keyboard layout,
+//! virtual desktops, USB drives; Calendar and mail = calendar, mail, OBS), App (General, Hotkeys, Updates).
 //!
 //! Every function is a titled SECTION of its page: its on/off switch first, then its events (the `live.*` rows), then its parameters. The rare
 //! and technical rows of all the functions of a page go into trailing `.adv()` sections that the window folds behind the one collapsed
@@ -317,8 +317,6 @@ pub(super) fn media(p: &mut Pool) -> Page {
         "Что читается. Громкость: только уровень и «без звука» устройства вывода по умолчанию. Микрофон и камера: в реестре Windows (только чтение, ветка вашего пользователя) отметки о том, какое приложение сейчас пользуется устройством; звук и изображение не открываются и не читаются. Пока переключатель выключен, это не опрашивается.",
         "What is read. Volume: only the level and the mute flag of the default output device. Microphone and camera: marks in the Windows registry (read-only, your user branch) saying which app is using the device right now; sound and picture are never opened or read. While a switch is off, none of this is polled.",
     );
-    // "Set up in the cloud" for voice only jumped to the recognition-service chips that now stand in the same section
-    p.drop_rows(&["aisetup.cloud-voice"]);
     let title = tr("Медиа и звук", "Media and sound");
     pg(
         "media",
@@ -331,11 +329,23 @@ pub(super) fn media(p: &mut Pool) -> Page {
                 vec![p.sec(tr("Источники звука", "Sound sources"), &["audio.perApp", "media.legacyPlayers"]).adv()],
             ),
             part(vec![p.note(tr("Громкость и микрофон", "Volume and microphone"), read, &["live.volume", "sound.volumeDevice", "audio.volumeTarget", "sound.micDevice", "live.micCam"])], vec![]),
-            part(
-                vec![p.sec(tr("Голос в текст", "Voice to text"), &["voice.enabled", "voice.mode", "voice.language", "voice.paste", "voice.provider", "voice.key", "aisetup.whisper", "voice.test-mic", "voice.test-service"])],
-                vec![p.sec(tr("Сервис распознавания", "Recognition service"), &["voice.endpoint", "voice.model", "voice.autostop"]).adv()],
-            ),
         ],
+    )
+}
+
+pub(super) fn voice(p: &mut Pool) -> Page {
+    // "Set up in the cloud" for voice only jumped to the recognition-service chips that now stand in the same section
+    p.drop_rows(&["aisetup.cloud-voice"]);
+    let title = tr("Голос в текст", "Voice to text");
+    pg(
+        "voice",
+        "mic",
+        title,
+        Tr::NONE,
+        vec![part(
+            vec![p.main(title, &["voice.enabled", "voice.mode", "voice.language", "voice.paste", "voice.provider", "voice.key", "aisetup.whisper", "voice.test-mic", "voice.test-service"])],
+            vec![p.sec(tr("Сервис распознавания", "Recognition service"), &["voice.endpoint", "voice.model", "voice.autostop"]).adv()],
+        )],
     )
 }
 
@@ -405,7 +415,8 @@ pub(super) fn tools(p: &mut Pool) -> Page {
 // ------------------------------------------------------------------------------------------------ Events
 
 pub(super) fn notifications(p: &mut Pool) -> Page {
-    let (title, head) = (tr("Уведомления и карточки", "Notifications and cards"), tr("Уведомления и карточки", "Notifications and cards"));
+    // the Russian sidebar name is shorter than the heading: "Уведомления и карточки" does not fit the selected item
+    let (title, head) = (tr("Уведомления", "Notifications and cards"), tr("Уведомления и карточки", "Notifications and cards"));
     let downloads = tr(
         "Что читается. Загрузки: только имена и размеры файлов во временных браузерных файлах (.crdownload, .part, .tmp) в папке «Загрузки»; содержимое файлов не читается. Готовый файл: только имена и размеры файлов в «Загрузках». Пока переключатель выключен, это не опрашивается.",
         "What is read. Downloads: only the names and sizes of browser temp files (.crdownload, .part, .tmp) in your Downloads folder; file contents are not read. Finished file: only the names and sizes of files in Downloads. While a switch is off, none of this is polled.",
@@ -455,7 +466,7 @@ pub(super) fn calendar(p: &mut Pool) -> Page {
     )
 }
 
-// ------------------------------------------------------------------------------------------------ Phone and AI
+// ------------------------------------------------------------------------------------------------ Phone link and AI (in the Features group)
 
 pub(super) fn phone(p: &mut Pool) -> Page {
     let (link, apps, clip, relay) = (p.footer("phone", 0), p.footer("phone", 1), p.footer("phone", 2), p.footer("phone", 4));
@@ -505,8 +516,8 @@ pub(super) fn ai(p: &mut Pool) -> Page {
         "aisetup.intro",
         None,
         Some(tr(
-            "ИИ-чат можно запустить на этом компьютере или подключить облачный сервис. Голос в текст ставится на странице «Медиа и звук», в разделе «Голос в текст». Ничего не скачивается и не запускается без вашего нажатия; у кнопки указано, откуда и сколько.",
-            "The AI chat can run on this computer or through a cloud service. Voice to text is installed on the Media and sound page, in the Voice to text section. Nothing is downloaded or started without your click; the button shows the source and size.",
+            "ИИ-чат можно запустить на этом компьютере или подключить облачный сервис. Голос в текст ставится на странице «Голос в текст». Ничего не скачивается и не запускается без вашего нажатия; у кнопки указано, откуда и сколько.",
+            "The AI chat can run on this computer or through a cloud service. Voice to text is installed on the Voice to text page. Nothing is downloaded or started without your click; the button shows the source and size.",
         )),
     );
     p.edit(

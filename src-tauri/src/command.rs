@@ -292,7 +292,7 @@ fn files(words: &[String]) -> Vec<Res> {
         let name = Path::new(&p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.clone());
         res(kind, format!("{kind}:{p}"), name, p.clone(), p)
     };
-    let hint = |e: &str| vec![res("hint", "hint:es".into(), e.into(), "Files and folders need Everything: Settings > File search can download it".into(), String::new())];
+    let hint = |e: &str| vec![res("hint", "hint:es".into(), e.into(), "Files and folders need Everything: Settings > General > Advanced can download it".into(), String::new())];
     let all = match es(words, None, ES_CAP) {
         Ok(v) => v,
         Err(e) => return hint(e),
@@ -690,7 +690,7 @@ fn remember(r: &Res) {
 /// "updated" keeps the bar open; the page turns the key in `message` into its own wording.
 fn pin_item(app: &AppHandle, target: &str, title: &str, store_app: bool) -> Outcome {
     if !settings::get_bool("module.launcher", true) {
-        return err("Turn on the Launcher module in Settings > Modules");
+        return err("Turn on the Launcher in Settings > Tools");
     }
     let added = if store_app { crate::launcher::add_store(app, target, title) } else { crate::launcher::launcher_add(app.clone(), vec![target.to_string()]) };
     Outcome { status: "updated", message: if added > 0 { "pinned" } else { "pinnedAlready" }.into() }
@@ -798,7 +798,7 @@ pub fn cmd_run(app: AppHandle, id: String, mode: String) -> Outcome {
                 let v = crate::vpn::vpn_toggle();
                 match v["status"].as_str() {
                     Some("ok" | "setup") => ok(),
-                    Some("off") => err("VPN is switched off in Settings > Modules"),
+                    Some("off") => err("VPN is switched off in Settings > Tools"),
                     _ => err(v["message"].as_str().unwrap_or("The VPN command failed").to_string()),
                 }
             }

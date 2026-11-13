@@ -48,7 +48,7 @@ fn ids_and_keys_are_unique() {
     for p in &schema().pages {
         assert!(pages.insert(p.id), "duplicate page {}", p.id);
     }
-    assert_eq!(schema().pages.len(), 15);
+    assert_eq!(schema().pages.len(), 16);
 }
 
 #[test]
@@ -418,10 +418,10 @@ fn first_choice_rows_stand_outside_the_section_and_technical_ones_inside() {
     for id in ["capture.encoder", "ui.gpu", "phone.relayUrl", "voice.endpoint", "vpn.own.connect", "live.obs.port", "fullscreenPeekEdge", "hotkey.uninstall", "timer.soundFile"] {
         assert!(in_advanced(id), "{id} is technical");
     }
-    // every page is short: the part that is in view has two dozen rows at most (the biggest page of the old schema had 38)
+    // every page is short: the part that is in view has eighteen rows at most (the biggest page of the old schema had 38)
     for p in &schema().pages {
         let main: usize = p.groups.iter().filter(|g| !g.advanced).map(|g| g.rows.len()).sum();
-        assert!(main <= 21, "{}: {main} rows in view", p.id);
+        assert!(main <= 18, "{}: {main} rows in view", p.id);
         let sections = p.groups.iter().filter(|g| !g.advanced).count();
         // a page with several sections names each of them; a one-section page is named by its heading
         assert!(p.groups.iter().filter(|g| !g.advanced).skip(1).all(|g| !g.title.is_blank() || g.rows.len() == 1), "{}: unnamed sections ({sections})", p.id);
@@ -438,7 +438,7 @@ const FEATURES: [(&str, &str, &[&str]); 21] = [
     ("System controls", "tools", &["module.controls", "live.sysmon"]),
     ("Media player", "media", &["module.media", "live.music", "musicPill", "audio.reactive", "music.lyrics", "home.player", "home.lyrics"]),
     ("Volume and microphone", "media", &["live.volume", "sound.volumeDevice", "audio.volumeTarget", "sound.micDevice", "live.micCam"]),
-    ("Voice to text", "media", &["voice.enabled", "voice.mode", "voice.language", "voice.paste", "voice.provider", "voice.key", "aisetup.whisper", "voice.test-mic", "voice.test-service"]),
+    ("Voice to text", "voice", &["voice.enabled", "voice.mode", "voice.language", "voice.paste", "voice.provider", "voice.key", "aisetup.whisper", "voice.test-mic", "voice.test-service"]),
     ("Clipboard history", "clipboard", &["module.clipboard", "live.copy", "clipboard.maxItems", "clipboard.retentionDays", "clipboard.private", "clipboard.skipSecrets", "clipboard.wipe"]),
     ("Screen recording", "capture", &["live.recording", "capture.format", "capture.fps", "capture.recordSystemAudio", "capture.recordMic", "capture.videoFolder"]),
     ("Phone link", "phone", &["phone.enabled", "module.phone", "live.phone", "phone.link", "phone.devices"]),
@@ -460,7 +460,7 @@ const ADVANCED_PARTS: [(&str, &str, &[&str]); 11] = [
     ("Notes and timer", "tools", &["timer.sound", "timer.soundFile"]),
     ("VPN", "tools", &["vpn.own.name", "vpn.own.connect", "vpn.own.disconnect", "vpn.admin"]),
     ("Media player", "media", &["audio.perApp", "media.legacyPlayers"]),
-    ("Voice to text", "media", &["voice.endpoint", "voice.model", "voice.autostop"]),
+    ("Voice to text", "voice", &["voice.endpoint", "voice.model", "voice.autostop"]),
     ("Clipboard history", "clipboard", &["clipClickPaste", "clipboard.denyList", "clipboard.maxImageMb"]),
     ("Screen recording", "capture", &["capture.encoder"]),
     ("Screenshots", "capture", &["capture.revealAfterSave", "showInCapture"]),
@@ -545,9 +545,9 @@ fn the_old_page_names_still_find_their_rows() {
         ("character", "edge", "pet.size"),
         ("Персонаж", "edge", "character.liquid"),
         ("weather", "weather", "weather.city"),
-        ("voice", "media", "voice.enabled"),
-        ("Голос в текст", "media", "voice.provider"),
-        ("aisetup", "media", "aisetup.whisper"),
+        ("voice", "voice", "voice.enabled"),
+        ("Голос в текст", "voice", "voice.provider"),
+        ("aisetup", "voice", "aisetup.whisper"),
         ("aisetup", "ai", "aisetup.chat"),
         ("Установка ИИ", "ai", "aisetup.chat"),
         ("search", "general", "search.engine"),
@@ -562,7 +562,7 @@ fn the_old_page_names_still_find_their_rows() {
         // the names of the 38 one-function pages are the titles of the sections now
         ("Clock and date", "look", "showTime"),
         ("Pet", "edge", "pet.side"),
-        ("Voice to text", "media", "voice.mode"),
+        ("Voice to text", "voice", "voice.mode"),
         ("Screen recording", "capture", "capture.fps"),
         ("Launcher", "tools", "module.launcher"),
         ("USB drives", "notifications", "live.usb"),
@@ -588,7 +588,7 @@ fn rows_per_page() {
     // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch
     let expect = [
         ("look", 18), ("edge", 7), ("tabs", 3),
-        ("weather", 7), ("media", 26), ("clipboard", 10), ("capture", 12), ("tools", 18),
+        ("weather", 7), ("media", 14), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
         ("notifications", 18), ("calendar", 12),
         ("phone", 16), ("ai", 14),
         ("general", 25), ("hotkeys", 19), ("updates", 5),

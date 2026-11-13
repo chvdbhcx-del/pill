@@ -163,7 +163,7 @@ fn a_search_hit_inside_a_closed_section_opens_it_scrolls_to_the_row_and_flashes_
     t.text("video encoder");
     assert!(t.v.borrow().search.rows.iter().any(|r| r.title == "Video encoder"), "the row is found: {:?}", t.v.borrow().search.rows.iter().map(|r| r.title.clone()).collect::<Vec<_>>());
     t.key(KeyCode::Enter, Modifiers::NONE);
-    assert_eq!(t.current(), "recording", "it opens the right page");
+    assert_eq!(t.current(), "capture", "it opens the right page");
     t.settle();
     t.sim.run(3);
     paint(&mut t);
@@ -201,14 +201,36 @@ fn old_page_names_open_the_page_that_holds_their_rows_and_scroll_to_the_section(
         ("search", "general", "module.fileSearch"),
         ("weather", "weather", "net.weather"),
         ("voice", "voice", "voice.enabled"),
-        ("aisetup", "localai", "aisetup.intro"),
+        ("aisetup", "ai", "aisetup.intro"),
         ("character", "edge", "character.liquid"),
-        ("sound", "volume", "live.volume"),
+        ("sound", "media", "live.volume"),
         ("modules", "tabs", "modules.tabs"),
         ("live", "notifications", "module.notifs"),
         ("start", "general", "language"),
         ("general", "general", "language"),
         ("appearance", "look", "shape"),
+        // the single-function pages of 0.8.8: each is a section of one of the fifteen pages now (the page may be long: the row is scrolled to)
+        ("pet", "edge", "pet.side"),
+        ("clock", "look", "showTime"),
+        ("animation", "look", "reduceMotion"),
+        ("volume", "media", "live.volume"),
+        ("screenshots", "capture", "capture.shotAction"),
+        ("recording", "capture", "live.recording"),
+        ("notes", "tools", "module.note"),
+        ("launcher", "tools", "module.launcher"),
+        ("shelf", "tools", "module.shelf"),
+        ("text", "tools", "module.text"),
+        ("controls", "tools", "module.controls"),
+        ("vpn", "tools", "module.vpn"),
+        ("downloads", "notifications", "live.downloads"),
+        ("battery", "notifications", "live.battery"),
+        ("keyboard", "notifications", "live.keyboardLayout"),
+        ("desktops", "notifications", "live.virtualDesktopFlash"),
+        ("usb", "notifications", "live.usb"),
+        ("obs", "calendar", "live.obs"),
+        ("mail", "calendar", "live.mail"),
+        ("agents", "ai", "live.agents"),
+        ("localai", "ai", "aisetup.intro"),
     ] {
         let mut t = boot(json!({"language": "en"}), old);
         t.settle();
@@ -228,7 +250,7 @@ fn an_old_name_asked_for_while_the_window_is_open_scrolls_too() {
     let mut t = boot(json!({"language": "en"}), "hotkeys");
     t.v.borrow_mut().show_page("sound", &mut t.sim.cx);
     t.settle();
-    assert_eq!(t.current(), "volume", "the old Sound page is Volume and microphone now");
+    assert_eq!(t.current(), "media", "the old Sound page is Media and sound now");
     let v = t.v.borrow();
     assert!(v.goto.is_none(), "the scroll was done");
     let r = v.page.rows().find(|r| r.row.id == "live.volume").expect("the first row of the old page");

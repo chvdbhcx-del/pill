@@ -70,6 +70,8 @@ impl SettingsView {
 
     /// An old page name was asked for: scroll to where its rows stand now (no flash; a collapsed section opens for it).
     pub(super) fn goto_anchor(&mut self, anchor: Option<&'static str>) {
+        // the preview opens with the scene of that function (`pet` -> the pet, `battery` -> the battery reaction)
+        self.pv.hint = anchor.and_then(|id| schema().row(id)).and_then(|r| super::preview::scene::of_focus(r.key));
         if let Some(row_id) = anchor {
             self.goto = Some(super::Goto { row_id: row_id.to_string(), title: String::new(), quiet: true });
         }
@@ -102,7 +104,8 @@ impl SettingsView {
                 adv_at = Some(pg.blocks.len());
                 pg.blocks.push(Block::Adv(0));
             }
-            let picker_only = g.rows.len() == 1 && matches!(g.rows[0].control, Control::PetsPicker);
+            // the pet gallery draws its own captions ("Pet · Characters"), so the section title above it would say the same twice
+            let picker_only = g.rows.first().is_some_and(|r| matches!(r.control, Control::PetsPicker));
             if !g.title.is_blank() && !picker_only {
                 pg.blocks.push(Block::Cap(g.title.get(lang).to_string()));
             }
@@ -202,11 +205,13 @@ impl SettingsView {
             "general" => calls.extend([BackendCall::AutostartGet, BackendCall::SettingsInfo, BackendCall::EverythingStatus]),
             "hotkeys" => calls.push(BackendCall::LauncherList),
             "look" => calls.push(BackendCall::PillMonitors),
-            // Media and sound: the output and input devices (Volume and microphone), and for Voice to text everything the old Voice page asked for
-            // plus the local Whisper install
+            // Media and sound: the output and input devices (Volume and microphone)
             "media" => {
                 calls.push(BackendCall::MediaDevices);
                 calls.push(BackendCall::MediaCaptureDevices);
+            }
+            // Voice to text: everything the old Voice page asked for, and the local Whisper install
+            "voice" => {
                 calls.push(BackendCall::VoiceHasKey { provider: Some(self.model.get_str("voice.provider")) });
                 calls.push(BackendCall::NetFeaturesStatus);
                 calls.push(BackendCall::AisetupStatus);

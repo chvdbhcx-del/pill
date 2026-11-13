@@ -63,6 +63,8 @@ pub struct Preview {
     page: &'static str,
     /// the settings key of the row that has the keyboard / click focus (a function section of a merged page brings its own scene)
     focus_key: Option<&'static str>,
+    /// an old page name ("pet", "battery") was opened: the scene of that function, for the page that is coming (`SettingsView::goto_anchor`)
+    pub(super) hint: Option<Scene>,
     active: bool,
     /// host clock of the last change
     t0: f64,
@@ -89,6 +91,7 @@ impl Preview {
             due: Vec::new(),
             page: "",
             focus_key: None,
+            hint: None,
             active: false,
             t0: 0.0,
             replay: false,
@@ -251,7 +254,7 @@ impl SettingsView {
             pv.live = Some(live);
             pv.open = false;
             pv.page = model.current;
-            let sc = of_page(model.current);
+            let sc = pv.hint.take().unwrap_or_else(|| of_page(model.current));
             pv.scene = sc;
             pv.go_scene(sc, reduce);
             pv.touch(now);
@@ -271,7 +274,8 @@ impl SettingsView {
         } else if pv.page != model.current {
             pv.page = model.current;
             pv.touch(now);
-            pv.go_scene(of_page(model.current), reduce);
+            let sc = pv.hint.take().unwrap_or_else(|| of_page(model.current));
+            pv.go_scene(sc, reduce);
         } else if let Some(fs) = focus_scene.filter(|s| *s != pv.scene) {
             pv.touch(now);
             pv.go_scene(fs, reduce);
