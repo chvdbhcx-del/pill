@@ -2,6 +2,13 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.8.9] - 2026-11-13
+
+### Highlights
+- Settings sidebar is shorter: 16 pages under four headings instead of 35, and no page holds a single row. Each function is a titled section inside its page: Look (island, clock and date, animation), Media and sound, Screen capture, Tools, Notifications and cards, Calendar and mail and more.
+- The live preview follows the section you are working in, and old page names and search still open the right place.
+- The pet gallery no longer shows its caption twice, and the long Russian name of Notifications fits the sidebar.
+
 ## [0.8.8] - 2026-11-13
 
 ### Highlights
