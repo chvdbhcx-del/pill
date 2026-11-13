@@ -518,3 +518,143 @@ fn the_function_pages_narrow_2x_scrolled_and_advanced() {
         snap(&mut t.sim, "fn-mail-ru-dark-2x", &th, (1180.0, 760.0));
     });
 }
+
+// ------------------------------------------------------------------------------------------------ sidebar icons and the General page
+
+/// One PNG of `page`: `lang`, theme, scale, window size; the sidebar scrolled to its end and / or the page's Advanced open and scrolled down.
+/// Run ONE of the `general_snap_*` tests per cargo invocation (PNG-writing tests in one process can crash the GPU thread).
+#[allow(clippy::too_many_arguments)]
+fn general_snap(name: &str, lang: &str, page: &str, th: Theme, scale: f32, size: (f32, f32), side_end: bool, adv: bool) -> Image {
+    let mut t = boot(json!({ "language": lang }), page);
+    t.sim.set_scale(scale);
+    settle(&mut t, size, &th);
+    if side_end {
+        t.v.borrow_mut().side.scroll.scroll_to(99999.0, false);
+    }
+    if adv {
+        t.v.borrow_mut().set_advanced(true, true);
+        settle(&mut t, size, &th);
+        t.v.borrow_mut().page.scroll.scroll_to(99999.0, false);
+    }
+    settle(&mut t, size, &th);
+    snap(&mut t.sim, name, &th, size)
+}
+
+/// Every visible page item of the sidebar has ink in its icon box, and the box is where the text starts after it.
+fn icons_are_drawn(t: &mut T, img: &Image) {
+    let v = t.v.borrow();
+    let (list, off) = (v.side.list, v.side.scroll.offset());
+    let mut seen = 0;
+    for n in pill_ui_core::settings::nav::NAV {
+        let pill_ui_core::settings::nav::NavItem::Page(id) = n else { continue };
+        let y = list.y - off + crate::ui::settings_view::chrome::Side::item_y(id);
+        if y < list.y || y + 30.0 > list.bottom() {
+            continue;
+        }
+        let ib = Rect::new(list.x + 10.0 + 14.0, y + 7.0, 16.0, 16.0);
+        let bg = img.at(ib.x - 4.0, ib.cy());
+        let ink = img.count(Some(ib), |p| p.iter().zip(bg).any(|(a, b)| a.abs_diff(b) > 40));
+        assert!(ink >= 12, "{id}: its icon is drawn ({ink} px of ink)");
+        seen += 1;
+    }
+    assert!(seen >= 10, "{seen} items were checked");
+}
+
+#[test]
+fn general_snap_sidebar_top_ru_dark_900() {
+    gfx(|| {
+        let _g = motion_on();
+        let mut t = boot(json!({ "language": "ru" }), "general");
+        let th = Theme::settings_dark();
+        settle(&mut t, (900.0, 760.0), &th);
+        let img = snap(&mut t.sim, "icons-sidebar-top-ru-dark-900", &th, (900.0, 760.0));
+        icons_are_drawn(&mut t, &img);
+    });
+}
+
+#[test]
+fn general_snap_sidebar_bottom_ru_dark_900() {
+    gfx(|| {
+        let _g = motion_on();
+        let mut t = boot(json!({ "language": "ru" }), "updates");
+        let th = Theme::settings_dark();
+        settle(&mut t, (900.0, 760.0), &th);
+        t.v.borrow_mut().side.scroll.scroll_to(99999.0, false);
+        settle(&mut t, (900.0, 760.0), &th);
+        let img = snap(&mut t.sim, "icons-sidebar-bottom-ru-dark-900", &th, (900.0, 760.0));
+        icons_are_drawn(&mut t, &img);
+    });
+}
+
+#[test]
+fn general_snap_sidebar_top_en_light_1180() {
+    gfx(|| {
+        let _g = motion_on();
+        let mut t = boot(json!({ "language": "en" }), "hotkeys");
+        let th = settings_light();
+        settle(&mut t, (1180.0, 760.0), &th);
+        let img = snap(&mut t.sim, "icons-sidebar-top-en-light-1180", &th, (1180.0, 760.0));
+        icons_are_drawn(&mut t, &img);
+    });
+}
+
+#[test]
+fn general_snap_sidebar_bottom_en_light_2x() {
+    gfx(|| {
+        let _g = motion_on();
+        general_snap("icons-sidebar-bottom-en-light-2x", "en", "ai", settings_light(), 2.0, (1180.0, 760.0), true, false);
+    });
+}
+
+#[test]
+fn general_snap_page_en_dark_1180() {
+    gfx(|| {
+        let _g = motion_on();
+        let img = general_snap("general-en-dark-1180", "en", "general", Theme::settings_dark(), 1.0, (1180.0, 760.0), false, false);
+        assert!(img.count(None, |p| p[3] == 255) > 100_000);
+    });
+}
+
+#[test]
+fn general_snap_page_ru_light_900() {
+    gfx(|| {
+        let _g = motion_on();
+        general_snap("general-ru-light-900", "ru", "general", settings_light(), 1.0, (900.0, 760.0), false, false);
+    });
+}
+
+#[test]
+fn general_snap_page_en_light_2x_1180() {
+    gfx(|| {
+        let _g = motion_on();
+        general_snap("general-en-light-2x-1180", "en", "general", settings_light(), 2.0, (1180.0, 760.0), false, false);
+    });
+}
+
+#[test]
+fn general_snap_advanced_ru_dark_1180() {
+    gfx(|| {
+        let _g = motion_on();
+        general_snap("general-adv-ru-dark-1180", "ru", "general", Theme::settings_dark(), 1.0, (1180.0, 760.0), false, true);
+    });
+}
+
+#[test]
+fn general_page_holds_the_general_settings_and_opens_the_folded_island() {
+    gfx(|| {
+        let _g = motion_on();
+        let t = boot(json!({ "language": "en" }), "quiet");
+        assert_eq!(t.current(), "general", "an old page id opens General");
+        assert_eq!(of_page("general"), Scene::Pill(Look::Island));
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Pill(Look::Island));
+        // the sections, in the order the page promises
+        let sc = pill_ui_core::settings::schema::schema();
+        let g = sc.page("general").unwrap();
+        let titles: Vec<&str> = g.groups.iter().map(|g| g.title.en).collect();
+        assert_eq!(
+            titles,
+            ["Start and language", "Hiding the pill", "Quiet hours", "Command bar search", "Settings window", "Details and program lists", "Pass-through mode", "File search: Everything", "Settings backup", "First run"]
+        );
+        assert!(g.groups[..5].iter().all(|g| !g.advanced) && g.groups[5..].iter().all(|g| g.advanced));
+    });
+}

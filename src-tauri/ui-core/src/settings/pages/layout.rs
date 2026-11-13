@@ -13,6 +13,9 @@
 //! (`net.weather` asks the internet, `module.weather` is the tab), Phone (`phone.enabled` is the link itself, `module.phone` the tab,
 //! `live.phone` the cards) and File shelf (`module.shelf` is the shelf, `live.shelf` the badge on the island).
 //!
+//! Everything that belongs to no single function (start and language, hiding, quiet hours, command bar search, the settings window's own switch,
+//! backup, first run) stands together on ONE page, `general`.
+//!
 //! Where a page fetches data when it shows up (`settings_view/nav.rs::page_shown`) and which pages poll statuses (Notifications, Downloads,
 //! OBS, Calendar, Mail, Phone) is decided per page id there.
 //!

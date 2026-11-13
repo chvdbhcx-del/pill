@@ -190,7 +190,7 @@ pub fn of_page(page: &str) -> Scene {
         "keyboard" => Scene::Flash(Flash::Kbd),
         "desktops" => Scene::Flash(Flash::Vdesk),
         "usb" => Scene::Flash(Flash::Usb),
-        // Start, Hiding, Quiet hours, Hotkeys, Command bar, Voice to text, OBS, Calendar, Mail, Phone link, the AI pages, Updates: the folded island
+        // General (start, hiding, quiet hours, search, the preview switch), Hotkeys, Command bar, Voice to text, OBS, Calendar, Mail, Phone link, the AI pages, Updates: the folded island
         _ => Scene::DEFAULT,
     }
 }
