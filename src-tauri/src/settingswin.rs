@@ -8,11 +8,13 @@ use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
 use windows::Win32::System::Registry::{RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ};
 use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT};
 
-// The 35 sidebar pages (one per function, General for everything else) plus the old ids (character, appearance, behavior, sound, live, modules, aisetup, start, hiding, quiet, search), which the window maps
-// to the page that holds their rows now (`pill_ui_core::settings::nav::LEGACY`), and "welcome" (the wizard). Same list as `nav::OPENABLE` (a test holds them equal).
+// The 15 sidebar pages (look, edge, tabs, weather, media, clipboard, capture, tools, notifications, calendar, phone, ai, general, hotkeys, updates: each a family of
+// functions, every function a titled section) plus the old ids (the single-function pages of 0.8.8: pet, clock, animation, volume, voice, screenshots, recording, notes, launcher, shelf,
+// text, controls, vpn, downloads, battery, keyboard, desktops, usb, obs, mail, agents, localai; and character, appearance, behavior, sound, live, modules, aisetup, start, hiding, quiet,
+// search), which the window maps to the page and section that hold their rows now (`pill_ui_core::settings::nav::LEGACY`), and "welcome" (the wizard). Same list as `nav::OPENABLE` (a test holds them equal).
 const PAGES: &[&str] = &[
-    "look", "edge", "pet", "clock", "tabs", "animation", "general", "hotkeys", "weather", "media", "volume", "clipboard", "screenshots", "recording", "notes", "launcher", "shelf", "text", "controls", "vpn", "voice", "notifications",
-    "downloads", "battery", "keyboard", "desktops", "usb", "obs", "calendar", "mail", "phone", "ai", "agents", "localai", "updates", "character", "appearance", "behavior", "sound", "live", "modules", "aisetup", "start", "hiding", "quiet", "search", "welcome",
+    "look", "edge", "tabs", "weather", "media", "clipboard", "capture", "tools", "notifications", "calendar", "phone", "ai", "general", "hotkeys", "updates", "pet", "clock", "animation", "volume", "voice", "screenshots", "recording", "notes", "launcher", "shelf", "text",
+    "controls", "vpn", "downloads", "battery", "keyboard", "desktops", "usb", "obs", "mail", "agents", "localai", "character", "appearance", "behavior", "sound", "live", "modules", "aisetup", "start", "hiding", "quiet", "search", "welcome",
 ];
 
 pub fn init(_app: &tauri::App) {
@@ -29,7 +31,7 @@ pub fn open(app: &AppHandle, page: Option<&str>) {
 // Commands for the window itself
 // ---------------------------------------------------------------------------------------------------------------
 
-/// Open or focus the settings window, optionally on a page (character, general, hotkeys, ai, voice, weather, sound, live, clipboard, modules, updates, aisetup).
+/// Open or focus the settings window, optionally on a page (any id of PAGES; the old ids open the page and section that hold their rows now).
 pub fn settings_open(app: AppHandle, page: Option<String>) {
     open(&app, page.as_deref());
 }

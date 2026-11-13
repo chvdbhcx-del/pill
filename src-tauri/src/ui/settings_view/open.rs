@@ -122,8 +122,8 @@ impl SettingsView {
         let t = self.data.tick;
         let live = super::nav::live_status(self.model.current);
         if !live.is_empty() && !self.wiz.active() {
-            // OBS answers fast and changes fast; the other lines every third second
-            let every = if self.model.current == "obs" { 2 } else { 3 };
+            // OBS (on Calendar and mail) answers fast and changes fast; the other lines every third second
+            let every = if self.model.current == "calendar" { 2 } else { 3 };
             if t % every == 0 {
                 self.run(cx, live);
             }

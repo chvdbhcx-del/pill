@@ -30,7 +30,7 @@ use glasskit::geom::Rect;
 use glasskit::text::{Align, Style, VAlign};
 use live::Live;
 use pill_ui_core::settings::schema::schema;
-use scene::{of_key, of_page, shareable, Scene};
+use scene::{of_focus, of_key, of_page, shareable, Scene};
 use serde_json::{json, Map, Value};
 
 /// Width of the panel (css px) and the least width the page needs next to it (a card, 24 px on each side): below that the panel stays away.
@@ -61,6 +61,8 @@ pub struct Preview {
     /// events to fire when the sandbox clock reaches the time: (at, name, payload)
     due: Vec<(f64, &'static str, Value)>,
     page: &'static str,
+    /// the settings key of the row that has the keyboard / click focus (a function section of a merged page brings its own scene)
+    focus_key: Option<&'static str>,
     active: bool,
     /// host clock of the last change
     t0: f64,
@@ -86,6 +88,7 @@ impl Preview {
             flip: false,
             due: Vec::new(),
             page: "",
+            focus_key: None,
             active: false,
             t0: 0.0,
             replay: false,
@@ -224,6 +227,7 @@ impl SettingsView {
     pub(super) fn step_preview(&mut self, dt: f32, cx: &mut Cx) -> bool {
         let reduce = self.reduce();
         let want = self.preview_wanted();
+        let fk = self.focus.focused().and_then(|f| self.page.rows().find(|r| r.fid == f)).map(|r| r.row.key).filter(|k| !k.is_empty());
         let pv = &mut self.pv;
         if want != (pv.vis.target() > 0.5) {
             go(&mut pv.vis, want as u8 as f32, reduce);
@@ -260,18 +264,24 @@ impl SettingsView {
                 l.patch(patch);
             }
         }
+        // the focus moved to a row of another function of the same page (Tab, a click): that function's scene comes up
+        let focus_scene = if fk != pv.focus_key { fk.and_then(of_focus) } else { None };
         if let Some(sc) = sc {
             pv.go_scene(sc, reduce);
         } else if pv.page != model.current {
             pv.page = model.current;
             pv.touch(now);
             pv.go_scene(of_page(model.current), reduce);
+        } else if let Some(fs) = focus_scene.filter(|s| *s != pv.scene) {
+            pv.touch(now);
+            pv.go_scene(fs, reduce);
         } else if pv.replay {
             pv.touch(now);
             let s = pv.scene;
             pv.go_scene(s, reduce);
         }
         pv.replay = false;
+        pv.focus_key = fk;
         busy |= tick(&mut pv.note, dt);
         let Some(live) = &mut pv.live else { return busy };
         if !pv.active && live.has_mail() {

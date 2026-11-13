@@ -916,8 +916,8 @@ mod tests {
         assert_eq!(m.begin(json!({"reduceMotion": true}).as_object().unwrap().clone(), Some("Weather")), OpenTarget::Page("weather"));
         assert_eq!(m.current, "weather", "Weather is a page of its own");
         m.recorder.start("toggle");
-        let plan = m.show("sound", true); // an old name: it leads to Volume and microphone
-        assert_eq!((plan.page, m.current, m.recorder.active()), ("volume", "volume", None), "leaving a page stops the key recorder");
+        let plan = m.show("sound", true); // an old name: it leads to Media and sound
+        assert_eq!((plan.page, m.current, m.recorder.active()), ("media", "media", None), "leaving a page stops the key recorder");
         assert!(plan.exit.is_none() && plan.enter.is_instant(), "Reduce motion");
         assert_eq!(m.anim(anim::AnimKind::ToggleFlip).dur_ms, 0);
     }

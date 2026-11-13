@@ -157,9 +157,9 @@ pub fn of_key(key: &str) -> Option<Scene> {
         "live.notifications" => Flash(self::Flash::Notif),
         "live.battery" => Flash(self::Flash::Battery),
         "live.usb" => Flash(self::Flash::Usb),
-        "live.dlDone" => Flash(self::Flash::Download),
+        "live.dlDone" | "live.downloads" | "live.steam" => Flash(self::Flash::Download),
         "live.reminders" | "sound.reminders" | "sound.reminderTone" => Flash(self::Flash::Reminder),
-        "live.recording" => Flash(self::Flash::Recording),
+        "live.recording" | "capture.format" | "capture.fps" | "capture.recordSystemAudio" | "capture.recordMic" => Flash(self::Flash::Recording),
         "live.music" | "musicPill" | "audio.reactive" => Flash(self::Flash::Music),
         "live.micCam" => Flash(self::Flash::Privacy),
         "cards.duration" | "capture.shotAction" | "capture.revealAfterSave" => Flash(self::Flash::Toast),
@@ -168,29 +168,28 @@ pub fn of_key(key: &str) -> Option<Scene> {
     })
 }
 
-/// The scene a page starts with when it is opened.
+/// The scene for a row that has just got the focus (Tab, a click): the same as when it changes, except the `module.*` switches, which only
+/// say "a tab" and would pull the preview to Home from the middle of a page (editing one still does).
+pub fn of_focus(key: &str) -> Option<Scene> {
+    if key.starts_with("module.") {
+        None
+    } else {
+        of_key(key)
+    }
+}
+
+/// The scene a page starts with when it is opened (the first function of the page; a row of another function brings its own, `of_key` / `of_focus`).
 pub fn of_page(page: &str) -> Scene {
     match page {
         "look" => Scene::Pill(Look::Island),
         "edge" => Scene::Pill(Look::Edge),
-        "pet" => Scene::Pill(Look::Pet),
-        "clock" => Scene::Pill(Look::Clock),
-        "animation" => Scene::Pill(Look::Motion),
-        "tabs" | "launcher" | "shelf" | "text" | "controls" | "vpn" => Scene::Panel(Tab::Home),
+        "tabs" | "tools" => Scene::Panel(Tab::Home),
         "weather" => Scene::Panel(Tab::Weather),
         "clipboard" => Scene::Panel(Tab::Clipboard),
         "media" => Scene::Flash(Flash::Music),
-        "volume" => Scene::Flash(Flash::Volume),
-        "screenshots" => Scene::Flash(Flash::Toast),
-        "recording" => Scene::Flash(Flash::Recording),
-        "notes" => Scene::Flash(Flash::Reminder),
+        "capture" => Scene::Flash(Flash::Toast),
         "notifications" => Scene::Flash(Flash::Notif),
-        "downloads" => Scene::Flash(Flash::Download),
-        "battery" => Scene::Flash(Flash::Battery),
-        "keyboard" => Scene::Flash(Flash::Kbd),
-        "desktops" => Scene::Flash(Flash::Vdesk),
-        "usb" => Scene::Flash(Flash::Usb),
-        // General (start, hiding, quiet hours, search, the preview switch), Hotkeys, Command bar, Voice to text, OBS, Calendar, Mail, Phone link, the AI pages, Updates: the folded island
+        // General (start, hiding, quiet hours, search, the preview switch), Hotkeys, Calendar and mail, Phone link, AI, Updates: the folded island
         _ => Scene::DEFAULT,
     }
 }

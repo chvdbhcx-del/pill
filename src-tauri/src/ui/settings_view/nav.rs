@@ -202,25 +202,19 @@ impl SettingsView {
             "general" => calls.extend([BackendCall::AutostartGet, BackendCall::SettingsInfo, BackendCall::EverythingStatus]),
             "hotkeys" => calls.push(BackendCall::LauncherList),
             "look" => calls.push(BackendCall::PillMonitors),
-            // the output and input devices
-            "volume" => {
+            // Media and sound: the output and input devices (Volume and microphone), and for Voice to text everything the old Voice page asked for
+            // plus the local Whisper install
+            "media" => {
                 calls.push(BackendCall::MediaDevices);
                 calls.push(BackendCall::MediaCaptureDevices);
-            }
-            // Voice to text: everything the old Voice page asked for, and the local Whisper install
-            "voice" => {
                 calls.push(BackendCall::VoiceHasKey { provider: Some(self.model.get_str("voice.provider")) });
                 calls.push(BackendCall::NetFeaturesStatus);
                 calls.push(BackendCall::AisetupStatus);
             }
             "clipboard" => calls.push(BackendCall::ClipStatus),
+            // AI: the assistant's provider, and the local AI setup (the old AI setup page)
             "ai" => {
                 calls.push(BackendCall::AiConfig);
-                calls.push(BackendCall::NetFeaturesStatus);
-                calls.push(BackendCall::AisetupStatus);
-            }
-            // the local AI setup (the old AI setup page)
-            "localai" => {
                 calls.push(BackendCall::NetFeaturesStatus);
                 calls.push(BackendCall::AisetupStatus);
             }
@@ -254,14 +248,12 @@ impl SettingsView {
 
 use super::chrome;
 
-/// The status calls of a page with a polled status line (Notifications, Downloads, OBS, Calendar, Mail); empty for every other page.
+/// The status calls of a page with polled status lines: Notifications and cards (Notifications, Downloads), Calendar and mail (OBS, Calendar,
+/// Mail); empty for every other page.
 pub(super) fn live_status(page: &str) -> Vec<BackendCall> {
     match page {
-        "notifications" => vec![BackendCall::NotifStatus],
-        "downloads" => vec![BackendCall::SteamStatus],
-        "obs" => vec![BackendCall::ObsStatus],
-        "calendar" => vec![BackendCall::LiveplusIcsStatus],
-        "mail" => vec![BackendCall::MailStatus],
+        "notifications" => vec![BackendCall::NotifStatus, BackendCall::SteamStatus],
+        "calendar" => vec![BackendCall::ObsStatus, BackendCall::LiveplusIcsStatus, BackendCall::MailStatus],
         _ => Vec::new(),
     }
 }

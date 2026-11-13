@@ -159,8 +159,7 @@ pub fn build_index(lang: Lang) -> Vec<Entry> {
             for c in pickers::STYLES.iter() {
                 out.push(Entry { page: p.id.into(), page_name: page_name.into(), title: c.name.get(lang).into(), desc: c.desc.get(lang).into(), keywords: c.name.get(other).into(), row: true, row_id: String::new() });
             }
-        }
-        if p.id == "pet" {
+            // the pets are the second picker of the same page
             for c in pickers::pet_cards() {
                 out.push(Entry { page: p.id.into(), page_name: page_name.into(), title: c.name.get(lang).into(), desc: c.desc.get(lang).into(), keywords: format!("{} {}", c.name.get(other), c.id), row: true, row_id: String::new() });
             }
@@ -407,7 +406,7 @@ mod tests {
             assert_eq!(pages, schema().pages.len());
             assert!(idx.iter().all(|e| !e.title.is_empty()));
             assert!(idx.iter().any(|e| e.row_id == "quiet.on"));
-            assert!(idx.iter().any(|e| e.page == "edge" && e.row_id.is_empty() && e.row) && idx.iter().any(|e| e.page == "pet" && e.row_id.is_empty() && e.row), "picker cards are indexed");
+            assert!(idx.iter().filter(|e| e.page == "edge" && e.row_id.is_empty() && e.row).count() > 5, "the edge-style and the pet cards are indexed");
         }
         // a Russian UI finds rows by their English label and the other way round
         let ru = build_index(Lang::Ru);
