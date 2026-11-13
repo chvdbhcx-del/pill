@@ -36,7 +36,7 @@ fn the_forecast_brings_six_tiles_and_one_sentence() {
     let r = Rig::on(with_tile_data(forecast("lightrain", "rain", 4.4)));
     let v = ok_view(&r);
     assert_eq!(v.tiles.len(), 6);
-    assert_eq!(v.tiles[2].num, Some(1012.0));
+    assert_eq!((v.tiles[2].num, v.tiles[3].num), (Some(3.0), Some(1012.0)), "UV index third, pressure after it");
     assert!(v.summary.starts_with("Light rain now,") && v.summary.ends_with('.') && !v.summary[..v.summary.len() - 1].contains(". "), "{}", v.summary);
     // a forecast from before the tiles existed still shows what it has
     let r = Rig::on(forecast("lightrain", "rain", 4.4));
