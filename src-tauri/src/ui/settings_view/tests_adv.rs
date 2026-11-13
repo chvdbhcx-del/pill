@@ -240,6 +240,11 @@ fn old_page_names_open_the_page_that_holds_their_rows_and_scroll_to_the_section(
         assert!(v.page.rows().all(|r| r.hl.is_none()), "{old}: an old name flashes nothing");
         let r = v.page.rows().find(|r| r.row.id == row).unwrap_or_else(|| panic!("{old}: {row}"));
         let top = v.page.scroll.offset();
+        if old == "pet" {
+            // the pet gallery is a long section: the window lands on its start (the gallery), the row under it is further down
+            assert!(top > 300.0 && r.rect.y > top, "pet: scrolled to the gallery ({top}), its row is below ({:?})", r.rect);
+            continue;
+        }
         assert!(r.rect.y >= top - 1.0 && r.rect.bottom() <= top + v.content_rect().h + 1.0, "{old}: {row} is on screen ({:?} at scroll {top})", r.rect);
     }
 }

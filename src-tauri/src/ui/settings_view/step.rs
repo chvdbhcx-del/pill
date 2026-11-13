@@ -207,7 +207,10 @@ impl SettingsView {
         if g.quiet {
             // the top of the section: the caption above the card that holds the row
             let at = self.page.blocks.iter().position(|b| matches!(b, Block::Card(rows) if rows.iter().any(|r| r.row.id == g.row_id)));
-            let top = at.and_then(|i| (0..i).rev().find(|j| matches!(self.page.blocks[*j], Block::Cap(_))).and_then(|j| self.page.rects.get(j)).map(|r| r.y));
+            // (a picker gallery - the edge styles, the pets - is part of the section: it brings its caption, or is the start itself when it draws its own)
+            let start = at.and_then(|i| (0..i).rev().find(|j| matches!(self.page.blocks[*j], Block::Cap(_) | Block::Pets(_) | Block::Chars(_))));
+            let start = start.map(|j| if j > 0 && matches!(self.page.blocks[j], Block::Pets(_) | Block::Chars(_)) && matches!(self.page.blocks[j - 1], Block::Cap(_)) { j - 1 } else { j });
+            let top = start.and_then(|j| self.page.rects.get(j)).map(|r| r.y);
             self.goto = None;
             if let Some(y) = top.or(at.and_then(|i| self.page.rects.get(i)).map(|r| r.y)) {
                 self.page.scroll.scroll_to((y - 16.0).max(0.0), !reduce);
