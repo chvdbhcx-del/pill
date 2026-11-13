@@ -137,7 +137,7 @@ impl SettingsView {
                 let changed = version != self.version || dir != self.dir;
                 self.version = version;
                 self.dir = dir;
-                if changed && self.loaded && self.model.current == "updates" && !self.wiz.active() {
+                if changed && self.loaded && matches!(self.model.current, "updates" | "general") && !self.wiz.active() {
                     self.rebuild(cx);
                 }
             }

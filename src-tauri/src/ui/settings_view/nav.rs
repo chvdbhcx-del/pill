@@ -142,7 +142,7 @@ impl SettingsView {
         if !p.footnote.is_blank() {
             pg.blocks.push(Block::Foot(p.footnote.get(lang).to_string()));
         }
-        if id == "updates" && !self.dir.is_empty() {
+        if id == "general" && !self.dir.is_empty() {
             pg.blocks.push(Block::Foot(pill_ui_core::settings::flows::data_dir_note(lang, &self.dir)));
         }
         pg
@@ -198,9 +198,8 @@ impl SettingsView {
         self.stop_ticker();
         let mut calls: Vec<BackendCall> = Vec::new();
         match id {
-            "start" => calls.push(BackendCall::AutostartGet),
-            // the file search (Everything) status
-            "search" => calls.push(BackendCall::EverythingStatus),
+            // General: the autostart state, the data folder (settings backup) and the file search (Everything) status
+            "general" => calls.extend([BackendCall::AutostartGet, BackendCall::SettingsInfo, BackendCall::EverythingStatus]),
             "hotkeys" => calls.push(BackendCall::LauncherList),
             "look" => calls.push(BackendCall::PillMonitors),
             // the output and input devices

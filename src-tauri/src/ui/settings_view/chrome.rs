@@ -28,6 +28,9 @@ const STRIDE: f32 = 31.0;
 const GROUP_H0: f32 = 22.0;
 const GROUP_H: f32 = 34.0;
 const HEAD_H: f32 = 64.0;
+/// Left edge of an item's icon and of a group heading inside the list item; the icon box (a 24 grid drawn at 16 px) and the gap to the name.
+const NAV_X: f32 = 14.0;
+const NAV_ICON: f32 = 16.0;
 const SEARCH_H: f32 = 36.0;
 const FOOT_H: f32 = 84.0;
 
@@ -287,7 +290,7 @@ impl SettingsView {
                 match n {
                     NavItem::Head(t) => {
                         let hh = head_h(i);
-                        cv.text(Rect::new(ox + 14.0, oy + y + hh - 20.0, iw - 20.0, 14.0), &txt::upper(t.get(d.lang)), Style::new(10.0, 600).track(0.8).ellipsis(), p.cap);
+                        cv.text(Rect::new(ox + NAV_X, oy + y + hh - 20.0, iw - 20.0, 14.0), &txt::upper(t.get(d.lang)), Style::new(10.0, 600).track(0.8).ellipsis(), p.cap);
                         y += hh;
                     }
                     NavItem::Page(id) => {
@@ -298,8 +301,12 @@ impl SettingsView {
                         let hv = self.ui.hover_of(k);
                         let pr = self.ui.press_of(k);
                         let fr = self.focus_ring_for(FID_NAV + idx);
-                        let name = schema().page(id).map(|pg| pg.title.get(d.lang)).unwrap_or("");
-                        self.paint_nav_item(d, r, "", name, on, hv, pr, p.item, p.icon, fr);
+                        let pg = schema().page(id);
+                        let name = pg.map(|pg| pg.title.get(d.lang)).unwrap_or("");
+                        // how much of the item is selected, read off the indicator that glides to it (no state of its own): the icon and the
+                        // name take the selected colours as the indicator arrives and let go as it leaves
+                        let sel = if self.side.ready { 1.0 - ((self.side.ind_y.at() - y).abs() / STRIDE).min(1.0) } else { on as u8 as f32 };
+                        self.paint_nav_item(d, r, pg.map_or("", |pg| pg.icon), name, on, sel, hv, pr, p.item, p.icon, fr);
                         y += STRIDE;
                         idx += 1;
                     }
@@ -318,26 +325,27 @@ impl SettingsView {
         let pr = self.ui.press_of(k);
         let fr = self.focus_ring_for(FID_QUIT);
         cv.fill_rr(qr, 10.0, p.red.alpha(0.10 * hv));
-        self.paint_nav_item(d, qr, "power", nav::QUIT.get(d.lang), false, 0.0, pr, p.red, p.red, fr);
+        self.paint_nav_item(d, qr, "power", nav::QUIT.get(d.lang), false, 0.0, 0.0, pr, p.red, p.red, fr);
     }
 
+    /// One line of the list: icon, name. Idle: the dim icon colour; hovered: the text colour; selected: the accent (`sel` 0..1 is how far the
+    /// selection indicator has come to this item). All three are mixes of values that already flow, so nothing here sets a target.
     #[allow(clippy::too_many_arguments)]
-    fn paint_nav_item(&mut self, d: &Dc, r: Rect, icon: &str, name: &str, on: bool, hv: f32, pr: f32, text: Color, ic: Color, fr: (bool, bool)) {
+    fn paint_nav_item(&mut self, d: &Dc, r: Rect, icon: &str, name: &str, on: bool, sel: f32, hv: f32, pr: f32, text: Color, ic: Color, fr: (bool, bool)) {
         let (cv, p) = (d.cv, d.p);
         let scale = 1.0 - 0.02 * pr.max(0.0);
         cv.with_scale_about(r.center(), scale, |cv| {
             if !on && hv > 0.0 && text != p.red {
                 cv.fill_rr(r, 10.0, p.item_hover.fade(hv));
             }
-            let c_text = if on { p.text } else { text };
-            let c_icon = if on { p.text } else { ic };
-            if icon.is_empty() {
-                // a function of the list: just its name, set in from the accent bar
-                cv.text(Rect::new(r.x + 16.0, r.y, r.w - 24.0, r.h), name, Style::new(13.0, if on { 600 } else { 400 }).ellipsis(), c_text);
-            } else {
-                self.icons.side(cv, icon, Rect::new(r.x + 12.0, r.cy() - 8.0, 16.0, 16.0), c_icon);
-                cv.text(Rect::new(r.x + 12.0 + 16.0 + 12.0, r.y, r.w - 52.0, r.h), name, Style::new(13.0, 400).ellipsis(), c_text);
+            let quit = text == p.red;
+            let c_text = if quit { text } else { mix(text, p.text, sel) };
+            let c_icon = if quit { ic } else { mix(mix(ic, p.text, hv), p.accent, sel) };
+            if !icon.is_empty() {
+                self.icons.side(cv, icon, Rect::new(r.x + NAV_X, r.cy() - NAV_ICON / 2.0, NAV_ICON, NAV_ICON), c_icon);
             }
+            let tx = r.x + NAV_X + NAV_ICON + 10.0;
+            cv.text(Rect::new(tx, r.y, r.right() - tx - 6.0, r.h), name, Style::new(13.0, if on { 600 } else { 400 }).ellipsis(), c_text);
         });
         if fr.0 && fr.1 {
             cv.focus_ring(r, 10.0, p.accent, 1.0);

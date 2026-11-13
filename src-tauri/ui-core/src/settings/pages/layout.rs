@@ -136,7 +136,7 @@ pub(super) fn look(p: &mut Pool) -> Page {
     let (title, head) = (tr("Вид", "Look"), tr("Вид острова", "Island look"));
     pg(
         "look",
-        "appearance",
+        "palette",
         title,
         head,
         vec![
@@ -158,12 +158,12 @@ pub(super) fn edge(p: &mut Pool) -> Page {
 
 pub(super) fn pet(p: &mut Pool) -> Page {
     let title = tr("Питомец", "Pet");
-    pg("pet", "character", title, Tr::NONE, vec![p.main(title, &["pet", "pet.side", "pet.size", "pet.keepDuringMusic"])])
+    pg("pet", "paw", title, Tr::NONE, vec![p.main(title, &["pet", "pet.side", "pet.size", "pet.keepDuringMusic"])])
 }
 
 pub(super) fn clock(p: &mut Pool) -> Page {
     let title = tr("Часы и дата", "Clock and date");
-    pg("clock", "appearance", title, Tr::NONE, vec![p.main(title, &["showTime", "showDate", "showSeconds", "clock24"])])
+    pg("clock", "clock", title, Tr::NONE, vec![p.main(title, &["showTime", "showDate", "showSeconds", "clock24"])])
 }
 
 pub(super) fn tabs(p: &mut Pool) -> Page {
@@ -179,7 +179,7 @@ pub(super) fn tabs(p: &mut Pool) -> Page {
     let title = tr("Вкладки и главная", "Tabs and Home");
     let mut page = pg(
         "tabs",
-        "modules",
+        "home",
         title,
         Tr::NONE,
         vec![
@@ -194,41 +194,42 @@ pub(super) fn tabs(p: &mut Pool) -> Page {
 
 pub(super) fn animation(p: &mut Pool) -> Page {
     let title = tr("Анимация", "Animation");
-    pg("animation", "appearance", title, Tr::NONE, vec![p.main(title, &["reduceMotion"]), p.sec(tr("Частота кадров и видеокарта", "Frame rate and GPU"), &["fps", "edgeIdleFps", "ui.gpu"]).adv()])
+    pg("animation", "motion", title, Tr::NONE, vec![p.main(title, &["reduceMotion"]), p.sec(tr("Частота кадров и видеокарта", "Frame rate and GPU"), &["fps", "edgeIdleFps", "ui.gpu"]).adv()])
 }
 
 // ------------------------------------------------------------------------------------------------ Behaviour
 
-pub(super) fn start(p: &mut Pool) -> Page {
-    let title = tr("Запуск и язык", "Start and language");
-    pg("start", "general", title, Tr::NONE, vec![p.main(title, &["language", "general.autostart"])])
-}
-
-pub(super) fn hiding(p: &mut Pool) -> Page {
-    let (title, head) = (tr("Скрытие", "Hiding"), tr("Прятать остров", "Hiding the pill"));
+pub(super) fn general(p: &mut Pool) -> Page {
+    // One page for everything that is not about a single function: start and language, hiding, quiet hours, the command bar's search and the
+    // settings window itself. What is rare (details of hiding, pass-through, Everything, backup, first run) is folded into the one Advanced part.
+    let browser = p.footer("search", 2);
+    let everything = p.footer("search", 0);
+    let title = tr("Общие", "General");
     pg(
-        "hiding",
-        "behavior",
+        "general",
+        "general",
         title,
-        head,
+        Tr::NONE,
         vec![
-            p.main(head, &["hideInFullscreen", "fullscreenPeek", "autoHide"]),
+            p.sec(tr("Запуск и язык", "Start and language"), &["language", "general.autostart"]),
+            p.sec(tr("Прятать остров", "Hiding the pill"), &["hideInFullscreen", "fullscreenPeek", "autoHide"]),
+            p.sec(tr("Тихие часы", "Quiet hours"), &["quiet.on", "quiet.from", "quiet.to", "quiet.days"]),
+            p.note(tr("Поиск в командной строке", "Command bar search"), browser, &["module.fileSearch", "search.engine", "search.customUrl"]),
+            p.sec(tr("Окно настроек", "Settings window"), &["settings.preview"]),
             p.sec(tr("Подробности и списки программ", "Details and program lists"), &["fullscreenPeekEdge", "autoHideKeepDesktop", "hideInApps", "behavior.hideAddActive", "showInApps", "behavior.showAddActive"]).adv(),
             p.sec(tr("Сквозной режим", "Pass-through mode"), &["passThrough", "passThroughOpacity"]).adv(),
+            p.note(tr("Поиск файлов: Everything", "File search: Everything"), everything, &["search.everything", "everything.autostart"]).adv(),
+            p.sec(tr("Копия настроек", "Settings backup"), &["general.backup"]).adv(),
+            p.sec(tr("Первый запуск", "First run"), &["general.wizard"]).adv(),
         ],
     )
-}
-
-pub(super) fn quiet(p: &mut Pool) -> Page {
-    let title = tr("Тихие часы", "Quiet hours");
-    pg("quiet", "behavior", title, Tr::NONE, vec![p.main(title, &["quiet.on", "quiet.from", "quiet.to", "quiet.days"])])
 }
 
 pub(super) fn hotkeys(p: &mut Pool) -> Page {
     // Hotkeys stay on one page on purpose: the recorder checks a combo against all the others, and a list of every key is what people look for
     pg(
         "hotkeys",
-        "hotkeys",
+        "keyboard",
         tr("Клавиши", "Hotkeys"),
         tr("Горячие клавиши", "Hotkeys"),
         vec![
@@ -236,22 +237,6 @@ pub(super) fn hotkeys(p: &mut Pool) -> Page {
             p.sec(tr("Экран: запись, снимки, текст и цвет", "Screen: recording, shots, text and colour"), &["hotkey.record", "hotkey.shotArea", "hotkey.shotFull", "hotkey.ocr", "hotkey.pipette", "hotkey.qr"]),
             p.sec(tr("Ярлыки лаунчера", "Launcher shortcuts"), &["hotkeys.launcher"]),
             p.sec(tr("Пока без сочетания", "Not assigned yet"), &["hotkey.uninstall", "hotkey.passThrough", "hotkey.theme", "hotkey.musicView", "hotkey.vpn"]).adv(),
-        ],
-    )
-}
-
-pub(super) fn search(p: &mut Pool) -> Page {
-    let browser = p.footer("search", 2);
-    let everything = p.footer("search", 0);
-    let (title, head) = (tr("Командная строка", "Command bar"), tr("Поиск в командной строке", "Command bar search"));
-    pg(
-        "search",
-        "search",
-        title,
-        head,
-        vec![
-            p.main_note(head, browser, &["module.fileSearch", "search.engine", "search.customUrl"]),
-            p.note(tr("Поиск файлов: Everything", "File search: Everything"), everything, &["search.everything", "everything.autostart"]).adv(),
         ],
     )
 }
@@ -284,7 +269,7 @@ pub(super) fn media(p: &mut Pool) -> Page {
     let title = tr("Медиаплеер", "Media player");
     pg(
         "media",
-        "sound",
+        "note2",
         title,
         Tr::NONE,
         vec![p.main(title, &["module.media", "live.music", "musicPill", "audio.reactive", "music.lyrics", "home.player", "home.lyrics"]), p.sec(tr("Источники звука", "Sound sources"), &["audio.perApp", "media.legacyPlayers"]).adv()],
@@ -297,7 +282,7 @@ pub(super) fn volume(p: &mut Pool) -> Page {
         "What is read. Volume: only the level and the mute flag of the default output device. Microphone and camera: marks in the Windows registry (read-only, your user branch) saying which app is using the device right now; sound and picture are never opened or read. While a switch is off, none of this is polled.",
     );
     let title = tr("Громкость и микрофон", "Volume and microphone");
-    pg("volume", "sound", title, Tr::NONE, vec![p.main_note(title, read, &["live.volume", "sound.volumeDevice", "audio.volumeTarget", "sound.micDevice", "live.micCam"])])
+    pg("volume", "volume", title, Tr::NONE, vec![p.main_note(title, read, &["live.volume", "sound.volumeDevice", "audio.volumeTarget", "sound.micDevice", "live.micCam"])])
 }
 
 pub(super) fn clipboard(p: &mut Pool) -> Page {
@@ -319,7 +304,7 @@ pub(super) fn screenshots(p: &mut Pool) -> Page {
     let title = tr("Скриншоты", "Screenshots");
     pg(
         "screenshots",
-        "clipboard",
+        "area",
         title,
         Tr::NONE,
         vec![p.main(title, &["capture.shotAction", "capture.annotate", "capture.folder"]), p.sec(tr("Подробности", "Details"), &["capture.revealAfterSave", "showInCapture"]).adv()],
@@ -331,7 +316,7 @@ pub(super) fn recording(p: &mut Pool) -> Page {
     let title = tr("Запись экрана", "Screen recording");
     pg(
         "recording",
-        "clipboard",
+        "video",
         title,
         Tr::NONE,
         vec![p.main_note(title, rec, &["live.recording", "capture.format", "capture.fps", "capture.recordSystemAudio", "capture.recordMic", "capture.videoFolder"]), p.sec(tr("Кодировщик", "Encoder"), &["capture.encoder"]).adv()],
@@ -342,7 +327,7 @@ pub(super) fn notes(p: &mut Pool) -> Page {
     let title = tr("Заметки и таймер", "Notes and timer");
     pg(
         "notes",
-        "modules",
+        "note",
         title,
         Tr::NONE,
         vec![p.main(title, &["module.note", "live.reminders", "sound.reminders", "sound.reminderTone", "sound.play"]), p.sec(tr("Свой звук", "Own sound"), &["timer.sound", "timer.soundFile"]).adv()],
@@ -352,31 +337,31 @@ pub(super) fn notes(p: &mut Pool) -> Page {
 pub(super) fn launcher(p: &mut Pool) -> Page {
     let title = tr("Лаунчер", "Launcher");
     let note = tr("Сочетания клавиш для ярлыков лаунчера стоят на странице «Клавиши».", "The hotkeys of the launcher shortcuts are on the Hotkeys page.");
-    pg("launcher", "modules", title, Tr::NONE, vec![p.main_note(title, note, &["module.launcher"])])
+    pg("launcher", "apps", title, Tr::NONE, vec![p.main_note(title, note, &["module.launcher"])])
 }
 
 pub(super) fn shelf(p: &mut Pool) -> Page {
     // File shelf: the shelf itself, and the badge it puts on the folded island
     p.edit("live.shelf", Some(tr("Значок с числом файлов", "File-count badge")), None);
     let title = tr("Полка файлов", "File shelf");
-    pg("shelf", "modules", title, Tr::NONE, vec![p.main(title, &["module.shelf", "live.shelf"])])
+    pg("shelf", "shelf", title, Tr::NONE, vec![p.main(title, &["module.shelf", "live.shelf"])])
 }
 
 pub(super) fn text(p: &mut Pool) -> Page {
     let title = tr("Текстовые инструменты", "Text tools");
-    pg("text", "modules", title, Tr::NONE, vec![p.main(title, &["module.text"])])
+    pg("text", "text", title, Tr::NONE, vec![p.main(title, &["module.text"])])
 }
 
 pub(super) fn controls(p: &mut Pool) -> Page {
     let title = tr("Управление системой", "System controls");
-    pg("controls", "modules", title, Tr::NONE, vec![p.main(title, &["module.controls", "live.sysmon"])])
+    pg("controls", "controls", title, Tr::NONE, vec![p.main(title, &["module.controls", "live.sysmon"])])
 }
 
 pub(super) fn vpn(p: &mut Pool) -> Page {
     let own = p.footer("modules", 2);
     pg(
         "vpn",
-        "modules",
+        "shield",
         tr("VPN", "VPN"),
         Tr::NONE,
         vec![p.main(tr("VPN", "VPN"), &["module.vpn"]), p.note(tr("Свой клиент", "Your own client"), own, &["vpn.own.name", "vpn.own.connect", "vpn.own.disconnect", "vpn.admin"]).adv()],
@@ -389,7 +374,7 @@ pub(super) fn voice(p: &mut Pool) -> Page {
     let title = tr("Голос в текст", "Voice to text");
     pg(
         "voice",
-        "voice",
+        "mic",
         title,
         Tr::NONE,
         vec![
@@ -405,7 +390,7 @@ pub(super) fn notifications(p: &mut Pool) -> Page {
     let (title, head) = (tr("Уведомления", "Notifications"), tr("Уведомления и карточки", "Notifications and cards"));
     pg(
         "notifications",
-        "live",
+        "bell",
         title,
         head,
         vec![p.main(head, &["module.notifs", "live.notifications", "live.notifications.allow"]), p.sec(tr("Время показа и история", "Display time and history"), &["cards.duration", "history.keep", "history.mail"]).adv()],
@@ -416,7 +401,7 @@ pub(super) fn downloads(p: &mut Pool) -> Page {
     let title = tr("Загрузки", "Downloads");
     let mut page = pg(
         "downloads",
-        "live",
+        "download",
         title,
         Tr::NONE,
         vec![p.main(title, &["live.downloads", "live.dlDone", "live.steam"]), p.sec(tr("Подробности", "Details"), &["live.downloadRing", "live.dlIgnoreExt"]).adv()],
@@ -430,7 +415,7 @@ pub(super) fn downloads(p: &mut Pool) -> Page {
 
 pub(super) fn battery(p: &mut Pool) -> Page {
     let title = tr("Батарея", "Battery");
-    let mut page = pg("battery", "live", title, Tr::NONE, vec![p.main(title, &["live.battery", "showBattery"])]);
+    let mut page = pg("battery", "battery", title, Tr::NONE, vec![p.main(title, &["live.battery", "showBattery"])]);
     page.footnote = tr(
         "Что читается. Батарея: уровень заряда и подключено ли питание. Пока переключатель выключен, это не опрашивается.",
         "What is read. Battery: the charge level and whether the power is plugged in. While the switch is off, none of this is polled.",
@@ -440,17 +425,17 @@ pub(super) fn battery(p: &mut Pool) -> Page {
 
 pub(super) fn keyboard(p: &mut Pool) -> Page {
     let title = tr("Раскладка клавиатуры", "Keyboard layout");
-    pg("keyboard", "live", title, Tr::NONE, vec![p.main(title, &["live.keyboardLayout", "live.keyboardLayoutAlways"])])
+    pg("keyboard", "globe", title, Tr::NONE, vec![p.main(title, &["live.keyboardLayout", "live.keyboardLayoutAlways"])])
 }
 
 pub(super) fn desktops(p: &mut Pool) -> Page {
     let (title, head) = (tr("Рабочие столы", "Virtual desktops"), tr("Виртуальные рабочие столы", "Virtual desktops"));
-    pg("desktops", "live", title, head, vec![p.main(head, &["live.virtualDesktopFlash", "live.virtualDesktop"])])
+    pg("desktops", "desktops", title, head, vec![p.main(head, &["live.virtualDesktopFlash", "live.virtualDesktop"])])
 }
 
 pub(super) fn usb(p: &mut Pool) -> Page {
     let (title, head) = (tr("Флешки и диски", "USB drives"), tr("Флешки и съёмные диски", "USB and removable drives"));
-    let mut page = pg("usb", "live", title, head, vec![p.main(head, &["live.usb"])]);
+    let mut page = pg("usb", "usb", title, head, vec![p.main(head, &["live.usb"])]);
     page.footnote = tr(
         "Что читается. Съёмные диски: список букв дисков. Пока переключатель выключен, это не опрашивается.",
         "What is read. Removable drives: the list of drive letters. While the switch is off, none of this is polled.",
@@ -460,12 +445,12 @@ pub(super) fn usb(p: &mut Pool) -> Page {
 
 pub(super) fn obs(p: &mut Pool) -> Page {
     let (title, head) = (tr("OBS", "OBS"), tr("OBS: запись и трансляция", "OBS: recording and streaming"));
-    pg("obs", "live", title, head, vec![p.main(head, &["live.obs"]), p.sec(tr("Подключение", "Connection"), &["live.obs.port", "live.obs.password"]).adv()])
+    pg("obs", "obs", title, head, vec![p.main(head, &["live.obs"]), p.sec(tr("Подключение", "Connection"), &["live.obs.port", "live.obs.password"]).adv()])
 }
 
 pub(super) fn calendar(p: &mut Pool) -> Page {
     let title = tr("Календарь", "Calendar");
-    let mut page = pg("calendar", "live", title, Tr::NONE, vec![p.main(title, &["live.calendar", "live.calendar.path"])]);
+    let mut page = pg("calendar", "calendar", title, Tr::NONE, vec![p.main(title, &["live.calendar", "live.calendar.path"])]);
     page.footnote = tr(
         "Что читается. Календарь: только файл .ics, который вы указали. Пока переключатель выключен, это не опрашивается.",
         "What is read. Calendar: only the .ics file you point to. While the switch is off, none of this is polled.",
@@ -475,7 +460,7 @@ pub(super) fn calendar(p: &mut Pool) -> Page {
 
 pub(super) fn mail(p: &mut Pool) -> Page {
     let (title, head) = (tr("Почта", "Mail"), tr("Почта (IMAP)", "Mail (IMAP)"));
-    pg("mail", "live", title, head, vec![p.main(head, &["live.mail", "mail.host", "mail.port", "mail.user", "mail.mailbox", "mail.password", "live.mail.test"])])
+    pg("mail", "mail", title, head, vec![p.main(head, &["live.mail", "mail.host", "mail.port", "mail.user", "mail.mailbox", "mail.password", "live.mail.test"])])
 }
 
 // ------------------------------------------------------------------------------------------------ Phone
@@ -523,12 +508,12 @@ pub(super) fn ai(p: &mut Pool) -> Page {
     // "Set up a cloud AI" only jumped to the assistant section that now stands right above on the same page
     p.drop_rows(&["aisetup.cloud-chat"]);
     let title = tr("ИИ-помощник и чат", "AI assistant and chat");
-    pg("ai", "ai", title, Tr::NONE, vec![p.main(title, &["net.ai", "module.chat", "ai.provider", "ai.key", "ai.baseUrl", "ai.model", "ai.list", "ai.test"])])
+    pg("ai", "sparkles", title, Tr::NONE, vec![p.main(title, &["net.ai", "module.chat", "ai.provider", "ai.key", "ai.baseUrl", "ai.model", "ai.list", "ai.test"])])
 }
 
 pub(super) fn agents(p: &mut Pool) -> Page {
     let (title, head) = (tr("ИИ-агенты", "AI agents"), tr("ИИ-агенты в терминале", "AI agents in the terminal"));
-    pg("agents", "ai", title, head, vec![p.main(head, &["live.agents", "live.agents.snippets", "agents.answerFromIsland"])])
+    pg("agents", "terminal", title, head, vec![p.main(head, &["live.agents", "live.agents.snippets", "agents.answerFromIsland"])])
 }
 
 pub(super) fn localai(p: &mut Pool) -> Page {
@@ -546,7 +531,7 @@ pub(super) fn localai(p: &mut Pool) -> Page {
         Some(tr("Раздел остаётся в настройках, на странице «Локальный ИИ»: вернуться можно в любой момент.", "The section stays in Settings, on the Local AI page: you can come back at any time.")),
     );
     let (title, head) = (tr("Локальный ИИ", "Local AI"), tr("Локальный ИИ-чат на этом компьютере", "Local AI chat on this computer"));
-    pg("localai", "ai", title, head, vec![p.main(head, &["aisetup.intro", "aisetup.chat"]), p.sec(Tr::NONE, &["aiSetupDone"])])
+    pg("localai", "chip", title, head, vec![p.main(head, &["aisetup.intro", "aisetup.chat"]), p.sec(Tr::NONE, &["aiSetupDone"])])
 }
 
 // ------------------------------------------------------------------------------------------------ App
@@ -560,10 +545,7 @@ pub(super) fn updates(p: &mut Pool) -> Page {
         vec![
             p.sec(tr("Версия и обновления", "Version and updates"), &["updates.check", "updateAuto"]),
             p.sec(tr("Что нового", "What is new"), &["whatsNew", "updates.whatsnew"]),
-            p.sec(tr("Окно настроек", "Settings window"), &["settings.preview"]),
             p.sec(tr("Помощь", "Help"), &["updates.report"]),
-            p.sec(tr("Копия настроек", "Settings backup"), &["general.backup"]).adv(),
-            p.sec(tr("Первый запуск", "First run"), &["general.wizard"]).adv(),
         ],
     )
 }

@@ -195,8 +195,10 @@ fn a_search_hit_on_the_page_that_is_already_open_also_opens_the_section() {
 fn old_page_names_open_the_page_that_holds_their_rows_and_scroll_to_the_section() {
     let _g = motion_lock();
     for (old, page, row) in [
-        ("behavior", "hiding", "hideInFullscreen"),
-        ("search", "search", "search.engine"),
+        ("behavior", "general", "hideInFullscreen"),
+        ("hiding", "general", "hideInFullscreen"),
+        ("quiet", "general", "quiet.on"),
+        ("search", "general", "module.fileSearch"),
         ("weather", "weather", "net.weather"),
         ("voice", "voice", "voice.enabled"),
         ("aisetup", "localai", "aisetup.intro"),
@@ -204,7 +206,8 @@ fn old_page_names_open_the_page_that_holds_their_rows_and_scroll_to_the_section(
         ("sound", "volume", "live.volume"),
         ("modules", "tabs", "modules.tabs"),
         ("live", "notifications", "module.notifs"),
-        ("general", "start", "general.autostart"),
+        ("start", "general", "language"),
+        ("general", "general", "language"),
         ("appearance", "look", "shape"),
     ] {
         let mut t = boot(json!({"language": "en"}), old);
@@ -236,7 +239,7 @@ fn an_old_name_asked_for_while_the_window_is_open_scrolls_too() {
 #[test]
 fn the_section_renders_closed_and_open() {
     let _g = motion_lock();
-    for id in ["hiding", "clipboard", "notifications"] {
+    for id in ["general", "clipboard", "notifications"] {
         let mut t = boot(json!({"language": "en"}), id);
         scroll_to_end(&mut t);
         let th = Theme::settings_dark();

@@ -48,7 +48,7 @@ fn ids_and_keys_are_unique() {
     for p in &schema().pages {
         assert!(pages.insert(p.id), "duplicate page {}", p.id);
     }
-    assert_eq!(schema().pages.len(), 38);
+    assert_eq!(schema().pages.len(), 35);
 }
 
 #[test]
@@ -451,8 +451,8 @@ const FEATURES: [(&str, &str, &[&str]); 21] = [
     ("Virtual desktops", "desktops", &["live.virtualDesktopFlash", "live.virtualDesktop"]),
     ("Calendar", "calendar", &["live.calendar", "live.calendar.path"]),
     ("Mail", "mail", &["live.mail", "mail.host", "mail.port", "mail.user", "mail.mailbox", "mail.password", "live.mail.test"]),
-    ("Command bar search", "search", &["module.fileSearch", "search.engine", "search.customUrl"]),
-    ("Hiding the pill", "hiding", &["hideInFullscreen", "fullscreenPeek", "autoHide"]),
+    ("Command bar search", "general", &["module.fileSearch", "search.engine", "search.customUrl"]),
+    ("Hiding the pill", "general", &["hideInFullscreen", "fullscreenPeek", "autoHide"]),
 ];
 
 /// The rare rows of a feature: they stand together in one `.adv()` section of the same page as the feature.
@@ -540,8 +540,8 @@ fn search_finds_rows_inside_the_advanced_sections_on_the_page_that_holds_them() 
 fn the_old_page_names_still_find_their_rows() {
     // (an old page name, in either language) -> a row that is on `page` now
     let cases = [
-        ("behavior", "hiding", "hideInFullscreen"),
-        ("Поведение", "quiet", "quiet.on"),
+        ("behavior", "general", "hideInFullscreen"),
+        ("Поведение", "general", "quiet.on"),
         ("character", "pet", "pet.size"),
         ("Персонаж", "edge", "character.liquid"),
         ("weather", "weather", "weather.city"),
@@ -550,14 +550,14 @@ fn the_old_page_names_still_find_their_rows() {
         ("aisetup", "voice", "aisetup.whisper"),
         ("aisetup", "localai", "aisetup.chat"),
         ("Установка ИИ", "localai", "aisetup.chat"),
-        ("search", "search", "search.engine"),
-        ("Поиск файлов", "search", "everything.autostart"),
+        ("search", "general", "search.engine"),
+        ("Поиск файлов", "general", "everything.autostart"),
         ("Живые события", "downloads", "live.steam"),
         ("live events", "usb", "live.usb"),
         ("sound", "volume", "sound.micDevice"),
         ("modules", "tabs", "modules.tabs"),
         ("appearance", "look", "island.colorCustom"),
-        ("general", "start", "general.autostart"),
+        ("general", "general", "general.autostart"),
         ("hotkeys", "hotkeys", "hotkey.qr"),
     ];
     for (q, page, row) in cases {
@@ -578,12 +578,12 @@ fn rows_per_page() {
     // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch
     let expect = [
         ("look", 10), ("edge", 3), ("pet", 4), ("clock", 4), ("tabs", 3), ("animation", 4),
-        ("start", 2), ("hiding", 11), ("quiet", 4), ("hotkeys", 19), ("search", 5),
+        ("general", 25), ("hotkeys", 19),
         ("weather", 7), ("media", 9), ("volume", 5), ("clipboard", 10), ("screenshots", 5), ("recording", 7), ("notes", 7), ("launcher", 1), ("shelf", 2), ("text", 1), ("controls", 2), ("vpn", 5), ("voice", 12),
         ("notifications", 6), ("downloads", 5), ("battery", 2), ("keyboard", 2), ("desktops", 2), ("usb", 1), ("obs", 3), ("calendar", 2), ("mail", 7),
         ("phone", 16),
         ("ai", 8), ("agents", 3), ("localai", 3),
-        ("updates", 8),
+        ("updates", 5),
     ];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");

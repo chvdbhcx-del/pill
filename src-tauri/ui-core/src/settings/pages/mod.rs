@@ -58,11 +58,8 @@ pub fn build() -> Vec<Page> {
         l::tabs(p),
         l::animation(p),
         // Behaviour
-        l::start(p),
-        l::hiding(p),
-        l::quiet(p),
+        l::general(p),
         l::hotkeys(p),
-        l::search(p),
         // Features
         l::weather(p),
         l::media(p),

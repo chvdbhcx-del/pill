@@ -110,6 +110,11 @@ impl Gpu {
         }
     }
 
+    /// The inner SVG markup of a line icon of the set (what `icon` draws), for callers that keep their own parsed copy (the settings sidebar).
+    pub fn glyph(name: &str) -> Option<&'static str> {
+        ICONS.iter().chain(EXTRA_ICONS.iter()).find(|(n, _)| *n == name).map(|(_, m)| *m)
+    }
+
     pub fn has_icon(name: &str) -> bool {
         ICONS.iter().chain(EXTRA_ICONS.iter()).any(|(n, _)| *n == name)
     }

@@ -196,7 +196,7 @@ fn ctrl_f_search_jumps_to_a_row_and_flashes_it() {
     assert!(t.v.borrow().model.search.open, "results are open");
     assert!(!t.v.borrow().search.rows.is_empty());
     t.key(KeyCode::Enter, Modifiers::NONE);
-    assert_eq!(t.current(), "quiet");
+    assert_eq!(t.current(), "general");
     // the highlight plays for 1.7 s: look right after the jump
     t.sim.run(3);
     let _ = t.sim.render((840.0, 760.0), &Theme::settings_dark());
@@ -218,7 +218,7 @@ fn wizard_steps_and_completion_flag() {
     assert_eq!(t.v.borrow().model.wizard.step(), 1);
     t.click_act(&Act::WizSkip);
     assert!(t.calls("settings_set").iter().any(|a| a["patch"]["firstRunDone"] == json!(true)));
-    assert_eq!(t.current(), "start");
+    assert_eq!(t.current(), "general");
     assert!(!t.v.borrow().wiz.active());
 }
 
