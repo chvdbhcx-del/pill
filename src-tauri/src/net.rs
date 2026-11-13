@@ -6,7 +6,7 @@
 // * HTTP = WinHTTP through the `windows` crate (no extra dependency): Schannel TLS with the system trust store and
 //   certificate verification left ON (we never touch WINHTTP_OPTION_SECURITY_FLAGS), system proxy (not for loopback),
 //   timeouts, response size caps, User-Agent that names the app. No telemetry, no cookies, no auto-update.
-// * Weather: MET Norway Locationforecast 2.0 compact + Nominatim city search; sunrise/sunset, feels-like and the
+// * Weather: MET Norway Locationforecast 2.0 complete + Nominatim city search; sunrise/sunset, feels-like and the
 //   daily/hourly digest are computed locally (pure functions, `cargo test net`).
 // * secrets: DPAPI (CryptProtectData, current user) for the AI key; the key is only ever sent to the configured endpoint.
 use crate::ui::bus;
@@ -816,7 +816,7 @@ fn r1(x: f64) -> f64 {
     (x * 10.0).round() / 10.0
 }
 
-/// Digest the MET compact forecast into what the weather tab shows. `tz_min` = PC's UTC offset in minutes (day boundaries, weekday).
+/// Digest the MET complete forecast into what the weather tab shows. `tz_min` = PC's UTC offset in minutes (day boundaries, weekday).
 pub fn build_weather(body: &str, lat: f64, lon: f64, now_ms: i64, tz_min: i64) -> Result<Value, String> {
     let (es, updated) = parse_met(body)?;
     let now_s = now_ms.div_euclid(1000);
@@ -919,6 +919,10 @@ struct Cached {
 
 fn load_cache() -> Option<Cached> {
     let v: Value = serde_json::from_str(&std::fs::read_to_string(cache_path()).ok()?).ok()?;
+    // a cache written by the old `compact` product (no `product` tag) has no UV field and its Last-Modified would 304 the new URL: refetch once
+    if v.get("product").and_then(Value::as_str) != Some("complete") {
+        return None;
+    }
     Some(Cached {
         lat: v.get("lat")?.as_f64()?,
         lon: v.get("lon")?.as_f64()?,
@@ -930,7 +934,7 @@ fn load_cache() -> Option<Cached> {
 }
 
 fn save_cache(c: &Cached) {
-    let v = json!({ "lat": c.lat, "lon": c.lon, "fetched": c.fetched, "expires": c.expires, "last_modified": c.last_modified, "body": c.body });
+    let v = json!({ "lat": c.lat, "lon": c.lon, "fetched": c.fetched, "expires": c.expires, "last_modified": c.last_modified, "product": "complete", "body": c.body });
     let p = cache_path();
     let tmp = p.with_extension("json.tmp");
     if serde_json::to_vec(&v).ok().is_some_and(|b| std::fs::write(&tmp, b).is_ok()) {
@@ -952,7 +956,8 @@ fn forecast_body(lat: f64, lon: f64, force: bool) -> Result<(String, i64, Option
             return Ok((c.body.clone(), c.fetched, None));
         }
     }
-    let url = format!("https://api.met.no/weatherapi/locationforecast/2.0/compact?lat={lat:.4}&lon={lon:.4}");
+    // `complete`, not `compact`: only `complete` carries `ultraviolet_index_clear_sky` (compact never does, so the UV tile stayed hidden)
+    let url = format!("https://api.met.no/weatherapi/locationforecast/2.0/complete?lat={lat:.4}&lon={lon:.4}");
     let ims = cached.as_ref().map(|c| c.last_modified.clone()).filter(|s| !s.is_empty());
     let mut hdrs: Vec<(&str, &str)> = vec![("Accept", "application/json")];
     if let Some(s) = &ims {
