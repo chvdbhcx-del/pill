@@ -66,7 +66,7 @@ fn a_page_cancelled_while_rising_turns_around_where_it_is() {
     }
     let e = t.v.borrow().enter_t.at01();
     assert!(e > 0.4 && e < 0.8, "caught mid-rise ({e})");
-    t.v.borrow_mut().show_page("general", &mut t.sim.cx);
+    t.v.borrow_mut().show_page("start", &mut t.sim.cx);
     let (leave, moving) = {
         let v = t.v.borrow();
         (v.leave_t.at(), v.leave_t.moving())
@@ -75,7 +75,7 @@ fn a_page_cancelled_while_rising_turns_around_where_it_is() {
     assert!(moving);
     t.sim.frame.request();
     idle_within(&mut t, 1500.0);
-    assert_eq!(t.v.borrow().page.id, "general");
+    assert_eq!(t.v.borrow().page.id, "start");
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn the_search_popup_flows_shut_keeping_its_rows_and_then_lets_the_window_idle() 
 #[test]
 fn a_row_message_opens_its_room_smoothly_and_closes_it_again() {
     let _m = motion_on();
-    let mut t = boot(json!({"language": "en"}), "general");
+    let mut t = boot(json!({"language": "en"}), "hiding");
     paint(&mut t);
     let id = t.v.borrow().page.rows().find(|r| matches!(r.ctl, page::Ctl::Toggle(_))).map(|r| r.row.id).expect("a toggle row");
     let h0 = |t: &T| t.v.borrow().page.rows().find(|r| r.row.id == id).map(|r| r.mh.at()).unwrap();

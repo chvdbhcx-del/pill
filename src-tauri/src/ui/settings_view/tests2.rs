@@ -101,7 +101,7 @@ impl T {
 #[test]
 fn toggle_click_writes_the_setting() {
     let _g = motion_lock();
-    let mut t = boot(json!({}), "general");
+    let mut t = boot(json!({}), "hiding");
     let r = t.v.borrow().ctl_rect_of("hideInFullscreen").expect("row");
     t.click_at(r);
     assert!(t.calls("settings_set").iter().any(|a| a["patch"]["hideInFullscreen"] == json!(false)), "{:?}", t.calls("settings_set"));
@@ -111,7 +111,7 @@ fn toggle_click_writes_the_setting() {
 #[test]
 fn segmented_click_keeps_the_option_type() {
     let _g = motion_lock();
-    let mut t = boot(json!({}), "appearance");
+    let mut t = boot(json!({}), "look");
     let r = t.v.borrow().ctl_rect_of("shape").expect("row");
     // the last segment is 240
     t.click_at(Rect::new(r.right() - 12.0, r.y, 10.0, r.h));
@@ -121,7 +121,7 @@ fn segmented_click_keeps_the_option_type() {
 #[test]
 fn slider_click_snaps_to_the_step() {
     let _g = motion_lock();
-    let mut t = boot(json!({}), "appearance");
+    let mut t = boot(json!({}), "look");
     let r = t.v.borrow().ctl_rect_of("size").expect("row");
     t.click_at(Rect::new(r.x + 139.0, r.y, 1.0, 16.0));
     let set: Vec<Value> = t.calls("settings_set");
@@ -196,7 +196,7 @@ fn ctrl_f_search_jumps_to_a_row_and_flashes_it() {
     assert!(t.v.borrow().model.search.open, "results are open");
     assert!(!t.v.borrow().search.rows.is_empty());
     t.key(KeyCode::Enter, Modifiers::NONE);
-    assert_eq!(t.current(), "general");
+    assert_eq!(t.current(), "quiet");
     // the highlight plays for 1.7 s: look right after the jump
     t.sim.run(3);
     let _ = t.sim.render((840.0, 760.0), &Theme::settings_dark());
@@ -218,7 +218,7 @@ fn wizard_steps_and_completion_flag() {
     assert_eq!(t.v.borrow().model.wizard.step(), 1);
     t.click_act(&Act::WizSkip);
     assert!(t.calls("settings_set").iter().any(|a| a["patch"]["firstRunDone"] == json!(true)));
-    assert_eq!(t.current(), "general");
+    assert_eq!(t.current(), "start");
     assert!(!t.v.borrow().wiz.active());
 }
 
@@ -242,7 +242,7 @@ fn sidebar_list_scrolls_with_the_wheel_and_reaches_the_last_page() {
             continue; // tall window: everything fits, nothing to scroll
         }
         assert!(t.v.borrow().side.scroll.max_offset() > 0.0, "list taller than its window at {w}x{h}");
-        t.sim.send(&InputEvent::Wheel { pos: (list.cx(), list.cy()), delta: (0.0, 600.0), mods: Modifiers::NONE, precise: false });
+        t.sim.send(&InputEvent::Wheel { pos: (list.cx(), list.cy()), delta: (0.0, 6000.0), mods: Modifiers::NONE, precise: false });
         t.sim.run(300);
         let off = t.v.borrow().side.scroll.offset();
         assert!(off > 10.0, "wheel over the list moved it ({off}) at {w}x{h}");
@@ -250,7 +250,7 @@ fn sidebar_list_scrolls_with_the_wheel_and_reaches_the_last_page() {
         render_size(&mut t, w, h);
         let y = chrome::Side::item_y("updates");
         let off = t.v.borrow().side.scroll.offset();
-        assert!(y + 36.0 <= off + list.h + 0.5, "Updates reachable: item bottom {} vs view bottom {}", y + 36.0, off + list.h);
+        assert!(y + chrome::ITEM_H <= off + list.h + 0.5, "Updates reachable: item bottom {} vs view bottom {}", y + chrome::ITEM_H, off + list.h);
     }
 }
 
@@ -269,11 +269,11 @@ fn the_page_content_scrolls_with_the_wheel_too() {
 fn keyboard_focus_scrolls_a_sidebar_item_into_view() {
     let _g = motion_lock();
     let mut t = boot(json!({"language": "en"}), "general");
-    // the smallest window the sidebar of ten pages still has to scroll in
+    // the smallest window the sidebar of 38 pages still has to scroll in
     render_size(&mut t, 840.0, 520.0);
     let mut last = 0.0f32;
     for _ in 0..12 {
-        // not `t.key`: its settling frames render the default 760 px window, in which all ten pages fit and the list snaps back to 0
+        // not `t.key`: its settling frames render the default 760 px window, in which the list may fit and snap back to 0
         for down in [true, false] {
             t.sim.send(&InputEvent::Key { code: KeyCode::Tab, mods: Modifiers::NONE, down, repeat: false });
         }

@@ -21,9 +21,12 @@ use std::ops::Range;
 pub const FID_SEARCH: u32 = 1;
 const FID_NAV: u32 = 1000;
 pub const FID_QUIT: u32 = 1999;
-const ITEM_H: f32 = 36.0;
-const STRIDE: f32 = 38.0;
-const SEP_H: f32 = 17.0;
+/// One function in the list: its box and the step to the next one.
+pub const ITEM_H: f32 = 30.0;
+const STRIDE: f32 = 31.0;
+/// A group heading: the first one hugs the top, the others have a gap above.
+const GROUP_H0: f32 = 22.0;
+const GROUP_H: f32 = 34.0;
 const HEAD_H: f32 = 64.0;
 const SEARCH_H: f32 = 36.0;
 const FOOT_H: f32 = 84.0;
@@ -40,17 +43,28 @@ pub struct Side {
     pub ready: bool,
     pub rect: Rect,
     pub list: Rect,
+    /// The selected item must be scrolled into view at the next paint (0 no, 1 at once, 2 smoothly): the list is not measured yet when a page is chosen.
+    pub reveal: u8,
+}
+
+/// Height of the heading at `i` of `NAV`: the first entry sits at the top of the list.
+fn head_h(i: usize) -> f32 {
+    if i == 0 {
+        GROUP_H0
+    } else {
+        GROUP_H
+    }
 }
 
 impl Side {
     pub fn new() -> Side {
-        Side { ind_y: Flow::px(0.0, Feel::FLOW), cur: "", scroll: ScrollState::new(), bar: Scrollbar::new(Axis::Vertical), ready: false, rect: Rect::default(), list: Rect::default() }
+        Side { ind_y: Flow::px(0.0, Feel::FLOW), cur: "", scroll: ScrollState::new(), bar: Scrollbar::new(Axis::Vertical), ready: false, rect: Rect::default(), list: Rect::default(), reveal: 0 }
     }
 
     /// y of the item of page `id` inside the list (content space).
     pub fn item_y(id: &str) -> f32 {
         let mut y = 4.0;
-        for n in nav::NAV.iter() {
+        for (i, n) in nav::NAV.iter().enumerate() {
             match n {
                 NavItem::Page(p) => {
                     if *p == id {
@@ -58,16 +72,16 @@ impl Side {
                     }
                     y += STRIDE;
                 }
-                NavItem::Sep => y += SEP_H,
+                NavItem::Head(_) => y += head_h(i),
             }
         }
         4.0
     }
 
-    /// Total height of the page list (4 px top padding, items, separators, 8 px bottom padding). `item_y` of an unknown id is the top, so
+    /// Total height of the page list (4 px top padding, headings and items, 8 px bottom padding). `item_y` of an unknown id is the top, so
     /// the sum is made here: this value is the content height of the list's `ScrollState`.
     pub fn list_h() -> f32 {
-        let body: f32 = nav::NAV.iter().map(|n| if matches!(n, NavItem::Page(_)) { STRIDE } else { SEP_H }).sum();
+        let body: f32 = nav::NAV.iter().enumerate().map(|(i, n)| if matches!(n, NavItem::Page(_)) { STRIDE } else { head_h(i) }).sum();
         4.0 + body + 8.0
     }
 
@@ -76,10 +90,28 @@ impl Side {
         (Side::item_y(id), ITEM_H)
     }
 
+    /// The scroll offset that shows item `id` inside a list window of `view` px that is now at `top` (None: already in view). A heading
+    /// above the first item of a group comes along, so the group's name stays visible when its first page is chosen.
+    pub fn reveal_offset(id: &str, top: f32, view: f32) -> Option<f32> {
+        let (mut y, h) = Side::item_span(id);
+        let first_of_group = nav::NAV.iter().position(|n| matches!(n, NavItem::Page(p) if *p == id)).is_some_and(|i| i > 0 && matches!(nav::NAV[i - 1], NavItem::Head(_)));
+        if first_of_group {
+            y -= GROUP_H - 4.0;
+        }
+        if y < top + 4.0 {
+            Some((y - 4.0).max(0.0))
+        } else if y + h > top + view - 8.0 {
+            Some(y + h - view + 8.0)
+        } else {
+            None
+        }
+    }
+
     pub fn snap_to(&mut self, id: &'static str) {
         self.cur = id;
         self.ind_y.jump(Side::item_y(id));
         self.ready = true;
+        self.reveal = 1;
     }
 
     pub fn move_to(&mut self, id: &'static str, reduce: bool) {
@@ -88,8 +120,10 @@ impl Side {
         if !self.ready {
             self.ind_y.jump(to);
             self.ready = true;
+            self.reveal = 1;
         } else {
             go(&mut self.ind_y, to, reduce);
+            self.reveal = if reduce { 1 } else { 2 };
         }
     }
 
@@ -224,6 +258,13 @@ impl SettingsView {
         let list = Rect::new(side.x, side.y + HEAD_H + SEARCH_H, w, (side.h - HEAD_H - SEARCH_H - FOOT_H).max(0.0));
         self.side.list = list;
         self.side.scroll.set_metrics(Side::list_h(), list.h);
+        if self.side.reveal != 0 && list.h > 0.0 {
+            // the chosen function is scrolled into the window (once the list is measured); a first paint lands there at once
+            if let Some(to) = Side::reveal_offset(self.side.cur, self.side.scroll.target(), list.h) {
+                self.side.scroll.scroll_to(to.min(self.side.scroll.max_offset()), self.side.reveal == 2 && !d.reduced);
+            }
+            self.side.reveal = 0;
+        }
         let off = self.side.scroll.offset();
         cv.with_clip(list, |cv| {
             let ox = list.x + 10.0;
@@ -231,15 +272,18 @@ impl SettingsView {
             let iw = w - 20.0;
             if self.side.ready {
                 let ir = Rect::new(ox, oy + self.side.ind_y.at(), iw, ITEM_H);
-                cv.fill_rr(ir, 10.0, p.item_on);
+                cv.fill_rr(ir, 9.0, p.item_on);
+                // the accent bar rides on the same glide: the selected function reads at a glance in dark and light
+                cv.fill_rr(Rect::new(ir.x + 4.0, ir.y + 8.0, 3.0, ITEM_H - 16.0), 1.5, p.accent);
             }
             let mut y = 4.0;
             let mut idx = 0u32;
-            for n in nav::NAV.iter() {
+            for (i, n) in nav::NAV.iter().enumerate() {
                 match n {
-                    NavItem::Sep => {
-                        cv.fill_rect(Rect::new(ox + 12.0, oy + y + 8.0, iw - 24.0, 1.0), if p.dark { Color::rgb8(0x1c, 0x1b, 0x1f) } else { p.side_line });
-                        y += SEP_H;
+                    NavItem::Head(t) => {
+                        let hh = head_h(i);
+                        cv.text(Rect::new(ox + 14.0, oy + y + hh - 20.0, iw - 20.0, 14.0), &txt::upper(t.get(d.lang)), Style::new(10.0, 600).track(0.8).ellipsis(), p.cap);
+                        y += hh;
                     }
                     NavItem::Page(id) => {
                         let r = Rect::new(ox, oy + y, iw, ITEM_H);
@@ -249,9 +293,8 @@ impl SettingsView {
                         let hv = self.ui.hover_of(k);
                         let pr = self.ui.press_of(k);
                         let fr = self.focus_ring_for(FID_NAV + idx);
-                        let icon = schema().page(id).map(|pg| pg.icon).unwrap_or("general");
                         let name = schema().page(id).map(|pg| pg.title.get(d.lang)).unwrap_or("");
-                        self.paint_nav_item(d, r, icon, name, on, hv, pr, p.item, p.icon, fr);
+                        self.paint_nav_item(d, r, "", name, on, hv, pr, p.item, p.icon, fr);
                         y += STRIDE;
                         idx += 1;
                     }
@@ -283,8 +326,13 @@ impl SettingsView {
             }
             let c_text = if on { p.text } else { text };
             let c_icon = if on { p.text } else { ic };
-            self.icons.side(cv, icon, Rect::new(r.x + 12.0, r.cy() - 8.0, 16.0, 16.0), c_icon);
-            cv.text(Rect::new(r.x + 12.0 + 16.0 + 12.0, r.y, r.w - 52.0, r.h), name, Style::new(13.0, 400).ellipsis(), c_text);
+            if icon.is_empty() {
+                // a function of the list: just its name, set in from the accent bar
+                cv.text(Rect::new(r.x + 16.0, r.y, r.w - 24.0, r.h), name, Style::new(13.0, if on { 600 } else { 400 }).ellipsis(), c_text);
+            } else {
+                self.icons.side(cv, icon, Rect::new(r.x + 12.0, r.cy() - 8.0, 16.0, 16.0), c_icon);
+                cv.text(Rect::new(r.x + 12.0 + 16.0 + 12.0, r.y, r.w - 52.0, r.h), name, Style::new(13.0, 400).ellipsis(), c_text);
+            }
         });
         if fr.0 && fr.1 {
             cv.focus_ring(r, 10.0, p.accent, 1.0);

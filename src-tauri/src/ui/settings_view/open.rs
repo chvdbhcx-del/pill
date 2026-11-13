@@ -120,15 +120,13 @@ impl SettingsView {
         use pill_ui_core::settings::calls::BackendCall as C;
         self.data.tick += 1;
         let t = self.data.tick;
-        if self.model.current == "live" && !self.wiz.active() {
-            let mut calls = Vec::new();
-            if t % 2 == 0 {
-                calls.push(C::ObsStatus);
+        let live = super::nav::live_status(self.model.current);
+        if !live.is_empty() && !self.wiz.active() {
+            // OBS answers fast and changes fast; the other lines every third second
+            let every = if self.model.current == "obs" { 2 } else { 3 };
+            if t % every == 0 {
+                self.run(cx, live);
             }
-            if t % 3 == 0 {
-                calls.extend([C::SteamStatus, C::NotifStatus, C::LiveplusIcsStatus, C::MailStatus]);
-            }
-            self.run(cx, calls);
         }
         if self.model.current == "phone" && !self.wiz.active() {
             self.phone_tick(cx);

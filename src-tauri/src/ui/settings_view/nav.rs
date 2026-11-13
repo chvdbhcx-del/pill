@@ -197,28 +197,37 @@ impl SettingsView {
         self.stop_ticker();
         let mut calls: Vec<BackendCall> = Vec::new();
         match id {
-            // General holds the file search (Everything) of the old Search page
-            "general" => calls.extend([BackendCall::AutostartGet, BackendCall::EverythingStatus]),
+            "start" => calls.push(BackendCall::AutostartGet),
+            // the file search (Everything) status
+            "search" => calls.push(BackendCall::EverythingStatus),
             "hotkeys" => calls.push(BackendCall::LauncherList),
-            "appearance" => calls.push(BackendCall::PillMonitors),
-            // Sound and voice: the devices, everything the old Voice page asked for, and the local Whisper install (the "Voice to text" section holds it)
-            "sound" => {
+            "look" => calls.push(BackendCall::PillMonitors),
+            // the output and input devices
+            "volume" => {
                 calls.push(BackendCall::MediaDevices);
                 calls.push(BackendCall::MediaCaptureDevices);
+            }
+            // Voice to text: everything the old Voice page asked for, and the local Whisper install
+            "voice" => {
                 calls.push(BackendCall::VoiceHasKey { provider: Some(self.model.get_str("voice.provider")) });
                 calls.push(BackendCall::NetFeaturesStatus);
                 calls.push(BackendCall::AisetupStatus);
             }
             "clipboard" => calls.push(BackendCall::ClipStatus),
-            // AI holds the old AI setup page
             "ai" => {
                 calls.push(BackendCall::AiConfig);
                 calls.push(BackendCall::NetFeaturesStatus);
                 calls.push(BackendCall::AisetupStatus);
             }
+            // the local AI setup (the old AI setup page)
+            "localai" => {
+                calls.push(BackendCall::NetFeaturesStatus);
+                calls.push(BackendCall::AisetupStatus);
+            }
             "updates" => calls.push(BackendCall::SettingsInfo),
-            "live" => {
-                calls.extend([BackendCall::ObsStatus, BackendCall::SteamStatus, BackendCall::NotifStatus, BackendCall::LiveplusIcsStatus, BackendCall::MailStatus]);
+            // the pages with a status line poll it while they are on screen
+            id if !live_status(id).is_empty() => {
+                calls.extend(live_status(id));
                 self.ensure_ticker(cx, 1000);
             }
             "phone" => {
@@ -244,6 +253,18 @@ impl SettingsView {
 }
 
 use super::chrome;
+
+/// The status calls of a page with a polled status line (Notifications, Downloads, OBS, Calendar, Mail); empty for every other page.
+pub(super) fn live_status(page: &str) -> Vec<BackendCall> {
+    match page {
+        "notifications" => vec![BackendCall::NotifStatus],
+        "downloads" => vec![BackendCall::SteamStatus],
+        "obs" => vec![BackendCall::ObsStatus],
+        "calendar" => vec![BackendCall::LiveplusIcsStatus],
+        "mail" => vec![BackendCall::MailStatus],
+        _ => Vec::new(),
+    }
+}
 
 impl SettingsView {
     /// The `Ui*` effects of the model: things the old page did inline.

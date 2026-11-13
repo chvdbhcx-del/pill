@@ -50,7 +50,8 @@ impl SettingsView {
         for t in self.pets.sel.values_mut() {
             busy |= tick(t, dt);
         }
-        if self.model.current != "appearance" || self.wiz.active() {
+        // the previews loop only on the two pages that show them (Edge and character, Pet)
+        if !matches!(self.model.current, "edge" | "pet") || self.wiz.active() {
             return busy;
         }
         let reduce = self.reduce();

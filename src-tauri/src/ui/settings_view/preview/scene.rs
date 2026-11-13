@@ -171,10 +171,26 @@ pub fn of_key(key: &str) -> Option<Scene> {
 /// The scene a page starts with when it is opened.
 pub fn of_page(page: &str) -> Scene {
     match page {
-        "modules" => Scene::Panel(Tab::Home),
+        "look" => Scene::Pill(Look::Island),
+        "edge" => Scene::Pill(Look::Edge),
+        "pet" => Scene::Pill(Look::Pet),
+        "clock" => Scene::Pill(Look::Clock),
+        "animation" => Scene::Pill(Look::Motion),
+        "tabs" | "launcher" | "shelf" | "text" | "controls" | "vpn" => Scene::Panel(Tab::Home),
+        "weather" => Scene::Panel(Tab::Weather),
         "clipboard" => Scene::Panel(Tab::Clipboard),
-        "live" => Scene::Flash(Flash::Notif),
-        "sound" => Scene::Flash(Flash::Music),
+        "media" => Scene::Flash(Flash::Music),
+        "volume" => Scene::Flash(Flash::Volume),
+        "screenshots" => Scene::Flash(Flash::Toast),
+        "recording" => Scene::Flash(Flash::Recording),
+        "notes" => Scene::Flash(Flash::Reminder),
+        "notifications" => Scene::Flash(Flash::Notif),
+        "downloads" => Scene::Flash(Flash::Download),
+        "battery" => Scene::Flash(Flash::Battery),
+        "keyboard" => Scene::Flash(Flash::Kbd),
+        "desktops" => Scene::Flash(Flash::Vdesk),
+        "usb" => Scene::Flash(Flash::Usb),
+        // Start, Hiding, Quiet hours, Hotkeys, Command bar, Voice to text, OBS, Calendar, Mail, Phone link, the AI pages, Updates: the folded island
         _ => Scene::DEFAULT,
     }
 }

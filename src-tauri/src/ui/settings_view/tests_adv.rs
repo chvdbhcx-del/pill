@@ -47,7 +47,7 @@ fn every_page_with_an_advanced_section_starts_with_it_closed() {
 #[test]
 fn pages_without_the_section_have_no_header() {
     let _g = motion_lock();
-    let t = boot(json!({"language": "en"}), "updates");
+    let t = boot(json!({"language": "en"}), "pet");
     assert!(t.v.borrow().page.adv.is_none() && !t.v.borrow().page.rows().any(|r| r.adv));
     let t = boot(json!({"language": "en"}), "ai");
     assert!(t.v.borrow().page.adv.is_none());
@@ -106,7 +106,7 @@ fn reduced_motion_opens_it_at_once() {
 #[test]
 fn a_click_on_the_header_toggles_it_and_a_folded_row_does_not_react() {
     let _g = motion_lock();
-    let mut t = boot(json!({"language": "en"}), "clipboard");
+    let mut t = boot(json!({"language": "en"}), "screenshots");
     scroll_to_end(&mut t);
     assert!(!adv_on(&t));
     t.click_act(&Act::Advanced);
@@ -163,7 +163,7 @@ fn a_search_hit_inside_a_closed_section_opens_it_scrolls_to_the_row_and_flashes_
     t.text("video encoder");
     assert!(t.v.borrow().search.rows.iter().any(|r| r.title == "Video encoder"), "the row is found: {:?}", t.v.borrow().search.rows.iter().map(|r| r.title.clone()).collect::<Vec<_>>());
     t.key(KeyCode::Enter, Modifiers::NONE);
-    assert_eq!(t.current(), "clipboard", "it opens the right page");
+    assert_eq!(t.current(), "recording", "it opens the right page");
     t.settle();
     t.sim.run(3);
     paint(&mut t);
@@ -174,7 +174,8 @@ fn a_search_hit_inside_a_closed_section_opens_it_scrolls_to_the_row_and_flashes_
     assert!((row.ak - 1.0).abs() < 0.01 && row.rect.h > 20.0, "it is laid out, not folded: {:?}", row.rect);
     assert!(row.hl.is_some() || v.goto.is_none(), "the flash plays or has played");
     assert!(v.goto.is_none(), "the request is done");
-    assert!(v.page.scroll.offset() > 100.0, "scrolled down to it");
+    let top = v.page.scroll.offset();
+    assert!(row.rect.y >= top - 1.0 && row.rect.bottom() <= top + v.content_rect().h + 1.0, "the row is on screen ({:?} at scroll {top})", row.rect);
 }
 
 #[test]
@@ -193,7 +194,19 @@ fn a_search_hit_on_the_page_that_is_already_open_also_opens_the_section() {
 #[test]
 fn old_page_names_open_the_page_that_holds_their_rows_and_scroll_to_the_section() {
     let _g = motion_lock();
-    for (old, page, row) in [("behavior", "general", "hideInFullscreen"), ("search", "general", "search.engine"), ("weather", "modules", "net.weather"), ("voice", "sound", "voice.enabled"), ("aisetup", "ai", "aisetup.intro"), ("character", "appearance", "character.liquid")] {
+    for (old, page, row) in [
+        ("behavior", "hiding", "hideInFullscreen"),
+        ("search", "search", "search.engine"),
+        ("weather", "weather", "net.weather"),
+        ("voice", "voice", "voice.enabled"),
+        ("aisetup", "localai", "aisetup.intro"),
+        ("character", "edge", "character.liquid"),
+        ("sound", "volume", "live.volume"),
+        ("modules", "tabs", "modules.tabs"),
+        ("live", "notifications", "module.notifs"),
+        ("general", "start", "general.autostart"),
+        ("appearance", "look", "shape"),
+    ] {
         let mut t = boot(json!({"language": "en"}), old);
         t.settle();
         assert_eq!(t.current(), page, "{old}");
@@ -210,17 +223,20 @@ fn old_page_names_open_the_page_that_holds_their_rows_and_scroll_to_the_section(
 fn an_old_name_asked_for_while_the_window_is_open_scrolls_too() {
     let _g = motion_lock();
     let mut t = boot(json!({"language": "en"}), "hotkeys");
-    t.v.borrow_mut().show_page("voice", &mut t.sim.cx);
+    t.v.borrow_mut().show_page("sound", &mut t.sim.cx);
     t.settle();
-    assert_eq!(t.current(), "sound");
-    assert!(t.v.borrow().page.scroll.offset() > 100.0);
+    assert_eq!(t.current(), "volume", "the old Sound page is Volume and microphone now");
+    let v = t.v.borrow();
+    assert!(v.goto.is_none(), "the scroll was done");
+    let r = v.page.rows().find(|r| r.row.id == "live.volume").expect("the first row of the old page");
+    assert!(r.rect.y >= v.page.scroll.offset() - 1.0 && r.rect.bottom() <= v.page.scroll.offset() + v.content_rect().h + 1.0, "it is on screen");
 }
 
 /// `PILL_SNAP_DIR=<dir> cargo test tests_adv` also writes the closed and the open section of three pages as PNGs.
 #[test]
 fn the_section_renders_closed_and_open() {
     let _g = motion_lock();
-    for id in ["general", "clipboard", "live"] {
+    for id in ["hiding", "clipboard", "notifications"] {
         let mut t = boot(json!({"language": "en"}), id);
         scroll_to_end(&mut t);
         let th = Theme::settings_dark();

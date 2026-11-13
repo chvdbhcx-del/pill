@@ -360,12 +360,8 @@ impl SettingsView {
             use pill_ui_core::settings::nav::{NavItem, NAV};
             let page = NAV.iter().filter_map(|x| if let NavItem::Page(p) = x { Some(*p) } else { None }).nth((fid - 1000) as usize);
             if let (Some(p), true) = (page, fid < super::chrome::FID_QUIT) {
-                let (y, h) = super::chrome::Side::item_span(p);
-                let (top, view) = (self.side.scroll.offset(), self.side.list.h);
-                if y < top + 4.0 {
-                    self.side.scroll.scroll_to((y - 4.0).max(0.0), !self.reduce());
-                } else if y + h > top + view - 8.0 {
-                    self.side.scroll.scroll_to(y + h - view + 8.0, !self.reduce());
+                if let Some(to) = super::chrome::Side::reveal_offset(p, self.side.scroll.target(), self.side.list.h) {
+                    self.side.scroll.scroll_to(to.min(self.side.scroll.max_offset()), !self.reduce());
                 }
             }
             return;
