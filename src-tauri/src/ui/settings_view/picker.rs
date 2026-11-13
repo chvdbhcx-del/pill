@@ -29,8 +29,10 @@ pub struct Pickers {
     pub since: f32,
 }
 
-const COL_W: f32 = (CARD_W - 16.0) / 3.0;
-const STAGE_H: f32 = 92.0;
+pub(super) const COL_W: f32 = (CARD_W - 16.0) / 3.0;
+/// The stage of a pet card: the notch (60 px) with the pet on its edge, and nothing under it.
+pub(super) const STAGE_H: f32 = 62.0;
+const DESC_LINES: usize = 3;
 
 impl SettingsView {
     pub(super) fn pets_set_state(&mut self, st: &'static str) {
@@ -108,12 +110,14 @@ impl SettingsView {
     pub(super) fn card_text(&mut self, d: &Dc, r: Rect, name: &str, desc: &str) {
         let (cv, p) = (d.cv, d.p);
         cv.text(Rect::new(r.x + 12.0, r.y + 9.0 + STAGE_H + 8.0, r.w - 24.0, 18.0), name, Style::new(13.0, 600).ellipsis(), p.text);
-        txt::para(cv, Rect::new(r.x + 12.0, r.y + 9.0 + STAGE_H + 8.0 + 20.0, r.w - 24.0, 80.0), desc, st_hint(), p.dim);
+        let (x, y, w) = (r.x + 12.0, r.y + 9.0 + STAGE_H + 8.0 + 20.0, r.w - 24.0);
+        // three lines at most: what does not fit is cut at the last line (the card keeps its tidy height)
+        cv.with_clip(Rect::new(x, y, w, 16.0 * DESC_LINES as f32), |cv| txt::para(cv, Rect::new(x, y, w, 16.0 * DESC_LINES as f32 + 16.0), desc, st_hint(), p.dim));
     }
 
     pub(super) fn card_h(&self, d: &Dc, desc: &str) -> f32 {
-        let n = txt::lines(d.cv, desc, st_hint(), COL_W - 24.0).max(1) as f32;
-        1.0 + 8.0 + STAGE_H + 8.0 + 18.0 + 2.0 + 16.0 * n + 12.0 + 1.0
+        let n = txt::lines(d.cv, desc, st_hint(), COL_W - 24.0).clamp(1, DESC_LINES) as f32;
+        1.0 + 8.0 + STAGE_H + 8.0 + 18.0 + 2.0 + 16.0 * n + 10.0 + 1.0
     }
 }
 

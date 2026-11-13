@@ -129,7 +129,7 @@ impl SettingsView {
                     if y + 24.0 >= vp.0 && y <= vp.1 {
                         cv.text(Rect::new(4.0, y, CARD_W - 8.0, 24.0), t, Style::new(20.0, 600), d.p.text);
                     }
-                    y += 24.0 + 16.0;
+                    y += 24.0 + 20.0;
                     prev_h1 = true;
                 }
                 Block::Cap(t) => {

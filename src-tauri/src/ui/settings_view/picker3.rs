@@ -1,6 +1,8 @@
 //! The island edge-style cards: liquid wave, tail, legs, glow, plain. The previews follow the reaction chips.
 use super::rows::*;
+use super::txt;
 use super::ui::{key, Act};
+use glasskit::text::Style;
 use super::SettingsView;
 use crate::ui::pets::characters::Characters;
 use glasskit::color::Color;
@@ -9,8 +11,9 @@ use glasskit::svgpath::{build_geometry, Affine, Path};
 use pill_ui_core::settings::pickers::{pet_state_for, REACTIONS, STYLES};
 use std::f32::consts::PI;
 
-const COL_W: f32 = (CARD_W - 16.0) / 3.0;
-const STAGE_H: f32 = 92.0;
+/// The edge styles are a compact list: one row per style, a small live pictogram on the left, the name and a line or two of text beside it.
+const PIC_W: f32 = 112.0;
+const PIC_H: f32 = 48.0;
 const X0: f32 = 16.0;
 const X1: f32 = 133.0;
 const R: f32 = 13.0;
@@ -48,26 +51,30 @@ impl SettingsView {
         let cur = self.model.get_str("character");
         let ring = self.focus_ring_for(fid);
         let mut yy = y;
-        for (ri, chunk) in STYLES.chunks(3).enumerate() {
-            let h = chunk.iter().map(|c| self.card_h(d, c.desc.get(d.lang))).fold(0.0, f32::max);
-            for (i, c) in chunk.iter().enumerate() {
-                let r = Rect::new(i as f32 * (COL_W + 8.0), yy, COL_W, h);
-                let title = c.name.get(d.lang).to_string();
-                self.pets.cards.insert(title.clone(), r);
-                if r.bottom() >= vp.0 && r.y <= vp.1 {
-                    let k = key(&format!("style:{}", c.id));
-                    self.ui.add(k, r, Act::StyleCard(c.id.to_string()), true, false, true);
-                    let on = self.card_on_t(&format!("style:{}", c.id), c.id == cur);
-                    self.card_frame(d, k, r, on, &title, c.id);
-                    let stage = Rect::new(r.x + 9.0, r.y + 9.0, r.w - 18.0, STAGE_H);
-                    self.paint_style_stage(d, stage, c.id);
-                    self.card_text(d, r, &title, c.desc.get(d.lang));
-                    if ring.0 && ring.1 && self.pets.focus_i == ri * 3 + i {
-                        cv.focus_ring(r, 14.0, p.accent, 1.0);
-                    }
+        let tx = 10.0 + PIC_W + 14.0;
+        for (i, c) in STYLES.iter().enumerate() {
+            let desc = c.desc.get(d.lang);
+            let n = txt::lines(cv, desc, st_hint(), CARD_W - tx - 14.0).max(1) as f32;
+            let h = (10.0 + 18.0 + 2.0 + 16.0 * n + 10.0).max(PIC_H + 16.0);
+            let r = Rect::new(0.0, yy, CARD_W, h);
+            let title = c.name.get(d.lang).to_string();
+            self.pets.cards.insert(title.clone(), r);
+            if r.bottom() >= vp.0 && r.y <= vp.1 {
+                let k = key(&format!("style:{}", c.id));
+                self.ui.add(k, r, Act::StyleCard(c.id.to_string()), true, false, true);
+                let on = self.card_on_t(&format!("style:{}", c.id), c.id == cur);
+                self.card_frame(d, k, r, on, &title, c.id);
+                let stage = Rect::new(r.x + 10.0, r.cy() - PIC_H / 2.0, PIC_W, PIC_H);
+                cv.fill_rr(stage, 8.0, if p.dark { Color::rgb8(0x14, 0x13, 0x16) } else { p.ctl });
+                self.paint_style_stage(d, stage, c.id);
+                let ty = r.cy() - (18.0 + 2.0 + 16.0 * n) / 2.0;
+                cv.text(Rect::new(r.x + tx, ty, r.w - tx - 14.0, 18.0), &title, Style::new(13.0, 600).ellipsis(), p.text);
+                txt::para(cv, Rect::new(r.x + tx, ty + 20.0, r.w - tx - 14.0, 16.0 * n), desc, st_hint(), p.dim);
+                if ring.0 && ring.1 && self.pets.focus_i == i {
+                    cv.focus_ring(r, 14.0, p.accent, 1.0);
                 }
             }
-            yy += h + 8.0;
+            yy += h + 6.0;
         }
         yy - y + 4.0
     }
@@ -98,7 +105,7 @@ impl SettingsView {
         let cv = d.cv;
         let state = self.model.reaction.current();
         let (t, tt) = (self.pets.clock, self.pets.since);
-        let s = (st.w / 149.0).max(STAGE_H / 92.0);
+        let s = st.w / 149.0;
         let m = Affine::translate(st.x, st.y).mul(&Affine::scale(s, s));
         let reduce = self.reduce();
         cv.with_clip_rr(st, 8.0, |cv| match id {

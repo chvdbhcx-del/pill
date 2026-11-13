@@ -22,7 +22,8 @@ impl SettingsView {
         let anchor = want.as_deref().and_then(pill_ui_core::settings::nav::legacy_anchor);
         let target = self.model.begin(merged, want.as_deref());
         self.loaded = true;
-        let rm = self.model.get_bool("reduceMotion");
+        self.search.refresh_lang(self.lang());
+        let rm =self.model.get_bool("reduceMotion");
         self.apply_reduce(rm, cx);
         match target {
             OpenTarget::Wizard => self.start_wizard(cx),

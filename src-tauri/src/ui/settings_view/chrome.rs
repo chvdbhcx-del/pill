@@ -45,6 +45,8 @@ pub struct Side {
     pub list: Rect,
     /// The selected item must be scrolled into view at the next paint (0 no, 1 at once, 2 smoothly): the list is not measured yet when a page is chosen.
     pub reveal: u8,
+    /// The height of the list window at the last paint: when the window is resized the selected item is brought back into view.
+    pub view_h: f32,
 }
 
 /// Height of the heading at `i` of `NAV`: the first entry sits at the top of the list.
@@ -58,7 +60,7 @@ fn head_h(i: usize) -> f32 {
 
 impl Side {
     pub fn new() -> Side {
-        Side { ind_y: Flow::px(0.0, Feel::FLOW), cur: "", scroll: ScrollState::new(), bar: Scrollbar::new(Axis::Vertical), ready: false, rect: Rect::default(), list: Rect::default(), reveal: 0 }
+        Side { ind_y: Flow::px(0.0, Feel::FLOW), cur: "", scroll: ScrollState::new(), bar: Scrollbar::new(Axis::Vertical), ready: false, rect: Rect::default(), list: Rect::default(), reveal: 0, view_h: 0.0 }
     }
 
     /// y of the item of page `id` inside the list (content space).
@@ -258,13 +260,16 @@ impl SettingsView {
         let list = Rect::new(side.x, side.y + HEAD_H + SEARCH_H, w, (side.h - HEAD_H - SEARCH_H - FOOT_H).max(0.0));
         self.side.list = list;
         self.side.scroll.set_metrics(Side::list_h(), list.h);
-        if self.side.reveal != 0 && list.h > 0.0 {
-            // the chosen function is scrolled into the window (once the list is measured); a first paint lands there at once
+        // the chosen function is scrolled into the window (once the list is measured; a first paint lands there at once); a window that was
+        // resized also takes its selected function back into view
+        let resized = (self.side.view_h - list.h).abs() > 0.5;
+        if (self.side.reveal != 0 || resized) && list.h > 0.0 {
             if let Some(to) = Side::reveal_offset(self.side.cur, self.side.scroll.target(), list.h) {
                 self.side.scroll.scroll_to(to.min(self.side.scroll.max_offset()), self.side.reveal == 2 && !d.reduced);
             }
             self.side.reveal = 0;
         }
+        self.side.view_h = list.h;
         let off = self.side.scroll.offset();
         cv.with_clip(list, |cv| {
             let ox = list.x + 10.0;

@@ -1,5 +1,6 @@
 //! The pet grid and the island-style grid: layout in rows of three equal cards, live previews.
 use super::pal::mix;
+use super::picker::{COL_W, STAGE_H};
 use super::rows::*;
 use super::ui::{key, Act};
 use super::SettingsView;
@@ -9,8 +10,6 @@ use glasskit::geom::Rect;
 use glasskit::text::Style;
 use pill_ui_core::settings::pickers::{self, STYLES};
 
-const COL_W: f32 = (CARD_W - 16.0) / 3.0;
-const STAGE_H: f32 = 92.0;
 
 impl SettingsView {
     pub(super) fn paint_pets(&mut self, d: &Dc, fid: u32, y: f32, vp: (f32, f32)) -> f32 {

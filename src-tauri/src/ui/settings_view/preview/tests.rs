@@ -423,3 +423,98 @@ fn the_caption_says_what_is_shown_and_when_the_switch_is_off() {
     }
     let _ = pal; // the colours come from the same palette as the page
 }
+
+/// What each function page starts the panel with: Weather -> the weather tab, Clipboard -> the clipboard tab, Notifications -> a notification, ...
+#[test]
+fn every_function_page_opens_the_matching_scene() {
+    gfx(|| {
+        let _g = motion_on();
+        let cases = [
+            ("look", Scene::Pill(Look::Island)),
+            ("edge", Scene::Pill(Look::Edge)),
+            ("pet", Scene::Pill(Look::Pet)),
+            ("clock", Scene::Pill(Look::Clock)),
+            ("animation", Scene::Pill(Look::Motion)),
+            ("tabs", Scene::Panel(Tab::Home)),
+            ("weather", Scene::Panel(Tab::Weather)),
+            ("clipboard", Scene::Panel(Tab::Clipboard)),
+            ("notifications", Scene::Flash(Flash::Notif)),
+            ("media", Scene::Flash(Flash::Music)),
+            ("volume", Scene::Flash(Flash::Volume)),
+            ("recording", Scene::Flash(Flash::Recording)),
+            ("downloads", Scene::Flash(Flash::Download)),
+            ("hotkeys", Scene::DEFAULT),
+            ("phone", Scene::DEFAULT),
+        ];
+        for (page, scene) in cases {
+            assert_eq!(of_page(page), scene, "{page}");
+        }
+        // opened for real, and the old names land on the same scenes
+        for (page, scene) in [("weather", Scene::Panel(Tab::Weather)), ("live", Scene::Flash(Flash::Notif)), ("sound", Scene::Flash(Flash::Volume)), ("modules", Scene::Panel(Tab::Home)), ("appearance", Scene::Pill(Look::Island))] {
+            let t = wide(page, json!({"language": "en"}));
+            assert_eq!(t.v.borrow().pv.scene(), scene, "{page}");
+        }
+        // every page of the schema has a scene (or the default island): the lookup never panics
+        for p in &pill_ui_core::settings::schema::schema().pages {
+            let _ = of_page(p.id);
+        }
+    });
+}
+
+/// `PILL_SNAP_DIR=<dir> cargo test --release --locked -p pill the_function_pages_with_the_panel` writes the pages as PNGs (1180 x 760, dark and light).
+#[test]
+fn the_function_pages_with_the_panel() {
+    gfx(|| {
+        let _g = motion_on();
+        const SIZE: (f32, f32) = (1180.0, 760.0);
+        for (tn, th) in [("dark", Theme::settings_dark()), ("light", settings_light())] {
+            for page in ["look", "edge", "pet", "clock", "weather", "clipboard", "notifications", "phone", "voice", "hotkeys", "updates"] {
+                let mut t = boot(json!({"language": "en"}), page);
+                settle(&mut t, SIZE, &th);
+                assert!(t.v.borrow().pv.width() > PV_W - 0.5, "{page}: the panel is open at 1180");
+                let c = t.v.borrow().content_rect();
+                assert!(c.w >= MIN_PAGE_W - 0.01, "{page}: the cards fit next to the panel");
+                let img = snap(&mut t.sim, &format!("fn-{page}-{tn}-1180"), &th, SIZE);
+                assert!(img.count(None, |p| p[3] == 255) > 100_000, "{page} {tn}");
+            }
+        }
+    });
+}
+
+/// Narrow window (no panel), double scale, the sidebar scrolled to its end, a closed and an open Advanced.
+#[test]
+fn the_function_pages_narrow_2x_scrolled_and_advanced() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = boot(json!({"language": "ru"}), "look");
+        settle(&mut t, (900.0, 760.0), &th);
+        assert!(t.v.borrow().pv.width() < 0.5, "no panel in a 900 px window");
+        snap(&mut t.sim, "fn-look-ru-900", &th, (900.0, 760.0));
+        // the sidebar scrolled to the bottom: the last function is reachable and the group names stay readable
+        t.v.borrow_mut().side.scroll.scroll_to(99999.0, false);
+        settle(&mut t, (900.0, 760.0), &th);
+        snap(&mut t.sim, "fn-sidebar-bottom-ru-900", &th, (900.0, 760.0));
+        // Advanced closed, then open
+        let mut t = boot(json!({"language": "en"}), "voice");
+        settle(&mut t, (1180.0, 760.0), &th);
+        t.v.borrow_mut().page.scroll.scroll_to(99999.0, false);
+        settle(&mut t, (1180.0, 760.0), &th);
+        snap(&mut t.sim, "fn-voice-adv-closed", &th, (1180.0, 760.0));
+        t.v.borrow_mut().set_advanced(true, true);
+        settle(&mut t, (1180.0, 760.0), &th);
+        t.v.borrow_mut().page.scroll.scroll_to(99999.0, false);
+        settle(&mut t, (1180.0, 760.0), &th);
+        snap(&mut t.sim, "fn-voice-adv-open", &th, (1180.0, 760.0));
+        // double scale, light, a long Russian title
+        let mut t = boot(json!({"language": "ru"}), "edge");
+        t.sim.set_scale(2.0);
+        let light = settings_light();
+        settle(&mut t, (1180.0, 760.0), &light);
+        snap(&mut t.sim, "fn-edge-ru-light-2x", &light, (1180.0, 760.0));
+        let mut t = boot(json!({"language": "ru"}), "mail");
+        t.sim.set_scale(2.0);
+        settle(&mut t, (1180.0, 760.0), &th);
+        snap(&mut t.sim, "fn-mail-ru-dark-2x", &th, (1180.0, 760.0));
+    });
+}

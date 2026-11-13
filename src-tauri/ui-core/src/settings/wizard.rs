@@ -70,7 +70,7 @@ pub enum Content {
 pub fn content(step: u8) -> Content {
     match step {
         1 => Content::Language,
-        2 => Content::Modules { note: tr("Включите то, чем будете пользоваться. Выключенный модуль прячет свою вкладку; всё можно изменить позже в «Модули».", "Keep what you will use. A module that is off hides its tab; you can change it later in Modules.") },
+        2 => Content::Modules { note: tr("Включите то, чем будете пользоваться. Выключенный модуль прячет свою вкладку; всё можно изменить позже в настройках, на страницах разделов «Функции» и «События».", "Keep what you will use. A module that is off hides its tab; you can change it later in Settings, on the pages of the Features and Events lists.") },
         3 => Content::Hotkeys {
             note: tr("Главные сочетания клавиш. Остальные и смена любой клавиши — на странице «Клавиши».", "The main shortcuts. The rest, and changing any key, are on the Hotkeys page."),
             change_label: tr("Поменять клавиши", "Change the keys"),
