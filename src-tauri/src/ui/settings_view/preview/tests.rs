@@ -658,3 +658,16 @@ fn general_page_holds_the_general_settings_and_opens_the_folded_island() {
         assert!(g.groups[..5].iter().all(|g| !g.advanced) && g.groups[5..].iter().all(|g| g.advanced));
     });
 }
+
+#[test]
+fn general_snap_page_end_closed_en_dark_900() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = boot(json!({ "language": "en" }), "general");
+        settle(&mut t, (900.0, 760.0), &th);
+        t.v.borrow_mut().page.scroll.scroll_to(99999.0, false);
+        settle(&mut t, (900.0, 760.0), &th);
+        snap(&mut t.sim, "general-end-closed-en-dark-900", &th, (900.0, 760.0));
+    });
+}
