@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.8.10] - 2026-11-13
+
+### Highlights
+- Weather: the UV index tile now ends the first row of the tile grid (third tile instead of sixth), so one scroll notch shows it. The UV chip on the island's weather card is unchanged.
+- The settings preview shows the UV chip and tile with sample data.
+
 ## [0.8.9] - 2026-11-13
 
 ### Highlights
