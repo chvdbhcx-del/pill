@@ -155,10 +155,12 @@ pub fn build_index(lang: Lang) -> Vec<Entry> {
             kw.extend(r.search_keywords.iter().map(|s| s.to_string()));
             out.push(Entry { page: p.id.into(), page_name: page_name.into(), title: r.label.get(lang).into(), desc: r.hint.get(lang).into(), keywords: kw.join(" "), row: true, row_id: r.id.into() });
         }
-        if p.id == "appearance" {
+        if p.id == "edge" {
             for c in pickers::STYLES.iter() {
                 out.push(Entry { page: p.id.into(), page_name: page_name.into(), title: c.name.get(lang).into(), desc: c.desc.get(lang).into(), keywords: c.name.get(other).into(), row: true, row_id: String::new() });
             }
+        }
+        if p.id == "pet" {
             for c in pickers::pet_cards() {
                 out.push(Entry { page: p.id.into(), page_name: page_name.into(), title: c.name.get(lang).into(), desc: c.desc.get(lang).into(), keywords: format!("{} {}", c.name.get(other), c.id), row: true, row_id: String::new() });
             }
@@ -405,7 +407,7 @@ mod tests {
             assert_eq!(pages, schema().pages.len());
             assert!(idx.iter().all(|e| !e.title.is_empty()));
             assert!(idx.iter().any(|e| e.row_id == "quiet.on"));
-            assert!(idx.iter().any(|e| e.page == "appearance" && e.row_id.is_empty() && e.row), "picker cards are indexed");
+            assert!(idx.iter().any(|e| e.page == "edge" && e.row_id.is_empty() && e.row) && idx.iter().any(|e| e.page == "pet" && e.row_id.is_empty() && e.row), "picker cards are indexed");
         }
         // a Russian UI finds rows by their English label and the other way round
         let ru = build_index(Lang::Ru);
@@ -414,7 +416,7 @@ mod tests {
         assert!(search(&en, "тихие часы", 3).iter().any(|e| e.row_id == "quiet.on"));
         assert!(search(&ru, "размер острова", 1).first().is_some_and(|e| e.row_id == "size"));
         assert!(search(&en, "frame rate", 3).iter().any(|e| e.row_id == "fps"));
-        assert!(search(&ru, "ollama", 8).iter().any(|e| e.page == "ai" || e.page == "aisetup"));
+        assert!(search(&ru, "ollama", 8).iter().any(|e| e.page == "ai" || e.page == "localai"));
     }
 
     #[test]

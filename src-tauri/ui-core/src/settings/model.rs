@@ -863,7 +863,7 @@ mod tests {
         assert!(st(&m, "capture.fps").visible);
         m.set("capture.format", json!("gif"));
         assert!(!st(&m, "capture.fps").visible && !st(&m, "capture.encoder").visible);
-        assert!(!m.visible_rows("clipboard").iter().any(|r| r.id == "capture.fps"));
+        assert!(!m.visible_rows("recording").iter().any(|r| r.id == "capture.fps"));
         // network opt-ins gate their fields
         assert!(!st(&m, "weather.city").enabled && !st(&m, "showTemp").enabled);
         m.set("net.weather", json!(true));
@@ -913,11 +913,11 @@ mod tests {
         assert_eq!(m.begin(Map::new(), Some("welcome")), OpenTarget::Wizard);
         assert!(m.wizard.is_active() && m.lang() == Lang::Ru);
         let mut m = SettingsModel::new("ru-RU");
-        assert_eq!(m.begin(json!({"reduceMotion": true}).as_object().unwrap().clone(), Some("Weather")), OpenTarget::Page("modules"));
-        assert_eq!(m.current, "modules", "the old Weather page is a section of Modules now");
+        assert_eq!(m.begin(json!({"reduceMotion": true}).as_object().unwrap().clone(), Some("Weather")), OpenTarget::Page("weather"));
+        assert_eq!(m.current, "weather", "Weather is a page of its own");
         m.recorder.start("toggle");
-        let plan = m.show("sound", true);
-        assert_eq!((plan.page, m.current, m.recorder.active()), ("sound", "sound", None), "leaving a page stops the key recorder");
+        let plan = m.show("sound", true); // an old name: it leads to Volume and microphone
+        assert_eq!((plan.page, m.current, m.recorder.active()), ("volume", "volume", None), "leaving a page stops the key recorder");
         assert!(plan.exit.is_none() && plan.enter.is_instant(), "Reduce motion");
         assert_eq!(m.anim(anim::AnimKind::ToggleFlip).dur_ms, 0);
     }

@@ -48,7 +48,7 @@ fn ids_and_keys_are_unique() {
     for p in &schema().pages {
         assert!(pages.insert(p.id), "duplicate page {}", p.id);
     }
-    assert_eq!(schema().pages.len(), 10);
+    assert_eq!(schema().pages.len(), 38);
 }
 
 #[test]
@@ -418,51 +418,55 @@ fn first_choice_rows_stand_outside_the_section_and_technical_ones_inside() {
     for id in ["capture.encoder", "ui.gpu", "phone.relayUrl", "voice.endpoint", "vpn.own.connect", "live.obs.port", "fullscreenPeekEdge", "hotkey.uninstall", "timer.soundFile"] {
         assert!(in_advanced(id), "{id} is technical");
     }
-    // the biggest page of the old schema (38 rows) is now headed sections of a handful each
-    let live = schema().page("live").unwrap();
-    assert!(live.groups.iter().all(|g| !g.title.is_blank()), "every section of Events has a name");
-    let main: Vec<usize> = live.groups.iter().filter(|g| !g.advanced).map(|g| g.rows.len()).collect();
-    assert!(main.iter().all(|n| *n <= 7), "no long unbroken list on Events: {main:?}");
+    // every page is short: the part that is in view has a dozen rows at most (the biggest page of the old schema had 38)
+    for p in &schema().pages {
+        let main: usize = p.groups.iter().filter(|g| !g.advanced).map(|g| g.rows.len()).sum();
+        assert!(main <= 14, "{}: {main} rows in view", p.id);
+        let sections = p.groups.iter().filter(|g| !g.advanced).count();
+        // a page with several sections names each of them; a one-section page is named by its heading
+        assert!(p.groups.iter().filter(|g| !g.advanced).skip(1).all(|g| !g.title.is_blank() || g.rows.len() == 1), "{}: unnamed sections ({sections})", p.id);
+    }
 }
 
 // ------------------------------------------------------------------------------------------------ one section per feature
 
 /// (feature, page, the ids that stand together in ONE section, switch first). Advanced parts of a feature are in `ADVANCED_PARTS`.
 const FEATURES: [(&str, &str, &[&str]); 21] = [
-    ("Weather", "modules", &["net.weather", "module.weather", "weather.city", "weather.units", "weather.refresh", "showWxIcon", "showTemp"]),
-    ("Notes and timer", "modules", &["module.note", "live.reminders", "sound.reminders", "sound.reminderTone", "sound.play"]),
-    ("File shelf", "modules", &["module.shelf", "live.shelf"]),
-    ("System controls", "modules", &["module.controls", "live.sysmon"]),
-    ("Media player", "sound", &["module.media", "live.music", "musicPill", "audio.reactive", "music.lyrics", "home.player", "home.lyrics"]),
-    ("Volume and microphone", "sound", &["live.volume", "sound.volumeDevice", "audio.volumeTarget", "sound.micDevice", "live.micCam"]),
-    ("Voice to text", "sound", &["voice.enabled", "voice.mode", "voice.language", "voice.paste", "voice.provider", "voice.key", "aisetup.whisper", "voice.test-mic", "voice.test-service"]),
+    ("Weather", "weather", &["net.weather", "module.weather", "weather.city", "weather.units", "weather.refresh", "showWxIcon", "showTemp"]),
+    ("Notes and timer", "notes", &["module.note", "live.reminders", "sound.reminders", "sound.reminderTone", "sound.play"]),
+    ("File shelf", "shelf", &["module.shelf", "live.shelf"]),
+    ("System controls", "controls", &["module.controls", "live.sysmon"]),
+    ("Media player", "media", &["module.media", "live.music", "musicPill", "audio.reactive", "music.lyrics", "home.player", "home.lyrics"]),
+    ("Volume and microphone", "volume", &["live.volume", "sound.volumeDevice", "audio.volumeTarget", "sound.micDevice", "live.micCam"]),
+    ("Voice to text", "voice", &["voice.enabled", "voice.mode", "voice.language", "voice.paste", "voice.provider", "voice.key", "aisetup.whisper", "voice.test-mic", "voice.test-service"]),
     ("Clipboard history", "clipboard", &["module.clipboard", "live.copy", "clipboard.maxItems", "clipboard.retentionDays", "clipboard.private", "clipboard.skipSecrets", "clipboard.wipe"]),
-    ("Screen recording", "clipboard", &["live.recording", "capture.format", "capture.fps", "capture.recordSystemAudio", "capture.recordMic", "capture.videoFolder"]),
+    ("Screen recording", "recording", &["live.recording", "capture.format", "capture.fps", "capture.recordSystemAudio", "capture.recordMic", "capture.videoFolder"]),
     ("Phone link", "phone", &["phone.enabled", "module.phone", "live.phone", "phone.link", "phone.devices"]),
     ("AI assistant and chat", "ai", &["net.ai", "module.chat", "ai.provider", "ai.key", "ai.baseUrl", "ai.model", "ai.list", "ai.test"]),
-    ("AI agents", "ai", &["live.agents", "live.agents.snippets", "agents.answerFromIsland"]),
-    ("Notifications", "live", &["module.notifs", "live.notifications", "live.notifications.allow"]),
-    ("Downloads", "live", &["live.downloads", "live.dlDone", "live.steam"]),
-    ("Battery", "live", &["live.battery", "showBattery"]),
-    ("Keyboard layout", "live", &["live.keyboardLayout", "live.keyboardLayoutAlways"]),
-    ("Virtual desktops", "live", &["live.virtualDesktopFlash", "live.virtualDesktop"]),
-    ("Calendar", "live", &["live.calendar", "live.calendar.path"]),
-    ("Mail", "live", &["live.mail", "mail.host", "mail.port", "mail.user", "mail.mailbox", "mail.password", "live.mail.test"]),
-    ("Command bar search", "general", &["module.fileSearch", "search.engine", "search.customUrl"]),
-    ("Hiding the pill", "general", &["hideInFullscreen", "fullscreenPeek", "autoHide"]),
+    ("AI agents", "agents", &["live.agents", "live.agents.snippets", "agents.answerFromIsland"]),
+    ("Notifications", "notifications", &["module.notifs", "live.notifications", "live.notifications.allow"]),
+    ("Downloads", "downloads", &["live.downloads", "live.dlDone", "live.steam"]),
+    ("Battery", "battery", &["live.battery", "showBattery"]),
+    ("Keyboard layout", "keyboard", &["live.keyboardLayout", "live.keyboardLayoutAlways"]),
+    ("Virtual desktops", "desktops", &["live.virtualDesktopFlash", "live.virtualDesktop"]),
+    ("Calendar", "calendar", &["live.calendar", "live.calendar.path"]),
+    ("Mail", "mail", &["live.mail", "mail.host", "mail.port", "mail.user", "mail.mailbox", "mail.password", "live.mail.test"]),
+    ("Command bar search", "search", &["module.fileSearch", "search.engine", "search.customUrl"]),
+    ("Hiding the pill", "hiding", &["hideInFullscreen", "fullscreenPeek", "autoHide"]),
 ];
 
 /// The rare rows of a feature: they stand together in one `.adv()` section of the same page as the feature.
-const ADVANCED_PARTS: [(&str, &str, &[&str]); 10] = [
-    ("Notes and timer", "modules", &["timer.sound", "timer.soundFile"]),
-    ("VPN", "modules", &["vpn.own.name", "vpn.own.connect", "vpn.own.disconnect", "vpn.admin"]),
-    ("Media player", "sound", &["audio.perApp", "media.legacyPlayers"]),
-    ("Voice to text", "sound", &["voice.endpoint", "voice.model", "voice.autostop"]),
+const ADVANCED_PARTS: [(&str, &str, &[&str]); 11] = [
+    ("Notes and timer", "notes", &["timer.sound", "timer.soundFile"]),
+    ("VPN", "vpn", &["vpn.own.name", "vpn.own.connect", "vpn.own.disconnect", "vpn.admin"]),
+    ("Media player", "media", &["audio.perApp", "media.legacyPlayers"]),
+    ("Voice to text", "voice", &["voice.endpoint", "voice.model", "voice.autostop"]),
     ("Clipboard history", "clipboard", &["clipClickPaste", "clipboard.denyList", "clipboard.maxImageMb"]),
-    ("Screenshots", "clipboard", &["capture.encoder", "capture.revealAfterSave", "showInCapture"]),
-    ("Notifications", "live", &["cards.duration", "history.keep", "history.mail"]),
-    ("Downloads", "live", &["live.downloadRing", "live.dlIgnoreExt"]),
-    ("OBS", "live", &["live.obs.port", "live.obs.password"]),
+    ("Screen recording", "recording", &["capture.encoder"]),
+    ("Screenshots", "screenshots", &["capture.revealAfterSave", "showInCapture"]),
+    ("Notifications", "notifications", &["cards.duration", "history.keep", "history.mail"]),
+    ("Downloads", "downloads", &["live.downloadRing", "live.dlIgnoreExt"]),
+    ("OBS", "obs", &["live.obs.port", "live.obs.password"]),
     ("Phone files", "phone", &["phone.maxFileMB", "phone.apkUrl"]),
 ];
 
@@ -478,7 +482,7 @@ fn every_feature_is_one_section_with_its_switch_first() {
         assert!(!g.advanced, "{name}: the switch is in view");
         assert_eq!(g.rows.iter().map(|r| r.id).collect::<Vec<_>>(), ids, "{name}: one section, in this order");
         assert_eq!(section_of(ids[0]).0, page, "{name} stands on {page}");
-        assert!(!g.title.is_blank() && complete(g.title), "{name}: the section is named");
+        assert!(complete(schema().page(page).unwrap().title), "{name}: the page is named");
     }
     for (name, page, ids) in ADVANCED_PARTS {
         let (pg, g) = section_of(ids[0]);
@@ -527,7 +531,7 @@ fn search_finds_rows_inside_the_advanced_sections_on_the_page_that_holds_them() 
     m.begin(Map::new(), None);
     assert!(matches!(m.search_input("video encoder"), search::SearchStep::Paint { .. }));
     match m.search_key(search::SearchKey::Enter) {
-        search::SearchStep::Go(t) => assert_eq!((t.page.as_str(), t.row_id.as_str(), t.row), ("clipboard", "capture.encoder", true)),
+        search::SearchStep::Go(t) => assert_eq!((t.page.as_str(), t.row_id.as_str(), t.row), ("recording", "capture.encoder", true)),
         s => panic!("{s:?}"),
     }
 }
@@ -536,20 +540,24 @@ fn search_finds_rows_inside_the_advanced_sections_on_the_page_that_holds_them() 
 fn the_old_page_names_still_find_their_rows() {
     // (an old page name, in either language) -> a row that is on `page` now
     let cases = [
-        ("behavior", "general", "hideInFullscreen"),
-        ("Поведение", "general", "quiet.on"),
-        ("character", "appearance", "pet.size"),
-        ("Персонаж", "appearance", "character.liquid"),
-        ("weather", "modules", "weather.city"),
-        ("voice", "sound", "voice.enabled"),
-        ("Голос в текст", "sound", "voice.provider"),
-        ("aisetup", "sound", "aisetup.whisper"),
-        ("aisetup", "ai", "aisetup.chat"),
-        ("Установка ИИ", "ai", "aisetup.chat"),
-        ("search", "general", "search.engine"),
-        ("Поиск файлов", "general", "everything.autostart"),
-        ("Живые события", "live", "live.steam"),
-        ("live events", "live", "live.usb"),
+        ("behavior", "hiding", "hideInFullscreen"),
+        ("Поведение", "quiet", "quiet.on"),
+        ("character", "pet", "pet.size"),
+        ("Персонаж", "edge", "character.liquid"),
+        ("weather", "weather", "weather.city"),
+        ("voice", "voice", "voice.enabled"),
+        ("Голос в текст", "voice", "voice.provider"),
+        ("aisetup", "voice", "aisetup.whisper"),
+        ("aisetup", "localai", "aisetup.chat"),
+        ("Установка ИИ", "localai", "aisetup.chat"),
+        ("search", "search", "search.engine"),
+        ("Поиск файлов", "search", "everything.autostart"),
+        ("Живые события", "downloads", "live.steam"),
+        ("live events", "usb", "live.usb"),
+        ("sound", "volume", "sound.micDevice"),
+        ("modules", "tabs", "modules.tabs"),
+        ("appearance", "look", "island.colorCustom"),
+        ("general", "start", "general.autostart"),
         ("hotkeys", "hotkeys", "hotkey.qr"),
     ];
     for (q, page, row) in cases {
@@ -568,7 +576,15 @@ fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
     // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch
-    let expect = [("appearance", 25), ("general", 25), ("hotkeys", 19), ("modules", 28), ("live", 30), ("clipboard", 22), ("sound", 26), ("phone", 16), ("ai", 14), ("updates", 5)];
+    let expect = [
+        ("look", 10), ("edge", 3), ("pet", 4), ("clock", 4), ("tabs", 3), ("animation", 4),
+        ("start", 2), ("hiding", 11), ("quiet", 4), ("hotkeys", 19), ("search", 5),
+        ("weather", 7), ("media", 9), ("volume", 5), ("clipboard", 10), ("screenshots", 5), ("recording", 7), ("notes", 7), ("launcher", 1), ("shelf", 2), ("text", 1), ("controls", 2), ("vpn", 5), ("voice", 12),
+        ("notifications", 6), ("downloads", 5), ("battery", 2), ("keyboard", 2), ("desktops", 2), ("usb", 1), ("obs", 3), ("calendar", 2), ("mail", 7),
+        ("phone", 16),
+        ("ai", 8), ("agents", 3), ("localai", 3),
+        ("updates", 8),
+    ];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");
     }
@@ -839,8 +855,9 @@ fn hotkey_table_matches_settingswin() {
 #[test]
 fn settings_open_accepts_the_same_pages_as_settingswin() {
     let src = include_str!("../../../src/settingswin.rs");
-    let line = src.lines().find(|l| l.starts_with("const PAGES:")).expect("PAGES");
-    let rust: BTreeSet<&str> = line.split('"').skip(1).step_by(2).collect();
+    let start = src.find("const PAGES:").expect("PAGES");
+    let list = &src[start..start + src[start..].find("];").expect("end of PAGES")];
+    let rust: BTreeSet<&str> = list.split('"').skip(1).step_by(2).collect();
     let ours: BTreeSet<&str> = super::nav::OPENABLE.iter().copied().collect();
     assert_eq!(ours, rust);
 }

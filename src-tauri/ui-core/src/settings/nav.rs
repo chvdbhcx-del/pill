@@ -5,45 +5,85 @@ use crate::settings::anim::{self, AnimSpec};
 use crate::settings::schema::schema;
 use crate::settings::tr::{tr, Lang, Tr};
 
-/// One sidebar entry: a page or a separator line.
+/// One sidebar entry: a page (one per function) or the small non-clickable heading of the group of pages that follow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavItem {
     Page(&'static str),
-    Sep,
+    Head(Tr),
 }
 
-/// Sidebar order: how it looks, how it behaves and the keys; what the island shows; the phone; the AI; the update page.
-pub const NAV: [NavItem; 13] = [
-    NavItem::Page("appearance"),
-    NavItem::Page("general"),
+/// Sidebar order: a list of FUNCTIONS under group headings. Island: how it looks; Behaviour: how it acts and the keys; Features: what the
+/// island can do; Events: what it reacts to; Phone; AI; App. Every page is short (see `pages::layout`).
+pub const NAV: [NavItem; 45] = [
+    NavItem::Head(tr("Остров", "Island")),
+    NavItem::Page("look"),
+    NavItem::Page("edge"),
+    NavItem::Page("pet"),
+    NavItem::Page("clock"),
+    NavItem::Page("tabs"),
+    NavItem::Page("animation"),
+    NavItem::Head(tr("Поведение", "Behaviour")),
+    NavItem::Page("start"),
+    NavItem::Page("hiding"),
+    NavItem::Page("quiet"),
     NavItem::Page("hotkeys"),
-    NavItem::Sep,
-    NavItem::Page("modules"),
-    NavItem::Page("live"),
+    NavItem::Page("search"),
+    NavItem::Head(tr("Функции", "Features")),
+    NavItem::Page("weather"),
+    NavItem::Page("media"),
+    NavItem::Page("volume"),
     NavItem::Page("clipboard"),
-    NavItem::Page("sound"),
+    NavItem::Page("screenshots"),
+    NavItem::Page("recording"),
+    NavItem::Page("notes"),
+    NavItem::Page("launcher"),
+    NavItem::Page("shelf"),
+    NavItem::Page("text"),
+    NavItem::Page("controls"),
+    NavItem::Page("vpn"),
+    NavItem::Page("voice"),
+    NavItem::Head(tr("События", "Events")),
+    NavItem::Page("notifications"),
+    NavItem::Page("downloads"),
+    NavItem::Page("battery"),
+    NavItem::Page("keyboard"),
+    NavItem::Page("desktops"),
+    NavItem::Page("usb"),
+    NavItem::Page("obs"),
+    NavItem::Page("calendar"),
+    NavItem::Page("mail"),
+    NavItem::Head(tr("Телефон", "Phone")),
     NavItem::Page("phone"),
-    NavItem::Sep,
+    NavItem::Head(tr("ИИ", "AI")),
     NavItem::Page("ai"),
-    NavItem::Sep,
+    NavItem::Page("agents"),
+    NavItem::Page("localai"),
+    NavItem::Head(tr("Приложение", "App")),
     NavItem::Page("updates"),
 ];
 
-/// Icon ids of the sidebar (one per page, plus "power" for Quit); the renderer owns the drawings.
+/// Icon ids of the sidebar pages' `Page::icon` (kept in the schema; the sidebar is a text list and draws none) plus "power" for Quit.
 pub const ICONS: [&str; 17] = ["character", "general", "hotkeys", "ai", "voice", "weather", "sound", "live", "clipboard", "modules", "updates", "aisetup", "appearance", "behavior", "search", "phone", "power"];
 
-/// The pages `settings_open` accepts (settingswin.rs `PAGES`): the ten of the sidebar, the six that were merged into them
-/// (`LEGACY`; callers in other files, saved links and `--open` still use those names) and "welcome", which starts the wizard.
-pub const OPENABLE: [&str; 17] = ["character", "general", "appearance", "behavior", "search", "hotkeys", "ai", "voice", "weather", "sound", "live", "clipboard", "modules", "updates", "aisetup", "phone", "welcome"];
+/// The pages `settings_open` accepts (settingswin.rs `PAGES`): every page of the sidebar, the ids of the old sidebars (`LEGACY`; callers in
+/// other files, saved links and `--open` still use those names) and "welcome", which starts the wizard.
+pub const OPENABLE: [&str; 47] = [
+    "look", "edge", "pet", "clock", "tabs", "animation", "start", "hiding", "quiet", "hotkeys", "search", "weather", "media", "volume", "clipboard", "screenshots", "recording", "notes", "launcher", "shelf", "text", "controls", "vpn", "voice", "notifications",
+    "downloads", "battery", "keyboard", "desktops", "usb", "obs", "calendar", "mail", "phone", "ai", "agents", "localai", "updates", "character", "general", "appearance", "behavior", "sound", "live", "modules", "aisetup", "welcome",
+];
 
-/// Pages that are not in the sidebar any more: (old id, the page that holds their rows now, a row at the start of the old section there).
-pub const LEGACY: [(&str, &str, &str); 6] = [
-    ("character", "appearance", "character.liquid"),
-    ("behavior", "general", "hideInFullscreen"),
-    ("search", "general", "search.engine"),
-    ("weather", "modules", "net.weather"),
-    ("voice", "sound", "voice.enabled"),
-    ("aisetup", "ai", "aisetup.intro"),
+/// Old page ids that are not in the sidebar any more: (old id, the page that holds their rows now, a row at the start of the old section there).
+/// The ids of the 16-page sidebar and of the 10-page one that are pages of the new sidebar too (hotkeys, search, weather, voice, clipboard, phone,
+/// ai, updates) need no entry: they open the page of that name.
+pub const LEGACY: [(&str, &str, &str); 8] = [
+    ("character", "edge", "character.liquid"),
+    ("general", "start", "general.autostart"),
+    ("appearance", "look", "shape"),
+    ("behavior", "hiding", "hideInFullscreen"),
+    ("sound", "volume", "live.volume"),
+    ("live", "notifications", "module.notifs"),
+    ("modules", "tabs", "modules.tabs"),
+    ("aisetup", "localai", "aisetup.intro"),
 ];
 
 /// Where a page name leads: (the sidebar page, the row to scroll to when the name was an old page). Case is the caller's business.
@@ -69,8 +109,8 @@ pub fn version_line(lang: Lang, version: &str) -> String {
     }
 }
 
-/// The page opened when nothing (or something unknown) is asked for: the first one, Appearance.
-pub const DEFAULT_PAGE: &str = "appearance";
+/// The page opened when nothing (or something unknown) is asked for: the first one, Look.
+pub const DEFAULT_PAGE: &str = "look";
 
 /// What a request to open a page resolves to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -209,19 +249,36 @@ mod tests {
     fn sidebar_lists_every_page_once_in_schema_order() {
         let pages: Vec<&str> = NAV.iter().filter_map(|n| if let NavItem::Page(p) = n { Some(*p) } else { None }).collect();
         let ids: Vec<&str> = schema().pages.iter().map(|p| p.id).collect();
-        let mut sorted_nav = pages.clone();
-        sorted_nav.sort();
-        let mut sorted_ids = ids.clone();
-        sorted_ids.sort();
-        assert_eq!(sorted_nav, sorted_ids, "every page is in the sidebar exactly once");
-        assert_eq!(pages.len(), 10);
-        assert!(pages.len() <= 11, "the sidebar stays short");
-        assert_eq!(NAV.iter().filter(|n| **n == NavItem::Sep).count(), 3);
+        assert_eq!(pages, ids, "every page is in the sidebar exactly once, in the order of the schema");
+        assert_eq!(pages.len(), 38);
+        // headings: the list starts with one, none follows another (no empty group), the list ends with a page
+        assert!(matches!(NAV[0], NavItem::Head(_)));
+        for w in NAV.windows(2) {
+            assert!(!(matches!(w[0], NavItem::Head(_)) && matches!(w[1], NavItem::Head(_))), "an empty group");
+        }
+        assert!(matches!(NAV[NAV.len() - 1], NavItem::Page(_)));
+        assert_eq!(NAV.iter().filter(|n| matches!(n, NavItem::Head(_))).count(), 7);
+        for n in NAV {
+            if let NavItem::Head(t) = n {
+                assert!(t.is_complete(), "a heading has both languages");
+            }
+        }
         for pg in &schema().pages {
             assert!(ICONS.contains(&pg.icon), "icon {}", pg.icon);
             assert!(OPENABLE.contains(&pg.id), "settings_open must accept {}", pg.id);
+            assert!(pg.title.is_complete(), "{}", pg.id);
+            assert!(pg.title.en.chars().count() <= 24 && pg.title.ru.chars().count() <= 24, "{}: a sidebar name must fit the sidebar", pg.id);
+            assert!(pg.rows().count() <= 19, "{}: a function page stays short (the one list of every hotkey is the longest)", pg.id);
         }
         assert!(ICONS.contains(&"power"));
+        // OPENABLE = every page + every old id + the wizard, nothing else
+        let mut want: Vec<&str> = pages.clone();
+        want.extend(LEGACY.iter().map(|l| l.0));
+        want.push("welcome");
+        let mut have = OPENABLE.to_vec();
+        want.sort();
+        have.sort();
+        assert_eq!(have, want);
     }
 
     #[test]
@@ -230,9 +287,10 @@ mod tests {
         assert_eq!(resolve_open(Some("WELCOME")), Some(OpenTarget::Wizard));
         assert_eq!(resolve_open(Some("calc.exe")), None);
         assert_eq!(resolve_open(None), None);
-        assert_eq!(initial(Some("bogus")), OpenTarget::Page("appearance"));
+        assert_eq!(initial(Some("bogus")), OpenTarget::Page("look"));
         assert_eq!(initial(Some("updates")), OpenTarget::Page("updates"));
-        assert_eq!(page_or_default("nope"), "appearance");
+        assert_eq!(initial(Some("Weather")), OpenTarget::Page("weather"));
+        assert_eq!(page_or_default("nope"), "look");
     }
 
     #[test]
@@ -246,7 +304,22 @@ mod tests {
             assert_eq!(show_plan(id, Lang::En, true, false, false).page, p);
         }
         assert_eq!(resolve_open(Some("WELCOME")), Some(OpenTarget::Wizard));
-        for (id, page) in [("character", "appearance"), ("behavior", "general"), ("search", "general"), ("weather", "modules"), ("voice", "sound"), ("aisetup", "ai"), ("live", "live")] {
+        for (id, page) in [
+            ("character", "edge"),
+            ("general", "start"),
+            ("appearance", "look"),
+            ("behavior", "hiding"),
+            ("search", "search"),
+            ("weather", "weather"),
+            ("voice", "voice"),
+            ("sound", "volume"),
+            ("aisetup", "localai"),
+            ("live", "notifications"),
+            ("modules", "tabs"),
+            ("clipboard", "clipboard"),
+            ("ai", "ai"),
+            ("phone", "phone"),
+        ] {
             assert_eq!(resolve_open(Some(id)), Some(OpenTarget::Page(page)), "{id}");
         }
         // an old name also names the row to scroll to; a page that is still there does not
@@ -268,7 +341,7 @@ mod tests {
         assert!(show_plan("hotkeys", Lang::En, false, true, true).exit.is_none(), "no exit in the wizard");
         let r = show_plan("general", Lang::En, true, false, true);
         assert!(r.exit.is_none() && r.enter.is_instant() && r.indicator.is_instant());
-        assert_eq!(r.heading, "General");
+        assert_eq!(r.heading, "Start and language");
     }
 
     #[test]

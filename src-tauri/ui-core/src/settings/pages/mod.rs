@@ -43,20 +43,58 @@ pub(crate) fn old_pages_for_tests() -> Vec<Page> {
     old_pages()
 }
 
-/// The ten pages of the sidebar. The rows are defined by the sixteen old page builders; `layout` arranges them (see there).
+/// The pages of the sidebar, one per function, in the order of `nav::NAV`. The rows are defined by the sixteen old page builders; `layout`
+/// arranges them (see there).
 pub fn build() -> Vec<Page> {
-    let mut pool = layout::Pool::new(old_pages());
+    use layout as l;
+    let mut pool = l::Pool::new(old_pages());
+    let p = &mut pool;
     let pages = vec![
-        layout::appearance(&mut pool),
-        layout::general(&mut pool),
-        layout::hotkeys(&mut pool),
-        layout::modules(&mut pool),
-        layout::live(&mut pool),
-        layout::clipboard(&mut pool),
-        layout::sound(&mut pool),
-        layout::phone(&mut pool),
-        layout::ai(&mut pool),
-        layout::updates(&mut pool),
+        // Island
+        l::look(p),
+        l::edge(p),
+        l::pet(p),
+        l::clock(p),
+        l::tabs(p),
+        l::animation(p),
+        // Behaviour
+        l::start(p),
+        l::hiding(p),
+        l::quiet(p),
+        l::hotkeys(p),
+        l::search(p),
+        // Features
+        l::weather(p),
+        l::media(p),
+        l::volume(p),
+        l::clipboard(p),
+        l::screenshots(p),
+        l::recording(p),
+        l::notes(p),
+        l::launcher(p),
+        l::shelf(p),
+        l::text(p),
+        l::controls(p),
+        l::vpn(p),
+        l::voice(p),
+        // Events
+        l::notifications(p),
+        l::downloads(p),
+        l::battery(p),
+        l::keyboard(p),
+        l::desktops(p),
+        l::usb(p),
+        l::obs(p),
+        l::calendar(p),
+        l::mail(p),
+        // Phone
+        l::phone(p),
+        // AI
+        l::ai(p),
+        l::agents(p),
+        l::localai(p),
+        // App
+        l::updates(p),
     ];
     pool.finish();
     pages
