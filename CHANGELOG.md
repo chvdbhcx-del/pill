@@ -2,6 +2,12 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.8.8] - 2026-11-13
+
+### Highlights
+- Every page in the Settings sidebar now has its own icon.
+- The general settings are one page, General: start and language, hiding the pill, quiet hours, command bar search and the settings window (live preview, backup, first run). Old links and search still find them.
+
 ## [0.8.7] - 2026-11-13
 
 ### Highlights
