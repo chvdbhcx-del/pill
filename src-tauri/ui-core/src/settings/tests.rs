@@ -4,7 +4,7 @@
 use super::calls::BackendCall;
 use super::hotkey;
 use super::model::SettingsModel;
-use super::schema::{schema, Action, Commit, Control, Row};
+use super::schema::{schema, Action, Commit, Control, Dynamic, Row};
 use super::search;
 use super::tr::{Lang, Tr};
 use serde_json::{json, Map, Value};
@@ -579,15 +579,54 @@ fn the_old_page_names_still_find_their_rows() {
     }
 }
 
+// ------------------------------------------------------------------------------------------------ the screen edge
+
+#[test]
+fn the_screen_edge_row_is_a_two_way_choice_that_defaults_to_the_top() {
+    let r = schema().row("edge.position").expect("the row exists");
+    assert_eq!(r.key, "edge.position");
+    assert_eq!(r.default, json!("top"));
+    match &r.control {
+        Control::Segmented { options, dynamic } => {
+            let vals: Vec<_> = options.iter().map(|o| o.value.clone()).collect();
+            assert_eq!(vals, [json!("top"), json!("bottom")]);
+            assert!(*dynamic == Dynamic::None, "a fixed choice: the preview island may hear it");
+            for o in options {
+                assert!(complete(o.label), "both languages: {:?}", o.value);
+            }
+        }
+        c => panic!("a segmented choice, not {c:?}"),
+    }
+    assert!(complete(r.label) && complete(r.hint));
+    // it stands in the Look page next to the monitor, and the taskbar switch tells what it does at either edge
+    let (page, _) = schema().all_rows().find(|(_, r)| r.id == "edge.position").unwrap();
+    assert_eq!(page.id, "look");
+    let under = schema().row("underTaskbar").unwrap();
+    let hint = under.hint.get(Lang::En);
+    assert!(hint.contains("bottom") && hint.contains("above"), "{hint}");
+    assert!(under.hint.get(Lang::Ru).contains("над"), "{}", under.hint.get(Lang::Ru));
+    // the model takes the two values and refuses anything else
+    let mut m = SettingsModel::new("en-US");
+    assert_eq!(m.get("edge.position"), json!("top"));
+    assert_eq!(m.set("edge.position", json!("bottom")), vec![super::calls::BackendCall::put("edge.position", json!("bottom"))]);
+    assert_eq!(m.get("edge.position"), json!("bottom"));
+    assert!(m.try_set("edge.position", json!("left")).is_err(), "only the two edges");
+    // it is found by search in both languages
+    for (q, lang) in [("bottom", Lang::En), ("снизу", Lang::Ru), ("edge", Lang::En)] {
+        let idx = search::build_index(lang);
+        assert!(search::search(&idx, q, 300).iter().any(|e| e.row_id == "edge.position"), "{q:?} finds the row");
+    }
+}
+
 // ------------------------------------------------------------------------------------------------ rows per page
 
 #[test]
 fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
-    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch
+    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch and the screen-edge choice
     let expect = [
-        ("look", 18), ("edge", 7), ("tabs", 3),
+        ("look", 19), ("edge", 7), ("tabs", 3),
         ("weather", 7), ("media", 14), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
         ("notifications", 18), ("calendar", 12),
         ("phone", 16), ("ai", 14),

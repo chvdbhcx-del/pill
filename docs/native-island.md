@@ -53,6 +53,29 @@ Frames: `step` returns true while anything moves (shell springs / liquid, swap /
 tweens, pets, edge pulse, panel in / out); nothing caps the rate (the shell's own `fps` setting is the user's choice and unchanged). Reduce motion:
 `Cx::reduced_motion` (OS or the `reduceMotion` setting, pushed with `host::set_reduce_motion_setting`) gives end states everywhere.
 
+## The bottom edge (`edge.position` = `bottom`)
+
+The island can hang from the top edge (default) or stand on the bottom edge, at the taskbar, and grow UPWARD. The shell, the tabs and the
+header keep their one layout, "hanging from the top of the window"; `IslandView` mirrors it about the window's middle line:
+
+| piece | what is mirrored |
+|---|---|
+| window | `pill.rs::frame_for` -> `geom::dock_position(Dock, mon, work, under_taskbar, ..)`: the window's BOTTOM is the anchor (work-area bottom with `underTaskbar`, the monitor bottom without), so the folded (120) and the open (480) frame share the floor; `Placement::BottomCenter`, `geom::resize_keep_bottom_center` for a DPI change |
+| body, hit region | `IslandView::win_rect` (`geom::mirror_y`): `h - (y + height)`; the click-through region, `locate`, `local_live` and the panel origin use it |
+| silhouette | `shapes::paint_body` / `paint_edge` / the tail run unchanged under a vertical flip (`flipped`): flat against the screen edge, round on the free side, flares, the light shadow and the liquid edge on the free side |
+| header | `ChromeLayout::docked_bottom`: tabs, buttons, VPN chip and the pet slot move to the bottom of the panel, the tab view grows above them |
+| legs / eyes | the legs hang from the top of the body (flipped), the eyes stay upright |
+| pointer | `shell_pt` mirrors `Zone` and `MouseMove` before they reach the shell (the liquid edge reaches for a pointer above the body) |
+| edge dwell | `Cx::set_edge_bottom` -> `Proximity::set_edge_bottom`: `TopEdge` fires on the monitor's BOTTOM row; the fullscreen peek (`fspeek::on_edge`) too |
+| command bar | `pill::body_bottom` is `None` at the bottom: the bar hangs from the top of the monitor as always |
+| auto-hide | the `-130 %` slide runs through the flipped body, i.e. downward |
+
+Changing the setting live: the view slides the body out through the old edge (`tuck`, `Slide::Out`), asks for the new edge (`pill_edge`, which
+moves the window while nothing is visible), waits `EDGE_HOLD_MS` and slides the body in from the new edge (`Slide::In`). Reduce motion and a
+hidden island take the edge at once. `pill.rs` keeps the edge the window is on (`pill::dock`), which follows `edge.position` only through
+`pill_edge`. The settings preview (`settings_view/preview`) runs the same view in its sandbox; its camera stands the island on the floor of the
+stage when `Live::at_bottom`.
+
 ## The pill.rs gates (flag off = the old code path, byte for byte)
 
 `pill.rs` got a `NATIVE: OnceLock<Box<dyn PillWin>>` (`attach_native`, `native_ready`) and these branches:

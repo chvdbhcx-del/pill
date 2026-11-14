@@ -491,6 +491,8 @@ struct Win {
     prox: Option<Proximity>,
     poll_at: f64,
     force_ignore: Option<bool>,
+    /// The island hangs from the bottom edge (`Cx::set_edge_bottom`): re-placing it by its spec and a DPI change keep the BOTTOM centre.
+    edge_bottom: bool,
     ignore_applied: bool,
     prev_fg: isize,
     blur: BlurGuard,
@@ -668,6 +670,7 @@ impl Host {
             prox,
             poll_at: 0.0,
             force_ignore: None,
+            edge_bottom: false,
             ignore_applied: false,
             prev_fg: 0,
             blur: BlurGuard::default(),
@@ -735,7 +738,8 @@ impl Host {
         let Some(win) = self.wins.get_mut(&id) else { return };
         let size_l = if win.spec.kind == WindowKind::Fullscreen { win.spec.size } else { win.view.size_hint().unwrap_or(win.spec.size) };
         win.size_l = size_l;
-        let r = resolve_placement(&win.spec.placement, size_l, &monitors(), cursor_pos(), below);
+        let placement = if win.edge_bottom { win.spec.placement.at_bottom() } else { win.spec.placement.clone() };
+        let r = resolve_placement(&placement, size_l, &monitors(), cursor_pos(), below);
         let after = if win.spec.topmost { HWND_TOPMOST } else { HWND_TOP };
         unsafe {
             let _ = SetWindowPos(win.hwnd, after, r.rect.l, r.rect.t, r.rect.w(), r.rect.h(), flags);
@@ -1043,6 +1047,7 @@ impl Host {
             }
             if let Some(v) = fx.edge_bottom {
                 p.set_edge_bottom(v);
+                win.edge_bottom = v;
             }
         }
         if let Some(c) = fx.fps_cap {
@@ -1597,9 +1602,9 @@ impl Host {
                             }
                         }
                         WindowKind::Overlay | WindowKind::Popup => {
-                            let size_l = self.wins.get(&id).map(|w| w.size_l)?;
+                            let (size_l, bottom) = self.wins.get(&id).map(|w| (w.size_l, w.edge_bottom))?;
                             let sz = geom::size_to_phys(size_l, scale);
-                            let r = geom::resize_keep_top_center(irect(suggested), sz);
+                            let r = if bottom { geom::resize_keep_bottom_center(irect(suggested), sz) } else { geom::resize_keep_top_center(irect(suggested), sz) };
                             let _ = SetWindowPos(hwnd, None, r.l, r.t, r.w(), r.h(), SWP_NOZORDER | SWP_NOACTIVATE);
                         }
                         WindowKind::Normal => {

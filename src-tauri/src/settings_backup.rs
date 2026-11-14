@@ -190,6 +190,14 @@ mod tests {
     }
 
     #[test]
+    fn the_screen_edge_travels_in_a_backup_as_a_string() {
+        let (p, skipped) = run(json!({ "edge.position": "bottom", "underTaskbar": false, "offsetX": 10 }));
+        assert_eq!((p.get("edge.position"), skipped), (Some(&json!("bottom")), 0));
+        assert!(run(json!({ "edge.position": true })).0.is_empty(), "a wrong type is refused");
+        assert_eq!(settings::defaults().get("edge.position"), Some(&json!("top")), "the default is the top edge");
+    }
+
+    #[test]
     fn non_object_and_header_only() {
         assert_eq!(run(json!([1, 2])).0.len(), 0);
         let (p, s) = run(json!({ "_pill": { "version": "x" } }));

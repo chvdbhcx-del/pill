@@ -183,6 +183,12 @@ pub fn resize_keep_top_center(old: IRect, new_size: (i32, i32)) -> IRect {
     IRect::from_xywh(cx - new_size.0 / 2, old.t, new_size.0, new_size.1)
 }
 
+/// Resizing a window keeps its bottom centre (the island at the bottom edge grows and shrinks upward).
+pub fn resize_keep_bottom_center(old: IRect, new_size: (i32, i32)) -> IRect {
+    let cx = old.l + old.w() / 2;
+    IRect::from_xywh(cx - new_size.0 / 2, old.b - new_size.1, new_size.0, new_size.1)
+}
+
 /// True when at least a 120 x 40 px piece of the title-bar strip of a `w`-wide window at (x, y) lies on one of the monitors. A remembered
 /// position that fails this (a monitor was unplugged) is ignored. Same rule as `settingswin::pos_visible`, on `IRect`s.
 pub fn pos_visible(x: i32, y: i32, w: i32, mons: &[IRect]) -> bool {
@@ -377,6 +383,15 @@ mod tests {
         assert_eq!((n.l, n.t, n.w(), n.h()), (920, 10, 720, 480));
         let n = resize_keep_top_center(old, (400, 100));
         assert_eq!((n.cx(), n.t), (old.cx(), 10));
+    }
+
+    #[test]
+    fn resizing_keeps_the_bottom_centre() {
+        let old = IRect::from_xywh(920, 1320, 720, 120);
+        let n = resize_keep_bottom_center(old, (720, 480));
+        assert_eq!((n.l, n.t, n.b, n.w()), (920, 960, 1440, 720), "taller: grows upward");
+        let n = resize_keep_bottom_center(old, (400, 100));
+        assert_eq!((n.cx(), n.b), (old.cx(), old.b));
     }
 
     #[test]

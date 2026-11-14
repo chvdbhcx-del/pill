@@ -295,9 +295,57 @@ fn once_settled_nothing_runs_and_the_sandbox_is_parked() {
     });
 }
 
+/// Opaque black (island body) pixels in the upper and the lower half of the preview's stage.
+fn stage_halves(t: &T, img: &Image) -> (usize, usize) {
+    let p = pv_rect(WIDE);
+    let h = t.v.borrow().pv.stage_h.at();
+    let (x, y, w) = (p.x + 16.0, p.y + 48.0, PV_W - 32.0);
+    let black = |r: Rect| img.count(Some(r), |px| px[3] == 255 && px[0].max(px[1]).max(px[2]) < 10);
+    (black(Rect::new(x, y, w, h / 2.0)), black(Rect::new(x, y + h / 2.0, w, h / 2.0)))
+}
+
+#[test]
+fn the_preview_island_stands_on_the_floor_of_its_stage_when_the_edge_is_the_bottom() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("appearance", json!({"language": "en"}));
+        let a = shot(&mut t, "preview-edge-top-dark-1x", &th);
+        let (up, down) = stage_halves(&t, &a);
+        assert!(up > 600 && down * 3 < up, "the top island hangs from the ceiling of the stage: {up} / {down}");
+        assert!(!t.v.borrow().pv.live.as_ref().unwrap().at_bottom());
+        // the choice reaches the sandbox before it is saved; the island slides over and settles on the other edge
+        set(&mut t, "edge.position", json!("bottom"));
+        settle(&mut t, WIDE, &th);
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Pill(Look::Island), "the folded island is what shows it");
+        assert!(t.v.borrow().pv.live.as_ref().unwrap().at_bottom());
+        let b = shot(&mut t, "preview-edge-bottom-dark-1x", &th);
+        let (up, down) = stage_halves(&t, &b);
+        assert!(down > 600 && up * 3 < down, "the bottom island stands on the floor of the stage: {up} / {down}");
+        assert!(t.calls("pill_edge").is_empty(), "the sandbox never moves the real island's window");
+        // and back
+        set(&mut t, "edge.position", json!("top"));
+        settle(&mut t, WIDE, &th);
+        let c = shot(&mut t, "preview-edge-top-again-dark-1x", &th);
+        let (up, down) = stage_halves(&t, &c);
+        assert!(up > 600 && down * 3 < up, "{up} / {down}");
+        // the open island too: it grows upward from the floor
+        set(&mut t, "edge.position", json!("bottom"));
+        settle(&mut t, WIDE, &th);
+        set(&mut t, "net.weather", json!(true));
+        settle(&mut t, WIDE, &th);
+        let d = shot(&mut t, "preview-edge-bottom-open-dark-1x", &th);
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Panel(Tab::Weather));
+        let (up, down) = stage_halves(&t, &d);
+        assert!(down > 1500 && up > 1500, "the open island fills the stage from the floor up: {up} / {down}");
+        let fx = t.sim.take_fx();
+        assert!(fx.edge_bottom.is_none(), "the sandbox's requests to the host are dropped: the real window is not told");
+    });
+}
+
 #[test]
 fn only_plain_choices_reach_the_preview_never_text_the_user_typed() {
-    for k in ["showSeconds", "size", "shape", "theme", "pet", "character", "net.weather", "weather.units", "live.copy", "island.colorCustom", "clipClickPaste"] {
+    for k in ["showSeconds", "size", "shape", "theme", "pet", "character", "net.weather", "weather.units", "live.copy", "island.colorCustom", "clipClickPaste", "edge.position"] {
         assert!(shareable(k), "{k} may go to the preview");
     }
     for k in ["weather.city", "mail.user", "mail.host", "capture.folder", "capture.videoFolder", "hotkey.toggle", "search.customUrl", "clipboard.denyList", "hideInApps", "autoHide", "quiet.on",
