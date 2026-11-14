@@ -426,8 +426,8 @@ mod tests {
         assert_eq!(bot.views, Rect::new(16.0, VIEWS_BOTTOM, 648.0, 338.0 - HEAD_H - VIEWS_BOTTOM));
         assert!(bot.views.bottom() <= bot.tabs[0].rect.y && bot.views.h == top.views.h, "the views end where the header begins");
         // a folding panel: the header slides with the edge (up to a negative offset, clipped by the body), the views never go negative
-        let folded = top.clone().docked_bottom(30.0);
-        assert!(folded.tabs[0].rect.y < top.tabs[0].rect.y && folded.views.h == 0.0);
+        let folded = layout(&v, false, 30.0, &|_, active| if active { 1.0 } else { 0.0 }, &Mono(0.5)).docked_bottom(30.0);
+        assert!(folded.tabs[0].rect.y < top.tabs[0].rect.y && folded.views.h == 0.0, "{:?}", folded.tabs[0].rect);
     }
 
     #[test]
