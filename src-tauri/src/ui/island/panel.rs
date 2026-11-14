@@ -54,6 +54,9 @@ pub fn reapply(cx: &mut Cx, fx: Effects, tab: bool) {
     if let Some(g) = fx.gaze {
         cx.set_gaze(g);
     }
+    if let Some(b) = fx.edge_bottom {
+        cx.set_edge_bottom(b);
+    }
     if fx.show {
         cx.show_self();
     }

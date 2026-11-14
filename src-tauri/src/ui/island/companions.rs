@@ -324,12 +324,18 @@ impl Companions {
     }
 
     /// Legs under the eyes and the eyes on the text line. `eyes` = (x, y) of the middle between the eyes in window px.
-    pub fn draw_legs_eyes(&mut self, cv: &Canvas, body: Rect, eyes: (f32, f32), s: f32, drop: f32) {
+    /// `flip_h`: the island hangs from the bottom edge of a window that tall; its free edge is the TOP of `body`, so the legs are drawn flipped
+    /// and hang from there (the eyes stay upright).
+    pub fn draw_legs_eyes(&mut self, cv: &Canvas, body: Rect, eyes: (f32, f32), s: f32, drop: f32, flip_h: Option<f32>) {
         self.ensure(cv);
         self.eyes_at = Some(eyes);
         let lx = eyes.0.clamp(body.x + 14.0 * s, (body.right() - 14.0 * s).max(body.x + 14.0 * s));
         if let Some(c) = &mut self.chars {
-            c.draw_legs(cv.dc, lx, body.bottom() - 0.2 + drop, s); // `drop`: the liquid edge sags under the legs, they stand on it
+            // `drop`: the liquid edge sags under the legs, they stand on it
+            match flip_h {
+                None => c.draw_legs(cv.dc, lx, body.bottom() - 0.2 + drop, s),
+                Some(h) => cv.with_transform(glasskit::canvas::scale_about((0.0, h / 2.0), 1.0, -1.0), |_| c.draw_legs(cv.dc, lx, h - body.y - 0.2 + drop, s)),
+            }
             c.draw_eyes(cv.dc, eyes.0, eyes.1, s);
         }
     }

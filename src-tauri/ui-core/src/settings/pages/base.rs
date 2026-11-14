@@ -147,9 +147,20 @@ pub fn appearance() -> Page {
                     slider("size", tr("Размер острова", "Island size"), tr("На большом мониторе остров можно сделать крупнее", "On a large monitor the pill can be made bigger"), 80.0, 200.0, 5.0, Unit::Percent, 100.0).kw(&["size", "scale", "размер", "масштаб", "крупнее"]),
                     slider("opacityCol", tr("Прозрачность свёрнутого острова", "Transparency of the folded island"), tr("Пилюля и её карточки", "The pill and its cards"), 0.0, 60.0, 5.0, Unit::Percent, 0.0).kw(&["opacity", "transparency", "прозрачность"]),
                     slider("opacityExp", tr("Прозрачность раскрытого острова", "Transparency of the open island"), Tr::NONE, 0.0, 60.0, 5.0, Unit::Percent, 0.0).kw(&["opacity", "transparency", "прозрачность"]),
+                    seg(
+                        "edge.position",
+                        tr("Край экрана", "Screen edge"),
+                        tr(
+                            "Сверху остров висит у верхнего края и раскрывается вниз. Снизу он стоит на нижнем краю, у панели задач, и раскрывается вверх",
+                            "Top: the pill hangs from the top edge and opens downward. Bottom: it stands on the bottom edge, at the taskbar, and opens upward",
+                        ),
+                        so(&[("top", tr("Сверху", "Top")), ("bottom", tr("Снизу", "Bottom"))]),
+                        json!("top"),
+                    )
+                    .kw(&["edge", "position", "bottom", "top", "taskbar", "край", "положение", "снизу", "сверху", "внизу", "панель задач"]),
                     slider(
                         "offsetX",
-                        tr("Положение вдоль верхнего края", "Position along the top edge"),
+                        tr("Положение вдоль края", "Position along the edge"),
                         tr(
                             "0 — посередине, минус — левее, плюс — правее. Свёрнутый остров стоит над серединой окна, раскрытый может дойти до края монитора",
                             "0 is the middle, minus is further left, plus further right. The folded pill stays above the middle; the open one can reach the monitor edge",
@@ -161,7 +172,16 @@ pub fn appearance() -> Page {
                         0.0,
                     )
                     .kw(&["position", "offset", "положение", "смещение", "влево", "вправо"]),
-                    toggle("underTaskbar", tr("Под панелью задач, если она сверху", "Below the taskbar if it is at the top"), tr("Остров встаёт под панель, а не поверх её кнопок", "The pill sits below the bar, not over its buttons"), true).kw(&["taskbar", "панель задач"]),
+                    toggle(
+                        "underTaskbar",
+                        tr("Не заходить на панель задач", "Keep clear of the taskbar"),
+                        tr(
+                            "Сверху остров встаёт под панель, снизу — над ней, а не поверх её кнопок. Выключите, чтобы он стоял у самого края экрана, поверх панели",
+                            "At the top the pill sits below the bar, at the bottom above it, not over its buttons. Switch off to let it stand at the very edge of the screen, over the bar",
+                        ),
+                        true,
+                    )
+                    .kw(&["taskbar", "панель задач", "above", "below", "над", "под", "поверх"]),
                     monitor.kw(&["monitor", "display", "screen", "монитор", "экран"]),
                 ],
             ),

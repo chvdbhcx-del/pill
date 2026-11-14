@@ -11,7 +11,8 @@
 //! * `Hover` once per visit, `Leave` only after the cursor stayed out for 250 ms; a button held since before the cursor arrived is a drag
 //!   (armed) and never opens the island; a drag that ended on the island suppresses hover until the cursor leaves it;
 //! * `Zone` stream while the cursor is in the window frame or within 120 logical px of the hit bounds (`None` once on leaving);
-//! * `TopEdge` after 120 ms pinned on the monitor's top row inside the island's x range with no button held;
+//! * `TopEdge` after 120 ms pinned on the monitor's top row inside the island's x range with no button held (the BOTTOM row when the island
+//!   hangs from the bottom edge, [`Proximity::set_edge_bottom`]; the event keeps its name: it means "the cursor is on the island's edge");
 //! * drag-to-shelf: a left-button drag that started elsewhere and enters the drop zone makes the window hit-testable (hysteresis +16 px) so
 //!   OLE can hand it the files;
 //! * `Gaze`: the cursor in physical px relative to the window, only when asked and only when it moved;
@@ -60,6 +61,8 @@ pub struct Probe {
     pub window: IRect,
     /// top row of the monitor the window is on
     pub monitor_top: i32,
+    /// first row BELOW the monitor the window is on (`rcMonitor.bottom`); only read for a bottom-hanging island
+    pub monitor_bottom: i32,
     /// the left mouse button is down (`GetAsyncKeyState(VK_LBUTTON)`)
     pub button_down: bool,
     /// the window is shown (a hidden island polls slowly and forgets its state)
@@ -83,6 +86,7 @@ pub struct Proximity {
     pass_through: bool,
     drop_zone: Option<Rect>,
     gaze: bool,
+    edge_bottom: bool,
     inside: bool,
     left_at: Option<f64>,
     edge_at: Option<f64>,
@@ -104,6 +108,7 @@ impl Proximity {
             pass_through: false,
             drop_zone: None,
             gaze: false,
+            edge_bottom: false,
             inside: false,
             left_at: None,
             edge_at: None,
@@ -137,6 +142,13 @@ impl Proximity {
     pub fn set_gaze(&mut self, on: bool) {
         self.gaze = on;
         self.gaze_last = (i32::MIN, i32::MIN);
+    }
+    /// The island hangs from the bottom edge: the edge dwell watches the monitor's bottom row instead of the top one.
+    pub fn set_edge_bottom(&mut self, on: bool) {
+        if self.edge_bottom != on {
+            self.edge_bottom = on;
+            self.edge_at = None;
+        }
     }
     pub fn pass_through(&self) -> bool {
         self.pass_through
@@ -200,9 +212,10 @@ impl Proximity {
         } else {
             !(in_rect || self.drag.engaged)
         };
-        // top-edge dwell
+        // edge dwell: the monitor's top row, or its bottom row for the bottom island
         let x_in = bounds.is_some_and(|b| cx >= b.l - PAD && cx < b.r + PAD);
-        let on_edge = x_in && cy <= p.monitor_top + 1 && !held;
+        let on_row = if self.edge_bottom { cy >= p.monitor_bottom - 2 } else { cy <= p.monitor_top + 1 };
+        let on_edge = x_in && on_row && !held;
         self.edge_at = if on_edge { self.edge_at.or(Some(p.now_ms)) } else { None };
         if self.edge_at.is_some_and(|t| p.now_ms - t >= EDGE_MS) {
             self.edge_at = None;
@@ -285,7 +298,7 @@ mod tests {
         HitRegion::Rects(vec![Rect::new(290.0, 7.0, 140.0, 36.0), Rect::new(300.0, 43.0, 120.0, 14.0)])
     }
     fn probe(now: f64, x: i32, y: i32) -> Probe {
-        Probe { now_ms: now, cursor: (x, y), window: WIN, monitor_top: 0, button_down: false, visible: true }
+        Probe { now_ms: now, cursor: (x, y), window: WIN, monitor_top: 0, monitor_bottom: 1440, button_down: false, visible: true }
     }
     fn prox() -> Proximity {
         let mut p = Proximity::new(1.0, 240);
@@ -373,6 +386,31 @@ mod tests {
         p.step(&probe(0.0, 1280, 0));
         p.step(&probe(100.0, 1280, 200));
         assert!(!edge(&p.step(&probe(150.0, 1280, 0))));
+    }
+
+    #[test]
+    fn the_bottom_island_reveals_from_the_bottom_row() {
+        // a 720 x 120 window at the bottom centre of the 2560 x 1440 monitor
+        let win = IRect::new(920, 1320, 1640, 1440);
+        let pr = |now: f64, y: i32| Probe { now_ms: now, cursor: (1280, y), window: win, monitor_top: 0, monitor_bottom: 1440, button_down: false, visible: true };
+        let mut p = Proximity::new(1.0, 240);
+        p.set_hit_region(HitRegion::Rects(vec![Rect::new(290.0, 70.0, 140.0, 36.0)]));
+        p.set_edge_bottom(true);
+        let edge = |o: &PollOut| o.events.contains(&ProximityEvent::TopEdge);
+        assert!(!edge(&p.step(&pr(0.0, 1439))));
+        assert!(!edge(&p.step(&pr(119.0, 1439))));
+        assert!(edge(&p.step(&pr(120.0, 1439))), "the dwell on the bottom row fires");
+        let mut q = Proximity::new(1.0, 240);
+        q.set_hit_region(HitRegion::Rects(vec![Rect::new(290.0, 70.0, 140.0, 36.0)]));
+        q.set_edge_bottom(true);
+        q.step(&pr(0.0, 1380));
+        assert!(!edge(&q.step(&pr(500.0, 1380))), "not on the row");
+        assert!(!edge(&q.step(&pr(900.0, 0))), "the top row means nothing to a bottom island");
+        // the top island ignores the bottom row
+        let mut t = Proximity::new(1.0, 240);
+        t.set_hit_region(HitRegion::Rects(vec![Rect::new(290.0, 70.0, 140.0, 36.0)]));
+        t.step(&pr(0.0, 1439));
+        assert!(!edge(&t.step(&pr(500.0, 1439))));
     }
 
     #[test]
@@ -490,7 +528,7 @@ mod tests {
         let win = IRect::new(1840, 0, 3280, 240);
         let mut p = Proximity::new(2.0, 144);
         p.set_hit_region(body());
-        let mk = |x, y| Probe { now_ms: 0.0, cursor: (x, y), window: win, monitor_top: 0, button_down: false, visible: true };
+        let mk = |x, y| Probe { now_ms: 0.0, cursor: (x, y), window: win, monitor_top: 0, monitor_bottom: 1440, button_down: false, visible: true };
         assert!(!p.step(&mk(1840 + 600, 40)).ignore, "(300,20) logical is on the body");
         assert!(p.step(&mk(1840 + 560 - 5, 40)).ignore, "left of the body by more than the 4 px slack");
     }

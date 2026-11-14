@@ -134,6 +134,49 @@ pub fn anchor_top_center(mon: IRect, top: i32, size: (i32, i32), offset_pct: f32
     (x, top.max(mon.t))
 }
 
+/// Which screen edge the island hangs from (the `edge.position` setting).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dock {
+    #[default]
+    Top,
+    Bottom,
+}
+
+impl Dock {
+    /// `"bottom"` = the bottom edge; anything else (also an empty or unknown value) = the top, the default.
+    pub fn from_setting(v: &str) -> Dock {
+        if v.eq_ignore_ascii_case("bottom") {
+            Dock::Bottom
+        } else {
+            Dock::Top
+        }
+    }
+}
+
+/// Window position (screen, physical) for a window of `size` (physical) hanging from the `dock` edge of `mon`, centred horizontally. `work` is
+/// the monitor's work area (the monitor minus the taskbar): `under_taskbar` keeps the window inside it (below a top taskbar, above a bottom
+/// one; a taskbar on another side changes nothing for the edge), off it uses the physical edge of the monitor. `margin` (physical px) moves the
+/// window away from that edge. Bottom grows UP: the window's bottom edge is the anchor, so a taller window reaches further up.
+pub fn dock_position(dock: Dock, mon: IRect, work: IRect, under_taskbar: bool, margin: i32, size: (i32, i32), offset_pct: f32) -> (i32, i32) {
+    match dock {
+        Dock::Top => {
+            let top = if under_taskbar { work.t.max(mon.t) } else { mon.t } + margin;
+            anchor_top_center(mon, top, size, offset_pct)
+        }
+        Dock::Bottom => {
+            let bottom = if under_taskbar { work.b.min(mon.b) } else { mon.b } - margin;
+            let (x, _) = anchor_top_center(mon, 0, size, offset_pct);
+            (x, (bottom - size.1).max(mon.t))
+        }
+    }
+}
+
+/// Mirrors a rectangle's vertical position inside a window `h` tall: the island is laid out hanging from the top; for the bottom dock every
+/// vertical position is `h - (y + height)`.
+pub fn mirror_y(y: f32, height: f32, h: f32) -> f32 {
+    h - (y + height)
+}
+
 /// Resizing a window keeps its top centre: the new top-left for a window that was at `old` and is now `new_size` wide / tall.
 pub fn resize_keep_top_center(old: IRect, new_size: (i32, i32)) -> IRect {
     let cx = old.l + old.w() / 2;
@@ -251,6 +294,80 @@ mod tests {
         assert_eq!(anchor_top_center(m2, 0, (720, 120), 0.0), (-1320, 0));
         // wider than the monitor: pinned to the left edge
         assert_eq!(anchor_top_center(m2, 0, (2500, 120), 0.0).0, -1920);
+    }
+
+    #[test]
+    fn the_top_dock_is_the_old_anchor() {
+        let mon = IRect::new(0, 0, 2560, 1440);
+        let work = IRect::new(0, 48, 2560, 1440); // a 48 px taskbar on top
+        assert_eq!(dock_position(Dock::Top, mon, work, true, 0, (720, 120), 0.0), (920, 48));
+        assert_eq!(dock_position(Dock::Top, mon, work, false, 0, (720, 120), 0.0), (920, 0));
+        assert_eq!(dock_position(Dock::Top, mon, work, false, 14, (720, 120), 50.0), (1840, 14));
+    }
+
+    #[test]
+    fn the_bottom_dock_sits_on_the_edge_and_grows_up() {
+        let mon = IRect::new(0, 0, 2560, 1440);
+        // taskbar at the bottom (48 px): above it with the switch on, over it with the switch off
+        let work = IRect::new(0, 0, 2560, 1392);
+        assert_eq!(dock_position(Dock::Bottom, mon, work, true, 0, (720, 120), 0.0), (920, 1272));
+        assert_eq!(dock_position(Dock::Bottom, mon, work, false, 0, (720, 120), 0.0), (920, 1320));
+        // the expanded frame keeps the same bottom edge and reaches 360 px further up
+        assert_eq!(dock_position(Dock::Bottom, mon, work, true, 0, (720, 480), 0.0), (920, 912));
+        // a margin lifts the window off the edge
+        assert_eq!(dock_position(Dock::Bottom, mon, work, false, 10, (720, 120), 0.0), (920, 1310));
+        // offset behaves as for the top dock
+        assert_eq!(dock_position(Dock::Bottom, mon, work, true, 0, (720, 120), -50.0).0, 0);
+        assert_eq!(dock_position(Dock::Bottom, mon, work, true, 0, (720, 120), 50.0).0, 1840);
+    }
+
+    #[test]
+    fn a_taskbar_on_another_side_does_not_move_the_bottom_dock() {
+        let mon = IRect::new(0, 0, 1920, 1080);
+        for work in [IRect::new(0, 48, 1920, 1080), IRect::new(60, 0, 1920, 1080), IRect::new(0, 0, 1860, 1080)] {
+            assert_eq!(dock_position(Dock::Bottom, mon, work, true, 0, (720, 120), 0.0), (600, 960), "work area {work:?}");
+            assert_eq!(dock_position(Dock::Bottom, mon, work, false, 0, (720, 120), 0.0), (600, 960));
+        }
+        // and a top taskbar still pushes the top dock down while a bottom one does not
+        assert_eq!(dock_position(Dock::Top, mon, IRect::new(0, 0, 1920, 1032), true, 0, (720, 120), 0.0), (600, 0));
+    }
+
+    #[test]
+    fn docking_follows_dpi_and_the_monitor() {
+        // physical sizes at 100 / 125 / 150 / 200 %: the window of 720 x 120 logical px is always flush with the bottom of the work area
+        for dpi in [96u32, 120, 144, 192] {
+            let s = scale_from_dpi(dpi);
+            let mon = IRect::new(0, 0, (2560.0 * s) as i32, (1440.0 * s) as i32);
+            let taskbar = phys(48.0, s);
+            let work = IRect::new(0, 0, mon.r, mon.b - taskbar);
+            let size = size_to_phys((720.0, 120.0), s);
+            let (x, y) = dock_position(Dock::Bottom, mon, work, true, 0, size, 0.0);
+            assert_eq!(y + size.1, work.b, "{dpi} dpi: the bottom edge is the work-area bottom");
+            assert_eq!(x, (mon.w() - size.0) / 2, "{dpi} dpi: centred");
+            let (_, y2) = dock_position(Dock::Bottom, mon, work, false, 0, size, 0.0);
+            assert_eq!(y2 + size.1, mon.b, "{dpi} dpi: over the taskbar the window touches the monitor edge");
+        }
+        // a second monitor to the left and above the primary
+        let m2 = IRect::new(-1920, -300, 0, 780);
+        assert_eq!(dock_position(Dock::Bottom, m2, m2, true, 0, (720, 120), 0.0), (-1320, 660));
+        // a window taller than the monitor is pinned to its top
+        assert_eq!(dock_position(Dock::Bottom, m2, m2, true, 0, (720, 2000), 0.0).1, -300);
+    }
+
+    #[test]
+    fn the_dock_setting_defaults_to_the_top() {
+        assert_eq!(Dock::from_setting("bottom"), Dock::Bottom);
+        assert_eq!(Dock::from_setting("Bottom"), Dock::Bottom);
+        for v in ["top", "", "left", "bottom "] {
+            assert_eq!(Dock::from_setting(v), Dock::Top, "{v:?}");
+        }
+    }
+
+    #[test]
+    fn mirroring_is_its_own_inverse() {
+        assert_eq!(mirror_y(8.0, 36.0, 120.0), 76.0);
+        assert_eq!(mirror_y(mirror_y(8.0, 36.0, 120.0), 36.0, 120.0), 8.0);
+        assert_eq!(mirror_y(0.0, 120.0, 120.0), 0.0);
     }
 
     #[test]

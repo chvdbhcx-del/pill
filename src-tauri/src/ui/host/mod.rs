@@ -83,6 +83,9 @@ pub enum Placement {
     /// Centred horizontally at the top of a monitor (island, bar). `below_taskbar`: start at the work-area top instead of the monitor top.
     /// `margin_top` is logical px below that; `offset_pct` (-50..50) shifts the centre by that percentage of the monitor width.
     TopCenter { monitor: MonitorSel, offset_pct: f32, below_taskbar: bool, margin_top: f32 },
+    /// Centred horizontally at the BOTTOM of a monitor, growing upward (the island with `edge.position` = bottom). `above_taskbar`: end at the
+    /// work-area bottom (just above a bottom taskbar) instead of the monitor bottom; `margin_bottom` is logical px above that.
+    BottomCenter { monitor: MonitorSel, offset_pct: f32, above_taskbar: bool, margin_bottom: f32 },
     /// Centred on a monitor.
     Center(MonitorSel),
     /// Exactly here (screen px, top-left).

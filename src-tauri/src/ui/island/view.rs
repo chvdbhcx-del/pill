@@ -10,6 +10,7 @@ use super::panel::TabHost;
 use super::shapes;
 use super::sys::{self, SysClock};
 use super::tabfx::Act;
+use crate::ui::host::geom::{self, Dock};
 use crate::ui::tabs::fx::TabFx;
 use crate::ui::view::{Cx, CursorShape, DropEvent, DropPayload, DropPhase, Msg, ProximityEvent, Ticket, View, Waker};
 use glasskit::canvas::{scale_about, translation, mul, Canvas};
@@ -90,6 +91,19 @@ impl Drop for Alarm {
         m.lock().unwrap_or_else(|e| e.into_inner()).1 = true;
         cv.notify_all();
     }
+}
+
+/// The island changing the screen edge it hangs from (`edge.position`): it slides off the old edge, the window moves while nothing is visible,
+/// and it slides in from the new one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Slide {
+    Rest,
+    /// the body leaves through the old edge
+    Out,
+    /// the window has been re-placed: wait (until this host time, ms) for the move to land before the body comes back
+    Hold(f64),
+    /// the body arrives from the new edge
+    In,
 }
 
 enum Pending {
@@ -180,7 +194,21 @@ pub struct IslandView {
     hdr: HeaderFx,
     /// the phone notification card: hover growth, reply field (phonecard.rs)
     phone: super::phonecard::PhoneUi,
+    /// The island hangs from the bottom edge of its window. The whole layout (shell, tabs, header) stays "hanging from the top"; the view
+    /// mirrors positions about the window's middle line (`win_rect`, `shell_pt`) and paints pure shapes under a vertical flip (`flipped`).
+    bottom: bool,
+    slide: Slide,
+    /// 0 = at rest, 1 = slid out through the edge; `tuck_px` is that in window px, fixed by `step` (draw only reads it)
+    tuck: Flow,
+    tuck_px: f32,
+    last_edge: Option<bool>,
 }
+
+/// Leaving an edge, and arriving at the new one.
+const TUCK_OUT: Feel = Feel::FADE.within(240.0);
+const TUCK_IN: Feel = Feel::FLOW.within(420.0);
+/// After the window has been re-placed, the body waits this long before it comes back (the host moves the window asynchronously).
+const EDGE_HOLD_MS: f64 = 90.0;
 
 /// The panel content fades in on this feel, after a short head start of the body; it leaves a little quicker.
 const PANEL_IN: Feel = Feel::FADE.within(200.0);
@@ -253,10 +281,16 @@ impl IslandView {
             fx: LiveFx::new(),
             hdr: HeaderFx::new(),
             phone: super::phonecard::PhoneUi::new(&Theme::pill_dark()),
+            bottom: false,
+            slide: Slide::Rest,
+            tuck: Flow::new(0.0, TUCK_OUT),
+            tuck_px: 0.0,
+            last_edge: None,
             now: cx.now_ms,
             started: false,
             device_id: 0,
         };
+        v.bottom = v.want_bottom();
         v.sync_env(cx);
         v.exec_outs(outs, cx);
         v.ask_chips(cx);
@@ -501,17 +535,38 @@ impl IslandView {
 
     // ------------------------------------------------------------------------------------------------ geometry / hit
 
+    /// The screen edge the settings ask for (`edge.position`).
+    fn want_bottom(&self) -> bool {
+        Dock::from_setting(self.core.settings.get("edge.position").and_then(|v| v.as_str()).unwrap_or("top")) == Dock::Bottom
+    }
+
+    /// A rectangle of the shell's layout (hanging from the top of the window, y down) as it is on the window now: slid toward its edge by the
+    /// edge change, and mirrored about the window's middle line for the bottom edge.
+    fn win_rect(&self, r: Rect) -> Rect {
+        let y = r.y - self.tuck_px;
+        Rect::new(r.x, if self.bottom { geom::mirror_y(y, r.h, self.win.1) } else { y }, r.w, r.h)
+    }
+
+    /// A point of the window (px) in the shell's layout: the inverse of [`IslandView::win_rect`] for the cursor.
+    fn shell_pt(&self, p: (f32, f32)) -> (f64, f64) {
+        let y = if self.bottom { self.win.1 - p.1 } else { p.1 };
+        (p.0 as f64, (y + self.tuck_px) as f64)
+    }
+
+    /// The body of `v` on the window (px).
+    fn win_body(&self, v: &ShellView) -> Rect {
+        let b = &v.body;
+        self.win_rect(Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32))
+    }
+
     fn hit_region(&self, v: &ShellView) -> Vec<Rect> {
         let s = v.scale as f32;
         let b = &v.body;
         if v.phase == Phase::AutoHidden || b.away {
-            return vec![Rect::new(b.left as f32, 0.0, b.width as f32, 2.0)];
+            return vec![self.win_rect(Rect::new(b.left as f32, 0.0, b.width as f32, 2.0))];
         }
-        let mut r = vec![Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32 + 14.0 * s)];
-        if v.panel.visible {
-            r[0].h = b.height as f32 + 14.0 * s;
-        }
-        r
+        // the body and the liquid strip hanging off its free edge
+        vec![self.win_rect(Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32 + 14.0 * s))]
     }
 
     fn update_window_requests(&mut self, v: &ShellView, cx: &mut Cx) {
@@ -530,6 +585,72 @@ impl IslandView {
             self.last_gaze = Some(gaze);
             cx.set_gaze(gaze);
         }
+        if self.last_edge != Some(self.bottom) {
+            self.last_edge = Some(self.bottom);
+            cx.set_edge_bottom(self.bottom);
+        }
+    }
+
+    /// Takes the new edge: the window moves (`pill_edge`) and the proximity engine watches the matching screen row.
+    fn set_edge(&mut self, bottom: bool, cx: &mut Cx) {
+        self.bottom = bottom;
+        self.last_edge = Some(bottom);
+        cx.set_edge_bottom(bottom);
+        self.call(cx, "pill_edge", json!({ "bottom": bottom }), Pending::Fire);
+    }
+
+    /// The settings changed while nothing is on screen (hidden island, reduced motion): there is nothing to slide, take the edge at once.
+    fn edge_now(&mut self, cx: &mut Cx) {
+        let want = self.want_bottom();
+        if want != self.bottom && self.slide == Slide::Rest && (self.core.shell.is_hidden() || self.core.shell.reduce()) {
+            self.set_edge(want, cx);
+        }
+    }
+
+    /// One frame of the edge change; true while it needs frames. The slide itself is a spring (`tuck`): out through the old edge, the
+    /// window moves while the body is out of sight, in from the new edge. Reduced motion and a hidden island skip the slide.
+    fn step_edge(&mut self, v: &ShellView, dt_ms: f64, cx: &mut Cx) -> bool {
+        let (want, now, instant) = (self.want_bottom(), cx.now_ms, v.reduced || v.phase == Phase::Hidden);
+        match self.slide {
+            Slide::Rest if want != self.bottom => {
+                if instant {
+                    self.set_edge(want, cx);
+                } else {
+                    self.tuck.set_feel(TUCK_OUT);
+                    self.slide = Slide::Out;
+                }
+            }
+            Slide::Out if want == self.bottom => {
+                self.tuck.set_feel(TUCK_IN);
+                self.slide = Slide::In;
+            }
+            Slide::Out if instant || self.tuck.at() > 0.97 => {
+                self.set_edge(want, cx);
+                self.slide = Slide::Hold(now + EDGE_HOLD_MS);
+            }
+            Slide::Hold(until) if now >= until => {
+                self.tuck.set_feel(TUCK_IN);
+                self.slide = Slide::In;
+            }
+            Slide::In if want != self.bottom => {
+                self.tuck.set_feel(TUCK_OUT);
+                self.slide = Slide::Out;
+            }
+            Slide::In if !self.tuck.moving() && self.tuck.target() == 0.0 => self.slide = Slide::Rest,
+            _ => {}
+        }
+        let out = matches!(self.slide, Slide::Out | Slide::Hold(_));
+        if v.reduced {
+            self.tuck.jump(0.0);
+            self.tuck.to(0.0);
+            self.slide = Slide::Rest;
+        } else {
+            self.tuck.chase(if out { 1.0 } else { 0.0 }, dt_ms);
+        }
+        // far enough that the body, its liquid edge and a character's legs are all out of the window
+        let off = v.body.top.max(0.0) as f32 + v.body.height as f32 + 48.0 * v.scale as f32;
+        self.tuck_px = self.tuck.at() * off;
+        self.slide != Slide::Rest || self.tuck.moving()
     }
 
     fn locate(&self, p: (f32, f32)) -> Hit {
@@ -579,7 +700,8 @@ impl IslandView {
     fn local_live(&self, p: (f32, f32)) -> (f32, f32) {
         let v = self.core.shell.view();
         let s = v.scale as f32;
-        ((p.0 - v.body.left as f32) / s, (p.1 - v.body.top as f32) / s)
+        let b = self.win_body(&v);
+        ((p.0 - b.x) / s, (p.1 - b.y) / s)
     }
 
     fn views_event(&self, ev: &InputEvent) -> InputEvent {
@@ -604,6 +726,16 @@ impl IslandView {
             Some(c) => super::tint::tinted(base, c),
             None => base,
         }
+    }
+}
+
+/// Runs `f` under the vertical flip of the bottom edge (shapes and characters drawn as for the top edge, in shell coordinates, come out
+/// mirrored about the middle line of the `win_h` tall window); at the top edge it just runs.
+fn flipped(cv: &Canvas, bottom: bool, win_h: f32, f: impl FnOnce(&Canvas)) {
+    if bottom {
+        cv.with_transform(scale_about((0.0, win_h / 2.0), 1.0, -1.0), f);
+    } else {
+        f(cv);
     }
 }
 
@@ -705,6 +837,7 @@ impl View for IslandView {
                 }
                 if name == "settings:changed" {
                     self.ask_chips(cx);
+                    self.edge_now(cx);
                 }
                 self.host.event_msg(&name, &payload, latest, cx);
             }
@@ -771,6 +904,7 @@ impl View for IslandView {
         self.exec(cx);
         let v = self.core.shell.view();
         let reduced = v.reduced;
+        let edge_busy = self.step_edge(&v, dt_ms, cx);
         self.live_a = self.live_sp.chase(if v.live.visible { 1.0 } else { 0.0 }, dt_ms);
         // the panel's content follows the body: it fades in a moment after the body starts to grow, and out quickly
         let want_panel = v.panel.visible && (reduced || v.panel.shown_age_ms >= PANEL_DELAY_MS);
@@ -836,9 +970,10 @@ impl View for IslandView {
             ("phone", phone_busy),
             ("glide", self.gpu.gliding()),
             ("fades", fades),
+            ("edge", edge_busy),
         ]);
-        self.pace_ambient(&v, cx, now, hdr_busy || host_busy || fx_busy || phone_busy || fades || amb_busy);
-        v.wants_frames || phone_busy || self.pending_measure.is_some() || pets_busy || host_busy || hdr_busy || rows_busy || fx_busy || self.gpu.gliding() || fades || amb_busy || amb_loop || self.tab_amb
+        self.pace_ambient(&v, cx, now, hdr_busy || host_busy || fx_busy || phone_busy || fades || amb_busy || edge_busy);
+        edge_busy || v.wants_frames || phone_busy || self.pending_measure.is_some() || pets_busy || host_busy || hdr_busy || rows_busy || fx_busy || self.gpu.gliding() || fades || amb_busy || amb_loop || self.tab_amb
     }
 
     fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
@@ -869,7 +1004,7 @@ impl View for IslandView {
                     self.hover_card_btn = hc;
                     resp = Response::redraw();
                 }
-                self.core.shell_event(Event::Cursor(Some((pos.0 as f64, pos.1 as f64))), cx.now_ms);
+                self.core.shell_event(Event::Cursor(Some(self.shell_pt(*pos))), cx.now_ms);
                 resp = resp.with_cursor(cursor_of(&h));
                 if h == Hit::Views {
                     resp = resp.merge(self.host.event(&self.views_event(ev), cx));
@@ -970,7 +1105,7 @@ impl View for IslandView {
         match ev {
             ProximityEvent::Hover => self.core.shell_event(Event::Hover, now),
             ProximityEvent::Leave => self.core.shell_event(Event::Leave, now),
-            ProximityEvent::Zone(p) => self.core.shell_event(Event::Cursor(p.map(|p| (p.0 as f64, p.1 as f64))), now),
+            ProximityEvent::Zone(p) => self.core.shell_event(Event::Cursor(p.map(|p| self.shell_pt(p))), now),
             ProximityEvent::Gaze(p) => {
                 let s = cx.scale.max(0.1);
                 self.comp.gaze(Some((p.0 / s, p.1 / s)));
@@ -1054,10 +1189,16 @@ impl View for IslandView {
         let s = v.scale as f32;
         let now = cx.now_ms;
         let b = &v.body;
-        let body = Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32);
+        // `sbody` = the body in the shell's layout (hanging from the top), `body` = where it is on the window (mirrored for the bottom edge)
+        let (bottom, wh) = (self.bottom, self.win.1);
+        let mut sb = b.clone();
+        sb.top -= self.tuck_px as f64;
+        let sbody = Rect::new(sb.left as f32, sb.top as f32, sb.width as f32, sb.height as f32);
+        let body = self.win_body(&v);
         let (rt, rb) = shapes::clamp_radii(body.w, body.h, b.radius_top as f32, b.radius_bottom as f32);
         self.amb.glow.paint(cv, body, rb.max(rt), s);
-        shapes::paint_body(cv, b, b.radius_top as f32, b.radius_bottom as f32, self.flare_a, self.fx.shadow(), self.fx.fill());
+        // the silhouette: flat against the screen edge, round on the free side, the flares and the light theme's shadow on the same sides
+        flipped(cv, bottom, wh, |cv| shapes::paint_body(cv, &sb, b.radius_top as f32, b.radius_bottom as f32, self.flare_a, self.fx.shadow(), self.fx.fill()));
         let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq), fx: { let mut f = live::Fx { ring: self.amb.ring.paint(), ..self.fx.fx() }; f.card.phone_open = self.phone.open_target(); f } };
         // ---- everything inside the body is clipped to its silhouette
         let mut painted = Painted::default();
@@ -1120,7 +1261,9 @@ impl View for IslandView {
                 let ru = self.core.ru();
                 let mut meter = LiveMeter(cv);
                 let ph = body.h / s;
-                self.chrome = self.hdr.layout(&v, ru, ph, &mut meter);
+                let lay = self.hdr.layout(&v, ru, ph, &mut meter);
+                // at the bottom edge the header is the part nearest the edge: it moves to the bottom of the panel, the views grow above it
+                self.chrome = if bottom { lay.docked_bottom(ph) } else { lay };
                 let m = mul(&scale_about((0.0, 0.0), s, s), &translation(ox, oy));
                 cv.with_transform(m, |cv| {
                     cv.with_opacity(self.panel_a, |cv| chrome::paint(cv, &th, &mut self.gpu, &self.chrome, &self.hdr, ru));
@@ -1150,9 +1293,10 @@ impl View for IslandView {
         if self.comp.take_created() {
             cx.post(Msg::Custom(Box::new(Own::Wake))); // a fresh engine: tick + draw it so it starts moving
         }
-        shapes::paint_edge(cv, &v.edge, (v.strip.x as f32, v.strip.y as f32), pulse, v.reduced);
+        let strip = (v.strip.x as f32, v.strip.y as f32 - self.tuck_px);
+        flipped(cv, bottom, wh, |cv| shapes::paint_edge(cv, &v.edge, strip, pulse, v.reduced));
         match self.comp.style {
-            EdgeStyle::Tail => self.comp.draw_tail(cv, body, rb, s),
+            EdgeStyle::Tail => flipped(cv, bottom, wh, |cv| self.comp.draw_tail(cv, sbody, rb, s)),
             EdgeStyle::Legs => {
                 let side = char_side(&self.comp.cfg);
                 // the characters' eyes are drawn about 0.75 px lower than the pet's eye line: they sit on the same text line
@@ -1164,7 +1308,7 @@ impl View for IslandView {
                 // the legs stand on the liquid edge: they follow its sag under them
                 let lx = cx_.clamp(body.x + 14.0 * s, (body.right() - 14.0 * s).max(body.x + 14.0 * s));
                 let drop = super::pet_extras::edge_offset_at(&v.edge.points, ((lx - body.cx()) / s) as f64) as f32 * s;
-                self.comp.draw_legs_eyes(cv, body, (cx_, cy), s, drop);
+                self.comp.draw_legs_eyes(cv, body, (cx_, cy), s, drop, bottom.then_some(wh));
             }
             _ => {}
         }
@@ -1305,7 +1449,8 @@ impl IslandView {
         let (lay, o) = self.phone.dbg_lay()?;
         let v = self.core.shell.view();
         let s = v.scale as f32;
-        let at = |r: Rect| (v.body.left as f32 + (o.0 + r.cx()) * s, v.body.top as f32 + (o.1 + r.cy()) * s);
+        let b = self.win_body(&v);
+        let at = |r: Rect| (b.x + (o.0 + r.cx()) * s, b.y + (o.1 + r.cy()) * s);
         Some(vec![at(lay.buttons[0]), at(lay.buttons[1]), at(lay.field), at(lay.send), at(lay.avatar)])
     }
     pub fn dbg_body_h(&self) -> f64 {

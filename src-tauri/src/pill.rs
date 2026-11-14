@@ -8,7 +8,8 @@
 use crate::ui::bus;
 use serde_json::{json, Map, Value};
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
+use crate::ui::host::geom::{self, Dock};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -92,17 +93,44 @@ fn layout(expanded: bool) -> Option<Lay> {
     layout_native(expanded)
 }
 
-/// The window frame on a monitor (physical px): size from the settings, centred plus `offsetX`, `top` = where the island hangs.
-fn frame_for(ml: i32, mt: i32, mw: i32, mh: i32, top: i32, sf: f64, expanded: bool) -> Lay {
+/// The edge the island window hangs from RIGHT NOW. It follows `edge.position`, but only when the island view says so (`pill_edge`): the view
+/// first slides the body off the old edge, so the window never jumps across the screen under a visible island.
+static DOCK: AtomicU8 = AtomicU8::new(DOCK_UNSET);
+const DOCK_UNSET: u8 = 2;
+
+pub fn dock() -> Dock {
+    match DOCK.load(Ordering::Relaxed) {
+        0 => Dock::Top,
+        1 => Dock::Bottom,
+        _ => {
+            let d = Dock::from_setting(&crate::settings::get_str("edge.position", "top"));
+            DOCK.store((d == Dock::Bottom) as u8, Ordering::Relaxed);
+            d
+        }
+    }
+}
+
+/// The island view slid out and asks for the new edge (`bottom`): re-place the window there.
+pub fn pill_edge(app: AppHandle, bottom: bool) {
+    if DOCK.swap(bottom as u8, Ordering::Relaxed) != bottom as u8 {
+        on_main(&app, place);
+    }
+}
+
+/// The window frame on a monitor (physical px): size from the settings, centred plus `offsetX`, hanging from the `dock` edge (`underTaskbar`
+/// keeps it inside the work area).
+fn frame_for(m: &crate::ui::host::MonitorInfo, expanded: bool) -> Lay {
+    let sf = m.scale as f64;
+    let (ml, mt, mw, mh) = (m.rect.l, m.rect.t, m.rect.r - m.rect.l, m.rect.b - m.rect.t);
     let k = sf * crate::settings::get_f64("size", 100.0).clamp(80.0, 200.0) / 100.0;
     let (fw, fh) = if expanded { EXPANDED } else if CARD.load(Ordering::Relaxed) { CARD_FRAME } else { COLLAPSED };
     let w = ((fw * k).round() as i32).min(mw);
     let h = (fh * k).round() as i32;
     // `offsetX` (-50..50 % of the monitor width, 0 = middle) moves the window centre; the window stays inside the monitor.
     let off = crate::settings::get_f64("offsetX", 0.0).clamp(-50.0, 50.0);
-    let cx = ml as f64 + mw as f64 / 2.0 + off / 100.0 * mw as f64;
-    let x = ((cx - w as f64 / 2.0).round() as i32).clamp(ml, (ml + mw - w).max(ml));
-    Lay { x, y: top, w, h, mon: [ml, mt, ml + mw, mt + mh], scale: sf }
+    let under = crate::settings::get_bool("underTaskbar", true);
+    let (x, y) = geom::dock_position(dock(), m.rect, m.work, under, 0, (w, h), off as f32);
+    Lay { x, y, w, h, mon: [ml, mt, ml + mw, mt + mh], scale: sf }
 }
 
 /// Monitors come from the host (the same `monitor` setting, "1".. = list order, else the primary).
@@ -115,9 +143,7 @@ fn layout_native(expanded: bool) -> Option<Lay> {
         .and_then(|i| mons.get(i.saturating_sub(1)))
         .or_else(|| mons.iter().find(|m| m.primary))
         .or_else(|| mons.first())?;
-    let (ml, mt, mw, mh) = (m.rect.l, m.rect.t, m.rect.r - m.rect.l, m.rect.b - m.rect.t);
-    let top = if crate::settings::get_bool("underTaskbar", true) { m.work.t.max(mt) } else { mt };
-    Some(frame_for(ml, mt, mw, mh, top, m.scale as f64, expanded))
+    Some(frame_for(m, expanded))
 }
 
 /// Put the window into its current frame (collapsed/expanded) on the target monitor. UI thread only.
@@ -242,8 +268,9 @@ pub fn guard_hidden() -> bool {
     st().hidden & HIDE_GUARD != 0
 }
 
-/// Where the top-edge request counts: the island's monitor (physical px) and the x range of its body (the whole frame until measured).
-pub fn edge_geometry() -> Option<([i32; 4], (i32, i32))> {
+/// Where the edge request counts: the island's monitor (physical px), the x range of its body (the whole frame until measured) and whether
+/// the island hangs from the bottom edge (then the request is the cursor resting on the monitor's bottom row).
+pub fn edge_geometry() -> Option<([i32; 4], (i32, i32), bool)> {
     let s = st();
     if s.mon == [0; 4] || s.layout[2] <= 0 {
         return None;
@@ -254,7 +281,7 @@ pub fn edge_geometry() -> Option<([i32; 4], (i32, i32))> {
     } else {
         (s.layout[0], s.layout[0] + s.layout[2])
     };
-    Some((s.mon, x))
+    Some((s.mon, x, dock() == Dock::Bottom))
 }
 
 /// Guard poll: if another program hid, minimised or un-topmosted the island, or it ended up off every monitor, put it back.
@@ -316,6 +343,9 @@ fn affinity() {
 /// Physical y just below the pill's body when it is on screen on the monitor at `(mon_x, mon_y)` (None while hidden / not measured):
 /// the command bar hangs under it instead of covering it.
 pub fn body_bottom(mon_x: i32, mon_y: i32) -> Option<i32> {
+    if dock() == Dock::Bottom {
+        return None; // the island hangs from the bottom edge: nothing of it is under the command bar at the top
+    }
     let s = st();
     let on_screen = s.hidden == 0 && s.shown && s.rect[3] > 0.0 && s.mon[0] == mon_x && s.mon[1] == mon_y;
     on_screen.then(|| s.layout[1] + ((s.rect[1] + s.rect[3]) * s.scale).round() as i32)

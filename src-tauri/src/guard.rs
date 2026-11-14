@@ -128,7 +128,7 @@ pub fn pill_add_active_app(app: tauri::AppHandle, key: String) -> serde_json::Ma
 }
 
 /// Watches the cursor for up to 500 ms (60 ms ticks) while a fullscreen app hides the island and `fullscreenPeekEdge` is on:
-/// resting on the top edge for 150 ms brings the island over the app. Runs only in that state.
+/// resting on the island's edge (the top, or the bottom when the island hangs from there) for 150 ms brings the island over the app. Runs only in that state.
 fn edge_wait(app: &tauri::AppHandle) {
     use windows::Win32::Foundation::POINT;
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
@@ -137,13 +137,13 @@ fn edge_wait(app: &tauri::AppHandle) {
     let mut dwell = crate::fspeek::EdgeDwell::default();
     while t0.elapsed() < std::time::Duration::from_millis(500) {
         std::thread::sleep(std::time::Duration::from_millis(60));
-        let Some((mon, xr)) = crate::pill::edge_geometry() else { continue };
+        let Some((mon, xr, bottom)) = crate::pill::edge_geometry() else { continue };
         let mut p = POINT::default();
         if unsafe { GetCursorPos(&mut p) }.is_err() {
             continue;
         }
         let held = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } < 0;
-        if dwell.step(t0.elapsed().as_millis() as u64, crate::fspeek::on_top_edge((p.x, p.y), mon, xr, held)) {
+        if dwell.step(t0.elapsed().as_millis() as u64, crate::fspeek::on_edge((p.x, p.y), mon, xr, held, bottom)) {
             crate::pill::peek(app, "edge");
             return;
         }

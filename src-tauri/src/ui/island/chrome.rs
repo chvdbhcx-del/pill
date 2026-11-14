@@ -56,6 +56,27 @@ pub struct ChromeLayout {
     pub views: Rect,
 }
 
+impl ChromeLayout {
+    /// The layout for an island that hangs from the BOTTOM edge: the header (tabs, buttons, VPN chip, the pet's slot) is the part nearest the
+    /// edge, so it sits at the bottom of the `panel_h` tall panel and the tab view grows above it, with the margin on its free (top) side.
+    /// While the panel grows or folds the header stays where it is relative to the screen edge, as the top layout's header does.
+    pub fn docked_bottom(mut self, panel_h: f32) -> ChromeLayout {
+        let dy = panel_h - HEAD_H;
+        for t in &mut self.tabs {
+            t.rect.y += dy;
+        }
+        for (_, r) in &mut self.buttons {
+            r.y += dy;
+        }
+        if let Some(r) = &mut self.vpn {
+            r.y += dy;
+        }
+        self.pet_slot.y += dy;
+        self.views = Rect::new(self.views.x, VIEWS_BOTTOM, self.views.w, self.views.h);
+        self
+    }
+}
+
 pub fn tab_icon(id: &str) -> &'static str {
     standard_tabs().iter().find(|t| t.id == id).map_or("home", |t| t.icon)
 }
@@ -384,6 +405,29 @@ mod tests {
         assert_eq!((settings.w, settings.h), (28.0, 28.0));
         assert_eq!(lay.buttons[1].1.right() + 8.0, settings.x);
         assert_eq!(lay.views, Rect::new(16.0, 60.0, 648.0, 338.0 - 71.0));
+    }
+
+    #[test]
+    fn the_bottom_island_keeps_its_header_next_to_the_edge_and_the_views_above_it() {
+        let v = view("home", "DE");
+        let top = layout(&v, false, 338.0, &|_, active| if active { 1.0 } else { 0.0 }, &Mono(0.5));
+        let bot = top.clone().docked_bottom(338.0);
+        let dy = 338.0 - HEAD_H;
+        // every header piece moved down by the same amount, sideways nothing changed
+        for (a, b) in top.tabs.iter().zip(&bot.tabs) {
+            assert_eq!((b.rect.x, b.rect.w, b.rect.h, b.rect.y), (a.rect.x, a.rect.w, a.rect.h, a.rect.y + dy));
+        }
+        for ((_, a), (_, b)) in top.buttons.iter().zip(&bot.buttons) {
+            assert_eq!((b.x, b.y), (a.x, a.y + dy));
+        }
+        assert_eq!(bot.vpn.unwrap().y, top.vpn.unwrap().y + dy);
+        assert_eq!(bot.pet_slot.y, top.pet_slot.y + dy);
+        // the views fill what is left above the header, with the same margin as the top layout keeps below them
+        assert_eq!(bot.views, Rect::new(16.0, VIEWS_BOTTOM, 648.0, 338.0 - HEAD_H - VIEWS_BOTTOM));
+        assert!(bot.views.bottom() <= bot.tabs[0].rect.y && bot.views.h == top.views.h, "the views end where the header begins");
+        // a folding panel: the header slides with the edge (up to a negative offset, clipped by the body), the views never go negative
+        let folded = top.clone().docked_bottom(30.0);
+        assert!(folded.tabs[0].rect.y < top.tabs[0].rect.y && folded.views.h == 0.0);
     }
 
     #[test]

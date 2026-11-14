@@ -74,7 +74,13 @@ pub fn peek_level(via: &str, why: u8, setting: bool) -> Option<u8> {
 
 /// The cursor rests on the top row of the island's monitor, inside the island's x range, no button held.
 pub fn on_top_edge(cursor: (i32, i32), monitor: [i32; 4], x_range: (i32, i32), held: bool) -> bool {
-    !held && cursor.1 <= monitor[1] + 1 && cursor.1 >= monitor[1] - 1 && cursor.0 >= monitor[0].max(x_range.0) && cursor.0 < monitor[2].min(x_range.1)
+    on_edge(cursor, monitor, x_range, held, false)
+}
+
+/// [`on_top_edge`], or the same on the BOTTOM row of the monitor (`bottom`: the island hangs from the bottom edge).
+pub fn on_edge(cursor: (i32, i32), monitor: [i32; 4], x_range: (i32, i32), held: bool, bottom: bool) -> bool {
+    let row = if bottom { monitor[3] - 1 } else { monitor[1] };
+    !held && cursor.1 <= row + 1 && cursor.1 >= row - 1 && cursor.0 >= monitor[0].max(x_range.0) && cursor.0 < monitor[2].min(x_range.1)
 }
 
 /// Top-edge dwell: true once the cursor has stayed on the edge for `DWELL_MS`.
@@ -160,6 +166,21 @@ mod tests {
         assert!(!on_top_edge((1640, 0), mon, x, false), "x range is half open");
         let second = [2560, 0, 4480, 1080];
         assert!(!on_top_edge((1000, 0), second, x, false), "another monitor");
+    }
+
+    #[test]
+    fn the_bottom_island_listens_on_the_bottom_row() {
+        let mon = [0, 0, 2560, 1440];
+        let x = (920, 1640);
+        assert!(on_edge((1000, 1439), mon, x, false, true));
+        assert!(on_edge((1000, 1438), mon, x, false, true));
+        assert!(!on_edge((1000, 1439), mon, x, true, true), "a drag is not a request");
+        assert!(!on_edge((1000, 0), mon, x, false, true), "the top row belongs to the top island");
+        assert!(!on_edge((1000, 1439), mon, x, false, false));
+        assert!(!on_edge((500, 1439), mon, x, false, true), "left of the island");
+        assert!(!on_edge((1000, 1400), mon, x, false, true));
+        let second = [2560, 0, 4480, 1080];
+        assert!(!on_edge((1000, 1079), second, x, false, true), "another monitor");
     }
 
     #[test]

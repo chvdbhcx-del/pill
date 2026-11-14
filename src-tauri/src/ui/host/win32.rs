@@ -181,6 +181,12 @@ pub(crate) fn resolve_placement(p: &Placement, size_l: (f32, f32), mons: &[Monit
             let (x, y) = geom::anchor_top_center(mon.rect, top, sz, *offset_pct);
             Resolved { rect: IRect::from_xywh(x, y, sz.0, sz.1), mon }
         }
+        Placement::BottomCenter { monitor, offset_pct, above_taskbar, margin_bottom } => {
+            let mon = pick_monitor(monitor, mons, cursor);
+            let sz = geom::size_to_phys(size_l, mon.scale);
+            let (x, y) = geom::dock_position(geom::Dock::Bottom, mon.rect, mon.work, *above_taskbar, geom::phys(*margin_bottom, mon.scale), sz, *offset_pct);
+            Resolved { rect: IRect::from_xywh(x, y, sz.0, sz.1), mon }
+        }
         Placement::Center(monitor) => {
             let mon = pick_monitor(monitor, mons, cursor);
             let sz = geom::size_to_phys(size_l, mon.scale);
@@ -1035,6 +1041,9 @@ impl Host {
                 p.set_gaze(v);
                 win.poll_at = 0.0;
             }
+            if let Some(v) = fx.edge_bottom {
+                p.set_edge_bottom(v);
+            }
         }
         if let Some(c) = fx.fps_cap {
             win.spec.fps_cap = c;
@@ -1330,7 +1339,7 @@ impl Host {
         let (events, ignore, next) = {
             let Some(win) = self.wins.get_mut(&id) else { return };
             let mut wr = RECT::default();
-            let (mut cur, mut mt) = (POINT::default(), 0);
+            let (mut cur, mut mt, mut mb) = (POINT::default(), 0, i32::MAX);
             unsafe {
                 if GetWindowRect(hwnd, &mut wr).is_err() || GetCursorPos(&mut cur).is_err() {
                     win.poll_at = now + 100.0;
@@ -1340,10 +1349,11 @@ impl Host {
                 let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
                 if GetMonitorInfoW(hm, &mut mi).as_bool() {
                     mt = mi.rcMonitor.top;
+                    mb = mi.rcMonitor.bottom;
                 }
             }
             let held = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0 };
-            let probe = Probe { now_ms: now, cursor: (cur.x, cur.y), window: irect(wr), monitor_top: mt, button_down: held, visible: win.visible };
+            let probe = Probe { now_ms: now, cursor: (cur.x, cur.y), window: irect(wr), monitor_top: mt, monitor_bottom: mb, button_down: held, visible: win.visible };
             let out = win.prox.as_mut().map(|p| p.step(&probe)).unwrap();
             win.poll_at = now + out.next_poll_ms;
             let engaged = win.prox.as_ref().is_some_and(|p| p.engaged());
@@ -1932,6 +1942,21 @@ mod tests {
         let r = resolve_placement(&p, (720.0, 120.0), &mons(), (0, 0), None);
         assert_eq!(r.rect, IRect::from_xywh(920, 48, 720, 120));
         assert_eq!(r.mon.refresh_hz, 240);
+    }
+
+    #[test]
+    fn the_bottom_island_ends_on_the_work_area_or_the_monitor_edge_and_follows_dpi() {
+        // the work area of the second monitor ends 40 px above its bottom (a bottom taskbar); the first has its taskbar on top
+        let p = |m, above| Placement::BottomCenter { monitor: m, offset_pct: 0.0, above_taskbar: above, margin_bottom: 0.0 };
+        let r = resolve_placement(&p(MonitorSel::Primary, true), (720.0, 120.0), &mons(), (0, 0), None);
+        assert_eq!(r.rect, IRect::from_xywh(920, 1320, 720, 120), "a top taskbar leaves the bottom edge alone");
+        let r = resolve_placement(&p(MonitorSel::Index(1), true), (720.0, 120.0), &mons(), (0, 0), None);
+        assert_eq!(r.mon.scale, 1.5);
+        assert_eq!(r.rect, IRect::from_xywh(2560 + (1920 - 1080) / 2, 1040 - 180, 1080, 180), "150 %: 120 logical = 180 physical, above the taskbar");
+        let r = resolve_placement(&p(MonitorSel::Index(1), false), (720.0, 120.0), &mons(), (0, 0), None);
+        assert_eq!(r.rect.b, 1080, "over the taskbar: the monitor edge");
+        let r = resolve_placement(&Placement::BottomCenter { monitor: MonitorSel::Primary, offset_pct: -50.0, above_taskbar: true, margin_bottom: 8.0 }, (720.0, 480.0), &mons(), (0, 0), None);
+        assert_eq!(r.rect, IRect::from_xywh(0, 1440 - 8 - 480, 720, 480));
     }
 
     #[test]
