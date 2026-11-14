@@ -535,6 +535,11 @@ impl IslandView {
 
     // ------------------------------------------------------------------------------------------------ geometry / hit
 
+    /// The island hangs from the bottom edge of its window (the edge it has slid over to, not the one the settings ask for yet).
+    pub fn at_bottom(&self) -> bool {
+        self.bottom
+    }
+
     /// The screen edge the settings ask for (`edge.position`).
     fn want_bottom(&self) -> bool {
         Dock::from_setting(self.core.settings.get("edge.position").and_then(|v| v.as_str()).unwrap_or("top")) == Dock::Bottom
@@ -1452,6 +1457,25 @@ impl IslandView {
         let b = self.win_body(&v);
         let at = |r: Rect| (b.x + (o.0 + r.cx()) * s, b.y + (o.1 + r.cy()) * s);
         Some(vec![at(lay.buttons[0]), at(lay.buttons[1]), at(lay.field), at(lay.send), at(lay.avatar)])
+    }
+    /// The body on the window (px) as the next draw puts it, and the clickable part last handed to the host.
+    pub fn dbg_body_win(&self) -> Rect {
+        self.win_body(&self.core.shell.view())
+    }
+    /// The shell-space point of a window point (the mirror for the cursor).
+    pub fn dbg_shell_pt(&self, p: (f32, f32)) -> (f64, f64) {
+        self.shell_pt(p)
+    }
+    pub fn dbg_hit(&self) -> Vec<Rect> {
+        self.last_hit.clone()
+    }
+    /// The edge change is still moving (it asks for frames).
+    pub fn dbg_sliding(&self) -> bool {
+        self.slide != Slide::Rest || self.tuck.moving()
+    }
+    /// How far the body has slid out through its edge (window px).
+    pub fn dbg_tuck_px(&self) -> f32 {
+        self.tuck_px
     }
     pub fn dbg_body_h(&self) -> f64 {
         self.core.shell.view().body.height

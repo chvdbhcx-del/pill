@@ -131,7 +131,14 @@ impl Live {
 
     pub fn draw(&mut self, cv: &Canvas, th: &Theme, host: &Cx) {
         self.cx.scale = host.scale;
-        self.view.draw(cv, th, Rect::new(0.0, 0.0, VW, VH), &self.cx);
+        // the imaginary window clips what slides out through its edge (the edge change), as the real window does
+        let win = Rect::new(0.0, 0.0, VW, VH);
+        cv.with_clip(win, |cv| self.view.draw(cv, th, win, &self.cx));
+    }
+
+    /// The island hangs from the bottom edge of its window (the `edge.position` setting, once the island has slid over).
+    pub fn at_bottom(&self) -> bool {
+        self.view.at_bottom()
     }
 
     /// The folded or open island's body in the imaginary window: `(left, width, height)`.

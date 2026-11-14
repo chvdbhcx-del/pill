@@ -60,15 +60,22 @@ struct G {
     v: Rc<RefCell<IslandView>>,
 }
 
-fn settings() -> Value {
-    json!({"size":100,"theme":"dark","clock24":true,"shape":"notch","character":"liquid","pet":"none","pet.side":"right","pet.size":"m",
-        "musicPill":"title","net.weather":true,"live.obs":false,"language":"auto"})
+fn settings(extra: Value) -> Value {
+    let mut s = json!({"size":100,"theme":"dark","clock24":true,"shape":"notch","character":"liquid","pet":"none","pet.side":"right","pet.size":"m",
+        "musicPill":"title","net.weather":true,"live.obs":false,"language":"auto"});
+    s.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+    s
 }
 
 impl G {
     fn new() -> G {
+        G::with(json!({}))
+    }
+
+    /// The island with `extra` on top of the usual test settings.
+    fn with(extra: Value) -> G {
         let (svc, fakes): (Services, Fakes) = Services::fake();
-        fakes.api.reply("settings_get", Ok(settings()));
+        fakes.api.reply("settings_get", Ok(settings(extra)));
         fakes.api.reply("weather_get", Ok(json!({"status":"ok","now":{"temp":18.4,"icon":"partly-day","text":"Partly cloudy"}})));
         fakes.api.reply("battery_state", Ok(json!({"has_battery":false,"percent":0,"charging":false})));
         let mut sim = crate::ui::host::testing::Sim::with_services(Box::new(Empty), svc);
@@ -99,10 +106,15 @@ impl G {
     }
 
     fn draw(&mut self) -> Image {
+        self.draw_h(480)
+    }
+
+    /// One frame drawn into a window `h` px tall (the folded frame is 120, the open one 480).
+    fn draw_h(&mut self, h: u32) -> Image {
         let th = Theme::pill_dark();
-        let rect = Rect::new(0.0, 0.0, 720.0, 480.0);
+        let rect = Rect::new(0.0, 0.0, 720.0, h as f32);
         let (cx, v) = (&self.sim.cx, &self.v);
-        H.with(|h| h.render(720, 480, 1.0, Color::rgba(0.0, 0.0, 0.0, 0.0), |cv| v.borrow_mut().draw(cv, &th, rect, cx)))
+        H.with(|hn| hn.render(720, h, 1.0, Color::rgba(0.0, 0.0, 0.0, 0.0), |cv| v.borrow_mut().draw(cv, &th, rect, cx)))
     }
 
     fn expand(&mut self, tab: &str) {
@@ -350,6 +362,184 @@ fn every_motion_settles_so_the_flows_stop_asking_for_frames() {
     g.esc();
     g.sim.run(300);
     assert!(!g.v.borrow().dbg_frames_wanted());
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// The bottom edge (`edge.position` = bottom): the island stands on the window's floor and grows upward.
+// ---------------------------------------------------------------------------------------------------------------------------------------
+
+fn bottom_island() -> G {
+    G::with(json!({ "edge.position": "bottom" }))
+}
+
+/// Lit (opaque) pixels of `img` inside `r`.
+fn opaque(img: &Image, r: Rect) -> usize {
+    img.count(Some(r), |p| p[3] > 200)
+}
+
+#[test]
+fn the_folded_bottom_island_stands_on_the_window_floor_and_the_top_one_hangs_from_the_ceiling() {
+    let mut g = bottom_island();
+    let img = g.draw_h(120);
+    assert!(g.v.borrow().at_bottom());
+    assert!(opaque(&img, Rect::new(0.0, 60.0, 720.0, 60.0)) > 800, "the body is in the lower half");
+    assert_eq!(opaque(&img, Rect::new(0.0, 0.0, 720.0, 50.0)), 0, "nothing in the upper part");
+    let body = g.v.borrow().dbg_body_win();
+    assert!(body.bottom() <= 120.0 && body.bottom() > 100.0 && body.y > 60.0, "{body:?}");
+    // the same window with the top edge: mirrored
+    let mut t = G::new();
+    let img = t.draw_h(120);
+    assert!(opaque(&img, Rect::new(0.0, 0.0, 720.0, 60.0)) > 800);
+    assert_eq!(opaque(&img, Rect::new(0.0, 70.0, 720.0, 50.0)), 0);
+    let tb = t.v.borrow().dbg_body_win();
+    assert!((tb.y - 0.0).abs() < 9.0 && (tb.h - body.h).abs() < 0.01, "{tb:?}");
+    // the click area is the body and its liquid strip, on the same side
+    let hit = g.v.borrow().dbg_hit();
+    assert_eq!(hit.len(), 1);
+    assert!(hit[0].y > 40.0 && (hit[0].bottom() - body.bottom()).abs() < 0.5, "{:?} vs {body:?}", hit[0]);
+    assert!(hit[0].h > body.h, "the liquid strip is part of it");
+    // the host is told which screen row to watch for the edge reveal
+    assert_eq!(g.sim.take_fx().edge_bottom, Some(true));
+    assert_eq!(t.sim.take_fx().edge_bottom, Some(false));
+}
+
+#[test]
+fn the_open_bottom_island_has_its_header_at_the_floor_and_the_content_above_it() {
+    let mut g = bottom_island();
+    g.expand("home");
+    let _ = g.draw();
+    let body = g.v.borrow().dbg_body_win();
+    assert!(body.bottom() > 460.0 && body.y < 150.0, "the panel grew upward from the floor: {body:?}");
+    let views = g.v.borrow().dbg_views_rect();
+    let (ox, oy, s) = g.v.borrow().dbg_panel_origin();
+    assert!((oy - body.y).abs() < 0.01);
+    let (tx, ty) = g.v.borrow().dbg_tab_center("home").expect("laid out");
+    assert!(ty > body.bottom() - 60.0 && ty < body.bottom(), "the tab strip is the lowest thing: {ty} in {body:?}");
+    assert!(oy + (views.bottom()) * s < ty, "the tab view ends above the header");
+    assert!((views.y - 11.0).abs() < 0.01, "{views:?}");
+    // pixels: the tab view is painted above the header, the header strip is lit
+    let img = g.draw();
+    let r = Rect::new(ox + views.x * s, oy + views.y * s, views.w * s, views.h * s);
+    assert!(img.count(Some(r), |p| p[3] > 0 && (p[0] > 30 || p[1] > 30 || p[2] > 30)) > 150, "the home tab draws");
+    // a click on a header tab (mirrored hit test) switches the tab
+    let clip = g.v.borrow().dbg_tab_center("clipboard").expect("clipboard tab");
+    click_at(&mut g, clip);
+    assert_eq!(g.v.borrow().dbg_tab().as_deref(), Some("clipboard"));
+    let _ = tx;
+    // folding brings it back to the floor and everything rests
+    g.esc();
+    g.sim.run(400);
+    let _ = g.draw_h(120);
+    assert!(g.v.borrow().dbg_body_win().y > 60.0);
+    assert!(!g.v.borrow().dbg_frames_wanted());
+}
+
+#[test]
+fn the_open_top_island_is_unchanged_header_first() {
+    let mut g = G::new();
+    g.expand("home");
+    let _ = g.draw();
+    let (_, ty) = g.v.borrow().dbg_tab_center("home").expect("laid out");
+    let body = g.v.borrow().dbg_body_win();
+    assert!(ty < body.y + 60.0, "the header is at the top of the body: {ty} in {body:?}");
+    assert!(body.y < 12.0, "{body:?}");
+}
+
+/// Steps frames (drawing each, so the window size is known) until `done`, at most `max`; the number of frames.
+fn frames_until(g: &mut G, max: usize, mut each: impl FnMut(&G), done: impl Fn(&G) -> bool) -> usize {
+    for i in 0..max {
+        if done(g) {
+            return i;
+        }
+        g.sim.step_frame();
+        let _ = g.draw_h(120);
+        each(g);
+    }
+    max
+}
+
+#[test]
+fn changing_the_edge_slides_out_moves_the_window_unseen_and_slides_in() {
+    let _m = crate::ui::host::testing::motion_on();
+    let mut g = G::new();
+    let _ = g.draw_h(120);
+    let top_body = g.v.borrow().dbg_body_win();
+    assert!(g.calls("pill_edge").is_empty());
+    g.emit("settings:changed", json!({ "edge.position": "bottom" }));
+    // the very first moment: still at the top, nothing has jumped, the window has not been asked to move
+    assert!(!g.v.borrow().at_bottom() && g.calls("pill_edge").is_empty());
+    let mut ys = vec![];
+    let mut swapped: Option<(Rect, Rect)> = None;
+    let mut last = g.v.borrow().dbg_body_win();
+    for _ in 0..400 {
+        g.sim.step_frame();
+        let _ = g.draw_h(120);
+        let now = g.v.borrow().dbg_body_win();
+        if swapped.is_none() && g.v.borrow().at_bottom() {
+            swapped = Some((last, now));
+        }
+        ys.push(now.y);
+        last = now;
+    }
+    let (before, after) = swapped.expect("the island took the bottom edge");
+    // it left through the top edge and arrived through the bottom: the swap happens with the body out of the window both times
+    assert!(before.bottom() <= 0.0, "slid fully out through the top before the window moved: {before:?}");
+    assert!(after.y >= 120.0, "and starts below the new window's floor: {after:?}");
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true })], "the window is asked once");
+    assert!(ys.iter().cloned().fold(f32::MAX, f32::min) < top_body.y - 20.0, "it really moved out first");
+    let end = g.v.borrow().dbg_body_win();
+    assert!(end.bottom() <= 120.0 && end.y > 60.0, "settled on the floor: {end:?}");
+    assert!(!g.v.borrow().dbg_frames_wanted() && g.v.borrow().dbg_tuck_px().abs() < 0.2, "and rests (the window may park again)");
+    assert!(!g.v.borrow().dbg_sliding(), "the edge change asks for no more frames once it has landed");
+    // before the swap the body only moved toward the top edge; after it only toward the floor
+    let swap_i = ys.iter().position(|y| *y >= 120.0).unwrap();
+    assert!(ys[..swap_i].windows(2).all(|w| w[1] <= w[0] + 0.01), "out: {:?}", &ys[..swap_i]);
+    assert_eq!(g.sim.take_fx().edge_bottom, Some(true));
+    // and back to the top
+    g.emit("settings:changed", json!({ "edge.position": "top" }));
+    g.sim.run(400);
+    let _ = g.draw_h(120);
+    assert!(!g.v.borrow().at_bottom());
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true }), json!({ "bottom": false })]);
+    assert!(g.v.borrow().dbg_body_win().y < 12.0);
+}
+
+#[test]
+fn with_reduced_motion_the_edge_changes_at_once() {
+    let mut g = G::new();
+    g.sim.cx.reduced_motion = true;
+    let _ = g.draw_h(120);
+    g.emit("settings:changed", json!({ "edge.position": "bottom" }));
+    g.sim.run(20);
+    let _ = g.draw_h(120);
+    assert!(g.v.borrow().at_bottom(), "no slide");
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true })]);
+    assert!(g.v.borrow().dbg_tuck_px() == 0.0 && g.v.borrow().dbg_body_win().y > 60.0);
+}
+
+#[test]
+fn a_hidden_island_takes_the_new_edge_without_a_slide() {
+    let mut g = G::new();
+    let _ = g.draw_h(120);
+    g.emit("pill:hide", json!({ "reason": "guard" }));
+    g.emit("settings:changed", json!({ "edge.position": "bottom" }));
+    assert!(g.v.borrow().at_bottom(), "nothing is on screen, so nothing to animate");
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true })]);
+}
+
+#[test]
+fn the_pointer_is_mirrored_for_the_bottom_island() {
+    use glasskit::input::Buttons;
+    let mut g = bottom_island();
+    let _ = g.draw_h(480);
+    let body = g.v.borrow().dbg_body_win();
+    // the liquid edge reaches for a pointer that approaches from above: the shell sees it above its body, i.e. below the shell's bottom edge
+    let pos = (body.cx(), body.y - 6.0);
+    g.sim.send(&InputEvent::MouseMove { pos, mods: Modifiers::default(), buttons: Buttons::default() });
+    let (sx, sy) = g.v.borrow().dbg_shell_pt(pos);
+    let sb = g.v.borrow().core.shell.view().body;
+    assert!((sx - body.cx() as f64).abs() < 0.01 && sy > sb.top + sb.height, "the pointer is below the shell's body: {sy} vs {}", sb.top + sb.height);
+    assert!(g.v.borrow().dbg_hit()[0].contains(pos.0, pos.1 + 3.0) || g.v.borrow().dbg_hit()[0].y <= body.y);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------

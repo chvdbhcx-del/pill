@@ -354,7 +354,7 @@ impl SettingsView {
                 if self.pv.exists() {
                     self.pv_chip(d, right, area.y + 14.0, pick(lang, "Повторить", "Replay"), Act::PvReplay);
                 }
-                // the stage: a desktop behind the island, which hangs from its top edge
+                // the stage: a desktop behind the island, which hangs from its top edge (or stands on its bottom edge)
                 let stage = Rect::new(area.x + SIDE_PAD, area.y + HEAD_H, sw, self.pv.stage_h.at().max(60.0));
                 let (c0, c1) = if p.dark { (Color::rgb8(0x1b, 0x22, 0x33), Color::rgb8(0x2c, 0x3a, 0x57)) } else { (Color::rgb8(0xa9, 0xb8, 0xd2), Color::rgb8(0xcb, 0xd6, 0xe8)) };
                 cv.with_clip_rr(stage, 12.0, |cv| {
@@ -362,7 +362,9 @@ impl SettingsView {
                     cv.fill_rect(Rect::new(stage.x, stage.y, stage.w, stage.h * 0.55), mix(c0, c1, 0.7));
                     if let Some(live) = &mut self.pv.live {
                         let k = self.pv.zoom.at().clamp(0.1, 2.0);
-                        let m = mul(&scale_about((0.0, 0.0), k, k), &translation(stage.cx() - self.pv.cx_world * k, stage.y + STAGE_TOP));
+                        // the island hangs from the top edge of the sandbox window, or stands on its bottom edge: the camera follows
+                        let top = if live.at_bottom() { stage.bottom() - STAGE_TOP - live::VH * k } else { stage.y + STAGE_TOP };
+                        let m = mul(&scale_about((0.0, 0.0), k, k), &translation(stage.cx() - self.pv.cx_world * k, top));
                         cv.with_transform(m, |cv| live.draw(cv, d.th, cx));
                     }
                 });

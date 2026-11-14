@@ -142,7 +142,7 @@ impl Scene {
 pub fn of_key(key: &str) -> Option<Scene> {
     use Scene::*;
     Some(match key {
-        "shape" | "theme" | "island.color" | "island.colorCustom" | "size" | "opacityCol" | "opacityExp" | "language" => Pill(Look::Island),
+        "shape" | "theme" | "island.color" | "island.colorCustom" | "size" | "opacityCol" | "opacityExp" | "language" | "edge.position" => Pill(Look::Island),
         "showTime" | "showDate" | "showWxIcon" | "showTemp" | "showSeconds" | "clock24" | "showBattery" => Pill(Look::Clock),
         "pet" | "pet.side" | "pet.size" | "pet.keepDuringMusic" => Pill(Look::Pet),
         "character" | "character.liquid" => Pill(Look::Edge),

@@ -112,6 +112,7 @@ fn merge(into: &mut Effects, fx: Effects) {
     into.drop_zone = fx.drop_zone.or(into.drop_zone.take());
     into.pass_through = fx.pass_through.or(into.pass_through);
     into.gaze = fx.gaze.or(into.gaze);
+    into.edge_bottom = fx.edge_bottom.or(into.edge_bottom);
     into.focus = fx.focus.or(into.focus);
     into.show |= fx.show;
     into.hide |= fx.hide;
