@@ -17,7 +17,7 @@
 //! * The window exists only while the setting is on. Its placement is part of its spec, so a change of the placement settings re-creates it
 //!   (`sync`); a change of the monitors, DPI or the taskbar re-places it (`relayout`, from the guard poll like the island's).
 //! * In the taskbar (`edge` = `taskbar`): the window is taller ([`logic::WIN_BAR`]), its floor is the monitor's bottom (over the bar), the folded
-//!   capsule is a compact one that fits the strip and the open card floats above the bar (`Placement::InBar` -> `geom::widget_place`). Where the
+//!   capsule is a compact one that fits the strip (its own prev / play / next: hovering does not open it, a click on its cover or title opens the card, which floats above the bar) (`Placement::InBar` -> `geom::widget_place`). Where the
 //!   monitor has no bar it can live in (top / left / right / auto-hidden / too tall) it is the plain bottom placement, like the island. When the
 //!   island stands in the same bar the widget keeps clear of it (`geom::widget_bar_slot`: the other side, from the settings alone). The window is
 //!   raised over the bar like the island (`taskbar::follow_widget`, `keep_widget_on_top` from the guard poll). `SLOT_EVENT` tells the view which bar

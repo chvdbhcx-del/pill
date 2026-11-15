@@ -4,7 +4,9 @@
 //!
 //! Motion (every value is a spring, every target is set in `step`/an event, never in `draw`):
 //! * enter / leave: `shown` slides the body from the screen edge, `fade` is its opacity; when it has left, the view hides its window;
-//! * hover: the cursor reaching the body (`ProximityEvent::Hover`) opens the capsule into the card (`expand`), leaving closes it;
+//! * hover: the cursor reaching the body (`ProximityEvent::Hover`) opens the capsule into the card (`expand`), leaving closes it. In the TASKBAR
+//!   the folded capsule has its own buttons, so hovering opens nothing there: a click on its cover or title opens the card (`pinned`), a click
+//!   on the card's cover / title (or the strip under it) or the cursor leaving folds it again;
 //! * a new track: the old title and artist fade up and away while the new ones arrive (`swap`), the cover fades in (`Gpu::cover`);
 //! * play / pause: the two icons cross-fade with a pop (`pp`), a pressed button dips (`press`), a hovered one lights (`hov`);
 //! * the progress bar glides to each reading (`prog`).
@@ -30,6 +32,8 @@ use std::time::Duration;
 
 const TITLE: Style = Style::new(13.0, 600).ellipsis();
 const SUB: Style = Style::new(11.5, 450).ellipsis();
+/// The artist's line box is a little lower than the title's so that the two share a baseline (their centres differ with the size).
+const SUB_DROP: f32 = 0.5;
 const BIG: Style = Style::new(15.0, 650).ellipsis();
 const MID: Style = Style::new(12.0, 450).ellipsis();
 const SMALL: Style = Style::new(11.0, 450);
@@ -77,6 +81,10 @@ pub struct MusicView {
     down: Option<Btn>,
     /// the cursor is on the widget (proximity)
     near: bool,
+    /// in the taskbar: the card was opened by a click and stays open while the cursor stays on the widget
+    pinned: bool,
+    /// a press that began on the header (cover / title) of the bar capsule
+    down_head: bool,
     /// a seek drag in progress: the fraction under the pointer
     seek: Option<f32>,
     ticker: Option<Ticker>,
@@ -96,7 +104,7 @@ impl MusicView {
             cx.subscribe(e);
         }
         let mut v = MusicView {
-            stand: dock.into(),
+            stand: Stand { scale: cx.scale.max(0.25), ..dock.into() },
             reseat: None,
             settings: ShellSettings::default(),
             os_light: false,
@@ -123,6 +131,8 @@ impl MusicView {
             hot: None,
             down: None,
             near: false,
+            pinned: false,
+            down_head: false,
             seek: None,
             ticker: None,
             state_ticket: None,
@@ -142,9 +152,26 @@ impl MusicView {
     /// The place in the bar the window was created for (`mod.rs` read it from the monitor); a no-op for the other docks.
     pub fn with_slot(mut self, bar: f32, align: Align) -> MusicView {
         if self.stand.dock == Dock::Taskbar {
-            self.stand = Stand { dock: Dock::Taskbar, align, bar };
+            self.stand = Stand { dock: Dock::Taskbar, align, bar, scale: self.stand.scale };
         }
         self
+    }
+
+    /// The monitor's DPI scale (the window is a whole number of device px; the layout snaps to them, see `Stand`).
+    fn rescale(&mut self, scale: f32) {
+        let scale = scale.max(0.25);
+        if (self.stand.scale - scale).abs() > 1e-4 {
+            self.stand.scale = scale;
+            if let Some(r) = self.reseat.as_mut() {
+                r.scale = scale;
+            }
+            self.last_hit = None;
+        }
+    }
+
+    /// The card opens on hover at the screen edges; in the taskbar only a click opens it (see `pinned`).
+    fn hover_opens(&self) -> bool {
+        !self.stand.in_bar()
     }
 
     /// The window stands somewhere else now. Hidden: just take it (a show re-places it). On screen: slide out first, the new place is taken and the
@@ -275,7 +302,8 @@ impl MusicView {
     }
 
     fn retarget(&mut self) {
-        self.expand.to((self.want && (self.near || self.seek.is_some())) as u8 as f32);
+        let open = if self.hover_opens() { self.near } else { self.pinned && self.near } || self.seek.is_some();
+        self.expand.to((self.want && open) as u8 as f32);
     }
 
     fn tick(&mut self, cx: &mut Cx) -> Response {
@@ -333,11 +361,17 @@ impl View for MusicView {
         Some(self.stand.win())
     }
 
+    fn on_dpi(&mut self, scale: f32, cx: &mut Cx) {
+        self.rescale(scale);
+        cx.request_frame();
+    }
+
     fn on_proximity(&mut self, ev: &ProximityEvent, cx: &mut Cx) -> Response {
         match ev {
             ProximityEvent::Hover => self.near = true,
             ProximityEvent::Leave => {
                 self.near = false;
+                self.pinned = false; // the card the click opened folds when the cursor goes away
                 self.set_hot(None);
             }
             _ => return Response::NONE,
@@ -356,17 +390,22 @@ impl View for MusicView {
                     self.prog.to(lg::seek_at(bar, pos.0));
                     return Response { redraw: true, consumed: true, capture: true, cursor: Some(Cursor::Hand), ..Response::NONE };
                 }
+                self.rescale(cx.scale);
                 let h = self.hit_at(*pos);
                 let hot = if let Hit::Button(b) = h { Some(b) } else { None };
                 let changed = self.set_hot(hot);
                 let r = Response { redraw: changed, ..Response::NONE };
-                if hot.is_some() || matches!(h, Hit::Seek(_)) {
+                if hot.is_some() || matches!(h, Hit::Seek(_) | Hit::Header) {
                     r.with_cursor(Cursor::Hand)
                 } else {
                     r
                 }
             }
             InputEvent::MouseDown { pos, button: MouseButton::Left, .. } => match self.hit_at(*pos) {
+                Hit::Header => {
+                    self.down_head = true;
+                    Response { consumed: true, redraw: true, capture: true, ..Response::NONE }
+                }
                 Hit::Button(b) => {
                     self.down = Some(b);
                     self.press[b.index()].to(1.0);
@@ -383,6 +422,15 @@ impl View for MusicView {
             },
             InputEvent::MouseUp { pos, button: MouseButton::Left, .. } => {
                 let mut r = Response::NONE;
+                if std::mem::take(&mut self.down_head) {
+                    if self.hit_at(*pos) == Hit::Header {
+                        self.pinned = !self.pinned;
+                        self.near |= self.pinned; // a click is the cursor being here, whether or not the proximity event came first
+                        self.retarget();
+                        cx.request_frame();
+                    }
+                    r = Response { consumed: true, redraw: true, ..Response::NONE };
+                }
                 if let Some(b) = self.down.take() {
                     self.press[b.index()].to(0.0);
                     if self.hit_at(*pos) == Hit::Button(b) {
@@ -432,7 +480,7 @@ impl View for MusicView {
                 SLOT_EVENT => {
                     let bar = payload.get("bar").and_then(Value::as_f64).unwrap_or(0.0).max(0.0) as f32;
                     let align = Align::from_setting(payload.get("align").and_then(Value::as_str).unwrap_or("left"));
-                    self.reslot(Stand { dock: self.stand.dock, align, bar }, cx);
+                    self.reslot(Stand { dock: self.stand.dock, align, bar, scale: self.stand.scale }, cx);
                 }
                 _ => return Response::NONE,
             },
@@ -456,6 +504,7 @@ impl View for MusicView {
     }
 
     fn step(&mut self, dt: f64, cx: &mut Cx) -> bool {
+        self.rescale(cx.scale);
         self.shown.step(dt);
         self.fade.step(dt);
         self.expand.step(dt);
@@ -508,6 +557,8 @@ impl View for MusicView {
         self.vis = false;
         self.asked = false;
         self.near = false;
+        self.pinned = false;
+        self.down_head = false;
         self.seek = None;
         self.down = None;
         self.hot = None;
@@ -519,6 +570,7 @@ impl View for MusicView {
     }
 
     fn draw(&mut self, cv: &Canvas, _theme: &Theme, _rect: Rect, cx: &Cx) {
+        self.rescale(cx.scale);
         let th = self.theme();
         let alpha = self.fade.at01();
         if alpha <= 0.002 {
@@ -531,7 +583,10 @@ impl View for MusicView {
         let accent = self.accent(&th);
         let pos = if let Some(f) = self.seek { (f as f64 * self.track.duration_ms as f64).round() as u64 } else { self.pos_now(cx.now_ms) };
         cv.with_opacity(alpha, |cv| {
-            cv.shadow_rr(body, rad, 10.0, if self.stand.dock.at_bottom() { -2.0 } else { 3.0 }, Color::rgba(0.0, 0.0, 0.0, 0.45));
+            // in the bar the folded capsule has only a few px of strip below it (the window ends at the screen's edge): a tighter shadow that
+            // does not reach the floor, so it is never cut off, growing to the island's own while the card rises
+            let (blur, sdy) = if self.stand.in_bar() { (4.0 + 6.0 * p.clamp(0.0, 1.0), -1.0) } else { (10.0, if self.stand.dock.at_bottom() { -2.0 } else { 3.0 }) };
+            cv.shadow_rr(body, rad, blur, sdy, Color::rgba(0.0, 0.0, 0.0, 0.45));
             cv.fill_rr(body, rad, th.bg.alpha(0.97));
             cv.stroke_rr(body, rad, 1.0, th.border);
             let (cap, card) = lg::frames(self.stand, p, dy);
@@ -623,16 +678,17 @@ impl Ink<'_> {
     }
 
     /// The track change cross-fade of the bar capsule: ONE line, the heading and then the sub line in the dimmer ink after it (`r` is centred
-    /// vertically by the style). The heading takes at most two thirds of the line, so the artist never disappears behind a long title.
+    /// vertically by the style). The artist gives way first (`lg::bar_line`): it is cut to what a whole title leaves, and dropped before the title
+    /// is cut. The two sizes share one baseline (`SUB_DROP`).
     fn line(&self, cv: &Canvas, r: Rect, hs: Style, ss: Style) {
         let th = self.th;
         let k = self.swap;
         let pair = |cv: &Canvas, h: &str, s: &str, dy: f32| {
-            let hw = cv.text_width(h, hs).min(r.w * 0.67).ceil();
-            cv.text(Rect::new(r.x, r.y + dy, hw, r.h), h, hs.ellipsis(), th.text);
-            let sx = r.x + hw + 7.0;
-            if !s.is_empty() && r.right() - sx > 24.0 {
-                cv.text(Rect::new(sx, r.y + dy, r.right() - sx, r.h), s, ss.ellipsis(), th.dim);
+            let (hw, sub) = lg::bar_line(r.w, cv.text_width(h, hs), if s.is_empty() { 0.0 } else { cv.text_width(s, ss) });
+            // a hair of slack: a layout box exactly as wide as its text may still decide to cut it
+            cv.text(Rect::new(r.x, r.y + dy, (hw.ceil() + 1.0).min(r.w), r.h), h, hs.ellipsis(), th.text);
+            if let Some((sx, sw)) = sub {
+                cv.text(Rect::new(r.x + sx, r.y + dy + SUB_DROP, (sw.ceil() + 1.0).min(r.w - sx), r.h), s, ss.ellipsis(), th.dim);
             }
         };
         if k < 0.999 {
@@ -644,7 +700,11 @@ impl Ink<'_> {
     fn capsule(&self, cv: &Canvas, c: Rect, gpu: &mut Gpu, art: u64, url: Option<&str>) {
         let th = self.th;
         let l = lg::capsule_layout_in(self.st, c);
-        gpu.cover(cv, th, art, url, l.cover, self.now);
+        if self.st.in_bar() {
+            gpu.cover_r(cv, th, art, url, l.cover, self.now, lg::bar_cover_radius(c.h));
+        } else {
+            gpu.cover(cv, th, art, url, l.cover, self.now);
+        }
         if self.st.in_bar() {
             self.line(cv, l.text, TITLE, SUB);
         } else {

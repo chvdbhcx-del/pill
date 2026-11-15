@@ -454,14 +454,13 @@ fn the_capsule_and_the_card_draw_inside_their_body_and_the_rest_of_the_window_st
         assert!(lit(&top, lg::body(Dock::Top, 0.0, 0.0)) > 15_000 && lit(&top, Rect::new(0.0, lg::CAPSULE_H + lg::PAD + 14.0, WIN.0, 100.0)) == 0);
         // in the taskbar: the compact capsule fills its strip and nothing is drawn above the bar; opened, the card floats above the bar
         let (mut b, _f3, _) = bar_on_screen(Align::Left, 48.0);
-        let st = lg::Stand { dock: Dock::Taskbar, align: Align::Left, bar: 48.0 };
+        let st = lg::Stand { dock: Dock::Taskbar, align: Align::Left, bar: 48.0, scale: 1.0 };
         let in_bar = b.render(lg::WIN_BAR, &th);
         let cap = lg::body(st, 0.0, 0.0);
         assert!(lit(&in_bar, cap) as f32 > cap.w * cap.h * 0.9, "the capsule fills its body in the bar");
         assert_eq!(lit(&in_bar, Rect::new(0.0, 0.0, lg::WIN_BAR.0, lg::WIN_BAR.1 - 48.0 - 14.0)), 0, "nothing above the bar: that is click-through glass");
         assert!(cap.bottom() <= lg::WIN_BAR.1 && cap.y >= lg::WIN_BAR.1 - 48.0, "inside the strip");
-        b.send_proximity(&ProximityEvent::Hover);
-        b.run(4000);
+        open_by_click(&mut b, st);
         let floating = b.render(lg::WIN_BAR, &th);
         let open = lg::body(st, 1.0, 0.0);
         assert!(lit(&floating, Rect::new(open.x, open.y, open.w, open.h)) > 20_000, "the open card is drawn");
@@ -489,6 +488,21 @@ fn bar_on_screen(align: Align, bar: f32) -> (Sim, Fakes, Rect) {
     media(&mut s, &fakes, state(true, "Song", 61_000));
     let r = hit_rect(&show(&mut s));
     (s, fakes, r)
+}
+
+/// A click at `at` (move, press, release).
+fn click(s: &mut Sim, at: (f32, f32)) {
+    s.send(&mv(at.0, at.1));
+    s.send(&down(at.0, at.1));
+    s.send(&up(at.0, at.1));
+}
+
+/// What the cursor does to open the card of the bar widget: it arrives (the host's `Hover`) and clicks the cover.
+fn open_by_click(s: &mut Sim, st: lg::Stand) {
+    s.send_proximity(&ProximityEvent::Hover);
+    let (cap, _) = lg::frames(st, 0.0, 0.0);
+    click(s, lg::capsule_layout_in(st, cap).cover.center());
+    s.run(4000);
 }
 
 fn slot_event(s: &mut Sim, f: &Fakes, bar: f64, align: &str) {
@@ -539,10 +553,19 @@ fn in_the_bar_the_capsule_settles_inside_the_strip_and_costs_nothing() {
 }
 
 #[test]
-fn hovering_opens_the_card_upward_over_the_bar_and_leaving_folds_it_back_into_the_bar() {
+fn hovering_the_bar_capsule_opens_nothing_a_click_on_the_cover_opens_the_card_upward_and_leaving_folds_it() {
     let _m = motion_on();
     let (mut s, _f, folded) = bar_on_screen(Align::Left, 48.0);
+    let st = lg::Stand { dock: Dock::Taskbar, align: Align::Left, bar: 48.0, scale: 1.0 };
     s.send_proximity(&ProximityEvent::Hover);
+    s.run(4000);
+    assert_eq!(s.run(50), 0, "the capsule has its own buttons: hovering moves nothing");
+    let still = s.take_fx().hit_region.map_or(folded, |r| r[0]);
+    assert!((still.y - folded.y).abs() < 0.01 && (still.h - folded.h).abs() < 0.01, "and the card stays folded: {still:?}");
+    // a click on the cover opens it with a spring
+    let (cap, _) = lg::frames(st, 0.0, 0.0);
+    let l = lg::capsule_layout_in(st, cap);
+    click(&mut s, l.cover.center());
     assert!(s.run(4000) > 10, "it opens with a spring");
     let open = hit_rect(&s.take_fx());
     assert!((open.y - (lg::WIN_BAR.1 - 48.0 - geom::BAR_FLOAT_GAP - lg::CARD_H)).abs() < 0.5, "the card floats 8 px above the bar: {open:?}");
@@ -553,26 +576,59 @@ fn hovering_opens_the_card_upward_over_the_bar_and_leaving_folds_it_back_into_th
     s.run(50);
     let fx = s.take_fx();
     assert!(!s.frame.wants_frame() && fx.hit_region.as_ref().map_or(true, |r| (r[0].y - open.y).abs() < 0.01), "and it stays where it is");
-    s.send_proximity(&ProximityEvent::Leave);
+    // another click on the card's cover folds it, the cursor leaving folds it too
+    let (_, card) = lg::frames(st, 1.0, 0.0);
+    click(&mut s, lg::card_layout(card).title.center());
     assert!(s.run(4000) > 10);
     let back = hit_rect(&s.take_fx());
     assert!((back.y - folded.y).abs() < 0.5 && (back.h - folded.h).abs() < 0.5, "back in the bar: {back:?}");
     assert!(!s.frame.wants_frame(), "settled: no frames");
+    click(&mut s, l.text.center());
+    s.run(4000);
+    assert!(hit_rect(&s.take_fx()).y < folded.y - 20.0, "the title opens it as well");
+    s.send_proximity(&ProximityEvent::Leave);
+    assert!(s.run(4000) > 10);
+    let gone = hit_rect(&s.take_fx());
+    assert!((gone.y - folded.y).abs() < 0.5, "the cursor went away: folded again, nothing pinned: {gone:?}");
+    s.send_proximity(&ProximityEvent::Hover);
+    s.run(4000);
+    assert!(!s.frame.wants_frame() && s.take_fx().hit_region.map_or(true, |r| (r[0].y - folded.y).abs() < 0.5), "and coming back does not reopen it");
+}
+
+#[test]
+fn the_bar_buttons_work_folded_without_opening_the_card_and_the_screen_edge_widget_still_opens_on_hover() {
+    let _m = motion_on();
+    let (mut s, f, folded) = bar_on_screen(Align::Left, 48.0);
+    let st = lg::Stand { dock: Dock::Taskbar, align: Align::Left, bar: 48.0, scale: 1.0 };
+    s.send_proximity(&ProximityEvent::Hover);
+    let (cap, _) = lg::frames(st, 0.0, 0.0);
+    let l = lg::capsule_layout_in(st, cap);
+    for (i, act) in ["prev", "play_pause", "next"].into_iter().enumerate() {
+        click(&mut s, l.btn[i].center());
+        assert_eq!(calls(&f, "media_control").last().map(|c| c["action"].clone()), Some(json!(act)));
+    }
+    s.run(4000);
+    let r = s.take_fx().hit_region.map_or(folded, |r| r[0]);
+    assert!((r.y - folded.y).abs() < 0.01, "three button clicks and the card never opened: {r:?}");
+    // the same hover at the bottom edge opens the card as before
+    let (mut b, _f2) = on_screen(Dock::Bottom);
+    b.send_proximity(&ProximityEvent::Hover);
+    assert!(b.run(4000) > 10);
+    assert!(hit_rect(&b.take_fx()).h > lg::CARD_H - 1.0);
 }
 
 #[test]
 fn the_open_card_in_the_bar_still_answers_its_buttons_and_the_folded_capsule_its_own() {
     let _m = motion_on();
     let (mut s, f, _) = bar_on_screen(Align::Right, 48.0);
-    let st = lg::Stand { dock: Dock::Taskbar, align: Align::Right, bar: 48.0 };
+    let st = lg::Stand { dock: Dock::Taskbar, align: Align::Right, bar: 48.0, scale: 1.0 };
     let (cap, _) = lg::frames(st, 0.0, 0.0);
     let play = lg::capsule_layout_in(st, cap).btn[1].center();
     s.send(&mv(play.0, play.1));
     s.send(&down(play.0, play.1));
     s.send(&up(play.0, play.1));
     assert_eq!(calls(&f, "media_control").last().map(|c| c["action"].clone()), Some(json!("play_pause")), "the compact capsule's play button works");
-    s.send_proximity(&ProximityEvent::Hover);
-    s.run(4000);
+    open_by_click(&mut s, st);
     let (_, card) = lg::frames(st, 1.0, 0.0);
     let next = lg::card_layout(card).btn[2].center();
     s.send(&down(next.0, next.1));
@@ -595,11 +651,14 @@ fn reduce_motion_lands_the_bar_capsule_and_its_card_at_once() {
     let frames_in = s.run(4);
     let folded = hit_rect(&s.take_fx());
     s.send_proximity(&ProximityEvent::Hover);
+    let st = lg::Stand { dock: Dock::Taskbar, align: Align::Center, bar: 48.0, scale: 1.0 };
+    let (cap, _) = lg::frames(st, 0.0, 0.0);
+    click(&mut s, lg::capsule_layout_in(st, cap).cover.center());
     let frames_open = s.run(4);
     let open = hit_rect(&s.take_fx());
     glasskit::ease::force_reduced(None);
     assert!(frames_in <= 2 && frames_open <= 2, "no animation: {frames_in} / {frames_open} frames");
-    assert_eq!(folded.h, lg::Stand { dock: Dock::Taskbar, align: Align::Center, bar: 48.0 }.fold_h());
+    assert_eq!(folded.h, lg::Stand { dock: Dock::Taskbar, align: Align::Center, bar: 48.0, scale: 1.0 }.fold_h());
     assert_eq!(open.w, lg::BODY_W);
     assert!(open.y < folded.y, "the card is up in one frame");
 }
@@ -654,4 +713,117 @@ fn the_bar_widget_leaves_with_the_guard_and_its_pending_move_does_not_bring_it_b
     f.bus.emit(GUARD_EVENT, json!({ "hidden": false }));
     s.pump();
     assert!(s.take_fx().show, "and comes back when the guard lets go");
+}
+
+// ------------------------------------------------------------------------------------------------------------------------------ the bar capsule, looked at
+
+/// One look at the bar capsule: the window rendered at `scale`, its bottom `bar` rows composited over a fake dark taskbar strip, scaled up 2x
+/// (nearest) so a person can judge pixels. Invented data only.
+fn bar_look(scale: f32, bar: f32, title: &str, artist: &str, playing: bool, cover: bool, open: bool) -> glasskit::testkit::Image {
+    let (svc, f) = Services::fake();
+    f.api.reply("settings_get", Ok(cfg(json!({}))));
+    let mut s = Sim::with_services(Box::new(Blank), svc);
+    s.cx.scale = scale;
+    let v = MusicView::new(&mut s.cx, Dock::Taskbar).with_slot(bar, Align::Left);
+    s.view = Box::new(v);
+    s.pump();
+    let mut st = state(true, title, 61_000);
+    st["artist"] = json!(artist);
+    if !cover {
+        st["thumb_id"] = json!(0);
+        st["thumbnail"] = json!("");
+    }
+    media(&mut s, &f, st.clone());
+    let _ = show(&mut s);
+    if !playing {
+        st["playing"] = json!(false);
+        media(&mut s, &f, st);
+        s.run(4000);
+    }
+    if open {
+        open_by_click(&mut s, lg::Stand { dock: Dock::Taskbar, align: Align::Left, bar, scale });
+    }
+    let th = Theme::pill_dark();
+    let img = s.render(lg::WIN_BAR, &th);
+    // the strip: from the window's floor up `bar` logical px (rounded to device px like the OS does); the open card shows above it
+    let bar_p = geom::phys(bar, scale) as u32;
+    let top = if open { 0 } else { img.h.saturating_sub(bar_p + 4) };
+    let (w, h) = (((2.0 * lg::PAD + lg::BAR_FOLD_W) * scale).ceil() as u32 + 8, img.h - top);
+    let k = 2u32;
+    let mut out = vec![0u8; (w * k * h * k * 4) as usize];
+    for y in 0..h * k {
+        for x in 0..w * k {
+            let (sx, sy) = ((x / k).min(img.w - 1), top + y / k);
+            let strip = sy + bar_p >= img.h;
+            let bg: [u32; 3] = if strip { [34, 34, 38] } else { [70, 80, 100] };
+            let p = img.px(sx, sy);
+            let a = p[3] as u32;
+            let i = ((y * w * k + x) * 4) as usize;
+            // premultiplied RGBA over an opaque background
+            out[i] = ((p[2] as u32 + bg[2] * (255 - a) / 255).min(255)) as u8;
+            out[i + 1] = ((p[1] as u32 + bg[1] * (255 - a) / 255).min(255)) as u8;
+            out[i + 2] = ((p[0] as u32 + bg[0] * (255 - a) / 255).min(255)) as u8;
+            out[i + 3] = 255;
+        }
+    }
+    glasskit::testkit::Image { w: w * k, h: h * k, scale: 1.0, bgra: out }
+}
+
+/// Stacks images vertically with a gap.
+fn stack(parts: &[glasskit::testkit::Image]) -> glasskit::testkit::Image {
+    let w = parts.iter().map(|p| p.w).max().unwrap_or(1);
+    let h: u32 = parts.iter().map(|p| p.h + 6).sum();
+    let mut bgra = vec![255u8; (w * h * 4) as usize];
+    for px in bgra.chunks_exact_mut(4) {
+        px.copy_from_slice(&[200, 200, 200, 255]);
+    }
+    let mut y0 = 0;
+    for p in parts {
+        for y in 0..p.h {
+            let (d, s) = (((y0 + y) * w * 4) as usize, (y * p.w * 4) as usize);
+            bgra[d..d + (p.w * 4) as usize].copy_from_slice(&p.bgra[s..s + (p.w * 4) as usize]);
+        }
+        y0 += p.h + 6;
+    }
+    glasskit::testkit::Image { w, h, scale: 1.0, bgra }
+}
+
+/// The bar capsule at every DPI, bar height, length of text, state and with / without a cover: it must draw (and the checks below hold);
+/// `PILL_SNAP_DIR=<dir>` writes one PNG per DPI for a look with your own eyes.
+#[test]
+fn the_bar_capsule_draws_at_every_dpi_with_short_and_long_text_and_stays_inside_its_body() {
+    gfx(|| {
+        let _m = motion_on();
+        let long_t = "A very long title that goes on and on and does not fit the capsule at all";
+        let long_a = "Some Artist With A Long Name Feat. Another One";
+        let cases: [(&str, &str, bool, bool); 8] = [
+            ("Life Is Narcosis", "IVOXYGEN", true, true),
+            ("No Surrender", "SOTA, Bad Omens", true, true),
+            (long_t, "Short", true, true),
+            ("Short", long_a, true, false),
+            ("Очень длинное название трека на русском языке", "Исполнитель", true, true),
+            ("Тишина", "МУККА", false, true),
+            ("Paused one", "Band", false, false),
+            (long_t, long_a, true, false),
+        ];
+        let dir = std::env::var("PILL_SNAP_DIR").ok();
+        for (dpi, scale) in [(100, 1.0f32), (125, 1.25), (150, 1.5)] {
+            let mut rows = Vec::new();
+            for (bar, rest) in [(48.0f32, true), (40.0, false), (52.0, false)] {
+                for (i, (t, a, playing, cover)) in cases.iter().enumerate() {
+                    if !rest && i > 1 {
+                        break;
+                    }
+                    let img = bar_look(scale, bar, t, a, *playing, *cover, false);
+                    assert!(img.w > 100 && img.h > 20);
+                    rows.push(img);
+                }
+            }
+            rows.push(bar_look(scale, 48.0, "Life Is Narcosis", "IVOXYGEN", true, true, true));
+            if let Some(d) = &dir {
+                let _ = std::fs::create_dir_all(d);
+                crate::ui::host::testing::save_png(&stack(&rows), std::path::Path::new(d).join(format!("bar-capsule-{dpi}.png")));
+            }
+        }
+    });
 }

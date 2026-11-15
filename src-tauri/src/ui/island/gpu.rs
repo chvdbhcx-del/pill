@@ -132,6 +132,12 @@ impl Gpu {
 
     /// Album cover (or the placeholder), 7 px corners; a new picture fades in over 250 ms.
     pub fn cover(&mut self, cv: &Canvas, th: &Theme, id: u64, url: Option<&str>, r: Rect, t: f64) {
+        self.cover_r(cv, th, id, url, r, t, 7.0);
+    }
+
+    /// [`Gpu::cover`] with corners of radius `rad`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn cover_r(&mut self, cv: &Canvas, th: &Theme, id: u64, url: Option<&str>, r: Rect, t: f64, rad: f32) {
         let px = (r.w * cv.scale).ceil().max(1.0) as u32;
         let stale = self.covers.get(&id).is_none_or(|c| c.px != px);
         if stale {
@@ -151,12 +157,12 @@ impl Gpu {
         let dt = (t - c.t).clamp(0.0, 100.0);
         c.t = t;
         let a = c.fade.chase(1.0, dt).clamp(0.0, 1.0);
-        cv.fill_rr(r, 7.0, th.raised2);
+        cv.fill_rr(r, rad, th.raised2);
         let Some(b) = &c.bmp else {
             self.icon_placeholder(cv, th, r);
             return;
         };
-        cv.with_clip_rr(r, 7.0, |cv| unsafe {
+        cv.with_clip_rr(r, rad, |cv| unsafe {
             let d = D2D_RECT_F { left: r.x, top: r.y, right: r.right(), bottom: r.bottom() };
             cv.dc.DrawBitmap(b, Some(&d), a, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, None, None);
         });
