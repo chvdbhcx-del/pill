@@ -198,7 +198,7 @@ pub fn of_page(page: &str) -> Scene {
 const BLOCKED: &[&str] = &[
     "autoHide", "autoHideKeepDesktop", "passThrough", "passThroughOpacity", "hideInFullscreen", "fullscreenPeek", "fullscreenPeekEdge", "hideInApps", "showInApps", "showInCapture", "monitor",
     "offsetX", "underTaskbar", "firstRunDone", "quiet.", "settings.",
-    // the music widget is its own window: the preview island keeps showing its sample player (and the widget would take the real island's rows away)
+    // the music widget is its own window: the preview island keeps showing its sample player and never sees the widget's placement
     "media.widget", "media.widget.",
 ];
 

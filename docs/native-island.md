@@ -90,7 +90,7 @@ the taskbar while the pill stays in the middle, at the top, or on either side of
 
 | key | default | meaning |
 |---|---|---|
-| `media.widget` | `false` | off = nothing changes and no window exists; on = the widget window, and the island shows no player |
+| `media.widget` | `false` | off = nothing changes and no window exists; on = the widget window (the island keeps its own player too) |
 | `media.widget.edge` | `bottom` | `top` / `bottom` / `taskbar` (INSIDE the bottom taskbar strip, see "The widget inside the taskbar" below) |
 | `media.widget.align` | `left` | `left` / `center` / `right` along that edge |
 | `media.widget.offset` | `0` | -50..50 % of the monitor width, only for `center` (like `offsetX`) |
@@ -125,10 +125,9 @@ island's z-order hook.
 | news to the view | `musicwidget::relayout` (the 500 ms guard poll, no timer of its own) compares `geometry_key` (monitor, DPI, work area, and in the bar the window position and slot, so a moved tray or island counts) and emits `music:slot { bar: logical px (0 = no bar), align }`; `on_settings` re-checks when `edge.position`, `edge.align`, `offsetX` or `size` change. Hidden: the view just takes the new place (a show re-places it). On screen: it slides out, takes the place, asks the host to re-place the window (`Cx::relayout_self`) and slides in, so the window never moves under a visible capsule. `music:slot` is internal to the widget and is not in the contract table |
 | z-order | the bar is topmost too and jumps in front of the widget when it is clicked. `taskbar::follow_widget` points the island's ONE `EVENT_SYSTEM_FOREGROUND` hook at the widget's window as well (installed from the main thread; the callback raises both windows when the new foreground window is a taskbar), and `taskbar::keep_widget_on_top` runs from `musicwidget::relayout` in the guard poll as the safety net (only while the window is visible and in the bar). `SWP_NOACTIVATE`, no move, no resize; a hidden or off-bar widget costs nothing |
 
-De-duplication: while `media.widget` is on the island does not show the player. `ui-core` `live::media::update_live` gives no row and no `music` edge reaction
-(it re-reads on `settings:changed`, so the switch acts at once); `panel::a::home` treats the player part as off (`parts_on`, `media_on`: the other Home parts
-re-flow, the volume row stays) and `command::tab_on("home")` ignores the player when it is the only part on. The settings preview keeps its sample player
-(`media.widget*` are not shareable to the preview island). Turning the switch off gives everything back.
+Coexistence: the widget and the island's own player show side by side. While `media.widget` is on, `ui-core` `live::media::update_live` still gives the title strip / `music`
+edge reaction, `panel::a::home` keeps the player part and `command::tab_on("home")` counts it; nothing is taken away from the island. The settings preview keeps its sample
+player (`media.widget*` are not shareable to the preview island).
 
 ### Inside the taskbar (`edge.position` = `taskbar`)
 
@@ -197,4 +196,4 @@ to the old island. Checklist:
 11. Auto-hide slides the body away; pushing the cursor to the monitor's top edge brings it back; fullscreen guard hides / shows it; tray Show / Hide.
 12. Reduce motion on (Windows or the setting): no motion anywhere. Light theme: body, shadow, eyes colour. DPI 125 / 150 / 200 %, two monitors.
 13. Tail / legs overlap with the capsule when the pet is on the left and a card or the music row is shown.
-14. Music widget (`media.widget` on, Media and sound page): it appears when something plays (not when a player starts paused), in the corner you chose (try bottom / top, left / centre / right, a second monitor, 150 % DPI, a taskbar on the side); with edge "In the taskbar" the folded player sits inside the bar (left / middle / right, 100 / 125 / 150 / 200 % DPI, a 40 / 48 / 52 px bar), stays clear of the tray and, when the pill is in the bar too, on the other side of it, opens upward above the bar on hover and folds back without flicker, stays above the bar after you click the bar, and falls back to the plain bottom placement with the bar at a side, auto-hidden or absent; hovering opens the card upward (bottom) or downward (top); prev / play / next and the seek bar work without taking the focus from the app you are typing in; a paused track keeps it ~45 s; the island shows no player meanwhile (no title strip, no player on Home); a fullscreen game hides it; switching `media.widget` off removes the window and gives the island its player back.
+14. Music widget (`media.widget` on, Media and sound page): it appears when something plays (not when a player starts paused), in the corner you chose (try bottom / top, left / centre / right, a second monitor, 150 % DPI, a taskbar on the side); with edge "In the taskbar" the folded player sits inside the bar (left / middle / right, 100 / 125 / 150 / 200 % DPI, a 40 / 48 / 52 px bar), stays clear of the tray and, when the pill is in the bar too, on the other side of it, opens upward above the bar on hover and folds back without flicker, stays above the bar after you click the bar, and falls back to the plain bottom placement with the bar at a side, auto-hidden or absent; hovering opens the card upward (bottom) or downward (top); prev / play / next and the seek bar work without taking the focus from the app you are typing in; a paused track keeps it ~45 s; the island keeps its own player meanwhile (title strip, player on Home); a fullscreen game hides it; switching `media.widget` off removes the window and leaves the island as it was.
