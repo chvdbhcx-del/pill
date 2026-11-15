@@ -71,6 +71,12 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `voice:state` | all windows | `p` | voice.rs |
 | `weather:current` | pill | `v` | net.rs |
 
+The standalone music widget (`media.widget`, `ui/musicwidget`) uses no command of its own: it reads `media:changed` / `media_state` and sends `media_control` /
+`media_seek` like the island's player. It also has two events that stay out of the table above (the table is parsed): `pill:guard { "hidden": bool }` from
+`pill.rs` (the fullscreen guard keeps the island away: the widget hides with it) and `music:slot { "bar": logical px, 0 = not in a taskbar, "align": "left" | "center" | "right" }`
+from `musicwidget::relayout` (with `media.widget.edge` = `taskbar`: the bar the widget stands in and the side it is anchored to changed; see the "The widget
+inside the taskbar" section of `native-island.md`). The `media.widget.edge` setting is `top` / `bottom` / `taskbar`.
+
 ## Commands (176)
 
 | Command | Args | Returns | Producer |

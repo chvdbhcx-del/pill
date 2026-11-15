@@ -149,13 +149,13 @@ pub fn sync(app: &tauri::AppHandle) {
     *cur = None;
     let Some(sig) = want else { return };
     let dock = sig.dock;
-    let (bar, align) = slot_of(&host, &sig);
+    let look = probe(&host, &sig);
+    let (bar, align) = (look.bar, look.align);
     let id = spec(&sig).spawn(&host, move |cx| Box::new(view::MusicView::new(cx, dock).with_slot(bar, align)));
     ID.store(id.0, Ordering::SeqCst);
     FOLLOWING.store(false, Ordering::Relaxed); // a new window: the next poll points the foreground hook at it
     crate::taskbar::follow_widget(windows::Win32::Foundation::HWND::default(), false);
-    let geo = geometry_key(&host, &sig);
-    *cur = Some((sig, geo));
+    *cur = Some((sig, look.key));
 }
 
 /// The island starts first, the widget right after it (`main.rs`).
@@ -182,25 +182,19 @@ fn monitor_of(host: &host::HostHandle, s: &Sig) -> Option<host::MonitorInfo> {
     .or_else(|| mons.first().cloned())
 }
 
-/// Where the window stands in the bar right now: the bar's height (logical px, 0 = it is not in a bar: any other dock, or no bar it can live in)
-/// and the side it is anchored to.
-fn slot_of(host: &host::HostHandle, s: &Sig) -> (f32, Align) {
-    if s.dock != Dock::Taskbar {
-        return (0.0, s.align);
-    }
-    let Some(m) = monitor_of(host, s) else { return (0.0, s.align) };
-    let size = geom::size_to_phys(logic::WIN_BAR, m.scale);
-    match crate::taskbar::widget_place(&m, &ask(s), size).1 {
-        Some((bar, slot)) => (bar.h as f32 / m.scale.max(0.25), slot.align),
-        None => (0.0, s.align),
-    }
+/// What one look at the monitor says about the window: a number that changes when the monitor the widget stands on moves, resizes, changes DPI or
+/// loses / gains a taskbar (in the taskbar also when the tray or the island changes the place the widget gets), and where the window stands in the
+/// bar: the bar's height (logical px, 0 = it is not in a bar: any other dock, or no bar it can live in) and the side it is anchored to.
+struct Probe {
+    key: u64,
+    bar: f32,
+    align: Align,
 }
 
-/// A number that changes when the monitor the widget stands on moves, resizes, changes DPI or loses / gains a taskbar; in the taskbar also when
-/// the tray or the island changes the place the widget gets.
-fn geometry_key(host: &host::HostHandle, s: &Sig) -> u64 {
-    let Some(m) = monitor_of(host, s) else { return 0 };
-    let mut h = 0xcbf2_9ce4_8422_2325u64;
+/// One look (one monitor enumeration, one tray lookup).
+fn probe(host: &host::HostHandle, s: &Sig) -> Probe {
+    let mut out = Probe { key: 0, bar: 0.0, align: s.align };
+    let Some(m) = monitor_of(host, s) else { return out };
     let mut vals = vec![m.rect.l, m.rect.t, m.rect.r, m.rect.b, m.work.l, m.work.t, m.work.r, m.work.b, (m.scale * 100.0) as i32, host.monitors().len() as i32];
     if s.dock == Dock::Taskbar {
         let size = geom::size_to_phys(logic::WIN_BAR, m.scale);
@@ -208,12 +202,15 @@ fn geometry_key(host: &host::HostHandle, s: &Sig) -> u64 {
         vals.extend([x, y]);
         if let Some((bar, slot)) = slot {
             vals.extend([bar.h, slot.x, slot.w, slot.align.code() as i32]);
+            (out.bar, out.align) = (bar.h as f32 / m.scale.max(0.25), slot.align);
         }
     }
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
     for v in vals {
         h = (h ^ v as u32 as u64).wrapping_mul(0x100_0000_01b3);
     }
-    h
+    out.key = h;
+    out
 }
 
 /// `SLOT_EVENT` text for an `Align`.
@@ -239,18 +236,17 @@ pub fn relayout(app: &tauri::AppHandle) {
     }
     let mut cur = live();
     let Some((sig, geo)) = cur.as_mut() else { return };
-    let now = geometry_key(&host, sig);
-    if now != *geo {
-        *geo = now;
+    let look = probe(&host, sig);
+    if look.key != *geo {
+        *geo = look.key;
         if sig.dock == Dock::Taskbar {
-            let (bar, align) = slot_of(&host, sig);
-            let _ = crate::ui::bus::emit(SLOT_EVENT, json!({ "bar": bar, "align": align_name(align) }));
+            let _ = crate::ui::bus::emit(SLOT_EVENT, json!({ "bar": look.bar, "align": align_name(look.align) }));
         } else {
             host.relayout(WindowId(id));
         }
     }
     if sig.dock == Dock::Taskbar {
-        let in_bar = slot_of(&host, sig).0 > 0.0;
+        let in_bar = look.bar > 0.0;
         let hwnd = host.hwnd(WindowId(id)).unwrap_or(0);
         if hwnd == 0 {
             return;

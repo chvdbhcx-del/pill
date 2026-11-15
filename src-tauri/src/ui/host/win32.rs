@@ -1621,7 +1621,7 @@ impl Host {
                                 let _ = SetWindowPos(hwnd, None, m.rect.l, m.rect.t, m.rect.w(), m.rect.h(), SWP_NOZORDER | SWP_NOACTIVATE);
                             }
                         }
-                        WindowKind::Overlay if self.wins.get(&id).is_some_and(|w| matches!(w.spec.placement, Placement::Docked { .. })) => {
+                        WindowKind::Overlay if self.wins.get(&id).is_some_and(|w| matches!(w.spec.placement, Placement::Docked { .. } | Placement::InBar { .. })) => {
                             // a free-standing widget: its side of its edge, not a centre, is what has to stay put
                             self.place(id, None, SWP_NOACTIVATE);
                         }
