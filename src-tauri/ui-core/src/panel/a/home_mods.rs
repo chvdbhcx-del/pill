@@ -165,19 +165,29 @@ pub fn plan(on: &On) -> Plan {
     let left: Vec<(usize, f32)> = [(0usize, PLAYER_H), (1, RECENT_H), (2, VOLUME_H)].into_iter().filter(|(i, _)| on.0[*i]).collect();
     let left_h = if left.is_empty() { 0.0 } else { left.iter().map(|(_, h)| h).sum::<f32>() + (left.len() - 1) as f32 * GAP };
     let cols = if n <= 2 { 1 } else { 2 };
-    let side_need = if n == 0 || left.is_empty() { 0.0 } else { n.div_ceil(cols) as f32 * TILE_MIN_H + (n.div_ceil(cols) - 1) as f32 * GAP };
-    let wide_h = if n > 0 && left.is_empty() { n.div_ceil(4) as f32 * 56.0 + (n.div_ceil(4) - 1) as f32 * GAP } else { 0.0 };
-    let body = left_h.max(side_need).max(wide_h);
-    // the left stack: next to the tiles it hugs the left edge, alone it is centred
-    let lx = if n > 0 { 0.0 } else { (W - PLAYER_W) / 2.0 };
-    let mut y = (body - left_h) / 2.0;
+    // Without the player the left stack (volume, recent) is lower than the tile column would be: side by side it would leave a blank
+    // hole above and below it. So the stack goes on top, centred, and the tiles take the full width under it (like tiles alone).
+    let stacked = !on.0[0] && n > 0 && !left.is_empty();
+    let wide = left.is_empty() || stacked;
+    let side_need = if n == 0 || wide { 0.0 } else { n.div_ceil(cols) as f32 * TILE_MIN_H + (n.div_ceil(cols) - 1) as f32 * GAP };
+    let wide_h = if n > 0 && wide { n.div_ceil(4) as f32 * 56.0 + (n.div_ceil(4) - 1) as f32 * GAP } else { 0.0 };
+    let body = if stacked { left_h + GAP + wide_h } else { left_h.max(side_need).max(wide_h) };
+    // the left stack: next to the tiles it hugs the left edge, alone or above wide tiles it is centred
+    let lx = if n > 0 && !stacked { 0.0 } else { (W - PLAYER_W) / 2.0 };
+    let mut y = if stacked { 0.0 } else { (body - left_h) / 2.0 };
     for (i, h) in &left {
         rects[*i] = Some(R::new(lx, y, PLAYER_W, *h));
         y += h + GAP;
     }
-    let region = if left.is_empty() { R::new(0.0, 0.0, W, body) } else { R::new(PLAYER_W + GAP, 0.0, SIDE_W, body) };
+    let region = if stacked {
+        R::new(0.0, left_h + GAP, W, wide_h)
+    } else if left.is_empty() {
+        R::new(0.0, 0.0, W, body)
+    } else {
+        R::new(PLAYER_W + GAP, 0.0, SIDE_W, body)
+    };
     let tiles: Vec<usize> = (0..8).filter(|i| on.0[tile_part(*i)]).collect();
-    for (k, r) in tile_rects(n, region, left.is_empty()).into_iter().enumerate() {
+    for (k, r) in tile_rects(n, region, wide).into_iter().enumerate() {
         rects[tile_part(tiles[k])] = Some(r);
     }
     let mut h = body;
@@ -269,6 +279,47 @@ mod tests {
         assert_eq!((r[0].w, r[0].h, r[0].x), (156.0, 56.0, 0.0));
         assert_eq!(r[4].x, (W - 156.0) / 2.0, "the lone tile of the second row is centred");
         assert_eq!(p.h, 56.0 * 2.0 + 8.0);
+    }
+
+    #[test]
+    fn without_the_player_the_rest_stacks_and_leaves_no_hole() {
+        // volume + eight tiles + strip, no player (the music widget owns it): the volume row on top, the tiles full width under it
+        let o = On(std::array::from_fn(|i| i != 0 && i != 1));
+        let p = plan(&o);
+        let vo = p.rects[2].unwrap();
+        assert_eq!((vo.x, vo.y, vo.w, vo.h), (118.0, 0.0, 412.0, 38.0), "the row is centred at the very top");
+        let t0 = p.rects[tile_part(0)].unwrap();
+        assert_eq!((t0.x, t0.y, t0.w, t0.h), (0.0, vo.bottom() + GAP, 156.0, 56.0));
+        assert_eq!(p.rects[tile_part(7)].unwrap().right(), W);
+        assert_eq!(p.rects[STRIP].unwrap().y, t0.y + 2.0 * 56.0 + 2.0 * GAP);
+        assert_eq!(p.h, 38.0 + GAP + 56.0 * 2.0 + GAP + GAP + STRIP_H, "the panel shrinks to the content: 226, 34 less than the classic 260");
+        // with the player on the classic side-by-side grid is untouched
+        assert_eq!(plan(&On::default()).h, 260.0);
+        // recently copied joins the stack
+        let mut o2 = o;
+        o2.0[1] = true;
+        let p2 = plan(&o2);
+        assert_eq!(p2.rects[1].unwrap().bottom() + GAP, p2.rects[2].unwrap().y);
+        assert_eq!(p2.rects[tile_part(0)].unwrap().y, p2.rects[2].unwrap().bottom() + GAP);
+    }
+
+    #[test]
+    fn no_player_means_no_vertical_gap_wider_than_the_gutter() {
+        // for every subset without the player the parts cover the height: no empty band between or around them
+        for mask in 0u32..(1 << N) {
+            if mask & 1 != 0 {
+                continue;
+            }
+            let p = plan(&On(std::array::from_fn(|i| mask & (1 << i) != 0)));
+            let mut rs: Vec<R> = p.rects.iter().flatten().copied().collect();
+            rs.sort_by(|a, b| a.y.total_cmp(&b.y));
+            let mut reach = 0.0f32;
+            for r in &rs {
+                assert!(r.y <= reach + GAP + 0.01, "{mask:b}: a blank band above {r:?} (parts end at {reach})");
+                reach = reach.max(r.bottom());
+            }
+            assert!((reach - p.h).abs() < 0.01, "{mask:b}: the content ends at {reach}, the plan says {}", p.h);
+        }
     }
 
     #[test]

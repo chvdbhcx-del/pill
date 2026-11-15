@@ -399,7 +399,8 @@ impl Home {
     }
     /// Which parts of the tab are on (Settings > Modules > What is on Home), see [`super::home_mods`].
     pub fn parts_on(&self) -> super::home_mods::On {
-        super::home_mods::On::from_get(|k| self.cfg.get(k).cloned())
+        let widget = self.widget_owns_player();
+        super::home_mods::On::from_get(|k| if widget && k == "module.media" { Some(Value::Bool(false)) } else { self.cfg.get(k).cloned() })
     }
     pub fn sessions(&self) -> &[Session] {
         &self.sessions
@@ -408,8 +409,12 @@ impl Home {
     fn reduce(&self) -> bool {
         self.cfg.reduce_motion()
     }
+    /// `media.widget`: the standalone music widget (ui/musicwidget) owns the player, so the Home tab has no player part of its own (the rest re-flows).
+    fn widget_owns_player(&self) -> bool {
+        self.cfg.get("media.widget") == Some(&Value::Bool(true))
+    }
     fn media_on(&self) -> bool {
-        self.cfg.not_false("module.media")
+        self.cfg.not_false("module.media") && !self.widget_owns_player()
     }
     fn accent(&self) -> String {
         self.st.as_ref().and_then(|s| s.accent.clone()).unwrap_or_default()
@@ -1487,14 +1492,18 @@ mod tests {
     }
 
     #[test]
-    fn the_music_widget_leaves_the_home_player_alone() {
+    fn the_music_widget_takes_the_player_off_home_and_the_rest_stays() {
         let mut h = open();
         assert!(h.view(&EnTr).player.visible && h.parts_on().0[0]);
-        let c = h.on_event("settings:changed", &json!({ "media.widget": true }));
-        assert!(c.is_empty(), "nothing to re-ask: Home keeps its state");
-        assert!(h.media().is_some() && h.view(&EnTr).player.visible && h.parts_on().0[0], "the widget is on: Home still has the player");
+        h.on_event("settings:changed", &json!({ "media.widget": true }));
+        assert!(h.media().is_none() && !h.view(&EnTr).player.visible, "the widget owns the player");
+        let on = h.parts_on();
+        assert!(!on.0[0] && on.any(), "no player part, but Home still has its other parts");
         h.on_event("media:changed", &media(true, 0, 1000));
-        assert!(h.media().is_some(), "events still reach Home");
+        assert!(h.media().is_none(), "events are ignored while the widget has it");
+        let c = h.on_event("settings:changed", &json!({ "media.widget": false }));
+        assert_eq!(c, vec![BackendCall::new("media_state", json!({ "known": null }))], "back on Home: ask for the state");
+        assert!(h.parts_on().0[0]);
     }
 
     #[test]

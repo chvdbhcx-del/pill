@@ -229,3 +229,33 @@ fn the_device_list_stays_inside_the_tab_when_the_volume_row_is_at_the_top() {
     r.click((layout::VOL_ROW.right() + 118.0 - 60.0, 90.0));
     assert_eq!(r.calls("media_set_default_device").len(), 1, "the list is closed now; the strip under it is not a device");
 }
+
+#[test]
+fn the_music_widget_takes_the_player_and_home_leaves_no_blank_hole() {
+    // `media.widget` on: the pill shows no player, the volume row, the tiles and the strip re-flow and the tab shrinks to them
+    let _m = motion(false);
+    let mut r = Rig::playing();
+    assert_eq!(height(&r), 260.0);
+    change(&mut r, json!({ "home.player": "compact", "media.widget": true }));
+    assert_eq!(height(&r), 226.0, "38 volume + 8 + two rows of 56 tiles + 8 + 8 + 52 strip");
+    r.sim.cx.scale = 1.0;
+    let img = shoot(&mut *r.sim.view, &r.sim.cx, &Theme::pill_dark(), 1.0, "home", "no-player-widget-on");
+    let bg = img.at(2.0, 2.0);
+    let lit = |x: f32, y: f32| img.at(x, y) != bg;
+    // the volume row is at the very top (centred), the first tile row right under it, the strip at the bottom: nothing blank between
+    assert!(lit(324.0, 19.0), "the volume row is on top");
+    assert!(lit(78.0, 46.0 + 28.0) && lit(570.0, 46.0 + 28.0), "tiles right under it, edge to edge");
+    assert!(lit(78.0, 110.0 + 28.0), "second tile row");
+    assert!(lit(324.0, 200.0), "the strip");
+    let total = img.count(None, |p| p != bg);
+    assert!(total as f32 > 0.75 * 648.0 * 226.0, "the tab is mostly filled, no hole: {total}");
+    // the old play button place and the old tile column take nothing
+    r.click(ctr(layout::MAIN));
+    assert!(r.calls("media_control").is_empty());
+    // a click on the first tile in its new place works
+    r.click((78.0, 46.0 + 28.0));
+    assert!(tile_fx(&r), "{:?}", r.fx);
+    // switching the widget off gives the classic tab back
+    change(&mut r, json!({ "home.player": "compact", "media.widget": false }));
+    assert_eq!(height(&r), 260.0);
+}

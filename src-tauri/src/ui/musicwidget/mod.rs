@@ -12,8 +12,8 @@
 //!   alpha, click-through outside the body. It uses the island's monitor (`monitor`), the work area (`underTaskbar`) and `showInCapture`.
 //! * `view.rs` draws it and `logic.rs` decides everything (when it shows, the geometry, what a click hits); both are fed by the SAME backend
 //!   the island's player uses (`media:changed`, `media_state`, `media_control`, `media_seek`): there is no second media backend.
-//! * Coexistence: the island keeps its own player while `media.widget` is on (title strip / music edge reaction, the player on Home); the
-//!   widget is one more view of the same media state, nothing is taken away from the island.
+//! * De-duplication: while `media.widget` is on, the island does not show the player (`ui-core` `live::media` gives no row and no edge
+//!   reaction, `panel::a::home` has no player part and `command::tab_on` ignores it). Turning it off gives all of it back at once.
 //! * The window exists only while the setting is on. Its placement is part of its spec, so a change of the placement settings re-creates it
 //!   (`sync`); a change of the monitors, DPI or the taskbar re-places it (`relayout`, from the guard poll like the island's).
 //! * In the taskbar (`edge` = `taskbar`): the window is taller ([`logic::WIN_BAR`]), its floor is the monitor's bottom (over the bar), the folded
