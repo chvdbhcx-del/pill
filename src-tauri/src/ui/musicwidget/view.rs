@@ -10,8 +10,8 @@
 //! * the progress bar glides to each reading (`prog`).
 //! Idle cost: nothing runs while the widget is hidden; while it shows, one 1 Hz tick (a `Ticker`) moves the clock and ends the grace of a pause,
 //! and frames run only while a spring moves.
-use super::logic::{self as lg, Btn, Hit, Presence, Track, BTNS};
-use crate::ui::host::geom::Dock;
+use super::logic::{self as lg, Btn, Hit, Presence, Stand, Track, BTNS};
+use crate::ui::host::geom::{Align, Dock};
 use crate::ui::island::gpu::Gpu;
 use crate::ui::liquid::{Feel, Flow};
 use crate::ui::tabs::a::core::{Tick, Ticker};
@@ -38,8 +38,14 @@ const TIMES: Style = Style::new(11.0, 500).mono();
 /// The bus event `pill.rs` emits when the fullscreen guard starts / stops hiding the island: `{ "hidden": bool }`.
 pub const GUARD_EVENT: &str = "pill:guard";
 
+/// The bus event `mod.rs` emits when the place the window stands in changed (the bar it is in, which side it is anchored to, the monitor, DPI):
+/// `{ "bar": logical px (0 = no bar), "align": "left" | "center" | "right" }`. In the taskbar the view slides out, is re-placed and slides in.
+pub const SLOT_EVENT: &str = "music:slot";
+
 pub struct MusicView {
-    dock: Dock,
+    stand: Stand,
+    /// a new place in the bar waiting for the body to have left (the window is re-placed then, see `step`)
+    reseat: Option<Stand>,
     settings: ShellSettings,
     os_light: bool,
     track: Track,
@@ -86,11 +92,12 @@ fn flows<const N: usize>(x: f32, f: Feel) -> [Flow; N] {
 
 impl MusicView {
     pub fn new(cx: &mut Cx, dock: Dock) -> MusicView {
-        for e in ["media:changed", "settings:changed", GUARD_EVENT] {
+        for e in ["media:changed", "settings:changed", GUARD_EVENT, SLOT_EVENT] {
             cx.subscribe(e);
         }
         let mut v = MusicView {
-            dock,
+            stand: dock.into(),
+            reseat: None,
             settings: ShellSettings::default(),
             os_light: false,
             track: Track::default(),
@@ -132,6 +139,29 @@ impl MusicView {
         v
     }
 
+    /// The place in the bar the window was created for (`mod.rs` read it from the monitor); a no-op for the other docks.
+    pub fn with_slot(mut self, bar: f32, align: Align) -> MusicView {
+        if self.stand.dock == Dock::Taskbar {
+            self.stand = Stand { dock: Dock::Taskbar, align, bar };
+        }
+        self
+    }
+
+    /// The window stands somewhere else now. Hidden: just take it (a show re-places it). On screen: slide out first, the new place is taken and the
+    /// window re-placed when the body has left (`step`), and it slides in again, so the body never jumps across the screen.
+    fn reslot(&mut self, to: Stand, cx: &mut Cx) {
+        if self.stand.dock != Dock::Taskbar {
+            return;
+        }
+        if self.vis {
+            self.reseat = Some(to);
+            self.sync(cx);
+        } else {
+            self.stand = to;
+            self.last_hit = None;
+        }
+    }
+
     // ------------------------------------------------------------------------------------------------------------ state
 
     fn take_settings(&mut self, s: &Value) {
@@ -157,9 +187,9 @@ impl MusicView {
         self.track.accent.map_or(th.accent, |[r, g, b]| Color::rgb8(r, g, b))
     }
 
-    /// Where the body is now (the hit region and the clicks use the same numbers as `draw`).
+    /// What answers the cursor now (the hit region and the clicks use the same numbers as `draw`).
     fn body_now(&self) -> Rect {
-        lg::body(self.dock, self.expand.at().clamp(0.0, 1.05), self.slide())
+        lg::hit_rect(self.stand, self.expand.at().clamp(0.0, 1.05), self.slide())
     }
 
     fn slide(&self) -> f32 {
@@ -171,7 +201,7 @@ impl MusicView {
     }
 
     fn hit_at(&self, pos: (f32, f32)) -> Hit {
-        lg::hit(self.dock, self.open(), self.slide(), pos)
+        lg::hit(self.stand, self.open(), self.slide(), pos)
     }
 
     fn pos_now(&self, now: f64) -> u64 {
@@ -225,7 +255,7 @@ impl MusicView {
 
     /// Re-decide whether the widget is wanted, start / stop its window and its tick. Cheap; call after anything that may change the answer.
     fn sync(&mut self, cx: &mut Cx) {
-        let want = self.widget_on && !self.guard && self.presence.visible(cx.now_ms);
+        let want = self.widget_on && !self.guard && self.reseat.is_none() && self.presence.visible(cx.now_ms);
         if want != self.want {
             self.want = want;
             self.shown.to(want as u8 as f32);
@@ -300,7 +330,7 @@ impl View for MusicView {
     }
 
     fn size_hint(&self) -> Option<(f32, f32)> {
-        Some(lg::WIN)
+        Some(self.stand.win())
     }
 
     fn on_proximity(&mut self, ev: &ProximityEvent, cx: &mut Cx) -> Response {
@@ -321,7 +351,7 @@ impl View for MusicView {
         match ev {
             InputEvent::MouseMove { pos, .. } => {
                 if self.seek.is_some() {
-                    let bar = lg::card_layout(lg::frames(self.dock, self.slide()).1).bar;
+                    let bar = lg::card_layout(lg::frames(self.stand, self.open(), self.slide()).1).bar;
                     self.seek = Some(lg::seek_at(bar, pos.0));
                     self.prog.to(lg::seek_at(bar, pos.0));
                     return Response { redraw: true, consumed: true, capture: true, cursor: Some(Cursor::Hand), ..Response::NONE };
@@ -399,6 +429,11 @@ impl View for MusicView {
                     self.guard = payload.get("hidden").and_then(Value::as_bool).unwrap_or(false);
                     self.sync(cx);
                 }
+                SLOT_EVENT => {
+                    let bar = payload.get("bar").and_then(Value::as_f64).unwrap_or(0.0).max(0.0) as f32;
+                    let align = Align::from_setting(payload.get("align").and_then(Value::as_str).unwrap_or("left"));
+                    self.reslot(Stand { dock: self.stand.dock, align, bar }, cx);
+                }
                 _ => return Response::NONE,
             },
             Msg::Reply { ticket, result } => {
@@ -437,6 +472,17 @@ impl View for MusicView {
         }
         let moving = self.moving();
         if !self.want && self.vis && !moving {
+            if let Some(to) = self.reseat.take() {
+                // it has left to be re-placed: take the new place, put the window there and come back in
+                self.stand = to;
+                self.last_hit = None;
+                cx.relayout_self();
+                self.sync(cx);
+                if self.want {
+                    cx.request_frame();
+                    return true;
+                }
+            }
             cx.hide_self(); // it has left: the window goes away and costs nothing
         }
         moving
@@ -466,6 +512,9 @@ impl View for MusicView {
         self.down = None;
         self.hot = None;
         self.expand.jump(0.0);
+        if let Some(to) = self.reseat.take() {
+            self.stand = to; // a re-placement that the guard or a pause turned into a leave: the show places it
+        }
         self.ticker = None; // nothing runs while it is away; the next event calls it up again
     }
 
@@ -477,18 +526,18 @@ impl View for MusicView {
         }
         let p = self.open();
         let dy = self.slide();
-        let body = lg::body(self.dock, p, dy);
+        let body = lg::body(self.stand, p, dy);
         let rad = (28.0 - 4.0 * p.min(1.0)).min(body.h / 2.0);
         let accent = self.accent(&th);
         let pos = if let Some(f) = self.seek { (f as f64 * self.track.duration_ms as f64).round() as u64 } else { self.pos_now(cx.now_ms) };
         cv.with_opacity(alpha, |cv| {
-            cv.shadow_rr(body, rad, 10.0, if self.dock == Dock::Bottom { -2.0 } else { 3.0 }, Color::rgba(0.0, 0.0, 0.0, 0.45));
+            cv.shadow_rr(body, rad, 10.0, if self.stand.dock.at_bottom() { -2.0 } else { 3.0 }, Color::rgba(0.0, 0.0, 0.0, 0.45));
             cv.fill_rr(body, rad, th.bg.alpha(0.97));
             cv.stroke_rr(body, rad, 1.0, th.border);
-            let (cap, card) = lg::frames(self.dock, dy);
+            let (cap, card) = lg::frames(self.stand, p, dy);
             let cap_a = (1.0 - p * 1.7).clamp(0.0, 1.0);
             let card_a = ((p - 0.3) / 0.7).clamp(0.0, 1.0);
-            let ink = Ink { th: &th, accent, track: &self.track, swap: self.swap.at01(), prev: &self.prev, pp: self.pp.at(), hov: &self.hov, press: &self.press, frac: self.prog.at().clamp(0.0, 1.0), pos, now: cx.now_ms };
+            let ink = Ink { st: self.stand, th: &th, accent, track: &self.track, swap: self.swap.at01(), prev: &self.prev, pp: self.pp.at(), hov: &self.hov, press: &self.press, frac: self.prog.at().clamp(0.0, 1.0), pos, now: cx.now_ms };
             cv.with_clip_rr(body, rad, |cv| {
                 if cap_a > 0.01 {
                     cv.with_opacity(cap_a, |cv| ink.capsule(cv, cap, &mut self.gpu_s, self.art_id, self.art_url.as_deref()));
@@ -503,6 +552,7 @@ impl View for MusicView {
 
 /// Everything `draw` needs, copied out of the view so the two cover caches can be borrowed mutably next to it.
 struct Ink<'a> {
+    st: Stand,
     th: &'a Theme,
     accent: Color,
     track: &'a Track,
@@ -572,15 +622,40 @@ impl Ink<'_> {
         }
     }
 
+    /// The track change cross-fade of the bar capsule: ONE line, the heading and then the sub line in the dimmer ink after it (`r` is centred
+    /// vertically by the style). The heading takes at most two thirds of the line, so the artist never disappears behind a long title.
+    fn line(&self, cv: &Canvas, r: Rect, hs: Style, ss: Style) {
+        let th = self.th;
+        let k = self.swap;
+        let pair = |cv: &Canvas, h: &str, s: &str, dy: f32| {
+            let hw = cv.text_width(h, hs).min(r.w * 0.67).ceil();
+            cv.text(Rect::new(r.x, r.y + dy, hw, r.h), h, hs.ellipsis(), th.text);
+            let sx = r.x + hw + 7.0;
+            if !s.is_empty() && r.right() - sx > 24.0 {
+                cv.text(Rect::new(sx, r.y + dy, r.right() - sx, r.h), s, ss.ellipsis(), th.dim);
+            }
+        };
+        if k < 0.999 {
+            cv.with_opacity(1.0 - k, |cv| pair(cv, &self.prev.0, &self.prev.1, -3.0 * k));
+        }
+        cv.with_opacity(k.max(0.0), |cv| pair(cv, &self.track.heading(), &self.track.sub(), 3.0 * (1.0 - k)));
+    }
+
     fn capsule(&self, cv: &Canvas, c: Rect, gpu: &mut Gpu, art: u64, url: Option<&str>) {
         let th = self.th;
-        let l = lg::capsule_layout(c);
+        let l = lg::capsule_layout_in(self.st, c);
         gpu.cover(cv, th, art, url, l.cover, self.now);
-        self.lines(cv, Rect::new(l.text.x, l.text.y + 3.0, l.text.w, 18.0), Rect::new(l.text.x, l.text.y + 21.0, l.text.w, 15.0), TITLE, SUB);
+        if self.st.in_bar() {
+            self.line(cv, l.text, TITLE, SUB);
+        } else {
+            self.lines(cv, Rect::new(l.text.x, l.text.y + 3.0, l.text.w, 18.0), Rect::new(l.text.x, l.text.y + 21.0, l.text.w, 15.0), TITLE, SUB);
+        }
         for b in BTNS {
             self.button(cv, gpu, b, l.btn[b.index()]);
         }
-        self.bar(cv, l.bar, 0.0);
+        if l.bar.h > 0.0 {
+            self.bar(cv, l.bar, 0.0);
+        }
     }
 
     fn card(&self, cv: &Canvas, c: Rect, gpu: &mut Gpu, art: u64, url: Option<&str>, grab: bool) {

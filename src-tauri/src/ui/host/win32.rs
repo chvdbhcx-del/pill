@@ -193,6 +193,12 @@ pub(crate) fn resolve_placement(p: &Placement, size_l: (f32, f32), mons: &[Monit
             let (x, y) = geom::dock_position_aligned(*dock, *align, mon.rect, mon.work, *inside_work, geom::phys(*margin, mon.scale), sz, *offset_pct);
             Resolved { rect: IRect::from_xywh(x, y, sz.0, sz.1), mon }
         }
+        Placement::InBar { monitor, ask } => {
+            let mon = pick_monitor(monitor, mons, cursor);
+            let sz = geom::size_to_phys(size_l, mon.scale);
+            let ((x, y), _) = crate::taskbar::widget_place(&mon, ask, sz);
+            Resolved { rect: IRect::from_xywh(x, y, sz.0, sz.1), mon }
+        }
         Placement::Center(monitor) => {
             let mon = pick_monitor(monitor, mons, cursor);
             let sz = geom::size_to_phys(size_l, mon.scale);
@@ -1096,6 +1102,9 @@ impl Host {
         }
         for OpenRequest { name, args } in fx.opens {
             self.open_registered(&name, args);
+        }
+        if fx.relayout && self.wins.get(&id).is_some_and(|w| w.visible) {
+            self.place(id, None, SWP_NOACTIVATE);
         }
         if fx.show {
             self.show(id, None);

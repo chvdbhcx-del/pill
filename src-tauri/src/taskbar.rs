@@ -4,7 +4,9 @@
 //  * at once, from an `EVENT_SYSTEM_FOREGROUND` hook that wakes only when the foreground window changes (zero idle cost, no timer);
 //  * and from the guard poll (500 ms, already running) as a safety net for a raise that gave no focus event.
 // Neither activates the island or takes the focus: `SWP_NOACTIVATE`, no move, no resize.
-use crate::ui::host::geom::IRect;
+// The standalone music widget (`media.widget.edge` = taskbar) stands in the same bar and rides the same hook: it is the second window the hook raises.
+use crate::ui::host::geom::{self, Align, IRect, IslandBar, WidgetAsk};
+use crate::ui::host::MonitorInfo;
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use windows::core::w;
@@ -98,29 +100,80 @@ pub fn raise_over_taskbar(island: HWND) -> bool {
 }
 
 static ISLAND: AtomicIsize = AtomicIsize::new(0);
+static WIDGET: AtomicIsize = AtomicIsize::new(0);
 static FOLLOW: AtomicBool = AtomicBool::new(false);
+static FOLLOW_WIDGET: AtomicBool = AtomicBool::new(false);
 static HOOKED: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "system" fn on_foreground(_hook: HWINEVENTHOOK, _event: u32, hwnd: HWND, _object: i32, _child: i32, _thread: u32, _ms: u32) {
-    if FOLLOW.load(Ordering::Relaxed) && is_taskbar_class(&class_of(hwnd)) {
-        raise_over_taskbar(HWND(ISLAND.load(Ordering::Relaxed) as *mut c_void));
+    let (island, widget) = (FOLLOW.load(Ordering::Relaxed), FOLLOW_WIDGET.load(Ordering::Relaxed));
+    if (island || widget) && is_taskbar_class(&class_of(hwnd)) {
+        if island {
+            raise_over_taskbar(HWND(ISLAND.load(Ordering::Relaxed) as *mut c_void));
+        }
+        if widget {
+            raise_over_taskbar(HWND(WIDGET.load(Ordering::Relaxed) as *mut c_void));
+        }
     }
 }
 
-/// The island stands in the taskbar (`on`) or not any more. The hook is installed once, from the thread that calls this (the UI thread: the
-/// out-of-context callback is delivered through its message loop) and does nothing while `on` is false.
-pub fn follow(island: HWND, on: bool) {
-    FOLLOW.store(on && !island.0.is_null(), Ordering::Relaxed);
-    if !on || island.0.is_null() {
-        return;
-    }
-    ISLAND.store(island.0 as isize, Ordering::Relaxed);
+/// Installs the foreground hook once, from the thread that calls this (the UI thread: the out-of-context callback is delivered through its
+/// message loop).
+fn hook() {
     if !HOOKED.swap(true, Ordering::Relaxed) {
         let h = unsafe { SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, None, Some(on_foreground), 0, 0, WINEVENT_OUTOFCONTEXT) };
         if h.0.is_null() {
             HOOKED.store(false, Ordering::Relaxed); // the guard poll still keeps the island on top
         }
     }
+}
+
+/// The island stands in the taskbar (`on`) or not any more. The hook does nothing while `on` is false.
+pub fn follow(island: HWND, on: bool) {
+    FOLLOW.store(on && !island.0.is_null(), Ordering::Relaxed);
+    if !on || island.0.is_null() {
+        return;
+    }
+    ISLAND.store(island.0 as isize, Ordering::Relaxed);
+    hook();
+}
+
+/// The same for the music widget's window (`on` while it stands in the bar). Call from the UI thread.
+pub fn follow_widget(widget: HWND, on: bool) {
+    FOLLOW_WIDGET.store(on && !widget.0.is_null(), Ordering::Relaxed);
+    if !on || widget.0.is_null() {
+        return;
+    }
+    WIDGET.store(widget.0 as isize, Ordering::Relaxed);
+    hook();
+}
+
+/// The widget keeps itself on top like the island: `raise_over_taskbar` when it is on screen (a hidden window is none of the bar's business).
+pub fn keep_widget_on_top(widget: HWND) {
+    if !widget.0.is_null() && unsafe { IsWindowVisible(widget) }.as_bool() {
+        raise_over_taskbar(widget);
+    }
+}
+
+/// Where the island stands in the bar, as the widget must keep clear of it (`None` = the island is not in the taskbar). Read from the settings,
+/// so the two windows need not talk: `monitor` is the same setting for both, so they are in the same bar.
+pub fn island_bar(scale: f32) -> Option<IslandBar> {
+    use crate::settings::{get_f64, get_str};
+    if !get_str("edge.position", "top").eq_ignore_ascii_case("taskbar") {
+        return None;
+    }
+    let size = get_f64("size", 100.0).clamp(80.0, 200.0) / 100.0;
+    Some(IslandBar {
+        align: Align::from_setting(&get_str("edge.align", "center")),
+        offset_pct: get_f64("offsetX", 0.0).clamp(-50.0, 50.0) as f32,
+        w: geom::phys((geom::ISLAND_BAR_W as f64 * size) as f32, scale),
+    })
+}
+
+/// The widget window of `size` (physical) on `mon`: its position, and its bar and slot when it stands in the bar ([`geom::widget_place`] with the
+/// real tray and the island's settings).
+pub fn widget_place(mon: &MonitorInfo, ask: &WidgetAsk, size: (i32, i32)) -> ((i32, i32), Option<(geom::Bar, geom::BarSlot)>) {
+    geom::widget_place(mon.rect, mon.work, mon.scale, tray_rect(mon.rect), island_bar(mon.scale), ask, size)
 }
 
 #[cfg(test)]
@@ -147,6 +200,8 @@ mod tests {
     fn there_is_nothing_to_raise_without_a_window() {
         assert!(!raise_over_taskbar(HWND::default()));
         follow(HWND::default(), true); // no window: the hook is not installed, nothing is followed
-        assert!(!FOLLOW.load(Ordering::Relaxed) && !HOOKED.load(Ordering::Relaxed));
+        follow_widget(HWND::default(), true);
+        keep_widget_on_top(HWND::default());
+        assert!(!FOLLOW.load(Ordering::Relaxed) && !FOLLOW_WIDGET.load(Ordering::Relaxed) && !HOOKED.load(Ordering::Relaxed));
     }
 }

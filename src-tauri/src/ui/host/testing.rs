@@ -117,6 +117,7 @@ fn merge(into: &mut Effects, fx: Effects) {
     into.focus = fx.focus.or(into.focus);
     into.show |= fx.show;
     into.hide |= fx.hide;
+    into.relayout |= fx.relayout;
     into.close |= fx.close;
     into.title = fx.title.or(into.title.take());
     into.window_cmd = fx.window_cmd.or(into.window_cmd);

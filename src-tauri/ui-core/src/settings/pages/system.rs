@@ -506,12 +506,12 @@ pub fn sound() -> Page {
                     seg(
                         "media.widget.edge",
                         tr("Край экрана виджета", "Widget screen edge"),
-                        tr("Сверху виджет висит у верхнего края и раскрывается вниз. Снизу он стоит на нижнем краю, у панели задач, и раскрывается вверх. Монитор тот же, что у острова", "Top: the widget hangs from the top edge and opens downward. Bottom: it stands on the bottom edge, at the taskbar, and opens upward. Same monitor as the pill"),
-                        so(&[("top", tr("Сверху", "Top")), ("bottom", tr("Снизу", "Bottom"))]),
+                        tr("Сверху виджет висит у верхнего края и раскрывается вниз. Снизу он стоит на нижнем краю, у панели задач, и раскрывается вверх. «В панели задач» — свёрнутый плеер умещается внутри панели (если она внизу и видна) и раскрывается вверх над ней; рядом с островом в панели он встаёт с другой стороны. Монитор тот же, что у острова", "Top: the widget hangs from the top edge and opens downward. Bottom: it stands on the bottom edge, at the taskbar, and opens upward. In the taskbar: the folded player fits inside the bar (when it is at the bottom and visible) and opens upward above it; next to the pill in the bar it takes the other side. Same monitor as the pill"),
+                        so(&[("top", tr("Сверху", "Top")), ("bottom", tr("Снизу", "Bottom")), ("taskbar", tr("В панели задач", "In the taskbar"))]),
                         json!("bottom"),
                     )
                     .enabled(Cond::On("media.widget"))
-                    .kw(&["widget", "edge", "bottom", "top", "виджет", "край", "снизу", "сверху"]),
+                    .kw(&["widget", "edge", "bottom", "top", "taskbar", "inside", "in the taskbar", "виджет", "край", "снизу", "сверху", "панель задач", "в панели задач", "панели"]),
                     seg(
                         "media.widget.align",
                         tr("Где у края", "Where along the edge"),

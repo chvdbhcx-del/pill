@@ -5,7 +5,7 @@ use super::logic::{self as lg, Btn, WIN};
 use super::view::MusicView;
 use super::*;
 use crate::ui::host::testing::{motion_lock, motion_on, Sim};
-use crate::ui::host::geom::{Align, Dock};
+use crate::ui::host::geom::{self, Align, Dock};
 use crate::ui::view::{Cx, Effects, Fakes, Msg, ProximityEvent, Services, View};
 use glasskit::geom::Rect;
 use glasskit::input::{Buttons, InputEvent, Modifiers, MouseButton};
@@ -267,7 +267,7 @@ fn hovering_opens_the_card_and_leaving_closes_it_and_it_idles_both_times() {
 fn the_buttons_send_the_media_commands_of_the_islands_player() {
     let _m = motion_on();
     let (mut s, f) = on_screen(Dock::Bottom);
-    let (cap, _) = lg::frames(Dock::Bottom, 0.0);
+    let (cap, _) = lg::frames(Dock::Bottom, 0.0, 0.0);
     let l = lg::capsule_layout(cap);
     for (b, action) in [(Btn::Prev, "prev"), (Btn::Play, "play_pause"), (Btn::Next, "next")] {
         let c = l.btn[b.index()].center();
@@ -296,7 +296,7 @@ fn the_card_seeks_by_a_click_or_a_drag_and_commits_once_on_release() {
     let (mut s, f) = on_screen(Dock::Bottom);
     s.send_proximity(&ProximityEvent::Hover);
     s.run(4000);
-    let (_, card) = lg::frames(Dock::Bottom, 0.0);
+    let (_, card) = lg::frames(Dock::Bottom, 0.0, 0.0);
     let bar = lg::card_layout(card).bar;
     let y = bar.cy();
     let r = s.send(&down(bar.x + bar.w * 0.25, y));
@@ -452,9 +452,206 @@ fn the_capsule_and_the_card_draw_inside_their_body_and_the_rest_of_the_window_st
         show(&mut t);
         let top = t.render(WIN, &th);
         assert!(lit(&top, lg::body(Dock::Top, 0.0, 0.0)) > 15_000 && lit(&top, Rect::new(0.0, lg::CAPSULE_H + lg::PAD + 14.0, WIN.0, 100.0)) == 0);
+        // in the taskbar: the compact capsule fills its strip and nothing is drawn above the bar; opened, the card floats above the bar
+        let (mut b, _f3, _) = bar_on_screen(Align::Left, 48.0);
+        let st = lg::Stand { dock: Dock::Taskbar, align: Align::Left, bar: 48.0 };
+        let in_bar = b.render(lg::WIN_BAR, &th);
+        let cap = lg::body(st, 0.0, 0.0);
+        assert!(lit(&in_bar, cap) as f32 > cap.w * cap.h * 0.9, "the capsule fills its body in the bar");
+        assert_eq!(lit(&in_bar, Rect::new(0.0, 0.0, lg::WIN_BAR.0, lg::WIN_BAR.1 - 48.0 - 14.0)), 0, "nothing above the bar: that is click-through glass");
+        assert!(cap.bottom() <= lg::WIN_BAR.1 && cap.y >= lg::WIN_BAR.1 - 48.0, "inside the strip");
+        b.send_proximity(&ProximityEvent::Hover);
+        b.run(4000);
+        let floating = b.render(lg::WIN_BAR, &th);
+        let open = lg::body(st, 1.0, 0.0);
+        assert!(lit(&floating, Rect::new(open.x, open.y, open.w, open.h)) > 20_000, "the open card is drawn");
+        assert_eq!(lit(&floating, Rect::new(0.0, 0.0, lg::WIN_BAR.0, open.y - 8.0)), 0, "and nothing beyond it");
+        assert!(open.bottom() <= lg::WIN_BAR.1 - 48.0 - geom::BAR_FLOAT_GAP + 0.5, "above the bar, not over it");
         if let Ok(dir) = std::env::var("PILL_SNAP_DIR") {
             let _ = std::fs::create_dir_all(&dir);
             crate::ui::host::testing::save_png(&card, std::path::Path::new(&dir).join("music-widget-card.png"));
+            crate::ui::host::testing::save_png(&floating, std::path::Path::new(&dir).join("music-widget-taskbar.png"));
         }
     });
+}
+
+// ------------------------------------------------------------------------------------------------------------------------------ in the taskbar
+
+/// A widget of the taskbar dock that was told it stands in a `bar` px tall bar anchored to `align`, playing and settled; the hit region it
+/// settled on comes with it.
+fn bar_on_screen(align: Align, bar: f32) -> (Sim, Fakes, Rect) {
+    let (svc, fakes) = Services::fake();
+    fakes.api.reply("settings_get", Ok(cfg(json!({}))));
+    let mut s = Sim::with_services(Box::new(Blank), svc);
+    let v = MusicView::new(&mut s.cx, Dock::Taskbar).with_slot(bar, align);
+    s.view = Box::new(v);
+    s.pump();
+    media(&mut s, &fakes, state(true, "Song", 61_000));
+    let r = hit_rect(&show(&mut s));
+    (s, fakes, r)
+}
+
+fn slot_event(s: &mut Sim, f: &Fakes, bar: f64, align: &str) {
+    f.bus.emit(SLOT_EVENT, json!({ "bar": bar, "align": align }));
+    s.pump();
+}
+
+#[test]
+fn the_taskbar_edge_is_a_dock_of_its_own_with_a_taller_window_and_its_own_placement() {
+    let s = sig(json!({ "media.widget": true, "media.widget.edge": "taskbar", "media.widget.align": "right", "media.widget.offset": 12, "monitor": "2" })).unwrap();
+    assert_eq!((s.dock, s.align), (Dock::Taskbar, Align::Right));
+    let sp = spec(&s).into_spec();
+    assert_eq!((sp.kind, sp.size, sp.visible, sp.topmost, sp.activate_on_show), (host::WindowKind::Overlay, lg::WIN_BAR, false, true, false), "the card floats above the bar: a taller window");
+    assert!(lg::WIN_BAR.1 > WIN.1 && lg::WIN_BAR.0 == WIN.0);
+    match placement(&s) {
+        Placement::InBar { monitor, ask } => {
+            assert_eq!(monitor, MonitorSel::Index(1));
+            assert_eq!((ask.align, ask.offset_pct, ask.body_w, ask.pad, ask.inside_work), (Align::Right, 12.0, lg::BAR_FOLD_W, lg::PAD, true));
+        }
+        p => panic!("{p:?}"),
+    }
+    // the other edges keep their placement and window
+    for (edge, dock) in [("top", Dock::Top), ("bottom", Dock::Bottom)] {
+        let s = sig(json!({ "media.widget": true, "media.widget.edge": edge })).unwrap();
+        assert_eq!(s.dock, dock);
+        assert!(matches!(placement(&s), Placement::Docked { .. }));
+        assert_eq!(spec(&s).into_spec().size, WIN);
+    }
+    // a changed edge re-creates the window; a change of the island's place alone does not (it only re-checks the place)
+    assert!(KEYS.contains(&"media.widget.edge") && !KEYS.contains(&"edge.position"));
+    assert!(ISLAND_KEYS.contains(&"edge.position") && ISLAND_KEYS.contains(&"edge.align") && ISLAND_KEYS.contains(&"offsetX") && ISLAND_KEYS.contains(&"size"));
+    assert_eq!((align_name(Align::Left), align_name(Align::Center), align_name(Align::Right)), ("left", "center", "right"));
+}
+
+#[test]
+fn in_the_bar_the_capsule_settles_inside_the_strip_and_costs_nothing() {
+    let _m = motion_on();
+    for bar in [40.0f32, 48.0, 52.0] {
+        let (mut s, _f, r) = bar_on_screen(Align::Left, bar);
+        assert_eq!(s.view.size_hint(), Some(lg::WIN_BAR));
+        let top = lg::WIN_BAR.1 - bar;
+        assert!(r.y >= top - 0.2 && r.bottom() <= lg::WIN_BAR.1 + 0.2, "{bar}: {r:?} inside the strip");
+        assert!(((r.y - top) - (lg::WIN_BAR.1 - r.bottom())).abs() < 0.3, "{bar}: centred in the bar");
+        assert_eq!((r.x, r.w), (lg::PAD, lg::BAR_FOLD_W));
+        assert!(!s.frame.wants_frame(), "settled: no frames");
+        assert_eq!(s.run(200), 0, "and nothing moves by itself");
+    }
+}
+
+#[test]
+fn hovering_opens_the_card_upward_over_the_bar_and_leaving_folds_it_back_into_the_bar() {
+    let _m = motion_on();
+    let (mut s, _f, folded) = bar_on_screen(Align::Left, 48.0);
+    s.send_proximity(&ProximityEvent::Hover);
+    assert!(s.run(4000) > 10, "it opens with a spring");
+    let open = hit_rect(&s.take_fx());
+    assert!((open.y - (lg::WIN_BAR.1 - 48.0 - geom::BAR_FLOAT_GAP - lg::CARD_H)).abs() < 0.5, "the card floats 8 px above the bar: {open:?}");
+    assert!(open.y < folded.y && open.bottom() >= folded.bottom() - 0.5, "it grew upward and still covers where the capsule stood: {open:?} vs {folded:?}");
+    assert!(!s.frame.wants_frame());
+    // the cursor resting on the capsule's place keeps the card open (no flicker)
+    s.send_proximity(&ProximityEvent::Hover);
+    s.run(50);
+    let fx = s.take_fx();
+    assert!(!s.frame.wants_frame() && fx.hit_region.as_ref().map_or(true, |r| (r[0].y - open.y).abs() < 0.01), "and it stays where it is");
+    s.send_proximity(&ProximityEvent::Leave);
+    assert!(s.run(4000) > 10);
+    let back = hit_rect(&s.take_fx());
+    assert!((back.y - folded.y).abs() < 0.5 && (back.h - folded.h).abs() < 0.5, "back in the bar: {back:?}");
+    assert!(!s.frame.wants_frame(), "settled: no frames");
+}
+
+#[test]
+fn the_open_card_in_the_bar_still_answers_its_buttons_and_the_folded_capsule_its_own() {
+    let _m = motion_on();
+    let (mut s, f, _) = bar_on_screen(Align::Right, 48.0);
+    let st = lg::Stand { dock: Dock::Taskbar, align: Align::Right, bar: 48.0 };
+    let (cap, _) = lg::frames(st, 0.0, 0.0);
+    let play = lg::capsule_layout_in(st, cap).btn[1].center();
+    s.send(&mv(play.0, play.1));
+    s.send(&down(play.0, play.1));
+    s.send(&up(play.0, play.1));
+    assert_eq!(calls(&f, "media_control").last().map(|c| c["action"].clone()), Some(json!("play_pause")), "the compact capsule's play button works");
+    s.send_proximity(&ProximityEvent::Hover);
+    s.run(4000);
+    let (_, card) = lg::frames(st, 1.0, 0.0);
+    let next = lg::card_layout(card).btn[2].center();
+    s.send(&down(next.0, next.1));
+    s.send(&up(next.0, next.1));
+    assert_eq!(calls(&f, "media_control").last().map(|c| c["action"].clone()), Some(json!("next")), "and so does the card that floats above the bar");
+}
+
+#[test]
+fn reduce_motion_lands_the_bar_capsule_and_its_card_at_once() {
+    let _g = motion_lock();
+    glasskit::ease::force_reduced(Some(true));
+    let (svc, f) = Services::fake();
+    f.api.reply("settings_get", Ok(cfg(json!({}))));
+    let mut s = Sim::with_services(Box::new(Blank), svc);
+    let v = MusicView::new(&mut s.cx, Dock::Taskbar).with_slot(48.0, Align::Center);
+    s.view = Box::new(v);
+    s.pump();
+    media(&mut s, &f, state(true, "Song", 0));
+    s.show();
+    let frames_in = s.run(4);
+    let folded = hit_rect(&s.take_fx());
+    s.send_proximity(&ProximityEvent::Hover);
+    let frames_open = s.run(4);
+    let open = hit_rect(&s.take_fx());
+    glasskit::ease::force_reduced(None);
+    assert!(frames_in <= 2 && frames_open <= 2, "no animation: {frames_in} / {frames_open} frames");
+    assert_eq!(folded.h, lg::Stand { dock: Dock::Taskbar, align: Align::Center, bar: 48.0 }.fold_h());
+    assert_eq!(open.w, lg::BODY_W);
+    assert!(open.y < folded.y, "the card is up in one frame");
+}
+
+#[test]
+fn a_new_place_in_the_bar_slides_it_out_re_places_the_window_and_slides_it_back_in() {
+    let _m = motion_on();
+    let (mut s, f, before) = bar_on_screen(Align::Left, 48.0);
+    slot_event(&mut s, &f, 40.0, "right"); // the island took the left side, or the bar got smaller
+    assert!(s.run(4000) > 5, "the body moves: out, then in");
+    let fx = s.take_fx();
+    assert!(fx.relayout, "the host is asked to put the window in its new place while the body is away");
+    assert!(!fx.hide, "the window itself stays");
+    let after = hit_rect(&fx);
+    assert_eq!(after.right(), lg::WIN_BAR.0 - lg::PAD, "now anchored to the right side");
+    assert!((after.h - 32.0).abs() < 0.3 && after.h < before.h, "and fitted to the smaller bar: {after:?}");
+    assert!(!s.frame.wants_frame(), "settled again");
+    // the bar goes away: the plain bottom widget, in the same window
+    slot_event(&mut s, &f, 0.0, "right");
+    s.run(4000);
+    let plain = hit_rect(&s.take_fx());
+    assert_eq!((plain.h, lg::WIN_BAR.1 - plain.bottom()), (lg::CAPSULE_H, lg::PAD));
+}
+
+#[test]
+fn a_new_place_while_it_is_away_is_taken_without_ceremony() {
+    let _m = motion_on();
+    let (mut s, f) = sim(Dock::Taskbar, cfg(json!({})));
+    slot_event(&mut s, &f, 48.0, "center");
+    assert!(!s.take_fx().relayout, "nothing is on screen: nothing to re-place (a show does it)");
+    media(&mut s, &f, state(true, "Song", 0));
+    let r = hit_rect(&show(&mut s));
+    assert!((r.cx() - lg::WIN_BAR.0 / 2.0).abs() < 0.3 && r.w == lg::BAR_FOLD_W, "it came in at the place it was told: {r:?}");
+    // the other docks ignore the event altogether
+    let (mut s, f) = on_screen(Dock::Bottom);
+    slot_event(&mut s, &f, 48.0, "right");
+    s.run(100);
+    assert!(!s.take_fx().relayout && !s.frame.wants_frame());
+}
+
+#[test]
+fn the_bar_widget_leaves_with_the_guard_and_its_pending_move_does_not_bring_it_back() {
+    let _m = motion_on();
+    let (mut s, f, _) = bar_on_screen(Align::Left, 48.0);
+    slot_event(&mut s, &f, 40.0, "right");
+    f.bus.emit(GUARD_EVENT, json!({ "hidden": true }));
+    s.pump();
+    s.run(4000);
+    let fx = s.take_fx();
+    assert!(fx.hide, "a fullscreen app in front: it goes away and stays away");
+    s.hide();
+    f.bus.emit(GUARD_EVENT, json!({ "hidden": false }));
+    s.pump();
+    assert!(s.take_fx().show, "and comes back when the guard lets go");
 }

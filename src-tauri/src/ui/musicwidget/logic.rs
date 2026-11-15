@@ -4,7 +4,10 @@
 //! The window is one fixed frame, [`WIN`] logical px, that never resizes: the capsule (collapsed) and the card (open) both stand flush against
 //! the window's DOCK edge (the bottom for `media.widget.edge` = bottom, the top otherwise) and the body between them grows away from that edge,
 //! like the island does. Everything outside the body is click-through (the view reports the body as its hit region).
-use crate::ui::host::geom::{mirror_y, Dock};
+//!
+//! In the taskbar (`media.widget.edge` = taskbar) the window is taller ([`WIN_BAR`]: its floor is the monitor's bottom, over the bar, with room
+//! above it for the open card) and the folded capsule is a compact one that fits the bar strip; see [`Stand`].
+use crate::ui::host::geom::{self, mirror_y, Align, Dock};
 use glasskit::geom::Rect;
 use serde_json::Value;
 
@@ -17,6 +20,10 @@ pub const CARD_H: f32 = 184.0;
 pub const PAD: f32 = 12.0;
 /// The fixed window, logical px.
 pub const WIN: (f32, f32) = (BODY_W + 2.0 * PAD, CARD_H + 2.0 * PAD);
+/// The folded capsule in the taskbar: narrower than the card, as tall as the bar allows (see [`Stand::fold_h`]).
+pub const BAR_FOLD_W: f32 = 288.0;
+/// The window in the taskbar: the open card floats [`geom::BAR_FLOAT_GAP`] above the tallest bar the widget lives in ([`geom::WIDGET_BAR_MAX_H`]).
+pub const WIN_BAR: (f32, f32) = (WIN.0, PAD + CARD_H + geom::BAR_FLOAT_GAP + geom::WIDGET_BAR_MAX_H);
 /// How long a paused track keeps the widget on screen.
 pub const PAUSE_GRACE_MS: f64 = 45_000.0;
 /// The expansion past which the card (not the capsule) answers clicks.
@@ -169,24 +176,108 @@ impl Presence {
 
 // ------------------------------------------------------------------------------------------------------------------------------ geometry
 
+/// How the body stands in its window: the dock, and for the taskbar dock the bar it stands in (`bar`, logical px, 0 = there is none: the plain
+/// bottom placement) and the side it is anchored to (`align`, the placement's, which may differ from the setting when the island is in the way).
+/// A plain `Dock` converts to a `Stand` with no bar.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Stand {
+    pub dock: Dock,
+    pub align: Align,
+    pub bar: f32,
+}
+
+impl From<Dock> for Stand {
+    fn from(dock: Dock) -> Stand {
+        Stand { dock, align: Align::Left, bar: 0.0 }
+    }
+}
+
+impl Stand {
+    /// The capsule stands inside the taskbar strip right now.
+    pub fn in_bar(&self) -> bool {
+        self.dock == Dock::Taskbar && self.bar > 0.0
+    }
+
+    /// The window's size, logical px (it never changes for a given dock).
+    pub fn win(&self) -> (f32, f32) {
+        if self.dock == Dock::Taskbar {
+            WIN_BAR
+        } else {
+            WIN
+        }
+    }
+
+    /// Height of the folded capsule: [`CAPSULE_H`], or what the bar leaves (`geom::bar_fold_cap`) when that is less.
+    pub fn fold_h(&self) -> f32 {
+        if self.in_bar() {
+            geom::bar_fold_cap(self.bar).min(CAPSULE_H)
+        } else {
+            CAPSULE_H
+        }
+    }
+
+    /// Where a rectangle `w` wide stands inside `b` (the body): flush with the anchored side, or in the middle.
+    fn side_x(&self, b: Rect, w: f32) -> f32 {
+        match self.align {
+            Align::Left => b.x,
+            Align::Right => b.right() - w,
+            Align::Center => b.x + (b.w - w) / 2.0,
+        }
+    }
+}
+
 /// The body (what is drawn and what clicks hit) for an expansion `p` (0 = capsule, 1 = card, may overshoot a little) and a slide `dy` away from
-/// the dock edge (the enter / leave motion: positive = further toward the edge). Window coordinates.
-pub fn body(dock: Dock, p: f32, dy: f32) -> Rect {
+/// the dock edge (the enter / leave motion: positive = further toward the edge). Window coordinates. In the bar the capsule is centred in it
+/// (`geom::bar_gap`) and the body rises with `p` to float above it, growing from the capsule's width to the card's on its anchored side.
+pub fn body(st: impl Into<Stand>, p: f32, dy: f32) -> Rect {
+    let st = st.into();
+    let win = st.win();
+    if st.in_bar() {
+        let fh = st.fold_h();
+        let h = (fh + (CARD_H - fh) * p).max(8.0);
+        let w = (BAR_FOLD_W + (BODY_W - BAR_FOLD_W) * p).max(8.0);
+        let x = match st.align {
+            Align::Left => PAD,
+            Align::Right => win.0 - PAD - w,
+            Align::Center => (win.0 - w) / 2.0,
+        };
+        return Rect::new(x, win.1 - geom::bar_gap(st.bar, fh, p) + dy - h, w, h);
+    }
     let h = (CAPSULE_H + (CARD_H - CAPSULE_H) * p).max(8.0);
-    let y = match dock {
+    let y = match st.dock {
         Dock::Top => PAD - dy,
-        // the widget only offers top / bottom; a taskbar dock (island-only) stands like the bottom edge
-        Dock::Bottom | Dock::Taskbar => mirror_y(PAD - dy, h, WIN.1),
+        // the plain bottom edge, and the taskbar dock where there is no bar to stand in
+        Dock::Bottom | Dock::Taskbar => mirror_y(PAD - dy, h, win.1),
     };
     Rect::new(PAD, y, BODY_W, h)
 }
 
-/// The capsule and the card at their full size, both flush against the dock edge (where the content is laid out; the body clips them).
-pub fn frames(dock: Dock, dy: f32) -> (Rect, Rect) {
-    (body(dock, 0.0, dy), body(dock, 1.0, dy))
+/// What answers the cursor: the body, and in the bar also the strip down to where the folded capsule stands, so that the cursor resting on the
+/// capsule keeps the card open while the card floats above the bar (otherwise it would fold the moment it rose off the cursor).
+pub fn hit_rect(st: impl Into<Stand>, p: f32, dy: f32) -> Rect {
+    let st = st.into();
+    let b = body(st, p, dy);
+    if !st.in_bar() {
+        return b;
+    }
+    let floor = st.win().1 - geom::bar_gap(st.bar, st.fold_h(), 0.0) + dy;
+    Rect::new(b.x, b.y, b.w, (floor - b.y).max(b.h))
+}
+
+/// The capsule and the card at their full size (where the content is laid out; the body clips them). On the plain edges both stand flush
+/// against the dock edge; in the bar both stand on the body's bottom at its anchored side, so they rise with it.
+pub fn frames(st: impl Into<Stand>, p: f32, dy: f32) -> (Rect, Rect) {
+    let st = st.into();
+    if st.in_bar() {
+        let b = body(st, p, dy);
+        let fh = st.fold_h();
+        return (Rect::new(st.side_x(b, BAR_FOLD_W), b.bottom() - fh, BAR_FOLD_W, fh), Rect::new(st.side_x(b, BODY_W), b.bottom() - CARD_H, BODY_W, CARD_H));
+    }
+    (body(st, 0.0, dy), body(st, 1.0, dy))
 }
 
 /// Which way the enter / leave motion goes along the vertical: the sign a slide away from the dock edge takes (toward the screen edge).
+/// Far enough for the body to leave the window from the bar too (a bar is at most [`geom::WIDGET_BAR_MAX_H`] tall).
 pub fn slide_distance() -> f32 {
     CAPSULE_H + PAD
 }
@@ -232,6 +323,31 @@ pub fn capsule_layout(c: Rect) -> CapsuleLayout {
         text: Rect::new(text_x, c.y + 8.0, btn[0].x - 6.0 - text_x, 38.0),
         btn,
         bar: Rect::new(c.x + 14.0, c.bottom() - 5.0, c.w - 28.0, 2.0),
+    }
+}
+
+/// The capsule in the taskbar strip: a small cover, one line of text, three small buttons and a hairline progress bar, scaled to the strip
+/// (`c.h` is what the bar leaves, see [`Stand::fold_h`]). The bar is dropped (zero height) when there is no room for it under the buttons.
+pub fn bar_capsule_layout(c: Rect) -> CapsuleLayout {
+    let h = c.h;
+    let cs = (h - 8.0).clamp(14.0, 40.0);
+    let bs = (h - 10.0).clamp(16.0, 28.0);
+    let step = bs + 2.0;
+    let m = ((h - cs) / 2.0).max(2.0);
+    let b = |i: f32| Rect::new(c.right() - m - (3.0 - i) * step + 1.0, c.y + (h - bs) / 2.0, bs, bs);
+    let btn = [b(0.0), b(1.0), b(2.0)];
+    let cover = Rect::new(c.x + m, c.y + (h - cs) / 2.0, cs, cs);
+    let text_x = cover.right() + 8.0;
+    let bar = if h >= 26.0 { Rect::new(c.x + h / 2.0, c.bottom() - 3.0, (c.w - h).max(0.0), 1.5) } else { Rect::new(c.x, c.bottom(), 0.0, 0.0) };
+    CapsuleLayout { cover, text: Rect::new(text_x, c.y, (btn[0].x - 6.0 - text_x).max(0.0), h), btn, bar }
+}
+
+/// The capsule's layout for the way the body stands: the compact one in the bar.
+pub fn capsule_layout_in(st: impl Into<Stand>, c: Rect) -> CapsuleLayout {
+    if st.into().in_bar() {
+        bar_capsule_layout(c)
+    } else {
+        capsule_layout(c)
     }
 }
 
@@ -281,12 +397,12 @@ pub fn seek_at(bar: Rect, x: f32) -> f32 {
 
 /// What a click at `pos` (window coordinates) would hit with the body at expansion `p`. The capsule answers while it is mostly closed, the card
 /// once it is mostly open; the bar's strip is a little taller than the bar so it is easy to grab.
-pub fn hit(dock: Dock, p: f32, dy: f32, pos: (f32, f32)) -> Hit {
-    let bd = body(dock, p, dy);
-    if !bd.contains(pos.0, pos.1) {
+pub fn hit(st: impl Into<Stand>, p: f32, dy: f32, pos: (f32, f32)) -> Hit {
+    let st = st.into();
+    if !hit_rect(st, p, dy).contains(pos.0, pos.1) {
         return Hit::None;
     }
-    let (cap, card) = frames(dock, dy);
+    let (cap, card) = frames(st, p, dy);
     let grab = |r: Rect| Rect::new(r.x - 4.0, r.y - 8.0, r.w + 8.0, r.h + 16.0).contains(pos.0, pos.1);
     if p >= CARD_AT {
         let l = card_layout(card);
@@ -297,7 +413,7 @@ pub fn hit(dock: Dock, p: f32, dy: f32, pos: (f32, f32)) -> Hit {
             return Hit::Seek(seek_at(l.bar, pos.0));
         }
     } else {
-        let l = capsule_layout(cap);
+        let l = capsule_layout_in(st, cap);
         if let Some(i) = l.btn.iter().position(|r| r.contains(pos.0, pos.1)) {
             return Hit::Button(BTNS[i]);
         }
@@ -402,7 +518,7 @@ mod tests {
     #[test]
     fn the_capsule_and_the_card_lay_their_parts_out_inside_themselves() {
         for dock in [Dock::Bottom, Dock::Top] {
-            let (cap, card) = frames(dock, 0.0);
+            let (cap, card) = frames(dock, 0.0, 0.0);
             let l = capsule_layout(cap);
             for r in [l.cover, l.text, l.btn[0], l.btn[1], l.btn[2], l.bar] {
                 assert!(r.x >= cap.x && r.right() <= cap.right() && r.y >= cap.y && r.bottom() <= cap.bottom(), "{r:?} in {cap:?}");
@@ -421,7 +537,7 @@ mod tests {
     #[test]
     fn clicks_mean_what_the_open_state_says() {
         let d = Dock::Bottom;
-        let (cap, card) = frames(d, 0.0);
+        let (cap, card) = frames(d, 0.0, 0.0);
         let play_c = capsule_layout(cap).btn[1].center();
         assert_eq!(hit(d, 0.0, 0.0, play_c), Hit::Button(Btn::Play));
         assert_eq!(hit(d, 0.0, 0.0, capsule_layout(cap).btn[0].center()), Hit::Button(Btn::Prev));
@@ -438,5 +554,133 @@ mod tests {
         // half way: the capsule's buttons while it is mostly closed
         assert_eq!(hit(d, CARD_AT - 0.01, 0.0, play_c), Hit::Button(Btn::Play));
         assert_eq!(seek_at(c.bar, c.bar.x + c.bar.w * 3.0), 1.0);
+    }
+
+    // ----- in the taskbar
+
+    fn in_bar(align: Align, bar: f32) -> Stand {
+        Stand { dock: Dock::Taskbar, align, bar }
+    }
+
+    /// The bar heights of the common taskbars at the common scalings, as the view is told them (logical px).
+    fn bars() -> Vec<f32> {
+        let mut v = Vec::new();
+        for dpi in [96u32, 120, 144, 192] {
+            let s = geom::scale_from_dpi(dpi);
+            for bar in [40.0f32, 48.0, 52.0] {
+                v.push(geom::phys(bar, s) as f32 / s);
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn the_folded_capsule_sits_inside_the_bar_centred_and_fits_it() {
+        for bar in bars() {
+            for align in [Align::Left, Align::Center, Align::Right] {
+                let st = in_bar(align, bar);
+                let b = body(st, 0.0, 0.0);
+                let (floor, top) = (WIN_BAR.1, WIN_BAR.1 - bar);
+                assert!(b.y >= top - 0.01 && b.bottom() <= floor + 0.01, "{bar}: {b:?} inside the strip [{top}, {floor}]");
+                assert!(((b.y - top) - (floor - b.bottom())).abs() < 0.01, "{bar}: centred in the bar");
+                assert!(b.h <= bar - 8.0 + 0.01 && b.h <= CAPSULE_H && b.h >= 16.0, "{bar}: {} tall", b.h);
+                assert_eq!(b.w, BAR_FOLD_W);
+                match align {
+                    Align::Left => assert_eq!(b.x, PAD),
+                    Align::Right => assert_eq!(b.right(), WIN_BAR.0 - PAD),
+                    Align::Center => assert!((b.cx() - WIN_BAR.0 / 2.0).abs() < 0.01),
+                }
+                assert!(b.x >= 0.0 && b.right() <= WIN_BAR.0, "inside the window");
+            }
+        }
+        // the tallest bar the widget lives in still has the open card inside the window
+        for bar in [24.0, 40.0, 72.0] {
+            let b = body(in_bar(Align::Left, bar), 1.0, 0.0);
+            assert!(b.y >= PAD - 0.01 && (WIN_BAR.1 - b.bottom() - (bar + geom::BAR_FLOAT_GAP)).abs() < 0.01, "{bar}: the open card floats 8 px above the bar: {b:?}");
+            assert_eq!((b.w, b.h), (BODY_W, CARD_H));
+        }
+    }
+
+    #[test]
+    fn opening_raises_the_capsule_out_of_the_bar_without_a_jump_and_closing_puts_it_back() {
+        let st = in_bar(Align::Left, 48.0);
+        let mut prev = body(st, 0.0, 0.0);
+        for i in 1..=20 {
+            let b = body(st, i as f32 / 20.0, 0.0);
+            assert!(b.bottom() <= prev.bottom() + 0.01 && b.y <= prev.y + 0.01, "it only rises while it opens");
+            assert!((b.bottom() - prev.bottom()).abs() < 12.0 && (b.y - prev.y).abs() < 12.0, "in small steps: {prev:?} -> {b:?}");
+            assert!(b.x >= PAD - 0.01 && b.x == PAD, "the anchored side stays put");
+            prev = b;
+        }
+        // the same on the right side: the right edge stays where the bar's slot ends while the card widens to the left
+        let r = in_bar(Align::Right, 48.0);
+        assert_eq!((body(r, 0.0, 0.0).right(), body(r, 1.0, 0.0).right()), (WIN_BAR.0 - PAD, WIN_BAR.0 - PAD));
+        // overshoot of a spring and a slide out (leaving) keep it a sane rectangle
+        assert!(body(st, -0.4, 0.0).h > 0.0 && body(st, 1.05, 0.0).y >= 0.0);
+        assert!(body(st, 0.0, slide_distance()).y >= WIN_BAR.1 - 0.01, "leaving slides the capsule down out of the window");
+    }
+
+    #[test]
+    fn the_capsule_parts_fit_every_bar() {
+        for bar in bars() {
+            let st = in_bar(Align::Left, bar);
+            let (cap, _) = frames(st, 0.0, 0.0);
+            let l = capsule_layout_in(st, cap);
+            for r in [l.cover, l.text, l.btn[0], l.btn[1], l.btn[2]] {
+                assert!(r.x >= cap.x - 0.01 && r.right() <= cap.right() + 0.01 && r.y >= cap.y - 0.01 && r.bottom() <= cap.bottom() + 0.01, "{bar}: {r:?} in {cap:?}");
+            }
+            assert!(l.cover.h >= 14.0 && l.cover.h <= cap.h - 4.0, "{bar}: a small cover");
+            assert!(l.btn[0].right() <= l.btn[1].x + 0.01 && l.btn[1].right() <= l.btn[2].x + 0.01, "the buttons do not overlap");
+            assert!(l.cover.right() < l.text.x && l.text.right() <= l.btn[0].x && l.text.w > 100.0, "{bar}: one line of text between the cover and the buttons: {:?}", l.text);
+            // the progress is a hairline under the buttons, or it is gone
+            if l.bar.h > 0.0 {
+                assert!(l.bar.h <= 2.0 && l.bar.y >= l.btn[1].bottom() && l.bar.bottom() <= cap.bottom() && l.bar.x >= cap.x && l.bar.right() <= cap.right(), "{bar}: {:?}", l.bar);
+            }
+        }
+        // a bar so thin that nothing fits under the buttons has no progress bar at all
+        let thin = capsule_layout_in(in_bar(Align::Left, 24.0), frames(in_bar(Align::Left, 24.0), 0.0, 0.0).0);
+        assert_eq!(thin.bar.h, 0.0);
+    }
+
+    #[test]
+    fn in_the_bar_the_hover_strip_reaches_down_to_the_folded_capsule_and_the_clicks_follow_the_open_state() {
+        let st = in_bar(Align::Left, 48.0);
+        let (cap, _) = frames(st, 0.0, 0.0);
+        let play = capsule_layout_in(st, cap).btn[1].center();
+        assert_eq!(hit(st, 0.0, 0.0, play), Hit::Button(Btn::Play), "the small buttons of the folded capsule");
+        assert_eq!(hit(st, 0.0, 0.0, (2.0, 2.0)), Hit::None, "outside the body the window is click-through");
+        // open: the card floats 8 px over the bar; the cursor still resting on the capsule's place stays on the hover strip
+        let open = hit_rect(st, 1.0, 0.0);
+        let folded = body(st, 0.0, 0.0);
+        assert!(open.contains(folded.cx(), folded.cy()) && open.bottom() >= folded.bottom() - 0.01, "{open:?} reaches {folded:?}");
+        assert_eq!(hit(st, 1.0, 0.0, (folded.cx(), folded.cy())), Hit::Body);
+        let (_, card) = frames(st, 1.0, 0.0);
+        let c = card_layout(card);
+        assert_eq!(hit(st, 1.0, 0.0, c.btn[1].center()), Hit::Button(Btn::Play), "the card's buttons float above the bar");
+        assert!(matches!(hit(st, 1.0, 0.0, (c.bar.cx(), c.bar.cy())), Hit::Seek(f) if (f - 0.5).abs() < 0.01));
+        // nothing above the open card and nothing under the window's floor answers
+        assert_eq!(hit(st, 1.0, 0.0, (c.bar.cx(), card.y - 6.0)), Hit::None);
+        // the plain bodies keep their own rectangle
+        assert_eq!(hit_rect(Dock::Bottom, 0.5, 0.0), body(Dock::Bottom, 0.5, 0.0));
+    }
+
+    #[test]
+    fn a_taskbar_dock_without_a_bar_is_the_plain_bottom_widget_in_the_taller_window() {
+        let st = in_bar(Align::Right, 0.0);
+        assert!(!st.in_bar() && st.win() == WIN_BAR && Stand::from(Dock::Bottom).win() == WIN);
+        for p in [0.0, 0.5, 1.0] {
+            let (a, b) = (body(st, p, 0.0), body(Dock::Bottom, p, 0.0));
+            assert_eq!((a.x, a.w, a.h, WIN_BAR.1 - a.bottom()), (b.x, b.w, b.h, PAD), "p={p}: standing on the floor of its window, {PAD} px up");
+        }
+        assert_eq!(frames(st, 0.3, 0.0), (body(st, 0.0, 0.0), body(st, 1.0, 0.0)));
+        assert_eq!(capsule_layout_in(st, body(st, 0.0, 0.0)).btn[1], capsule_layout(body(st, 0.0, 0.0)).btn[1], "the roomy layout");
+        assert_eq!(Stand::from(Dock::Top).fold_h(), CAPSULE_H);
+        assert!(win_fits());
+    }
+
+    /// The window of the taskbar dock holds the card at the tallest bar and the widest body.
+    fn win_fits() -> bool {
+        let b = body(in_bar(Align::Center, geom::WIDGET_BAR_MAX_H), 1.0, 0.0);
+        b.x >= 0.0 && b.y >= 0.0 && b.right() <= WIN_BAR.0 && b.bottom() <= WIN_BAR.1
     }
 }

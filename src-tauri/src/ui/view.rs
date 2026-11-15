@@ -557,6 +557,8 @@ pub struct Effects {
     pub focus: Option<bool>,
     pub show: bool,
     pub hide: bool,
+    /// Re-apply the placement rules of the window now (it is on screen and where it stands may have changed: the music widget in the taskbar).
+    pub relayout: bool,
     pub close: bool,
     pub title: Option<String>,
     pub window_cmd: Option<WindowCmd>,
@@ -749,6 +751,11 @@ impl Cx {
     pub fn hide_self(&mut self) {
         self.fx.hide = true;
         self.fx.show = false;
+    }
+
+    /// Asks the host to re-place this window by its spec after the current call (a no-op while it is hidden: a show places it anyway).
+    pub fn relayout_self(&mut self) {
+        self.fx.relayout = true;
     }
 
     /// Closes (destroys) this window after the current call.

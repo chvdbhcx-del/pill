@@ -211,7 +211,7 @@ pub fn auto_hidden() -> bool {
 
 /// Called by the guard poll (500 ms): re-place when monitor / DPI / taskbar / size changed.
 pub fn relayout(app: &AppHandle) {
-    crate::ui::musicwidget::relayout(); // the standalone music widget: its monitor / DPI / taskbar may have changed too
+    crate::ui::musicwidget::relayout(app); // the standalone music widget: its monitor / DPI / taskbar may have changed too
     on_main(app, |a| {
         let (exp, last) = {
             let s = st();

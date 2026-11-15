@@ -661,7 +661,7 @@ fn the_music_widget_rows_default_to_off_and_to_the_bottom_left_corner() {
         Control::Segmented { options, .. } => options.iter().map(|o| o.value.clone()).collect::<Vec<_>>(),
         c => panic!("a segmented choice, not {c:?}"),
     };
-    assert_eq!(opts(e), [json!("top"), json!("bottom")]);
+    assert_eq!(opts(e), [json!("top"), json!("bottom"), json!("taskbar")]);
     assert_eq!(opts(a), [json!("left"), json!("center"), json!("right")]);
     let off = get("media.widget.offset");
     assert!(matches!(off.control, Control::Slider { min, max, .. } if min == -50.0 && max == 50.0) && off.default == json!(0));
@@ -687,6 +687,12 @@ fn the_music_widget_rows_default_to_off_and_to_the_bottom_left_corner() {
     assert_eq!((m.get("media.widget"), m.get("media.widget.edge"), m.get("media.widget.align")), (json!(false), json!("bottom"), json!("left")));
     assert!(m.try_set("media.widget.edge", json!("left")).is_err() && m.try_set("media.widget.align", json!("up")).is_err());
     assert!(m.try_set("media.widget.edge", json!("top")).is_ok() && m.try_set("media.widget.offset", json!(-20)).is_ok());
+    assert!(m.try_set("media.widget.edge", json!("taskbar")).is_ok(), "the widget can stand inside the taskbar like the pill");
+    assert!(e.hint.get(Lang::En).contains("taskbar") && e.hint.get(Lang::Ru).contains("панел"), "the hint says what the taskbar choice does");
+    for (q, lang) in [("taskbar", Lang::En), ("панели задач", Lang::Ru)] {
+        let idx = search::build_index(lang);
+        assert!(search::search(&idx, q, 300).iter().any(|r| r.row_id == "media.widget.edge"), "{q:?} finds the widget edge row");
+    }
     // found by search in both languages
     for (q, lang) in [("widget", Lang::En), ("виджет", Lang::Ru), ("player widget", Lang::En)] {
         let idx = search::build_index(lang);

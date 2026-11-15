@@ -204,6 +204,8 @@ mod tests {
     fn the_music_widget_settings_travel_in_a_backup_with_their_types() {
         let (p, skipped) = run(json!({ "media.widget": true, "media.widget.edge": "top", "media.widget.align": "center", "media.widget.offset": -12 }));
         assert_eq!((p.len(), skipped), (4, 0));
+        let (p, skipped) = run(json!({ "media.widget.edge": "taskbar" }));
+        assert_eq!((p.get("media.widget.edge"), skipped), (Some(&json!("taskbar")), 0), "the taskbar is one more string of the widget edge");
         assert!(run(json!({ "media.widget": "on" })).0.is_empty() && run(json!({ "media.widget.offset": "left" })).0.is_empty(), "a wrong type is refused");
         let d = settings::defaults();
         assert_eq!(

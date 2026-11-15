@@ -4,7 +4,7 @@
 //! | key | meaning |
 //! |---|---|
 //! | `media.widget` | off (default: nothing changes, no window exists) / on |
-//! | `media.widget.edge` | `top` / `bottom` (default `bottom`) |
+//! | `media.widget.edge` | `top` / `bottom` / `taskbar` (default `bottom`; `taskbar` = INSIDE the bottom taskbar strip, see below) |
 //! | `media.widget.align` | `left` / `center` / `right` along that edge (default `left`) |
 //! | `media.widget.offset` | -50..50 % of the monitor width, only for `center` (like `offsetX`) |
 //!
@@ -16,6 +16,12 @@
 //!   reaction, `panel::a::home` has no player part and `command::tab_on` ignores it). Turning it off gives all of it back at once.
 //! * The window exists only while the setting is on. Its placement is part of its spec, so a change of the placement settings re-creates it
 //!   (`sync`); a change of the monitors, DPI or the taskbar re-places it (`relayout`, from the guard poll like the island's).
+//! * In the taskbar (`edge` = `taskbar`): the window is taller ([`logic::WIN_BAR`]), its floor is the monitor's bottom (over the bar), the folded
+//!   capsule is a compact one that fits the strip and the open card floats above the bar (`Placement::InBar` -> `geom::widget_place`). Where the
+//!   monitor has no bar it can live in (top / left / right / auto-hidden / too tall) it is the plain bottom placement, like the island. When the
+//!   island stands in the same bar the widget keeps clear of it (`geom::widget_bar_slot`: the other side, from the settings alone). The window is
+//!   raised over the bar like the island (`taskbar::follow_widget`, `keep_widget_on_top` from the guard poll). `SLOT_EVENT` tells the view which bar
+//!   and side the window got, whenever that changes.
 //! * The fullscreen guard hides it with the island (`pill.rs` emits `pill:guard`); nothing plays, nothing shows: no window, no timer, no frames.
 pub mod logic;
 mod view;
@@ -23,13 +29,13 @@ mod view;
 #[cfg(test)]
 mod tests;
 
-pub use view::GUARD_EVENT;
+pub use view::{GUARD_EVENT, SLOT_EVENT};
 
-use crate::ui::host::geom::{Align, Dock};
+use crate::ui::host::geom::{self, Align, Dock};
 use crate::ui::host::{self, MonitorSel, NativeWindow, Placement, WinEvent};
 use crate::ui::view::WindowId;
-use serde_json::{Map, Value};
-use std::sync::atomic::{AtomicU64, Ordering};
+use serde_json::{json, Map, Value};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 /// The settings that decide where the window stands and how it is made. A change of any of them re-creates the window.
@@ -49,6 +55,9 @@ pub struct Sig {
 
 /// Every key that matters to the window (what `on_settings` watches).
 pub const KEYS: &[&str] = &["media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset", "monitor", "underTaskbar", "showInCapture"];
+
+/// The island's settings the widget keeps clear of while both stand in the taskbar: a change re-checks the place, it does not re-create the window.
+const ISLAND_KEYS: &[&str] = &["edge.position", "edge.align", "offsetX", "size"];
 
 /// The window for these settings: `None` when the widget is off. Pure: `get` is the settings reader (value or `Null`).
 pub fn sig_from(get: &dyn Fn(&str) -> Value) -> Option<Sig> {
@@ -78,14 +87,27 @@ pub fn monitor_sel(setting: &str) -> MonitorSel {
     }
 }
 
+/// What the widget asks of a place in the bar.
+fn ask(s: &Sig) -> geom::WidgetAsk {
+    geom::WidgetAsk { align: s.align, offset_pct: s.offset as f32, body_w: logic::BAR_FOLD_W, pad: logic::PAD, inside_work: s.inside_work }
+}
+
 pub fn placement(s: &Sig) -> Placement {
+    if s.dock == Dock::Taskbar {
+        return Placement::InBar { monitor: monitor_sel(&s.monitor), ask: ask(s) };
+    }
     Placement::Docked { monitor: monitor_sel(&s.monitor), dock: s.dock, align: s.align, offset_pct: s.offset as f32, inside_work: s.inside_work, margin: 0.0 }
+}
+
+/// The window's size, logical px (the taskbar dock's is taller: the open card floats above the bar).
+fn win_size(s: &Sig) -> (f32, f32) {
+    logic::Stand::from(s.dock).win()
 }
 
 fn spec(s: &Sig) -> NativeWindow {
     NativeWindow::overlay("music-widget")
         .title("pill-music")
-        .size(logic::WIN.0, logic::WIN.1)
+        .size(win_size(s).0, win_size(s).1)
         .placement(placement(s))
         .hidden() // the view calls it up when something plays
         .exclude_from_capture(!s.in_capture)
@@ -127,8 +149,11 @@ pub fn sync(app: &tauri::AppHandle) {
     *cur = None;
     let Some(sig) = want else { return };
     let dock = sig.dock;
-    let id = spec(&sig).spawn(&host, move |cx| Box::new(view::MusicView::new(cx, dock)));
+    let (bar, align) = slot_of(&host, &sig);
+    let id = spec(&sig).spawn(&host, move |cx| Box::new(view::MusicView::new(cx, dock).with_slot(bar, align)));
     ID.store(id.0, Ordering::SeqCst);
+    FOLLOWING.store(false, Ordering::Relaxed); // a new window: the next poll points the foreground hook at it
+    crate::taskbar::follow_widget(windows::Win32::Foundation::HWND::default(), false);
     let geo = geometry_key(&host, &sig);
     *cur = Some((sig, geo));
 }
@@ -141,28 +166,72 @@ pub fn start(app: &tauri::AppHandle) {
 pub fn on_settings(app: &tauri::AppHandle, patch: &Map<String, Value>) {
     if KEYS.iter().any(|k| patch.contains_key(*k)) {
         sync(app);
+    } else if ISLAND_KEYS.iter().any(|k| patch.contains_key(*k)) {
+        relayout(app); // the island moved in the bar: the widget may have to step aside (or may come back)
     }
 }
 
-/// A number that changes when the monitor the widget stands on moves, resizes, changes DPI or loses / gains a taskbar.
-fn geometry_key(host: &host::HostHandle, s: &Sig) -> u64 {
+/// The monitor the widget stands on (the island's `monitor` setting).
+fn monitor_of(host: &host::HostHandle, s: &Sig) -> Option<host::MonitorInfo> {
     let mons = host.monitors();
-    let m = match monitor_sel(&s.monitor) {
-        MonitorSel::Index(i) => mons.get(i),
+    match monitor_sel(&s.monitor) {
+        MonitorSel::Index(i) => mons.get(i).cloned(),
         _ => None,
     }
-    .or_else(|| mons.iter().find(|m| m.primary))
-    .or_else(|| mons.first());
-    let Some(m) = m else { return 0 };
+    .or_else(|| mons.iter().find(|m| m.primary).cloned())
+    .or_else(|| mons.first().cloned())
+}
+
+/// Where the window stands in the bar right now: the bar's height (logical px, 0 = it is not in a bar: any other dock, or no bar it can live in)
+/// and the side it is anchored to.
+fn slot_of(host: &host::HostHandle, s: &Sig) -> (f32, Align) {
+    if s.dock != Dock::Taskbar {
+        return (0.0, s.align);
+    }
+    let Some(m) = monitor_of(host, s) else { return (0.0, s.align) };
+    let size = geom::size_to_phys(logic::WIN_BAR, m.scale);
+    match crate::taskbar::widget_place(&m, &ask(s), size).1 {
+        Some((bar, slot)) => (bar.h as f32 / m.scale.max(0.25), slot.align),
+        None => (0.0, s.align),
+    }
+}
+
+/// A number that changes when the monitor the widget stands on moves, resizes, changes DPI or loses / gains a taskbar; in the taskbar also when
+/// the tray or the island changes the place the widget gets.
+fn geometry_key(host: &host::HostHandle, s: &Sig) -> u64 {
+    let Some(m) = monitor_of(host, s) else { return 0 };
     let mut h = 0xcbf2_9ce4_8422_2325u64;
-    for v in [m.rect.l, m.rect.t, m.rect.r, m.rect.b, m.work.l, m.work.t, m.work.r, m.work.b, (m.scale * 100.0) as i32, mons.len() as i32] {
+    let mut vals = vec![m.rect.l, m.rect.t, m.rect.r, m.rect.b, m.work.l, m.work.t, m.work.r, m.work.b, (m.scale * 100.0) as i32, host.monitors().len() as i32];
+    if s.dock == Dock::Taskbar {
+        let size = geom::size_to_phys(logic::WIN_BAR, m.scale);
+        let ((x, y), slot) = crate::taskbar::widget_place(&m, &ask(s), size);
+        vals.extend([x, y]);
+        if let Some((bar, slot)) = slot {
+            vals.extend([bar.h, slot.x, slot.w, slot.align.code() as i32]);
+        }
+    }
+    for v in vals {
         h = (h ^ v as u32 as u64).wrapping_mul(0x100_0000_01b3);
     }
     h
 }
 
-/// The guard poll (every 500 ms, `pill::relayout`): the monitor, its DPI or its taskbar changed -> put the window back in its corner.
-pub fn relayout() {
+/// `SLOT_EVENT` text for an `Align`.
+fn align_name(a: Align) -> &'static str {
+    match a {
+        Align::Left => "left",
+        Align::Center => "center",
+        Align::Right => "right",
+    }
+}
+
+/// The foreground hook points at the live window while it stands in the bar (set from the main thread; reset when the window is re-created).
+static FOLLOWING: AtomicBool = AtomicBool::new(false);
+
+/// The guard poll (every 500 ms, `pill::relayout`): the monitor, its DPI, its taskbar, the tray or the island's place changed -> put the window
+/// back in its corner (in the taskbar the view slides out, is re-placed and slides in: `SLOT_EVENT`); and keep a window that stands in the bar
+/// above it (the bar puts itself in front of the other topmost windows when it is clicked). Nothing here runs a timer of its own.
+pub fn relayout(app: &tauri::AppHandle) {
     let id = ID.load(Ordering::SeqCst);
     let Some(host) = host::handle() else { return };
     if id == 0 {
@@ -173,6 +242,25 @@ pub fn relayout() {
     let now = geometry_key(&host, sig);
     if now != *geo {
         *geo = now;
-        host.relayout(WindowId(id));
+        if sig.dock == Dock::Taskbar {
+            let (bar, align) = slot_of(&host, sig);
+            let _ = crate::ui::bus::emit(SLOT_EVENT, json!({ "bar": bar, "align": align_name(align) }));
+        } else {
+            host.relayout(WindowId(id));
+        }
+    }
+    if sig.dock == Dock::Taskbar {
+        let in_bar = slot_of(&host, sig).0 > 0.0;
+        let hwnd = host.hwnd(WindowId(id)).unwrap_or(0);
+        if hwnd == 0 {
+            return;
+        }
+        if in_bar {
+            crate::taskbar::keep_widget_on_top(windows::Win32::Foundation::HWND(hwnd as *mut std::ffi::c_void));
+        }
+        if FOLLOWING.swap(in_bar, Ordering::Relaxed) != in_bar {
+            // the hook is installed from the main thread's message loop, like the island's
+            let _ = app.run_on_main_thread(move || crate::taskbar::follow_widget(windows::Win32::Foundation::HWND(hwnd as *mut std::ffi::c_void), in_bar));
+        }
     }
 }

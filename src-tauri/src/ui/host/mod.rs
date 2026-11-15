@@ -90,6 +90,10 @@ pub enum Placement {
     /// the bottom edge, `align` the side (`geom::dock_position_aligned`: the window is put against that side of the work area with `inside_work`),
     /// `offset_pct` only applies to `Align::Center`; `margin` is logical px away from the edge.
     Docked { monitor: MonitorSel, dock: geom::Dock, align: geom::Align, offset_pct: f32, inside_work: bool, margin: f32 },
+    /// Inside the bottom taskbar strip (the music widget with `media.widget.edge` = taskbar): `geom::widget_place` puts the window's floor on the
+    /// monitor's bottom with its body in the bar at the `ask` side, clear of the tray and of an island that stands in the same bar; where the
+    /// monitor has no bar the widget can live in it is the plain bottom edge (`Docked` with the bottom dock).
+    InBar { monitor: MonitorSel, ask: geom::WidgetAsk },
     /// Centred on a monitor.
     Center(MonitorSel),
     /// Exactly here (screen px, top-left).
