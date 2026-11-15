@@ -376,6 +376,33 @@ fn the_preview_island_stands_in_the_corner_of_its_stage_for_a_corner_alignment()
 }
 
 #[test]
+fn the_preview_island_stands_in_an_imaginary_taskbar_when_the_edge_is_the_taskbar() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("appearance", json!({"language": "en"}));
+        assert!(!t.v.borrow().pv.live.as_ref().unwrap().in_bar());
+        // the choice reaches the sandbox: the island slides over, then stands in the bar (the stage draws it under the island)
+        set(&mut t, "edge.position", json!("taskbar"));
+        settle(&mut t, WIDE, &th);
+        {
+            let v = t.v.borrow();
+            let live = v.pv.live.as_ref().unwrap();
+            assert!(live.at_bottom() && live.in_bar(), "the sandbox island has taken the bar");
+            let (_, _, bh) = live.body();
+            assert!(bh <= live::BAR_H - 8.0 + 0.6, "a capsule that fits the bar: {bh}");
+        }
+        assert!(t.calls("pill_edge").is_empty(), "the sandbox never moves the real island's window");
+        // leaving the taskbar takes the bar away; a settings window that opens on the taskbar edge has it from the start
+        set(&mut t, "edge.position", json!("bottom"));
+        settle(&mut t, WIDE, &th);
+        assert!(t.v.borrow().pv.live.as_ref().unwrap().at_bottom() && !t.v.borrow().pv.live.as_ref().unwrap().in_bar());
+        let t2 = wide("appearance", json!({"language": "en", "edge.position": "taskbar"}));
+        assert!(t2.v.borrow().pv.live.as_ref().unwrap().in_bar());
+    });
+}
+
+#[test]
 fn only_plain_choices_reach_the_preview_never_text_the_user_typed() {
     for k in ["showSeconds", "size", "shape", "theme", "pet", "character", "net.weather", "weather.units", "live.copy", "island.colorCustom", "clipClickPaste", "edge.position", "edge.align"] {
         assert!(shareable(k), "{k} may go to the preview");

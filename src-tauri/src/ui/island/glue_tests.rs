@@ -734,3 +734,249 @@ fn the_phone_card_stays_while_hovered_and_the_island_goes_quiet_afterwards() {
     assert!(card_title(&g).is_none(), "gone a few seconds after the pointer left");
     assert!(!g.v.borrow().dbg_frames_wanted(), "nothing keeps asking for frames");
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// In the taskbar (`edge.position` = taskbar): the folded island stands centred in the bar, the open one floats above it. The window is the
+// frame plus the bar's height (`pill.rs`): 120 + 48 folded, 480 + 48 open, 200 + 48 with a card; `pill:taskbar` says how tall the bar is.
+// ---------------------------------------------------------------------------------------------------------------------------------------
+
+const BAR: f32 = 48.0;
+const FOLDED_WIN: u32 = 120 + BAR as u32;
+const OPEN_WIN: u32 = 480 + BAR as u32;
+
+/// Frames drawn into a window `h` px tall until the island rests; the last picture.
+fn rest_in(g: &mut G, h: u32) -> Image {
+    let mut img = g.draw_h(h);
+    for _ in 0..8 {
+        g.settle(60);
+        img = g.draw_h(h);
+    }
+    img
+}
+
+/// The island standing in a 48 px bar at the left, drawn at rest in its folded window.
+fn bar_island(extra: Value) -> G {
+    let mut s = json!({ "edge.position": "taskbar", "edge.align": "left" });
+    s.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+    let mut g = G::with(s);
+    let _ = g.draw_h(FOLDED_WIN);
+    g.emit("pill:taskbar", json!({ "h": BAR }));
+    let _ = rest_in(&mut g, FOLDED_WIN);
+    g
+}
+
+/// Opens the island (a window `OPEN_WIN` tall, as `pill.rs` makes it) and lets it settle.
+fn open_in_bar(g: &mut G, tab: &str) {
+    g.emit("pill:expand", json!({ "tab": tab, "via": "test" }));
+    let _ = rest_in(g, OPEN_WIN);
+}
+
+/// How many opaque pixels `img` has in a 3 x 3 square whose bottom-left corner is the bottom-left of `body`: 9 = a square corner, ~3 = a round one.
+fn corner_px(img: &Image, body: Rect) -> usize {
+    opaque(img, Rect::new(body.x, body.bottom() - 3.0, 3.0, 3.0))
+}
+
+#[test]
+fn a_taskbar_island_with_no_bar_is_the_plain_bottom_island() {
+    let mut g = G::with(json!({ "edge.position": "taskbar" }));
+    let img = g.draw_h(120);
+    let (in_bar, lift, ..) = g.v.borrow().dbg_bar();
+    assert!(g.v.borrow().at_bottom() && !g.v.borrow().in_bar() && !in_bar && lift == 0.0, "it mirrors like the bottom edge, nothing is lifted");
+    let body = g.v.borrow().dbg_body_win();
+    assert!(body.bottom() > 119.0 && body.y > 60.0, "{body:?}");
+    assert!(corner_px(&img, body) >= 9, "flat against the floor, as at the bottom edge: {}", corner_px(&img, body));
+    assert_eq!(g.sim.take_fx().edge_bottom, Some(true), "the host watches the bottom row");
+    // a bar of height 0 (auto-hidden, or on the top) is the same
+    g.emit("pill:taskbar", json!({ "h": 0 }));
+    assert!(!g.v.borrow().in_bar());
+}
+
+#[test]
+fn the_folded_island_stands_centred_in_the_bar_round_on_every_side() {
+    let mut g = bar_island(json!({}));
+    let img = rest_in(&mut g, FOLDED_WIN);
+    assert!(g.v.borrow().in_bar());
+    let body = g.v.borrow().dbg_body_win();
+    let gap = FOLDED_WIN as f32 - body.bottom();
+    assert!((body.h - 30.0).abs() < 0.6, "a plain capsule: {body:?}");
+    assert!((gap - (BAR - body.h) / 2.0).abs() < 0.6, "the same room under and over it in the bar: {gap} for {body:?}");
+    assert!(body.y >= FOLDED_WIN as f32 - BAR, "inside the bar strip: {body:?}");
+    assert!((body.x - 20.0).abs() < 1.0, "left side: on the pad: {body:?}");
+    // a pill in the bar, not a notch of the screen edge: round at the floor side as well, and no flares at its feet
+    assert!(corner_px(&img, body) <= 5, "round at the bottom: {}", corner_px(&img, body));
+    assert!(opaque(&img, Rect::new(0.0, 0.0, 720.0, FOLDED_WIN as f32 - BAR - 4.0)) < 40, "nothing above the bar but the liquid edge's hint");
+    // the click area follows the body
+    let hit = g.v.borrow().dbg_hit();
+    assert!(hit[0].contains(body.cx(), body.cy()) && hit[0].x >= 19.0, "{:?} vs {body:?}", hit[0]);
+    // and the pointer is mapped back through the lift
+    let (_, sy) = g.v.borrow().dbg_shell_pt((body.cx(), body.cy()));
+    let sb = g.v.borrow().core.shell.view().body;
+    assert!((sy - (sb.top + sb.height / 2.0)).abs() < 0.6, "{sy} in {sb:?}");
+    // at rest: no frames asked for, nothing moving
+    assert!(!g.v.borrow().dbg_bar_moving() && !g.v.borrow().dbg_frames_wanted(), "at rest the bar placement asks for no frames");
+}
+
+#[test]
+fn a_bigger_island_is_cut_down_to_fit_the_bar_and_gets_its_size_back() {
+    let win = (120.0 * 2.0 + BAR) as u32; // size 200 %: the frame doubles, the bar does not
+    let mut g = G::with(json!({ "edge.position": "taskbar", "edge.align": "left", "size": 200 }));
+    let _ = g.draw_h(win);
+    let tall = g.v.borrow().dbg_body_win().h;
+    assert!((tall - 60.0).abs() < 0.6, "twice the capsule when it stands on a plain edge: {tall}");
+    g.emit("pill:taskbar", json!({ "h": BAR }));
+    let _ = rest_in(&mut g, win);
+    let body = g.v.borrow().dbg_body_win();
+    assert!((body.h - 40.0).abs() < 0.6, "the bar leaves 4 px above and below: {body:?}");
+    assert!(body.y >= win as f32 - BAR - 0.5 && body.bottom() <= win as f32 + 0.01, "inside the bar: {body:?}");
+    // the bar goes away (auto-hide): the island is the plain bottom island again, full size
+    g.emit("pill:taskbar", json!({ "h": 0 }));
+    let _ = rest_in(&mut g, win);
+    let body = g.v.borrow().dbg_body_win();
+    assert!((body.h - 60.0).abs() < 0.6 && body.bottom() > win as f32 - 0.6, "back to the floor and full size: {body:?}");
+    assert_eq!(g.v.borrow().dbg_bar().1, 0.0);
+}
+
+#[test]
+fn a_thin_bar_is_not_outgrown_and_the_open_island_never_covers_it() {
+    for bar in [40.0f32, 52.0] {
+        let mut g = G::with(json!({ "edge.position": "taskbar", "edge.align": "left" }));
+        let (folded, open) = (120 + bar as u32, 480 + bar as u32);
+        let _ = g.draw_h(folded);
+        g.emit("pill:taskbar", json!({ "h": bar }));
+        let _ = rest_in(&mut g, folded);
+        let b = g.v.borrow().dbg_body_win();
+        assert!(b.y >= folded as f32 - bar && b.bottom() <= folded as f32 + 0.01, "{bar} px bar: {b:?}");
+        g.emit("pill:expand", json!({ "tab": "home", "via": "test" }));
+        let _ = rest_in(&mut g, open);
+        let o = g.v.borrow().dbg_body_win();
+        assert!(o.bottom() <= open as f32 - bar, "{bar} px bar: the panel stands above the bar: {o:?}");
+        assert!(o.y >= 0.0, "and is not cut off at the top of the window: {o:?}");
+    }
+}
+
+#[test]
+fn the_open_island_floats_above_the_bar_with_its_header_at_the_bottom() {
+    let mut g = bar_island(json!({}));
+    open_in_bar(&mut g, "home");
+    let (in_bar, lift, w, raised) = g.v.borrow().dbg_bar();
+    assert!(in_bar && w > 0.99 && raised > 0.99 && lift > 40.0, "{lift} {w} {raised}");
+    let body = g.v.borrow().dbg_body_win();
+    assert!((body.bottom() - (OPEN_WIN as f32 - BAR - 8.0)).abs() < 1.5, "8 px above the bar: {body:?}");
+    assert!(body.h > 200.0 && body.y >= 0.0, "{body:?}");
+    let (_, ty) = g.v.borrow().dbg_tab_center("home").expect("laid out");
+    assert!(ty > body.bottom() - 60.0 && ty < body.bottom(), "the tab strip is the lowest thing: {ty} in {body:?}");
+    assert!((body.x - 20.0).abs() < 1.0, "{body:?}");
+    // a click on a tab lands on it
+    let clip = g.v.borrow().dbg_tab_center("clipboard").expect("clipboard tab");
+    let _ = g.draw_h(OPEN_WIN);
+    click_at_h(&mut g, clip, OPEN_WIN);
+    assert_eq!(g.v.borrow().dbg_tab().as_deref(), Some("clipboard"));
+}
+
+/// `click_at` for a window of another height.
+fn click_at_h(g: &mut G, p: (f32, f32), h: u32) {
+    g.sim.send(&InputEvent::MouseDown { pos: p, button: glasskit::input::MouseButton::Left, mods: Modifiers::default(), clicks: 1 });
+    g.sim.send(&InputEvent::MouseUp { pos: p, button: glasskit::input::MouseButton::Left, mods: Modifiers::default() });
+    let _ = g.draw_h(h);
+    g.settle(30);
+}
+
+#[test]
+fn opening_and_folding_glide_between_the_bar_and_the_float_without_a_jump() {
+    let _m = crate::ui::host::testing::motion_on();
+    let mut g = bar_island(json!({}));
+    let rest = g.v.borrow().dbg_body_win().bottom();
+    // the window is already the open frame (pill.rs enlarges it first), so only the body moves
+    let _ = g.draw_h(OPEN_WIN);
+    let rest = rest + (OPEN_WIN - FOLDED_WIN) as f32;
+    g.emit("pill:expand", json!({ "tab": "home", "via": "test" }));
+    let mut path = vec![];
+    for _ in 0..200 {
+        let _ = g.draw_h(OPEN_WIN);
+        g.sim.step_frame();
+        path.push(g.v.borrow().dbg_body_win().bottom());
+    }
+    let end = OPEN_WIN as f32 - BAR - 8.0;
+    assert!((path[0] - rest).abs() < 12.0 && (path.last().unwrap() - end).abs() < 1.5, "{} -> {} (rest {rest}, float {end})", path[0], path.last().unwrap());
+    let worst = path.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
+    assert!(worst < 14.0, "no frame jumps: the largest step is {worst}");
+    assert!(path.iter().all(|b| *b <= rest + 1.0 && *b >= end - 3.0), "it rises between the two and does not dip below the bar");
+    // and back
+    g.esc();
+    let mut back = vec![];
+    for _ in 0..300 {
+        let _ = g.draw_h(OPEN_WIN);
+        g.sim.step_frame();
+        back.push(g.v.borrow().dbg_body_win().bottom());
+    }
+    let worst = back.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
+    assert!(worst < 14.0, "folding: the largest step is {worst}");
+    assert!((back.last().unwrap() - rest).abs() < 0.8, "settled in the bar again: {} vs {rest}", back.last().unwrap());
+    assert!(!g.v.borrow().dbg_bar_moving());
+}
+
+#[test]
+fn an_event_card_floats_above_the_bar_and_the_island_sinks_back_into_it() {
+    let _m = crate::ui::host::testing::motion_on();
+    let win = 200 + BAR as u32;
+    let mut g = bar_island(json!({}));
+    g.emit("phone:notif", phone_notif("k1"));
+    for _ in 0..3 {
+        let _ = g.draw_h(win);
+        g.settle(40);
+    }
+    assert!(card_title(&g).is_some(), "the card is up");
+    let (_, _, _, raised) = g.v.borrow().dbg_bar();
+    let b = g.v.borrow().dbg_body_win();
+    assert!(raised > 0.99 && b.bottom() <= win as f32 - BAR + 0.5, "above the bar: {b:?} raised {raised}");
+    assert!(b.h > 30.0 && b.y >= 0.0, "{b:?}");
+    advance(&mut g, 12_000.0);
+    for _ in 0..4 {
+        let _ = g.draw_h(win);
+        g.settle(40);
+    }
+    let _ = rest_in(&mut g, win);
+    assert!(card_title(&g).is_none(), "the card is gone");
+    let b = g.v.borrow().dbg_body_win();
+    assert!((win as f32 - b.bottom() - (BAR - b.h) / 2.0).abs() < 0.8, "centred in the bar again: {b:?}");
+}
+
+#[test]
+fn with_reduced_motion_the_island_takes_its_place_in_the_bar_at_once() {
+    let mut g = G::with(json!({ "edge.position": "taskbar", "edge.align": "left" }));
+    g.sim.cx.reduced_motion = true;
+    let _ = g.draw_h(FOLDED_WIN);
+    g.emit("pill:taskbar", json!({ "h": BAR }));
+    g.sim.run(3);
+    let _ = g.draw_h(FOLDED_WIN);
+    let b = g.v.borrow().dbg_body_win();
+    assert!((FOLDED_WIN as f32 - b.bottom() - (BAR - b.h) / 2.0).abs() < 0.8, "{b:?}");
+    assert!(!g.v.borrow().dbg_bar_moving());
+}
+
+#[test]
+fn changing_to_the_taskbar_slides_out_and_asks_for_the_bar_placement() {
+    let _m = crate::ui::host::testing::motion_on();
+    let mut g = G::new();
+    let _ = g.draw_h(120);
+    g.emit("settings:changed", json!({ "edge.position": "taskbar" }));
+    assert!(!g.v.borrow().at_bottom() && g.calls("pill_edge").is_empty(), "nothing jumps: the slide comes first");
+    g.sim.run(400);
+    let _ = g.draw_h(FOLDED_WIN);
+    assert!(g.v.borrow().at_bottom());
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true, "align": "center", "bar": true })], "the window is asked once, with the bar flag");
+    // pill.rs answers with the bar it found
+    g.emit("pill:taskbar", json!({ "h": BAR }));
+    let _ = rest_in(&mut g, FOLDED_WIN);
+    let b = g.v.borrow().dbg_body_win();
+    assert!(g.v.borrow().in_bar() && b.y >= FOLDED_WIN as f32 - BAR && b.bottom() <= FOLDED_WIN as f32, "settled in the bar: {b:?}");
+    // from the taskbar to the plain bottom edge: no bar flag, the body lands on the floor
+    g.emit("settings:changed", json!({ "edge.position": "bottom" }));
+    g.sim.run(400);
+    let _ = g.draw_h(120);
+    assert_eq!(g.calls("pill_edge").last(), Some(&json!({ "bottom": true, "align": "center" })));
+    assert!(!g.v.borrow().in_bar());
+    g.emit("pill:taskbar", json!({ "h": 0 }));
+    let _ = rest_in(&mut g, 120);
+    assert!(g.v.borrow().dbg_body_win().bottom() > 119.0, "flat on the floor again");
+}

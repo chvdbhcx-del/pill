@@ -38,11 +38,13 @@ struct St {
     mon: [i32; 4],     // target monitor rect, physical px
     scale: f64,        // target monitor scale factor (css px -> physical px)
     layout: [i32; 4],  // last placed x, y, w, h
+    bar: i32,          // height of the taskbar strip the island stands in, physical px (0 = not in a taskbar)
+    bar_scale: f64,    // the monitor scale the island was told that height in (the event carries logical px)
 }
 
 static ST: Mutex<St> = Mutex::new(St {
     expanded: false, hidden: 0, shown: true, rect: [0.0; 4], mon: [0; 4], scale: 1.0,
-    layout: [0; 4],
+    layout: [0; 4], bar: 0, bar_scale: 1.0,
 });
 
 fn st() -> MutexGuard<'static, St> {
@@ -86,6 +88,8 @@ struct Lay {
     h: i32,
     mon: [i32; 4],
     scale: f64,
+    /// height of the taskbar strip the window stands in (physical px, 0 = a plain edge placement)
+    bar: i32,
 }
 
 /// Target monitor + frame size for the current settings.
@@ -93,10 +97,10 @@ fn layout(expanded: bool) -> Option<Lay> {
     layout_native(expanded)
 }
 
-/// The edge the island window hangs from RIGHT NOW. It follows `edge.position`, but only when the island view says so (`pill_edge`): the view
-/// first slides the body off the old edge, so the window never jumps across the screen under a visible island.
+/// The edge the island window hangs from RIGHT NOW (`Dock::code`). It follows `edge.position`, but only when the island view says so (`pill_edge`):
+/// the view first slides the body off the old edge, so the window never jumps across the screen under a visible island.
 static DOCK: AtomicU8 = AtomicU8::new(DOCK_UNSET);
-const DOCK_UNSET: u8 = 2;
+const DOCK_UNSET: u8 = 255;
 
 static ALIGN: AtomicU8 = AtomicU8::new(DOCK_UNSET);
 
@@ -105,28 +109,30 @@ pub fn align() -> Align {
     if let Some(a) = Align::from_code(ALIGN.load(Ordering::Relaxed)) {
         return a;
     }
-    let a = if dock() == Dock::Bottom { Align::from_setting(&crate::settings::get_str("edge.align", "center")) } else { Align::Center };
+    let a = if dock().at_bottom() { Align::from_setting(&crate::settings::get_str("edge.align", "center")) } else { Align::Center };
     ALIGN.store(a.code(), Ordering::Relaxed);
     a
 }
 
 pub fn dock() -> Dock {
-    match DOCK.load(Ordering::Relaxed) {
-        0 => Dock::Top,
-        1 => Dock::Bottom,
-        _ => {
-            let d = Dock::from_setting(&crate::settings::get_str("edge.position", "top"));
-            DOCK.store((d == Dock::Bottom) as u8, Ordering::Relaxed);
-            d
-        }
+    if let Some(d) = Dock::from_code(DOCK.load(Ordering::Relaxed)) {
+        return d;
     }
+    let d = Dock::from_setting(&crate::settings::get_str("edge.position", "top"));
+    DOCK.store(d.code(), Ordering::Relaxed);
+    d
 }
 
-/// The island view slid out and asks for the new edge (`bottom`) and side (`align`, the centre unless it is the bottom edge): re-place the
-/// window there.
-pub fn pill_edge(app: AppHandle, bottom: bool, align: Option<String>) {
+/// The island view slid out and asks for the new edge (`bottom`, and `bar`: inside the taskbar) and side (`align`, the centre unless it is the
+/// bottom edge): re-place the window there.
+pub fn pill_edge(app: AppHandle, bottom: bool, align: Option<String>, bar: Option<bool>) {
     let a = if bottom { Align::from_setting(align.as_deref().unwrap_or("center")) } else { Align::Center };
-    let moved = DOCK.swap(bottom as u8, Ordering::Relaxed) != bottom as u8;
+    let d = match (bottom, bar.unwrap_or(false)) {
+        (false, _) => Dock::Top,
+        (true, false) => Dock::Bottom,
+        (true, true) => Dock::Taskbar,
+    };
+    let moved = DOCK.swap(d.code(), Ordering::Relaxed) != d.code();
     let moved = ALIGN.swap(a.code(), Ordering::Relaxed) != a.code() || moved;
     if moved {
         on_main(&app, place);
@@ -134,19 +140,31 @@ pub fn pill_edge(app: AppHandle, bottom: bool, align: Option<String>) {
 }
 
 /// The window frame on a monitor (physical px): size from the settings, centred plus `offsetX`, hanging from the `dock` edge (`underTaskbar`
-/// keeps it inside the work area).
+/// keeps it inside the work area). In the taskbar (`Dock::Taskbar`, a plain visible bar along the bottom of THIS monitor) the window is the
+/// frame plus the bar's height, stands on the monitor's bottom edge over the bar, and its body sits in the bar at the `edge.align` side (see
+/// `geom::taskbar_position`); with no such bar it is the plain bottom edge.
 fn frame_for(m: &crate::ui::host::MonitorInfo, expanded: bool) -> Lay {
     let sf = m.scale as f64;
     let (ml, mt, mw, mh) = (m.rect.l, m.rect.t, m.rect.r - m.rect.l, m.rect.b - m.rect.t);
     let k = sf * crate::settings::get_f64("size", 100.0).clamp(80.0, 200.0) / 100.0;
     let (fw, fh) = if expanded { EXPANDED } else if CARD.load(Ordering::Relaxed) { CARD_FRAME } else { COLLAPSED };
     let w = ((fw * k).round() as i32).min(mw);
-    let h = (fh * k).round() as i32;
+    let mut h = (fh * k).round() as i32;
     // `offsetX` (-50..50 % of the monitor width, 0 = middle) moves the window centre; the window stays inside the monitor.
     let off = crate::settings::get_f64("offsetX", 0.0).clamp(-50.0, 50.0);
-    let under = crate::settings::get_bool("underTaskbar", true);
-    let (x, y) = geom::dock_position_aligned(dock(), align(), m.rect, m.work, under, 0, (w, h), off as f32);
-    Lay { x, y, w, h, mon: [ml, mt, ml + mw, mt + mh], scale: sf }
+    let dock = dock();
+    let bar = if dock == Dock::Taskbar { geom::bottom_bar(m.rect, m.work, m.scale, crate::taskbar::tray_rect(m.rect)) } else { None };
+    let (x, y) = match bar {
+        Some(b) => {
+            h += b.h;
+            geom::taskbar_position(align(), m.rect, &b, m.scale, (w, h), geom::phys(geom::ALIGN_PAD, k as f32), geom::phys(pill_ui_core::shell::capsule::COL_MIN_W as f32, k as f32), off as f32)
+        }
+        None => {
+            let under = crate::settings::get_bool("underTaskbar", true);
+            geom::dock_position_aligned(dock, align(), m.rect, m.work, under, 0, (w, h), off as f32)
+        }
+    };
+    Lay { x, y, w, h, mon: [ml, mt, ml + mw, mt + mh], scale: sf, bar: bar.map_or(0, |b| b.h) }
 }
 
 /// Monitors come from the host (the same `monitor` setting, "1".. = list order, else the primary).
@@ -166,15 +184,24 @@ fn layout_native(expanded: bool) -> Option<Lay> {
 pub fn place(_app: &AppHandle) {
     let exp = st().expanded;
     let Some(l) = layout(exp) else { return };
-    {
+    let bar_changed = {
         let mut s = st();
         s.mon = l.mon;
         s.scale = l.scale;
         s.layout = [l.x, l.y, l.w, l.h];
-    }
+        let changed = s.bar != l.bar || (l.bar > 0 && s.bar_scale != l.scale);
+        s.bar = l.bar;
+        s.bar_scale = l.scale;
+        changed
+    };
     if let Some(n) = native() {
         n.set_bounds(l.x, l.y, l.w, l.h);
     }
+    // the island view learns the bar's height (logical px; 0 = no bar) to centre the folded pill in it and to lift the open one above it
+    if bar_changed {
+        let _ = bus::emit("pill:taskbar", json!({ "h": l.bar as f64 / l.scale.max(0.25) }));
+    }
+    crate::taskbar::follow(me(), l.bar > 0);
 }
 
 /// True while auto-hide has slid the pill away (guard.rs brings it back over the desktop when `autoHideKeepDesktop` is on).
@@ -297,7 +324,7 @@ pub fn edge_geometry() -> Option<([i32; 4], (i32, i32), bool)> {
     } else {
         (s.layout[0], s.layout[0] + s.layout[2])
     };
-    Some((s.mon, x, dock() == Dock::Bottom))
+    Some((s.mon, x, dock().at_bottom()))
 }
 
 /// Guard poll: if another program hid, minimised or un-topmosted the island, or it ended up off every monitor, put it back.
@@ -308,6 +335,10 @@ pub fn keep_alive(app: &AppHandle) {
     on_main(app, |a| {
         if crate::keepalive::repair(me(), &monitor_rects()) {
             place(a);
+        }
+        // inside the taskbar the island is topmost together with the bar, which jumps in front of it whenever it is clicked
+        if st().bar > 0 {
+            crate::taskbar::raise_over_taskbar(me());
         }
     });
 }
@@ -359,7 +390,7 @@ fn affinity() {
 /// Physical y just below the pill's body when it is on screen on the monitor at `(mon_x, mon_y)` (None while hidden / not measured):
 /// the command bar hangs under it instead of covering it.
 pub fn body_bottom(mon_x: i32, mon_y: i32) -> Option<i32> {
-    if dock() == Dock::Bottom {
+    if dock().at_bottom() {
         return None; // the island hangs from the bottom edge: nothing of it is under the command bar at the top
     }
     let s = st();

@@ -83,6 +83,26 @@ hidden island take the edge at once. `pill.rs` keeps the edge the window is on (
 `pill_edge`. The settings preview (`settings_view/preview`) runs the same view in its sandbox; its camera stands the island on the floor of the
 stage when `Live::at_bottom`.
 
+### Inside the taskbar (`edge.position` = `taskbar`)
+
+A third placement: the folded island lives INSIDE the bottom taskbar strip, like one of its widgets, and opens upward above it. It reuses the whole
+bottom-edge machinery (mirrored view, `Dock::at_bottom`, the edge slide) and adds:
+
+| piece | how |
+|---|---|
+| the bar | `geom::bottom_bar(monitor, work area, scale, tray)`: a plain bar along the BOTTOM of this monitor (work area = monitor minus a strip of at least 24 logical px, nothing else). A bar at the top / left / right, an auto-hidden bar (work area = monitor or a 2 px stub), a monitor without a bar and an absurdly tall strip give `None`: the island is then the plain bottom island (with `underTaskbar` as usual) |
+| tray | `taskbar::tray_rect(monitor)`: the `TrayNotifyWnd` child of the `Shell_TrayWnd` / `Shell_SecondaryTrayWnd` that lies along the bottom of the monitor. The free span is monitor-left .. tray-left minus 8 px; a nonsensical or invisible tray is ignored (the span is then the whole bar) |
+| window | `pill.rs::frame_for`: the usual frame (120 / 200 / 480 x size) PLUS the bar's height, its bottom on the MONITOR's bottom (over the bar), x from `geom::taskbar_position`: `edge.align` Left / Right = the body 8 px from the span's side (window = body minus the 20 px shell pad), Center = the middle of the span; `offsetX` shifts it away from the side (percent of the monitor width), clamped so the narrowest folded body (118 px) stays inside the span, never over the tray. `underTaskbar` is not used (greyed out in settings) |
+| news to the view | `pill.rs::place` emits `pill:taskbar` `{ "h": bar height in logical px }` (0 = no bar) when the bar changes (taskbar resized / hidden / moved, DPI, the setting); the 500 ms guard poll (`relayout`) re-evaluates, no new timer. `pill_edge` carries `bar: true` for this dock |
+| folded size | the view hands the shell `set_fold_cap(bar - 2 x 4 px)`: the plain capsule never outgrows the bar (the default 30 px capsule fits any bar of 38 px and more; a bigger `size` is cut down while it stands in the bar and gets its size back outside it) |
+| body place | `geom::bar_gap`: folded = the capsule centred in the bar; open / an event card / a widget taller than the bar = floating 8 px above the bar. `IslandView::step_bar`: two springs (`bar_sp` in the bar or not, `raise_sp` folded or floating) give `lift_px`, added to the shell's own rest offset in `win_rect` / `shell_pt` / the drawing (`dy()`), so the folded pill glides up into the open one and sinks back without a jump; reduced motion jumps |
+| look | in the bar the capsule is round on the edge side too (`radius_top` follows `radius_bottom` by `bar_w`) and the notch flares are gone |
+| z-order | the bar is topmost too and puts itself in front of the island when clicked. `taskbar::follow` installs ONE `EVENT_SYSTEM_FOREGROUND` hook (out of context, delivered by the UI thread's message loop; it wakes only when the foreground window changes and only does anything when the new foreground window is a taskbar) that calls `raise_over_taskbar`: walk `GW_HWNDPREV` up from the island (32 steps at most), and when a `Shell_*TrayWnd` is above it `SetWindowPos(HWND_TOPMOST, NOMOVE | NOSIZE | NOACTIVATE | NOOWNERZORDER | ASYNCWINDOWPOS)`. The same call runs from the guard poll (`pill::keep_alive`) as a safety net. Nothing is reparented into `Shell_TrayWnd`; clicks outside the hit region still reach the bar |
+
+Settings: choosing the taskbar when `edge.align` was never chosen (still the default "center") also sets it to "left" (`SettingsModel::try_set`):
+beside Start, in the free area of a centred Win11 taskbar. The settings preview (`settings_view/preview/live.rs`) tells its sandbox island a 48 px
+bar and the stage draws a strip under the island.
+
 ## The pill.rs gates (flag off = the old code path, byte for byte)
 
 `pill.rs` got a `NATIVE: OnceLock<Box<dyn PillWin>>` (`attach_native`, `native_ready`) and these branches:

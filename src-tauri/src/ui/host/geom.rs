@@ -140,22 +140,40 @@ pub enum Dock {
     #[default]
     Top,
     Bottom,
+    /// Inside the bottom taskbar strip (a widget of the bar), growing upward from it; where there is no such bar it is `Bottom`.
+    Taskbar,
 }
 
 impl Dock {
-    /// `"bottom"` = the bottom edge; anything else (also an empty or unknown value) = the top, the default.
+    /// `"bottom"` = the bottom edge, `"taskbar"` = inside the taskbar; anything else (also an empty or unknown value) = the top, the default.
     pub fn from_setting(v: &str) -> Dock {
         if v.eq_ignore_ascii_case("bottom") {
             Dock::Bottom
+        } else if v.eq_ignore_ascii_case("taskbar") {
+            Dock::Taskbar
         } else {
             Dock::Top
         }
+    }
+
+    /// The island stands on the bottom edge of its window and grows upward (the bottom edge and the taskbar).
+    pub fn at_bottom(self) -> bool {
+        self != Dock::Top
+    }
+
+    pub fn code(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_code(c: u8) -> Option<Dock> {
+        [Dock::Top, Dock::Bottom, Dock::Taskbar].get(c as usize).copied()
     }
 }
 
 /// Window position (screen, physical) for a window of `size` (physical) hanging from the `dock` edge of `mon`, centred horizontally. `work` is
 /// the monitor's work area (the monitor minus the taskbar): `under_taskbar` keeps the window inside it (below a top taskbar, above a bottom
-/// one; a taskbar on another side changes nothing for the edge), off it uses the physical edge of the monitor. `margin` (physical px) moves the
+/// one; a taskbar on another side changes nothing for the edge), off it uses the physical edge of the monitor. `Dock::Taskbar` is the bottom edge
+/// here (the fallback where there is no plain bottom bar; the bar itself is [`taskbar_position`]). `margin` (physical px) moves the
 /// window away from that edge. Bottom grows UP: the window's bottom edge is the anchor, so a taller window reaches further up.
 pub fn dock_position(dock: Dock, mon: IRect, work: IRect, under_taskbar: bool, margin: i32, size: (i32, i32), offset_pct: f32) -> (i32, i32) {
     dock_position_aligned(dock, Align::Center, mon, work, under_taskbar, margin, size, offset_pct)
@@ -207,7 +225,7 @@ pub fn dock_position_aligned(dock: Dock, align: Align, mon: IRect, work: IRect, 
     let x = if align == Align::Center { x } else { x.clamp(mon.l, (mon.r - size.0).max(mon.l)) };
     match dock {
         Dock::Top => (x, (if under_taskbar { work.t.max(mon.t) } else { mon.t } + margin).max(mon.t)),
-        Dock::Bottom => (x, ((if under_taskbar { work.b.min(mon.b) } else { mon.b } - margin) - size.1).max(mon.t)),
+        Dock::Bottom | Dock::Taskbar => (x, ((if under_taskbar { work.b.min(mon.b) } else { mon.b } - margin) - size.1).max(mon.t)),
     }
 }
 
@@ -219,6 +237,72 @@ pub fn align_body_dx(align: Align, win_w: f32, body_left: f32, body_w: f32, pad:
         Align::Left => pad - body_left,
         Align::Right => win_w - pad - body_w - body_left,
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// The taskbar strip (`edge.position` = taskbar)
+// ---------------------------------------------------------------------------------------------------------------------------------------
+
+/// A bar thinner than this (logical px) is not a taskbar the island can live in (an auto-hidden bar leaves 0..2 px of work area behind).
+pub const BAR_MIN_H: f32 = 24.0;
+/// Logical px kept free above and below the folded island inside the bar.
+pub const BAR_FIT_MARGIN: f32 = 4.0;
+/// Logical px between the free span's side (the monitor edge or the tray) and the folded island.
+pub const BAR_SIDE_PAD: f32 = 8.0;
+/// Logical px between the open island and the bar it floats above.
+pub const BAR_FLOAT_GAP: f32 = 8.0;
+
+/// The bottom taskbar of a monitor as the island needs it (physical px).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Bar {
+    /// height of the bar strip (monitor bottom minus work-area bottom)
+    pub h: i32,
+    /// where the island may stand horizontally: from the monitor's left edge to the notification area (the tray), or the monitor's right edge
+    pub span: (i32, i32),
+}
+
+/// The taskbar of `mon` when it is a plain, visible bar along the BOTTOM: the work area is the monitor minus a strip at the bottom and nothing
+/// else (a bar at the top / left / right, an auto-hidden bar and a monitor without one give `None`, so the island falls back to the plain bottom
+/// edge). `tray` is the notification area's rectangle when it is known (`taskbar::tray_rect`): the free span ends [`BAR_SIDE_PAD`] before it.
+pub fn bottom_bar(mon: IRect, work: IRect, scale: f32, tray: Option<IRect>) -> Option<Bar> {
+    let h = mon.b - work.b;
+    let plain = work.l == mon.l && work.r == mon.r && work.t == mon.t;
+    if !plain || h < phys(BAR_MIN_H, scale) || h > mon.h() / 3 {
+        return None;
+    }
+    // the tray counts when it is a piece of the bar on the right half of the monitor
+    let right = tray.filter(|t| t.r > t.l && t.b > work.b - 1 && t.l > mon.cx() && t.l < mon.r).map_or(mon.r, |t| t.l - phys(BAR_SIDE_PAD, scale));
+    Some(Bar { h, span: (mon.l, right.max(mon.l)) })
+}
+
+/// Window position (screen, physical) of the island window of `size` inside `bar`: the window's BOTTOM is the monitor's bottom (the window
+/// covers the bar and everything above it as far as it is tall; only its hit region is clickable). `pad` is how far the shell keeps the body from
+/// the window's side (the view's [`ALIGN_PAD`]), so the body of a left / right island stands [`BAR_SIDE_PAD`] from the span's side; `min_body` is the
+/// narrowest folded body, which must stay inside the span; `offset_pct` (`offsetX`) moves the island away from its side / from the middle.
+pub fn taskbar_position(align: Align, mon: IRect, bar: &Bar, scale: f32, size: (i32, i32), pad: i32, min_body: i32, offset_pct: f32) -> (i32, i32) {
+    let side = phys(BAR_SIDE_PAD, scale);
+    let (lo, hi) = (bar.span.0 + side, (bar.span.1 - side).max(bar.span.0 + side));
+    let min_body = min_body.min(hi - lo).max(0);
+    let shift = (offset_pct.clamp(-50.0, 50.0) as f64 / 100.0 * mon.w() as f64).round() as i32;
+    let x = match align {
+        Align::Left => (lo + shift).clamp(lo, hi - min_body) - pad,
+        Align::Right => (hi + shift).clamp(lo + min_body, hi) + pad - size.0,
+        Align::Center => ((lo + hi) / 2 + shift).clamp(lo + min_body / 2, hi - min_body / 2) - size.0 / 2,
+    };
+    (x, (mon.b - size.1).max(mon.t))
+}
+
+/// The tallest folded capsule that fits a bar `bar_h` tall (all logical px).
+pub fn bar_fold_cap(bar_h: f32) -> f32 {
+    (bar_h - 2.0 * BAR_FIT_MARGIN).max(16.0)
+}
+
+/// Where the body's bottom edge stands above the screen's bottom edge (logical px): `raised` 0 = the folded body centred in the bar, 1 = the
+/// open island floating [`BAR_FLOAT_GAP`] above it. In between it blends, so the folded pill glides up into the open one.
+pub fn bar_gap(bar_h: f32, body_h: f32, raised: f32) -> f32 {
+    let folded = (bar_h - body_h) / 2.0;
+    let floating = bar_h + BAR_FLOAT_GAP;
+    folded + (floating - folded) * raised.clamp(0.0, 1.0)
 }
 
 /// Mirrors a rectangle's vertical position inside a window `h` tall: the island is laid out hanging from the top; for the bottom dock every
@@ -410,6 +494,162 @@ mod tests {
         assert_eq!(dock_position(Dock::Bottom, m2, m2, true, 0, (720, 2000), 0.0).1, -300);
     }
 
+    // ---- the taskbar strip ----
+
+    /// A monitor of 2560 x 1440 logical px at `dpi` with a bottom taskbar `bar` logical px tall: (monitor, work area, scale).
+    fn bar_screen(dpi: u32, bar: f32) -> (IRect, IRect, f32) {
+        let s = scale_from_dpi(dpi);
+        let mon = IRect::new(0, 0, phys(2560.0, s), phys(1440.0, s));
+        (mon, IRect::new(0, 0, mon.r, mon.b - phys(bar, s)), s)
+    }
+
+    #[test]
+    fn the_taskbar_dock_is_a_third_edge_that_stands_at_the_bottom() {
+        assert_eq!((Dock::from_setting("taskbar"), Dock::from_setting("TaskBar"), Dock::from_setting("bottom")), (Dock::Taskbar, Dock::Taskbar, Dock::Bottom));
+        assert_eq!(Dock::from_setting("in the taskbar"), Dock::Top, "an unknown value is still the top");
+        assert!(Dock::Taskbar.at_bottom() && Dock::Bottom.at_bottom() && !Dock::Top.at_bottom());
+        for d in [Dock::Top, Dock::Bottom, Dock::Taskbar] {
+            assert_eq!(Dock::from_code(d.code()), Some(d));
+        }
+        assert_eq!(Dock::from_code(9), None);
+    }
+
+    #[test]
+    fn a_plain_bottom_bar_is_found_at_every_height_and_dpi() {
+        for dpi in [96u32, 120, 144, 192] {
+            for bar in [40.0f32, 48.0, 52.0] {
+                let (mon, work, s) = bar_screen(dpi, bar);
+                let b = bottom_bar(mon, work, s, None).unwrap_or_else(|| panic!("{bar} px at {dpi} dpi"));
+                assert_eq!(b.h, phys(bar, s), "{bar} px at {dpi} dpi");
+                assert_eq!(b.span, (0, mon.r), "no tray known: the whole width");
+            }
+        }
+    }
+
+    #[test]
+    fn no_plain_bottom_bar_means_the_plain_bottom_edge() {
+        let mon = IRect::new(0, 0, 2560, 1440);
+        // top, left, right bars
+        assert_eq!(bottom_bar(mon, IRect::new(0, 48, 2560, 1440), 1.0, None), None, "a bar on top");
+        assert_eq!(bottom_bar(mon, IRect::new(60, 0, 2560, 1440), 1.0, None), None, "a bar on the left");
+        assert_eq!(bottom_bar(mon, IRect::new(0, 0, 2500, 1440), 1.0, None), None, "a bar on the right");
+        // auto-hide: the whole monitor, or a stub of a few px
+        assert_eq!(bottom_bar(mon, mon, 1.0, None), None, "auto-hidden");
+        assert_eq!(bottom_bar(mon, IRect::new(0, 0, 2560, 1438), 1.0, None), None, "a 2 px stub is not a bar");
+        // a bar at the bottom plus another one at a side
+        assert_eq!(bottom_bar(mon, IRect::new(60, 0, 2560, 1392), 1.0, None), None);
+        // a second monitor without a taskbar, left of the primary and higher up
+        let m2 = IRect::new(-1920, -300, 0, 780);
+        assert_eq!(bottom_bar(m2, m2, 1.0, None), None);
+        // a second monitor WITH its own bar works on its own coordinates
+        let b = bottom_bar(m2, IRect::new(-1920, -300, 0, 732), 1.0, None).unwrap();
+        assert_eq!((b.h, b.span), (48, (-1920, 0)));
+        // an absurdly tall strip is no bar either
+        assert_eq!(bottom_bar(mon, IRect::new(0, 0, 2560, 400), 1.0, None), None);
+    }
+
+    #[test]
+    fn the_free_span_ends_before_the_tray() {
+        let (mon, work, s) = bar_screen(120, 48.0);
+        let bar_top = work.b;
+        let tray = IRect::new(2800, bar_top, mon.r, mon.b); // 400 px of notification area on the right
+        let b = bottom_bar(mon, work, s, Some(tray)).unwrap();
+        assert_eq!(b.span, (0, 2800 - phys(BAR_SIDE_PAD, s)));
+        // a tray rectangle that is nonsense (left half, off the bar, empty) is ignored
+        for t in [IRect::new(100, bar_top, 500, mon.b), IRect::new(2800, 0, mon.r, 40), IRect::new(2800, bar_top, 2800, mon.b), IRect::new(mon.r + 10, bar_top, mon.r + 100, mon.b)] {
+            assert_eq!(bottom_bar(mon, work, s, Some(t)).unwrap().span, (0, mon.r), "{t:?}");
+        }
+        // second monitor to the right of the primary: its own tray
+        let m2 = IRect::new(2560, 0, 4480, 1080);
+        let w2 = IRect::new(2560, 0, 4480, 1032);
+        let t2 = IRect::new(4100, 1032, 4480, 1080);
+        assert_eq!(bottom_bar(m2, w2, 1.0, Some(t2)).unwrap().span, (2560, 4100 - 8));
+    }
+
+    #[test]
+    fn the_taskbar_island_stands_in_the_bar_at_its_side() {
+        for dpi in [96u32, 120, 144, 192] {
+            for bar in [40.0f32, 48.0, 52.0] {
+                let (mon, work, s) = bar_screen(dpi, bar);
+                let tray = IRect::new(mon.r - phys(300.0, s), work.b, mon.r, mon.b);
+                let b = bottom_bar(mon, work, s, Some(tray)).unwrap();
+                let size = size_to_phys((720.0, 120.0 + bar), s); // the window is as tall as the frame plus the bar
+                let (pad, minb) = (phys(ALIGN_PAD, s), phys(118.0, s));
+                let side = phys(BAR_SIDE_PAD, s);
+                let at = |a, off| taskbar_position(a, mon, &b, s, size, pad, minb, off);
+                // left: the body (window + pad) is a side pad from the monitor's left edge; the window's bottom is the monitor's bottom
+                let (x, y) = at(Align::Left, 0.0);
+                assert_eq!((x + pad, y + size.1), (side, mon.b), "{bar} px at {dpi} dpi, left");
+                // right: the body's right edge (window right - pad) is a side pad before the tray
+                let (x, y) = at(Align::Right, 0.0);
+                assert_eq!((x + size.0 - pad, y + size.1), (b.span.1 - side, mon.b), "{bar} px at {dpi} dpi, right");
+                // middle of the free span
+                let (x, _) = at(Align::Center, 0.0);
+                assert_eq!(x + size.0 / 2, (side + b.span.1 - side) / 2, "{bar} px at {dpi} dpi, middle");
+            }
+        }
+    }
+
+    #[test]
+    fn the_offset_moves_the_taskbar_island_but_never_off_the_span() {
+        let (mon, work, s) = bar_screen(96, 48.0);
+        let b = bottom_bar(mon, work, s, Some(IRect::new(2200, work.b, 2560, mon.b))).unwrap();
+        let size = (720, 168);
+        let near = Bar { h: 48, span: (0, 1000) };
+        let at = |a, off| taskbar_position(a, mon, &b, s, size, 20, 118, off).0;
+        assert_eq!(at(Align::Left, 0.0) + 20, 8);
+        assert_eq!(at(Align::Left, 10.0) + 20, 8 + 256, "10 % of the monitor to the right");
+        assert_eq!(at(Align::Left, -30.0) + 20, 8, "left of the side is the side");
+        assert_eq!(at(Align::Left, 50.0) + 20, 8 + 1280, "half the monitor");
+        // a tray in the middle of the monitor: the shift stops where the narrowest body still fits before it
+        assert_eq!(taskbar_position(Align::Left, mon, &near, 1.0, size, 20, 118, 50.0).0 + 20, 1000 - 8 - 118 - 8 + 8, "and never over the tray");
+        assert_eq!(at(Align::Right, 0.0) + 720 - 20, 2200 - 8 - 8);
+        assert_eq!(at(Align::Right, -10.0) + 720 - 20, 2200 - 16 - 256);
+        assert_eq!(at(Align::Right, 50.0) + 720 - 20, 2200 - 16, "right of the tray stays before the tray");
+        assert_eq!(at(Align::Right, -50.0) + 720 - 20, 2184 - 1280);
+        assert_eq!(taskbar_position(Align::Right, mon, &near, 1.0, size, 20, 118, -50.0).0 + 720 - 20, 8 + 118, "the left end keeps the narrowest body inside");
+        assert_eq!(at(Align::Center, 0.0) + 360, (8 + 2200 - 16) / 2);
+        assert_eq!(at(Align::Center, 50.0) + 360, 2200 - 16 - 59);
+        // a span narrower than the body does not panic and puts the island at the side
+        let tiny = Bar { h: 48, span: (0, 100) };
+        assert_eq!(taskbar_position(Align::Left, mon, &tiny, 1.0, size, 20, 118, 0.0).0 + 20, 8);
+        assert_eq!(taskbar_position(Align::Center, mon, &tiny, 1.0, size, 20, 118, 0.0).1, mon.b - 168);
+    }
+
+    #[test]
+    fn the_taskbar_window_stays_on_its_own_monitor() {
+        // a second monitor to the left of the primary and higher up: bottom = that monitor's bottom
+        let m2 = IRect::new(-1920, -300, 0, 780);
+        let b = bottom_bar(m2, IRect::new(-1920, -300, 0, 732), 1.0, Some(IRect::new(-400, 732, 0, 780))).unwrap();
+        let (x, y) = taskbar_position(Align::Left, m2, &b, 1.0, (720, 168), 20, 118, 0.0);
+        assert_eq!((x + 20, y + 168), (-1920 + 8, 780));
+        // a window taller than the monitor is pinned to its top
+        assert_eq!(taskbar_position(Align::Left, m2, &b, 1.0, (720, 2000), 20, 118, 0.0).1, -300);
+    }
+
+    #[test]
+    fn the_folded_capsule_fits_the_bar_and_rises_when_it_opens() {
+        for (bar, cap) in [(40.0, 32.0), (48.0, 40.0), (52.0, 44.0)] {
+            assert_eq!(bar_fold_cap(bar), cap);
+            // the default 30 px capsule fits every bar; folded it is centred, with the same room above and below
+            let gap = bar_gap(bar, 30.0, 0.0);
+            assert_eq!(gap, (bar - 30.0) / 2.0);
+            assert!(gap >= BAR_FIT_MARGIN - 0.001, "{bar}: {gap}");
+            // the capsule at its cap keeps the margin
+            assert_eq!(bar_gap(bar, cap, 0.0), BAR_FIT_MARGIN);
+            assert_eq!(bar_gap(bar, 30.0, 1.0), bar + BAR_FLOAT_GAP, "open: above the bar");
+        }
+        // in between it glides: monotonic and continuous
+        let mut last = bar_gap(48.0, 30.0, 0.0);
+        for i in 1..=10 {
+            let g = bar_gap(48.0, 30.0, i as f32 / 10.0);
+            assert!(g > last, "{g} > {last}");
+            last = g;
+        }
+        assert_eq!(bar_gap(48.0, 30.0, 7.0), bar_gap(48.0, 30.0, 1.0), "raised is clamped");
+        assert_eq!(bar_fold_cap(10.0), 16.0, "never a degenerate capsule");
+    }
+
     #[test]
     fn the_left_island_stands_in_the_corner_of_the_work_area_and_grows_up() {
         let mon = IRect::new(0, 0, 2560, 1440);
@@ -439,12 +679,12 @@ mod tests {
             let mon = IRect::new(0, 0, (2560.0 * s) as i32, (1440.0 * s) as i32);
             let work = IRect::new(0, 0, mon.r, mon.b - phys(48.0, s));
             let size = size_to_phys((720.0, 120.0), s);
-            for dock in [Dock::Top, Dock::Bottom] {
+            for dock in [Dock::Top, Dock::Bottom, Dock::Taskbar] {
                 let (x, y) = dock_position_aligned(dock, Align::Left, mon, work, true, 0, size, 0.0);
                 assert_eq!(x, 0, "{dpi} dpi {dock:?}");
                 match dock {
                     Dock::Top => assert_eq!(y, 0),
-                    Dock::Bottom => assert_eq!(y + size.1, work.b),
+                    Dock::Bottom | Dock::Taskbar => assert_eq!(y + size.1, work.b),
                 }
                 let (x, _) = dock_position_aligned(dock, Align::Right, mon, work, true, 0, size, 0.0);
                 assert_eq!(x + size.0, mon.r, "{dpi} dpi {dock:?}");

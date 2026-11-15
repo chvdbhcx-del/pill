@@ -194,6 +194,8 @@ mod tests {
         let (p, skipped) = run(json!({ "edge.position": "bottom", "edge.align": "left", "underTaskbar": false, "offsetX": 10 }));
         assert_eq!((p.get("edge.position"), p.get("edge.align"), skipped), (Some(&json!("bottom")), Some(&json!("left")), 0));
         assert_eq!(settings::defaults().get("edge.align"), Some(&json!("center")));
+        let (p, skipped) = run(json!({ "edge.position": "taskbar", "edge.align": "left" }));
+        assert_eq!((p.get("edge.position"), p.get("edge.align"), skipped), (Some(&json!("taskbar")), Some(&json!("left")), 0), "the taskbar is one more string");
         assert!(run(json!({ "edge.position": true })).0.is_empty(), "a wrong type is refused");
         assert_eq!(settings::defaults().get("edge.position"), Some(&json!("top")), "the default is the top edge");
     }
