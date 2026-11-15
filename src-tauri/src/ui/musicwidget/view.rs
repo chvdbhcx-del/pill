@@ -18,7 +18,7 @@ use crate::ui::island::gpu::Gpu;
 use crate::ui::liquid::{Feel, Flow};
 use crate::ui::tabs::a::core::{Tick, Ticker};
 use crate::ui::view::{Cx, Msg, ProximityEvent, Ticket, View};
-use glasskit::canvas::Canvas;
+use glasskit::canvas::{scale_about, translation, Canvas};
 use glasskit::geom::Rect;
 use glasskit::input::{Cursor, InputEvent, MouseButton, Response};
 use glasskit::text::Style;
@@ -48,6 +48,9 @@ pub const SLOT_EVENT: &str = "music:slot";
 
 pub struct MusicView {
     stand: Stand,
+    /// the size factor as it glides to the island's `size` (`stand.k` follows it every frame), and the bar's real height (the stand has it in base px)
+    kf: Flow,
+    bar_real: f32,
     /// a new place in the bar waiting for the body to have left (the window is re-placed then, see `step`)
     reseat: Option<Stand>,
     settings: ShellSettings,
@@ -105,6 +108,8 @@ impl MusicView {
         }
         let mut v = MusicView {
             stand: Stand { scale: cx.scale.max(0.25), ..dock.into() },
+            kf: Flow::new(1.0, Feel::FLOW),
+            bar_real: 0.0,
             reseat: None,
             settings: ShellSettings::default(),
             os_light: false,
@@ -144,6 +149,8 @@ impl MusicView {
         if let Ok(s) = cx.call("settings_get", json!({})) {
             v.take_settings(&s);
         }
+        v.kf.jump(v.kf.target());
+        v.apply_k();
         v.os_light = crate::ui::island::sys::os_prefers_light();
         v.state_ticket = Some(cx.call_async("media_state", json!({ "known": null })));
         v
@@ -151,10 +158,27 @@ impl MusicView {
 
     /// The place in the bar the window was created for (`mod.rs` read it from the monitor); a no-op for the other docks.
     pub fn with_slot(mut self, bar: f32, align: Align) -> MusicView {
+        self.stand.align = align; // the plain docks too: the body stands on the side the window is placed at
         if self.stand.dock == Dock::Taskbar {
-            self.stand = Stand { dock: Dock::Taskbar, align, bar, scale: self.stand.scale };
+            self.bar_real = bar;
         }
+        self.apply_k();
         self
+    }
+
+    /// The size factor into the stand (and the bar's real height into base px), every frame it moves.
+    fn apply_k(&mut self) {
+        let k = self.kf.at().clamp(lg::KMIN * 0.9, lg::KMAX * 1.1);
+        if (self.stand.k - k).abs() > 1e-6 || (self.stand.bar * k - self.bar_real).abs() > 1e-3 {
+            self.stand.k = k;
+            self.stand.bar = self.bar_real / k;
+            self.last_hit = None;
+        }
+    }
+
+    /// A stand for a bar `bar` px tall (real) and the side `align`, at the current size.
+    fn stand_in_bar(&self, align: Align, bar: f32) -> Stand {
+        Stand { dock: self.stand.dock, align, bar: bar / self.stand.k, scale: self.stand.scale, k: self.stand.k }
     }
 
     /// The monitor's DPI scale (the window is a whole number of device px; the layout snaps to them, see `Stand`).
@@ -165,6 +189,7 @@ impl MusicView {
             if let Some(r) = self.reseat.as_mut() {
                 r.scale = scale;
             }
+            self.apply_k();
             self.last_hit = None;
         }
     }
@@ -180,6 +205,7 @@ impl MusicView {
         if self.stand.dock != Dock::Taskbar {
             return;
         }
+        self.bar_real = to.bar * to.k;
         if self.vis {
             self.reseat = Some(to);
             self.sync(cx);
@@ -199,6 +225,15 @@ impl MusicView {
         self.widget_on = s.get("media.widget").and_then(Value::as_bool).unwrap_or(false);
         self.module_on = s.get("module.media") != Some(&Value::Bool(false));
         self.presence.set_enabled(self.widget_on && self.module_on);
+        if let Some(pct) = s.get("size").and_then(Value::as_f64) {
+            let k = lg::size_k(pct);
+            if (k - self.kf.target()).abs() > 1e-6 {
+                self.kf.to(k);
+                if !self.vis {
+                    self.kf.jump(k); // nobody sees it: no animation, no frames
+                }
+            }
+        }
     }
 
     fn theme(&self) -> Theme {
@@ -216,7 +251,7 @@ impl MusicView {
 
     /// What answers the cursor now (the hit region and the clicks use the same numbers as `draw`).
     fn body_now(&self) -> Rect {
-        lg::hit_rect(self.stand, self.expand.at().clamp(0.0, 1.05), self.slide())
+        self.stand.rect_to_real(lg::hit_rect(self.stand, self.expand.at().clamp(0.0, 1.05), self.slide()))
     }
 
     fn slide(&self) -> f32 {
@@ -227,8 +262,9 @@ impl MusicView {
         self.expand.at().clamp(0.0, 1.05)
     }
 
+    /// `pos` is in the real window; the layout is in base px.
     fn hit_at(&self, pos: (f32, f32)) -> Hit {
-        lg::hit(self.stand, self.open(), self.slide(), pos)
+        lg::hit(self.stand, self.open(), self.slide(), self.stand.to_base(pos))
     }
 
     fn pos_now(&self, now: f64) -> u64 {
@@ -344,6 +380,7 @@ impl MusicView {
         self.shown.moving()
             || self.fade.moving()
             || self.expand.moving()
+            || self.kf.moving()
             || self.swap.moving()
             || self.pp.moving()
             || self.prog.moving()
@@ -358,7 +395,7 @@ impl View for MusicView {
     }
 
     fn size_hint(&self) -> Option<(f32, f32)> {
-        Some(self.stand.win())
+        Some(self.stand.real_win())
     }
 
     fn on_dpi(&mut self, scale: f32, cx: &mut Cx) {
@@ -386,8 +423,9 @@ impl View for MusicView {
             InputEvent::MouseMove { pos, .. } => {
                 if self.seek.is_some() {
                     let bar = lg::card_layout(lg::frames(self.stand, self.open(), self.slide()).1).bar;
-                    self.seek = Some(lg::seek_at(bar, pos.0));
-                    self.prog.to(lg::seek_at(bar, pos.0));
+                    let f = lg::seek_at(bar, self.stand.to_base(*pos).0);
+                    self.seek = Some(f);
+                    self.prog.to(f);
                     return Response { redraw: true, consumed: true, capture: true, cursor: Some(Cursor::Hand), ..Response::NONE };
                 }
                 self.rescale(cx.scale);
@@ -480,7 +518,8 @@ impl View for MusicView {
                 SLOT_EVENT => {
                     let bar = payload.get("bar").and_then(Value::as_f64).unwrap_or(0.0).max(0.0) as f32;
                     let align = Align::from_setting(payload.get("align").and_then(Value::as_str).unwrap_or("left"));
-                    self.reslot(Stand { dock: self.stand.dock, align, bar, scale: self.stand.scale }, cx);
+                    let to = self.stand_in_bar(align, bar);
+                    self.reslot(to, cx);
                 }
                 _ => return Response::NONE,
             },
@@ -505,6 +544,8 @@ impl View for MusicView {
 
     fn step(&mut self, dt: f64, cx: &mut Cx) -> bool {
         self.rescale(cx.scale);
+        self.kf.step(dt);
+        self.apply_k();
         self.shown.step(dt);
         self.fade.step(dt);
         self.expand.step(dt);
@@ -579,13 +620,16 @@ impl View for MusicView {
         let p = self.open();
         let dy = self.slide();
         let body = lg::body(self.stand, p, dy);
-        let rad = (28.0 - 4.0 * p.min(1.0)).min(body.h / 2.0);
+        let rad = lg::body_radius(p, body.h);
         let accent = self.accent(&th);
         let pos = if let Some(f) = self.seek { (f as f64 * self.track.duration_ms as f64).round() as u64 } else { self.pos_now(cx.now_ms) };
-        cv.with_opacity(alpha, |cv| {
+        // the layout is in base px (100 %): draw it scaled by the size factor, from where the base window stands in the real one
+        let (st, (ox, oy)) = (self.stand, self.stand.origin());
+        cv.with_transform(translation(ox, oy), |cv| cv.with_transform(scale_about((0.0, 0.0), st.k, st.k), |cv| cv.with_opacity(alpha, |cv| {
             // in the bar the folded capsule has only a few px of strip below it (the window ends at the screen's edge): a tighter shadow that
-            // does not reach the floor, so it is never cut off, growing to the island's own while the card rises
-            let (blur, sdy) = if self.stand.in_bar() { (4.0 + 6.0 * p.clamp(0.0, 1.0), -1.0) } else { (10.0, if self.stand.dock.at_bottom() { -2.0 } else { 3.0 }) };
+            // does not reach the floor, so it is never cut off, growing to the island's own while the card rises. Elsewhere the shadow stays
+            // inside the window's PAD on every side, at the top edge too (it falls the other way there)
+            let (blur, sdy) = if self.stand.in_bar() { (4.0 + 4.0 * p.clamp(0.0, 1.0), -1.0) } else { (lg::SHADOW_BLUR, if self.stand.dock.at_bottom() { -lg::SHADOW_DY } else { lg::SHADOW_DY }) };
             cv.shadow_rr(body, rad, blur, sdy, Color::rgba(0.0, 0.0, 0.0, 0.45));
             cv.fill_rr(body, rad, th.bg.alpha(0.97));
             cv.stroke_rr(body, rad, 1.0, th.border);
@@ -601,7 +645,7 @@ impl View for MusicView {
                     cv.with_opacity(card_a, |cv| ink.card(cv, card, &mut self.gpu_l, self.art_id, self.art_url.as_deref(), self.seek.is_some() || self.near));
                 }
             });
-        });
+        })));
     }
 }
 
@@ -673,8 +717,18 @@ impl Ink<'_> {
             cv.fill_rr(Rect::new(r.x, r.y, w.max(r.h), r.h), r.h / 2.0, self.accent);
         }
         if knob > 0.01 {
-            cv.fill_circle((r.x + w, r.cy()), (r.h * 0.9 + 1.0) * knob, th.text);
+            // the knob stays inside the track's ends, so the track keeps the card's padding (cover, times and track share their left and right edges)
+            let kr = (r.h * 0.9 + 1.0) * knob;
+            cv.fill_circle(((r.x + w).clamp(r.x + kr, (r.right() - kr).max(r.x + kr)), r.cy()), kr, th.text);
         }
+    }
+
+    /// The album cover in the base rectangle `r`, drawn in the REAL window's coordinates (the picture is decoded at its real size, so it is sharp at
+    /// any size factor): `rad` is the corner radius in base px.
+    fn cover(&self, cv: &Canvas, gpu: &mut Gpu, art: u64, url: Option<&str>, r: Rect, rad: f32) {
+        let (k, (ox, oy)) = (self.st.k, self.st.origin());
+        let real = self.st.rect_to_real(r);
+        cv.with_transform(scale_about((0.0, 0.0), 1.0 / k, 1.0 / k), |cv| cv.with_transform(translation(-ox, -oy), |cv| gpu.cover_r(cv, self.th, art, url, real, self.now, rad * k)));
     }
 
     /// The track change cross-fade of the bar capsule: ONE line, the heading and then the sub line in the dimmer ink after it (`r` is centred
@@ -698,12 +752,11 @@ impl Ink<'_> {
     }
 
     fn capsule(&self, cv: &Canvas, c: Rect, gpu: &mut Gpu, art: u64, url: Option<&str>) {
-        let th = self.th;
         let l = lg::capsule_layout_in(self.st, c);
         if self.st.in_bar() {
-            gpu.cover_r(cv, th, art, url, l.cover, self.now, lg::bar_cover_radius(c.h));
+            self.cover(cv, gpu, art, url, l.cover, lg::bar_cover_radius(c.h));
         } else {
-            gpu.cover(cv, th, art, url, l.cover, self.now);
+            self.cover(cv, gpu, art, url, l.cover, 7.0);
         }
         if self.st.in_bar() {
             self.line(cv, l.text, TITLE, SUB);
@@ -721,7 +774,7 @@ impl Ink<'_> {
     fn card(&self, cv: &Canvas, c: Rect, gpu: &mut Gpu, art: u64, url: Option<&str>, grab: bool) {
         let th = self.th;
         let l = lg::card_layout(c);
-        gpu.cover(cv, th, art, url, l.cover, self.now);
+        self.cover(cv, gpu, art, url, l.cover, lg::card_cover_radius());
         self.lines(cv, l.title, l.sub, BIG, MID);
         let album = self.track.album.trim();
         if !album.is_empty() {

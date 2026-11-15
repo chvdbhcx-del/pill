@@ -15,15 +15,32 @@ use serde_json::Value;
 pub const BODY_W: f32 = 320.0;
 /// Height of the collapsed capsule and of the open card.
 pub const CAPSULE_H: f32 = 56.0;
-pub const CARD_H: f32 = 184.0;
+pub const CARD_H: f32 = 200.0;
 /// Room around the body inside the window (soft shadow, the overshoot of the springs).
 pub const PAD: f32 = 12.0;
-/// The fixed window, logical px.
+/// The shadow of the body: it must stay inside [`PAD`] (the window ends there), so `SHADOW_BLUR + SHADOW_DY < PAD` on every side.
+pub const SHADOW_BLUR: f32 = 8.0;
+pub const SHADOW_DY: f32 = 2.0;
+/// The window at size 100 %, logical px: the unit every layout number below is in ("base px"). The widget is laid out in base px and drawn
+/// scaled by `k` (the island's `size`), see [`Stand::origin`].
 pub const WIN: (f32, f32) = (BODY_W + 2.0 * PAD, CARD_H + 2.0 * PAD);
+/// The `size` range of the island (80..200 %) as a factor: the widget follows it.
+pub const KMIN: f32 = 0.8;
+pub const KMAX: f32 = 2.0;
+/// `size` (percent) as the widget's factor.
+pub fn size_k(pct: f64) -> f32 {
+    (pct / 100.0).clamp(KMIN as f64, KMAX as f64) as f32
+}
+/// The real window never changes: big enough for the largest size, click-through outside the body. The body stands in it by [`Stand::origin`].
+pub const WIN_REAL: (f32, f32) = (WIN.0 * KMAX, WIN.1 * KMAX);
+/// In the taskbar the window's side is this far from the body's anchored side, whatever the size (so a change of size never moves the window).
+pub const BAR_PAD: f32 = PAD * KMAX;
 /// The folded capsule in the taskbar: narrower than the card, as tall as the bar allows (see [`Stand::fold_h`]).
 pub const BAR_FOLD_W: f32 = 288.0;
 /// The window in the taskbar: the open card floats [`geom::BAR_FLOAT_GAP`] above the tallest bar the widget lives in ([`geom::WIDGET_BAR_MAX_H`]).
 pub const WIN_BAR: (f32, f32) = (WIN.0, PAD + CARD_H + geom::BAR_FLOAT_GAP + geom::WIDGET_BAR_MAX_H);
+/// The real window in the taskbar: the open card at the largest size floats [`geom::BAR_FLOAT_GAP`] above the tallest bar (real px).
+pub const WIN_BAR_REAL: (f32, f32) = (WIN.0 * KMAX, (PAD + CARD_H + geom::BAR_FLOAT_GAP) * KMAX + geom::WIDGET_BAR_MAX_H);
 /// How long a paused track keeps the widget on screen.
 pub const PAUSE_GRACE_MS: f64 = 45_000.0;
 /// The expansion past which the card (not the capsule) answers clicks.
@@ -183,23 +200,78 @@ impl Presence {
 pub struct Stand {
     pub dock: Dock,
     pub align: Align,
+    /// the bar's height in BASE px (the real height over `k`), 0 = no bar
     pub bar: f32,
     /// device px per logical px of the monitor the window stands on: the window is a whole number of device px, so its floor (the monitor's
     /// bottom, in the bar) and the capsule's edges are snapped to device px by [`Stand::surface`] and [`Stand::fold_h`]
     pub scale: f32,
+    /// the size factor (`size` / 100, see [`size_k`]): one base px is `k` logical px. 1.0 = the layout at 100 %.
+    pub k: f32,
 }
 
 impl From<Dock> for Stand {
     fn from(dock: Dock) -> Stand {
-        Stand { dock, align: Align::Left, bar: 0.0, scale: 1.0 }
+        Stand { dock, align: Align::Left, bar: 0.0, scale: 1.0, k: 1.0 }
     }
 }
 
 impl Stand {
-    /// A logical length snapped to the nearest device px.
+    /// Device px per BASE px: the grid every layout number is snapped to.
+    pub fn bs(&self) -> f32 {
+        self.scale.max(0.25) * self.k.max(0.1)
+    }
+
+    /// A base length snapped to the nearest device px.
     pub fn px(&self, v: f32) -> f32 {
-        let k = self.scale.max(0.25);
+        let k = self.bs();
         geom::phys(v, k) as f32 / k
+    }
+
+    /// The real window (logical px): the same for every size.
+    pub fn real_win(&self) -> (f32, f32) {
+        if self.dock == Dock::Taskbar {
+            WIN_BAR_REAL
+        } else {
+            WIN_REAL
+        }
+    }
+
+    /// Where the base layout's origin stands in the real window (logical px, a whole number of device px): window = base * `k` + origin. The
+    /// base window (`surface`) hangs on the side the widget is docked to: its dock edge on the real window's top / bottom edge and, along the edge,
+    /// its left / right side on the real window's side (in the bar: the body's anchored side [`BAR_PAD`] from it) or its middle on the middle.
+    /// So at 100 % a left docked body stands `PAD` from the screen's side and edge, and a change of `k` only grows it away from the corner.
+    pub fn origin(&self) -> (f32, f32) {
+        let m = self.scale.max(0.25);
+        let real = self.real_win();
+        let (rw, rh) = (geom::phys(real.0, m), geom::phys(real.1, m));
+        let s = self.surface();
+        let (bw, bh) = ((s.0 * self.k * m).round() as i32, (s.1 * self.k * m).round() as i32);
+        let bar = self.in_bar();
+        let ox = match self.align {
+            Align::Center => ((rw - bw) as f32 / 2.0).round() as i32,
+            Align::Left if bar => ((BAR_PAD - self.px(PAD) * self.k) * m).round() as i32,
+            Align::Left => 0,
+            Align::Right if bar => rw - (BAR_PAD * m).round() as i32 - ((s.0 - self.px(PAD)) * self.k * m).round() as i32,
+            Align::Right => rw - bw,
+        };
+        let oy = if self.dock == Dock::Top { 0 } else { rh - bh };
+        (ox as f32 / m, oy as f32 / m)
+    }
+
+    /// A base point -> the real window, and back.
+    pub fn to_real(&self, p: (f32, f32)) -> (f32, f32) {
+        let o = self.origin();
+        (p.0 * self.k + o.0, p.1 * self.k + o.1)
+    }
+
+    pub fn to_base(&self, p: (f32, f32)) -> (f32, f32) {
+        let o = self.origin();
+        ((p.0 - o.0) / self.k, (p.1 - o.1) / self.k)
+    }
+
+    pub fn rect_to_real(&self, r: Rect) -> Rect {
+        let o = self.origin();
+        Rect::new(r.x * self.k + o.0, r.y * self.k + o.1, r.w * self.k, r.h * self.k)
     }
 
     /// The window as the host really makes it (logical px): a whole number of device px, so up to half a device px off [`Stand::win`]. Its
@@ -214,7 +286,7 @@ impl Stand {
         self.dock == Dock::Taskbar && self.bar > 0.0
     }
 
-    /// The window's size, logical px (it never changes for a given dock).
+    /// The window's size in base px (it never changes for a given dock); the real window is [`Stand::real_win`].
     pub fn win(&self) -> (f32, f32) {
         if self.dock == Dock::Taskbar {
             WIN_BAR
@@ -228,8 +300,9 @@ impl Stand {
     /// (no half-pixel rows: crisp edges, truly centred) at every DPI.
     pub fn fold_h(&self) -> f32 {
         if self.in_bar() {
-            let k = self.scale.max(0.25);
-            let (bar_p, mut h_p) = (geom::phys(self.bar, k), geom::phys(geom::bar_fold_cap(self.bar).min(CAPSULE_H), k));
+            // the cap is a REAL length (the bar's margin does not grow with the size): the capsule only gets as big as the bar allows
+            let (k, cap) = (self.bs(), geom::bar_fold_cap(self.bar * self.k) / self.k);
+            let (bar_p, mut h_p) = (geom::phys(self.bar, k), geom::phys(cap.min(CAPSULE_H), k));
             if (bar_p - h_p) % 2 != 0 {
                 h_p -= 1;
             }
@@ -267,7 +340,11 @@ pub fn body(st: impl Into<Stand>, p: f32, dy: f32) -> Rect {
             // snapped when folded, and the snap fades out while it opens so that nothing steps
             Align::Center => (win.0 - w) / 2.0 + (st.px((win.0 - fw) / 2.0) - (win.0 - fw) / 2.0) * (1.0 - p.clamp(0.0, 1.0)),
         };
-        return Rect::new(x, win.1 - geom::bar_gap(st.bar, fh, p) + dy - h, w, h);
+        // open: the sides on device px too (folded they are snapped above; in between they glide)
+        let (x, w) = if p >= 1.0 { (st.px(x), st.px(x + w) - st.px(x)) } else { (x, w) };
+        // the vertical edges on device px (a size where the float gap is not a whole number of them would blur the open card's outline)
+        let (top, bottom) = (st.px(win.1 - geom::bar_gap(st.bar, fh, p) + dy - h), st.px(win.1 - geom::bar_gap(st.bar, fh, p) + dy));
+        return Rect::new(x, top, w, bottom - top);
     }
     let h = (CAPSULE_H + (CARD_H - CAPSULE_H) * p).max(8.0);
     let y = match st.dock {
@@ -275,7 +352,14 @@ pub fn body(st: impl Into<Stand>, p: f32, dy: f32) -> Rect {
         // the plain bottom edge, and the taskbar dock where there is no bar to stand in
         Dock::Bottom | Dock::Taskbar => mirror_y(PAD - dy, h, win.1),
     };
-    Rect::new(PAD, y, BODY_W, h)
+    // every edge on a device px (at rest, at any size and DPI): crisp outline, the same margin on all sides
+    let (x, top, bottom) = (st.px(PAD), st.px(y), st.px(y + h));
+    Rect::new(x, top, st.px(PAD + BODY_W) - x, bottom - top)
+}
+
+/// The corner radius of the body: the capsule's full half circle closing into the card's [`CARD_R`] (one radius for all four corners).
+pub fn body_radius(p: f32, h: f32) -> f32 {
+    (28.0 - (28.0 - CARD_R) * p.clamp(0.0, 1.0)).min(h / 2.0)
 }
 
 /// What answers the cursor: the body, and in the bar also the strip down to where the folded capsule stands, so that the cursor resting on the
@@ -419,7 +503,7 @@ pub fn bar_cover_radius(h: f32) -> f32 {
 pub fn capsule_layout_in(st: impl Into<Stand>, c: Rect) -> CapsuleLayout {
     let st = st.into();
     if st.in_bar() {
-        bar_capsule_layout(c, st.scale)
+        bar_capsule_layout(c, st.bs())
     } else {
         capsule_layout(c)
     }
@@ -437,20 +521,42 @@ pub struct CardLayout {
     pub btn: [Rect; 3],
 }
 
+/// The card's even outer padding (left, top, right and bottom: the cover, the time labels, the track ends and the play disc stand this far from
+/// the card's edges) and its corner radius; the cover's radius is the concentric one, [`card_cover_radius`].
+pub const CARD_PAD: f32 = 16.0;
+pub const CARD_R: f32 = 24.0;
+pub const COVER: f32 = 88.0;
+
+/// The cover's corner radius: the card's radius less the padding, so its corner arcs share their centre with the card's.
+pub fn card_cover_radius() -> f32 {
+    CARD_R - CARD_PAD
+}
+
 pub fn card_layout(c: Rect) -> CardLayout {
-    let tx = c.x + 16.0 + 88.0 + 14.0;
-    let tw = c.right() - 16.0 - tx;
-    let cy = c.y + 160.0;
+    let p = CARD_PAD;
+    let cover = Rect::new(c.x + p, c.y + p, COVER, COVER);
+    let tx = cover.right() + 14.0;
+    let tw = c.right() - p - tx;
+    // the three lines are one block, centred against the cover (title high, album low, the artist between)
+    let (th, sh, ah, g1, g2) = (22.0, 18.0, 16.0, 2.0, 4.0);
+    let top = cover.y + (cover.h - (th + g1 + sh + g2 + ah)) / 2.0;
+    let sub = Rect::new(tx, top + th + g1, tw, sh);
+    // the track spans the card between the padding (the knob is kept inside it, see `view`), the times hang under its ends
+    let bar = Rect::new(c.x + p, cover.bottom() + 12.0, c.w - 2.0 * p, 6.0);
+    let elapsed = Rect::new(bar.x, bar.bottom() + 2.0, 80.0, 14.0);
+    // the transport row stands on the bottom padding: the play disc's bottom is `p` above the card's
+    let (side, play) = (32.0, 40.0);
+    let cy = c.bottom() - p - play / 2.0;
     let mid = c.x + c.w / 2.0;
     CardLayout {
-        cover: Rect::new(c.x + 16.0, c.y + 16.0, 88.0, 88.0),
-        title: Rect::new(tx, c.y + 20.0, tw, 22.0),
-        sub: Rect::new(tx, c.y + 44.0, tw, 18.0),
-        album: Rect::new(tx, c.y + 64.0, tw, 16.0),
-        bar: Rect::new(c.x + 16.0, c.y + 116.0, c.w - 32.0, 6.0),
-        elapsed: Rect::new(c.x + 16.0, c.y + 124.0, 80.0, 14.0),
-        total: Rect::new(c.right() - 16.0 - 80.0, c.y + 124.0, 80.0, 14.0),
-        btn: [Rect::new(mid - 64.0 - 18.0, cy - 18.0, 36.0, 36.0), Rect::new(mid - 22.0, cy - 22.0, 44.0, 44.0), Rect::new(mid + 64.0 - 18.0, cy - 18.0, 36.0, 36.0)],
+        cover,
+        title: Rect::new(tx, top, tw, th),
+        sub,
+        album: Rect::new(tx, sub.bottom() + g2, tw, ah),
+        bar,
+        elapsed,
+        total: Rect::new(bar.right() - 80.0, elapsed.y, 80.0, 14.0),
+        btn: [Rect::new(mid - 64.0 - side / 2.0, cy - side / 2.0, side, side), Rect::new(mid - play / 2.0, cy - play / 2.0, play, play), Rect::new(mid + 64.0 - side / 2.0, cy - side / 2.0, side, side)],
     }
 }
 
@@ -642,7 +748,7 @@ mod tests {
     // ----- in the taskbar
 
     fn in_bar(align: Align, bar: f32) -> Stand {
-        Stand { dock: Dock::Taskbar, align, bar, scale: 1.0 }
+        Stand { dock: Dock::Taskbar, align, bar, scale: 1.0, k: 1.0 }
     }
 
     /// The bar heights of the common taskbars at the common scalings (and the odd ones, 110 / 175 %), as the view is told them: the bar in
@@ -843,5 +949,161 @@ mod tests {
     fn win_fits() -> bool {
         let b = body(in_bar(Align::Center, geom::WIDGET_BAR_MAX_H), 1.0, 0.0);
         b.x >= 0.0 && b.y >= 0.0 && b.right() <= WIN_BAR.0 && b.bottom() <= WIN_BAR.1
+    }
+
+    // ----- the card, looked at
+
+    #[test]
+    fn the_card_has_the_same_padding_on_all_four_sides_and_concentric_radii() {
+        let c = Rect::new(0.0, 0.0, BODY_W, CARD_H);
+        let l = card_layout(c);
+        let play = l.btn[1];
+        // left, top, right, bottom: the cover, the track and the time labels, the play disc
+        assert_eq!((l.cover.x - c.x, l.cover.y - c.y), (CARD_PAD, CARD_PAD));
+        assert_eq!((l.bar.x - c.x, c.right() - l.bar.right()), (CARD_PAD, CARD_PAD), "the track keeps the padding on both sides");
+        assert_eq!((l.elapsed.x, l.total.right()), (l.bar.x, l.bar.right()), "the times hang under the ends of the track");
+        assert_eq!(l.elapsed.x, l.cover.x, "cover, track and time share one left edge");
+        assert_eq!(c.bottom() - play.bottom(), CARD_PAD, "the play disc stands on the bottom padding (was 2 px)");
+        for r in [l.title, l.sub, l.album] {
+            assert!(r.right() <= c.right() - CARD_PAD + 0.01, "text stays inside the right padding: {r:?}");
+        }
+        // vertical rhythm: cover, track, times, transport row, in that order, none touching
+        assert!(l.cover.bottom() < l.bar.y && l.bar.bottom() <= l.elapsed.y && l.elapsed.bottom() < play.y);
+        // the three lines are one block centred against the cover: the same room above the title as under the album
+        assert!(((l.title.y - l.cover.y) - (l.cover.bottom() - l.album.bottom())).abs() < 0.01);
+        assert!(l.title.y > l.cover.y && l.album.bottom() < l.cover.bottom(), "and inside the cover's height");
+        // the transport row is symmetrical: equal gaps between the discs, centred on the card
+        let mid = c.cx();
+        assert!(((mid - l.btn[0].cx()) - (l.btn[2].cx() - mid)).abs() < 0.01 && (play.cx() - mid).abs() < 0.01);
+        assert!(((play.x - l.btn[0].right()) - (l.btn[2].x - play.right())).abs() < 0.01);
+        assert!(play.w >= 40.0 && l.btn[0].w >= 32.0, "hittable");
+        // one radius for all four corners; the cover's is the concentric one
+        assert_eq!(body_radius(1.0, CARD_H), CARD_R);
+        assert_eq!(body_radius(0.0, CAPSULE_H), CAPSULE_H / 2.0, "the capsule is a full pill");
+        assert_eq!(card_cover_radius() + CARD_PAD, CARD_R, "the cover's corner arcs share the card's corner centre");
+        assert!(body_radius(0.5, 120.0) < 28.0 && body_radius(0.5, 120.0) > CARD_R);
+        // the shadow stays inside the window's margin on every side, at the top edge too
+        assert!(SHADOW_BLUR + SHADOW_DY < PAD);
+    }
+
+    #[test]
+    fn the_card_in_the_top_window_is_the_mirror_of_the_bottom_one() {
+        // top: the body hangs PAD below the ceiling; bottom: it stands PAD above the floor; the open card is as tall as the window allows
+        let (t, b) = (body(Dock::Top, 1.0, 0.0), body(Dock::Bottom, 1.0, 0.0));
+        assert_eq!((t.y, WIN.1 - b.bottom()), (PAD, PAD));
+        assert_eq!((t.h, b.h, WIN.1 - t.bottom()), (CARD_H, CARD_H, PAD), "the same padding under the card at the top edge");
+        assert_eq!(t.x, b.x);
+    }
+
+    // ----- the size
+
+    fn on_device_px(v: f32, scale: f32) -> bool {
+        (v * scale - (v * scale).round()).abs() < 0.02
+    }
+
+    #[test]
+    fn size_follows_the_island_in_range_and_the_default_is_the_old_layout() {
+        assert_eq!((size_k(100.0), size_k(80.0), size_k(200.0), size_k(50.0), size_k(900.0)), (1.0, 0.8, 2.0, KMIN, KMAX));
+        assert_eq!(size_k(125.0), 1.25);
+        // at 100 % the body stands PAD from its corner exactly where it always did
+        let b = Stand::from(Dock::Bottom);
+        assert_eq!(b.origin(), (0.0, WIN_REAL.1 - WIN.1));
+        assert_eq!(b.rect_to_real(body(b, 0.0, 0.0)), Rect::new(PAD, WIN_REAL.1 - PAD - CAPSULE_H, BODY_W, CAPSULE_H));
+        let t = Stand::from(Dock::Top);
+        assert_eq!(t.rect_to_real(body(t, 0.0, 0.0)).y, PAD);
+        assert_eq!(t.to_base(t.to_real((40.0, 50.0))), (40.0, 50.0));
+    }
+
+    #[test]
+    fn every_size_edge_align_bar_and_dpi_keeps_the_body_in_its_window_on_device_pixels_and_anchored() {
+        let scales = [1.0f32, 1.25, 1.5, 1.75, 2.0];
+        for &pct in &[80.0, 100.0, 125.0, 150.0, 175.0, 200.0] {
+            let k = size_k(pct);
+            for &scale in &scales {
+                for align in [Align::Left, Align::Center, Align::Right] {
+                    for (dock, bar_real) in [(Dock::Bottom, 0.0f32), (Dock::Top, 0.0), (Dock::Taskbar, 0.0), (Dock::Taskbar, 40.0), (Dock::Taskbar, 48.0), (Dock::Taskbar, 52.0), (Dock::Taskbar, 72.0)] {
+                        let bar_real = geom::phys(bar_real, scale) as f32 / scale;
+                        let st = Stand { dock, align, bar: bar_real / k, scale, k };
+                        let win = st.real_win();
+                        let tag = format!("{pct}% {dock:?} {align:?} bar {bar_real} @{scale}");
+                        let tol = 1.5 / scale;
+                        let o = st.origin();
+                        assert!(on_device_px(o.0, scale) && on_device_px(o.1, scale), "{tag}: the origin is on a device px: {o:?}");
+                        for p in [0.0f32, 0.5, 1.0] {
+                            let r = st.rect_to_real(body(st, p, 0.0));
+                            assert!(r.x >= -0.01 && r.y >= -0.01 && r.right() <= win.0 + 0.01 && r.bottom() <= win.1 + 0.01, "{tag} p={p}: {r:?} inside {win:?}");
+                            if p == 0.0 || p == 1.0 {
+                                for v in [r.x, r.y, r.right(), r.bottom()] {
+                                    assert!(on_device_px(v, scale), "{tag} p={p}: {v} is on a device px: {r:?}");
+                                }
+                            }
+                            // the hit region always holds the body, and a point of the body maps back into it
+                            let h = st.rect_to_real(hit_rect(st, p, 0.0));
+                            assert!(h.x <= r.x + 0.01 && h.right() >= r.right() - 0.01 && h.y <= r.y + 0.01 && h.bottom() >= r.bottom() - 0.01, "{tag}");
+                            let c = st.to_base((r.cx(), r.cy()));
+                            let b = body(st, p, 0.0);
+                            assert!((c.0 - b.cx()).abs() < 0.01 && (c.1 - b.cy()).abs() < 0.01, "{tag}: to_base undoes to_real");
+                        }
+                        let (cap, card) = (st.rect_to_real(body(st, 0.0, 0.0)), st.rect_to_real(body(st, 1.0, 0.0)));
+                        // the card is the card at any size
+                        assert!((card.w - BODY_W * k).abs() <= tol && (card.h - CARD_H * k).abs() <= tol, "{tag}: the card scales: {card:?}");
+                        if st.in_bar() {
+                            // the capsule is as big as the size says but never taller than the bar leaves it (the old cap), centred in the bar
+                            let cap_h = geom::bar_fold_cap(bar_real).min(CAPSULE_H * k);
+                            assert!(cap.h <= cap_h + tol && cap.h >= (cap_h - 2.0 / scale).max(1.0), "{tag}: {} tall, cap {cap_h}", cap.h);
+                            let (floor, top) = (win.1, win.1 - bar_real);
+                            assert!(cap.y >= top - 0.01 && cap.bottom() <= floor + 0.01, "{tag}: inside the strip");
+                            assert!(((cap.y - top) - (floor - cap.bottom())).abs() < 0.01, "{tag}: centred in the bar");
+                            assert!(cap.h <= bar_real - 8.0 + 0.01 || bar_real < 24.0, "{tag}: never beyond what the bar allows");
+                            assert!((cap.w - st.px(BAR_FOLD_W) * k).abs() <= tol, "{tag}: the width follows the size");
+                            match align {
+                                Align::Left => assert!((cap.x - BAR_PAD).abs() <= tol, "{tag}: anchored to the slot's left: {cap:?}"),
+                                Align::Right => assert!((win.0 - BAR_PAD - cap.right()).abs() <= tol, "{tag}: anchored to the slot's right"),
+                                Align::Center => assert!((cap.cx() - win.0 / 2.0).abs() <= tol, "{tag}: centred on the slot"),
+                            }
+                            // the open card floats the same gap above the bar, in the window
+                            assert!((win.1 - bar_real - k * geom::BAR_FLOAT_GAP - card.bottom()).abs() <= tol, "{tag}: floats over the bar: {card:?}");
+                        } else {
+                            assert!((cap.h - CAPSULE_H * k).abs() <= tol && (cap.w - BODY_W * k).abs() <= tol, "{tag}: the capsule scales: {cap:?}");
+                            // the margins to the corner / edge are PAD at the size, so the shadow (PAD) is never cut by the window
+                            let m = PAD * k;
+                            match align {
+                                Align::Left => assert!((cap.x - m).abs() <= tol, "{tag}: {cap:?}"),
+                                Align::Right => assert!((win.0 - cap.right() - m).abs() <= tol, "{tag}"),
+                                Align::Center => assert!((cap.cx() - win.0 / 2.0).abs() <= tol, "{tag}"),
+                            }
+                            if dock == Dock::Top {
+                                assert!((card.y - m).abs() <= tol && (card.bottom() + m - (WIN.1 * k)).abs() <= tol, "{tag}: the card hangs from the top edge: {card:?}");
+                            } else {
+                                assert!((win.1 - cap.bottom() - m).abs() <= tol && (win.1 - card.bottom() - m).abs() <= tol, "{tag}: it stands PAD above the floor");
+                            }
+                            let reach = (SHADOW_BLUR + SHADOW_DY) * k;
+                            assert!(card.x - reach >= -0.01 && card.right() + reach <= win.0 + 0.01 && card.y - reach >= -0.01 && card.bottom() + reach <= win.1 + 0.01, "{tag}: the shadow fits in the window");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_corner_the_body_grows_from_does_not_move_while_the_size_changes() {
+        // the animation of a size change: the dock corner / side stays put, the body grows away from it (no jump of the window either: it is fixed)
+        for (dock, align) in [(Dock::Bottom, Align::Left), (Dock::Bottom, Align::Right), (Dock::Top, Align::Left), (Dock::Top, Align::Center), (Dock::Taskbar, Align::Left)] {
+            let mut prev: Option<Rect> = None;
+            for i in 0..=24 {
+                let k = 0.8 + 1.2 * i as f32 / 24.0;
+                let st = Stand { dock, align, bar: 0.0, scale: 1.0, k };
+                let r = st.rect_to_real(body(st, 0.0, 0.0));
+                let corner = (match align { Align::Left => r.x, Align::Right => r.right(), Align::Center => r.cx() }, if dock == Dock::Top { r.y } else { r.bottom() });
+                if let Some(p) = prev {
+                    let pc = (match align { Align::Left => p.x, Align::Right => p.right(), Align::Center => p.cx() }, if dock == Dock::Top { p.y } else { p.bottom() });
+                    // the anchor side moves only with the margin (PAD * dk), and never the way the growth goes
+                    assert!((corner.0 - pc.0).abs() <= PAD * 0.06 + 1.01 && (corner.1 - pc.1).abs() <= PAD * 0.06 + 1.01, "{dock:?} {align:?} k={k}: {pc:?} -> {corner:?}");
+                    assert!(r.w >= p.w - 1.0 && r.h >= p.h - 1.0, "it only grows");
+                }
+                prev = Some(r);
+            }
+        }
     }
 }

@@ -173,7 +173,9 @@ pub fn island_bar(scale: f32) -> Option<IslandBar> {
 /// The widget window of `size` (physical) on `mon`: its position, and its bar and slot when it stands in the bar ([`geom::widget_place`] with the
 /// real tray and the island's settings).
 pub fn widget_place(mon: &MonitorInfo, ask: &WidgetAsk, size: (i32, i32)) -> ((i32, i32), Option<(geom::Bar, geom::BarSlot)>) {
-    geom::widget_place(mon.rect, mon.work, mon.scale, tray_rect(mon.rect), island_bar(mon.scale), ask, size)
+    // the slot asked of the bar is as wide as the folded capsule at the current size
+    let ask = WidgetAsk { body_w: ask.body_w * crate::ui::musicwidget::size_k(), ..*ask };
+    geom::widget_place(mon.rect, mon.work, mon.scale, tray_rect(mon.rect), island_bar(mon.scale), &ask, size)
 }
 
 #[cfg(test)]

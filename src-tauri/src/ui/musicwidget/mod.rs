@@ -8,8 +8,13 @@
 //! | `media.widget.align` | `left` / `center` / `right` along that edge (default `left`) |
 //! | `media.widget.offset` | -50..50 % of the monitor width, only for `center` (like `offsetX`) |
 //!
-//! * One Overlay window (`ui::host`, `Placement::Docked`), 344 x 208 logical px, never resized: topmost, tool window, no-activate, per-pixel
-//!   alpha, click-through outside the body. It uses the island's monitor (`monitor`), the work area (`underTaskbar`) and `showInCapture`.
+//! * One Overlay window (`ui::host`, `Placement::Docked`), never resized: topmost, tool window, no-activate, per-pixel alpha, click-through
+//!   outside the body. It is as big as the largest size needs (`logic::WIN_REAL`, 688 x 448 logical px); the body stands in it by `Stand::origin`.
+//! * Size: the widget follows the island's `size` (80..200 %, `logic::size_k`): it is laid out in base px at 100 % and drawn scaled by the factor, so
+//!   the capsule, the card, the fonts, the cover, the paddings, the radii and the shadow all scale, and so do the hit region and the placement
+//!   numbers. A change of `size` re-targets the view's factor (a Flow: Reduce motion lands at once); the window is not re-created or moved, the
+//!   body grows from its corner / side. In the taskbar the capsule is still capped by the bar's height (`Stand::fold_h`) and the slot asked of the
+//!   bar is as wide as the scaled capsule (`taskbar::widget_place`). It uses the island's monitor (`monitor`), the work area (`underTaskbar`) and `showInCapture`.
 //! * `view.rs` draws it and `logic.rs` decides everything (when it shows, the geometry, what a click hits); both are fed by the SAME backend
 //!   the island's player uses (`media:changed`, `media_state`, `media_control`, `media_seek`): there is no second media backend.
 //! * De-duplication: while `media.widget` is on, the island does not show the player (`ui-core` `live::media` gives no row and no edge
@@ -35,7 +40,7 @@ use crate::ui::host::geom::{self, Align, Dock};
 use crate::ui::host::{self, MonitorSel, NativeWindow, Placement, WinEvent};
 use crate::ui::view::WindowId;
 use serde_json::{json, Map, Value};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 /// The settings that decide where the window stands and how it is made. A change of any of them re-creates the window.
@@ -57,7 +62,19 @@ pub struct Sig {
 pub const KEYS: &[&str] = &["media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset", "monitor", "underTaskbar", "showInCapture"];
 
 /// The island's settings the widget keeps clear of while both stand in the taskbar: a change re-checks the place, it does not re-create the window.
+/// (`size` is the island's and also the widget's own: the view scales, see [`size_k`].)
 const ISLAND_KEYS: &[&str] = &["edge.position", "edge.align", "offsetX", "size"];
+
+/// The widget's size factor (`size` / 100, `logic::size_k`) as the placement code sees it (`taskbar::widget_place` widens the slot it asks for).
+static SIZE_K: AtomicU32 = AtomicU32::new(0x3f80_0000); // 1.0f32
+
+pub fn size_k() -> f32 {
+    f32::from_bits(SIZE_K.load(Ordering::Relaxed))
+}
+
+fn read_size() {
+    SIZE_K.store(logic::size_k(crate::settings::get_f64("size", 100.0)).to_bits(), Ordering::Relaxed);
+}
 
 /// The window for these settings: `None` when the widget is off. Pure: `get` is the settings reader (value or `Null`).
 pub fn sig_from(get: &dyn Fn(&str) -> Value) -> Option<Sig> {
@@ -89,7 +106,8 @@ pub fn monitor_sel(setting: &str) -> MonitorSel {
 
 /// What the widget asks of a place in the bar.
 fn ask(s: &Sig) -> geom::WidgetAsk {
-    geom::WidgetAsk { align: s.align, offset_pct: s.offset as f32, body_w: logic::BAR_FOLD_W, pad: logic::PAD, inside_work: s.inside_work }
+    // body_w at 100 % (`taskbar::widget_place` scales it by the size); the pad is the same at every size, so the window never moves with it
+    geom::WidgetAsk { align: s.align, offset_pct: s.offset as f32, body_w: logic::BAR_FOLD_W, pad: logic::BAR_PAD, inside_work: s.inside_work }
 }
 
 pub fn placement(s: &Sig) -> Placement {
@@ -101,7 +119,7 @@ pub fn placement(s: &Sig) -> Placement {
 
 /// The window's size, logical px (the taskbar dock's is taller: the open card floats above the bar).
 fn win_size(s: &Sig) -> (f32, f32) {
-    logic::Stand::from(s.dock).win()
+    logic::Stand::from(s.dock).real_win()
 }
 
 fn spec(s: &Sig) -> NativeWindow {
@@ -136,6 +154,7 @@ fn current() -> Option<Sig> {
 
 /// Creates, re-creates or closes the window so that it matches the settings. Idempotent; safe from any thread.
 pub fn sync(app: &tauri::AppHandle) {
+    read_size();
     let want = current();
     let mut cur = live();
     if cur.as_ref().map(|c| &c.0) == want.as_ref() {
@@ -164,6 +183,9 @@ pub fn start(app: &tauri::AppHandle) {
 }
 
 pub fn on_settings(app: &tauri::AppHandle, patch: &Map<String, Value>) {
+    if patch.contains_key("size") {
+        read_size(); // the view reads `size` from the settings event itself; the placement reads it here
+    }
     if KEYS.iter().any(|k| patch.contains_key(*k)) {
         sync(app);
     } else if ISLAND_KEYS.iter().any(|k| patch.contains_key(*k)) {
@@ -197,11 +219,12 @@ fn probe(host: &host::HostHandle, s: &Sig) -> Probe {
     let Some(m) = monitor_of(host, s) else { return out };
     let mut vals = vec![m.rect.l, m.rect.t, m.rect.r, m.rect.b, m.work.l, m.work.t, m.work.r, m.work.b, (m.scale * 100.0) as i32, host.monitors().len() as i32];
     if s.dock == Dock::Taskbar {
-        let size = geom::size_to_phys(logic::WIN_BAR, m.scale);
+        let size = geom::size_to_phys(logic::WIN_BAR_REAL, m.scale);
         let ((x, y), slot) = crate::taskbar::widget_place(&m, &ask(s), size);
         vals.extend([x, y]);
         if let Some((bar, slot)) = slot {
-            vals.extend([bar.h, slot.x, slot.w, slot.align.code() as i32]);
+            // not the slot's own x / width: they follow the size, which the view animates in place (the window's position is what counts)
+            vals.extend([bar.h, slot.align.code() as i32]);
             (out.bar, out.align) = (bar.h as f32 / m.scale.max(0.25), slot.align);
         }
     }
