@@ -83,6 +83,37 @@ hidden island take the edge at once. `pill.rs` keeps the edge the window is on (
 `pill_edge`. The settings preview (`settings_view/preview`) runs the same view in its sandbox; its camera stands the island on the floor of the
 stage when `Live::at_bottom`.
 
+## The music widget (`media.widget`): the player as its own window
+
+`ui/musicwidget/` puts the island's player into a SEPARATE small window, so it can stand apart from the island: in the bottom left corner next to
+the taskbar while the pill stays in the middle, at the top, or on either side of either edge. Settings (Media and sound page, section "Player widget"):
+
+| key | default | meaning |
+|---|---|---|
+| `media.widget` | `false` | off = nothing changes and no window exists; on = the widget window, and the island shows no player |
+| `media.widget.edge` | `bottom` | `top` / `bottom` |
+| `media.widget.align` | `left` | `left` / `center` / `right` along that edge |
+| `media.widget.offset` | `0` | -50..50 % of the monitor width, only for `center` (like `offsetX`) |
+
+The monitor (`monitor`), the taskbar rule (`underTaskbar`) and `showInCapture` are the island's.
+
+| piece | how |
+|---|---|
+| window | ONE Overlay (`NativeWindow::overlay("music-widget")`, title `pill-music`), 344 x 208 logical px, never resized, created hidden, only while `media.widget` is on; topmost, tool window, no-activate, per-pixel alpha, click-through outside the body (`Cx::set_hit_region`) |
+| placement | `Placement::Docked { monitor, dock, align, offset_pct, inside_work, margin }` -> `geom::dock_position_aligned` (the same maths as the island's corner); it is part of the window spec, so `musicwidget::sync` re-creates the window when a placement setting changes; `musicwidget::relayout` (guard poll via `pill::relayout`) re-places it when the monitor, its DPI or the taskbar changed; `WM_DPICHANGED` re-places a Docked overlay by its spec instead of keeping a centre |
+| data | the island's own feed: `media:changed` (+ `media_state` once at the start and when a cover is missing), `media_control` (prev / play_pause / next), `media_seek`; no second media backend. `media.rs` keeps emitting while the island is hidden when the widget is on (`widget_on`); the equaliser capture still follows the island alone |
+| privacy | `module.media` off = no track is read, nothing shows, and a visible widget leaves at once; nothing is stored |
+| when | `logic::Presence`: while a track plays and for 45 s after a pause; a player first seen paused does not call it up; no session = gone |
+| shapes | `logic.rs` (pure, tested): the capsule 320 x 56 and the card 320 x 184 stand flush against the dock edge and the body between them grows away from it (`mirror_y` for the bottom); the layouts and the hit test are functions of the expansion |
+| motion | `Flow` / `Feel` only, targets in `step`/events: enter / leave (`shown` slide + `fade`), hover open / close (`expand`, `ProximityEvent::Hover` / `Leave`), track change (`swap` cross-fades the old and the new text, `Gpu::cover` fades the cover in), play / pause (`pp` cross-fade with a pop), press dip, hover glow, progress glide. Reduce motion lands every value at once |
+| idle cost | hidden = no frames, no timer; showing = one 1 Hz `Ticker` (clock + the end of a pause) and frames only while a spring moves; the ticker stops when the widget is not wanted |
+| guard | `pill.rs` emits `pill:guard { hidden }` when the fullscreen guard (or a peek over it) starts / stops keeping the island away; the widget hides with it |
+
+De-duplication: while `media.widget` is on the island does not show the player. `ui-core` `live::media::update_live` gives no row and no `music` edge reaction
+(it re-reads on `settings:changed`, so the switch acts at once); `panel::a::home` treats the player part as off (`parts_on`, `media_on`: the other Home parts
+re-flow, the volume row stays) and `command::tab_on("home")` ignores the player when it is the only part on. The settings preview keeps its sample player
+(`media.widget*` are not shareable to the preview island). Turning the switch off gives everything back.
+
 ## The pill.rs gates (flag off = the old code path, byte for byte)
 
 `pill.rs` got a `NATIVE: OnceLock<Box<dyn PillWin>>` (`attach_native`, `native_ready`) and these branches:
@@ -130,3 +161,4 @@ to the old island. Checklist:
 11. Auto-hide slides the body away; pushing the cursor to the monitor's top edge brings it back; fullscreen guard hides / shows it; tray Show / Hide.
 12. Reduce motion on (Windows or the setting): no motion anywhere. Light theme: body, shadow, eyes colour. DPI 125 / 150 / 200 %, two monitors.
 13. Tail / legs overlap with the capsule when the pet is on the left and a card or the music row is shown.
+14. Music widget (`media.widget` on, Media and sound page): it appears when something plays (not when a player starts paused), in the corner you chose (try bottom / top, left / centre / right, a second monitor, 150 % DPI, a taskbar on the side); hovering opens the card upward (bottom) or downward (top); prev / play / next and the seek bar work without taking the focus from the app you are typing in; a paused track keeps it ~45 s; the island shows no player meanwhile (no title strip, no player on Home); a fullscreen game hides it; switching `media.widget` off removes the window and gives the island its player back.
