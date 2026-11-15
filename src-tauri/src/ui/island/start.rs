@@ -10,7 +10,7 @@ use tauri::AppHandle;
 pub fn start(app: &AppHandle) {
     let h = crate::ui::native::ensure_host(app);
     let mut win = NativeWindow::overlay("pill");
-    if crate::pill::dock() == Dock::Bottom {
+    if crate::pill::dock() != Dock::Top {
         // born at the bottom edge: `pill::native_ready` applies the real monitor / offset right after, this only avoids a flash at the top
         win = win.placement(Placement::BottomCenter { monitor: MonitorSel::Primary, offset_pct: 0.0, above_taskbar: true, margin_bottom: 0.0, align: crate::pill::align() });
     }

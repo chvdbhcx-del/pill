@@ -151,31 +151,31 @@ pub fn appearance() -> Page {
                         "edge.position",
                         tr("Край экрана", "Screen edge"),
                         tr(
-                            "Сверху остров висит у верхнего края и раскрывается вниз. Снизу он стоит на нижнем краю, у панели задач, и раскрывается вверх",
-                            "Top: the pill hangs from the top edge and opens downward. Bottom: it stands on the bottom edge, at the taskbar, and opens upward",
+                            "Сверху остров висит у верхнего края и раскрывается вниз. Снизу он стоит на нижнем краю, у панели задач, и раскрывается вверх. «В панели задач» — свёрнутый остров живёт прямо в нижней панели, как её виджет, и раскрывается вверх над ней (если панель внизу и не скрыта; иначе он стоит у нижнего края)",
+                            "Top: the pill hangs from the top edge and opens downward. Bottom: it stands on the bottom edge, at the taskbar, and opens upward. In the taskbar: the folded pill lives inside the bottom taskbar bar like one of its widgets and opens upward above it (when the bar is at the bottom and not hidden; otherwise it stands on the bottom edge)",
                         ),
-                        so(&[("top", tr("Сверху", "Top")), ("bottom", tr("Снизу", "Bottom"))]),
+                        so(&[("top", tr("Сверху", "Top")), ("bottom", tr("Снизу", "Bottom")), ("taskbar", tr("В панели задач", "In the taskbar"))]),
                         json!("top"),
                     )
-                    .kw(&["edge", "position", "bottom", "top", "taskbar", "край", "положение", "снизу", "сверху", "внизу", "панель задач"]),
+                    .kw(&["edge", "position", "bottom", "top", "taskbar", "inside", "in the taskbar", "край", "положение", "снизу", "сверху", "внизу", "панель задач", "в панели задач", "панели"]),
                     seg(
                         "edge.align",
                         tr("Где у нижнего края", "Where along the bottom edge"),
                         tr(
-                            "Посередине или в углу, как виджет: остров встаёт в левый или правый нижний угол и растёт вверх, не выходя за монитор. Нужен нижний край",
-                            "In the middle, or in a corner like a widget: the pill stands in the bottom left or right corner and grows upward, never leaving the monitor. Needs the bottom edge",
+                            "Посередине или сбоку, как виджет: остров встаёт слева или справа и растёт вверх, не выходя за монитор. В панели задач «слева» — свободное место рядом с кнопкой «Пуск» и виджетами, «справа» — перед треем. Нужен нижний край или панель задач",
+                            "In the middle, or at a side like a widget: the pill stands at the left or right and grows upward, never leaving the monitor. In the taskbar, Left is the free room next to Start and the widgets and Right is before the tray. Needs the bottom edge or the taskbar",
                         ),
                         so(&[("center", tr("Посередине", "Middle")), ("left", tr("Слева", "Left")), ("right", tr("Справа", "Right"))]),
                         json!("center"),
                     )
-                    .enabled(Cond::Eq("edge.position", json!("bottom")))
+                    .enabled(Cond::Ne("edge.position", json!("top")))
                     .kw(&["align", "corner", "left", "right", "widget", "угол", "слева", "справа", "виджет", "положение"]),
                     slider(
                         "offsetX",
                         tr("Положение вдоль края", "Position along the edge"),
                         tr(
-                            "0 — посередине, минус — левее, плюс — правее. Свёрнутый остров стоит над серединой окна, раскрытый может дойти до края монитора. Не нужно, когда остров прижат к углу",
-                            "0 is the middle, minus is further left, plus further right. The folded pill stays above the middle; the open one can reach the monitor edge. Not used when the pill stands in a corner",
+                            "0 — посередине, минус — левее, плюс — правее. Свёрнутый остров стоит над серединой окна, раскрытый может дойти до края монитора. Не нужно, когда остров прижат к углу; в панели задач он сдвигает остров от выбранной стороны, не заходя на трей",
+                            "0 is the middle, minus is further left, plus further right. The folded pill stays above the middle; the open one can reach the monitor edge. Not used when the pill stands in a corner; in the taskbar it shifts the pill away from the chosen side, never onto the tray",
                         ),
                         -50.0,
                         50.0,
@@ -193,6 +193,7 @@ pub fn appearance() -> Page {
                         ),
                         true,
                     )
+                    .enabled(Cond::Ne("edge.position", json!("taskbar")))
                     .kw(&["taskbar", "панель задач", "above", "below", "над", "под", "поверх"]),
                     monitor.kw(&["monitor", "display", "screen", "монитор", "экран"]),
                 ],

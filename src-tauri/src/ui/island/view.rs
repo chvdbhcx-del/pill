@@ -196,7 +196,22 @@ pub struct IslandView {
     phone: super::phonecard::PhoneUi,
     /// The island hangs from the bottom edge of its window. The whole layout (shell, tabs, header) stays "hanging from the top"; the view
     /// mirrors positions about the window's middle line (`win_rect`, `shell_pt`) and paints pure shapes under a vertical flip (`flipped`).
-    bottom: bool,
+    dock: Dock,
+    /// The taskbar strip the island stands in, in logical px (0 = none: `pill.rs` found no plain bottom bar), as `pill:taskbar` last told.
+    bar_h: f32,
+    /// 1 while the island stands in that bar (the edge is the taskbar and the bar exists), eased: 0 = a plain edge placement. It carries the
+    /// body from the floor of the window to its place in the bar, rounds the edge side of the body into a capsule and takes the flares away.
+    bar_sp: Flow,
+    bar_w: f32,
+    /// 0 = the folded pill sits in the bar, 1 = it floats above it (open, a card, a widget taller than the bar), eased
+    raise_sp: Flow,
+    raise_a: f32,
+    /// the height of the folded capsule the bar centres (its target, so the pill does not bob while it grows)
+    fold_h: f32,
+    /// how far the body is lifted off the window's floor to stand in the bar (window px, see `bar_lift`); fixed by `step`, draw only reads it
+    lift_px: f32,
+    /// the folded capsule's height limit last handed to the shell
+    last_cap: Option<f64>,
     /// Where along the edge the body stands (`edge.align`, the bottom edge only): the shell lays the body out centred in the window, the view
     /// moves it sideways by `dx_for` (the window itself stands against that side of the monitor, see `pill.rs`).
     align: Align,
@@ -204,7 +219,7 @@ pub struct IslandView {
     /// 0 = at rest, 1 = slid out through the edge; `tuck_px` is that in window px, fixed by `step` (draw only reads it)
     tuck: Flow,
     tuck_px: f32,
-    last_edge: Option<(bool, Align)>,
+    last_edge: Option<(Dock, Align)>,
 }
 
 /// Leaving an edge, and arriving at the new one.
@@ -212,6 +227,9 @@ const TUCK_OUT: Feel = Feel::FADE.within(240.0);
 const TUCK_IN: Feel = Feel::FLOW.within(420.0);
 /// After the window has been re-placed, the body waits this long before it comes back (the host moves the window asynchronously).
 const EDGE_HOLD_MS: f64 = 90.0;
+/// The island settling into the taskbar (or leaving it when the bar goes away), and rising out of it when it opens / sinking back.
+const BAR_IN: Feel = Feel::FLOW.within(420.0);
+const RAISE: Feel = Feel::FLOW.within(380.0);
 
 /// The panel content fades in on this feel, after a short head start of the body; it leaves a little quicker.
 const PANEL_IN: Feel = Feel::FADE.within(200.0);
@@ -284,7 +302,15 @@ impl IslandView {
             fx: LiveFx::new(),
             hdr: HeaderFx::new(),
             phone: super::phonecard::PhoneUi::new(&Theme::pill_dark()),
-            bottom: false,
+            dock: Dock::Top,
+            bar_h: 0.0,
+            bar_sp: Flow::new(0.0, BAR_IN),
+            bar_w: 0.0,
+            raise_sp: Flow::new(0.0, RAISE),
+            raise_a: 0.0,
+            fold_h: 0.0,
+            lift_px: 0.0,
+            last_cap: None,
             align: Align::Center,
             slide: Slide::Rest,
             tuck: Flow::new(0.0, TUCK_OUT),
@@ -294,7 +320,7 @@ impl IslandView {
             started: false,
             device_id: 0,
         };
-        v.bottom = v.want_bottom();
+        v.dock = v.want_dock();
         v.align = v.want_align();
         v.sync_env(cx);
         v.exec_outs(outs, cx);
@@ -549,17 +575,22 @@ impl IslandView {
 
     /// The island hangs from the bottom edge of its window (the edge it has slid over to, not the one the settings ask for yet).
     pub fn at_bottom(&self) -> bool {
-        self.bottom
+        self.dock.at_bottom()
+    }
+
+    /// The island stands inside a taskbar right now (the edge is the taskbar and `pill.rs` found a bar for it).
+    pub fn in_bar(&self) -> bool {
+        self.dock == Dock::Taskbar && self.bar_h > 0.0
     }
 
     /// The screen edge the settings ask for (`edge.position`).
-    fn want_bottom(&self) -> bool {
-        Dock::from_setting(self.core.settings.get("edge.position").and_then(|v| v.as_str()).unwrap_or("top")) == Dock::Bottom
+    fn want_dock(&self) -> Dock {
+        Dock::from_setting(self.core.settings.get("edge.position").and_then(|v| v.as_str()).unwrap_or("top"))
     }
 
-    /// The screen side the settings ask for (`edge.align`); only the bottom edge has one.
+    /// The screen side the settings ask for (`edge.align`); only the bottom edge and the taskbar have one.
     fn want_align(&self) -> Align {
-        if self.want_bottom() {
+        if self.want_dock().at_bottom() {
             Align::from_setting(self.core.settings.get("edge.align").and_then(|v| v.as_str()).unwrap_or("center"))
         } else {
             Align::Center
@@ -579,15 +610,21 @@ impl IslandView {
     /// A rectangle of the shell's layout (hanging from the top of the window, y down) as it is on the window now: moved sideways to its
     /// corner by `dx`, slid toward its edge by the edge change, and mirrored about the window's middle line for the bottom edge.
     fn win_rect(&self, r: Rect, dx: f32) -> Rect {
-        let y = r.y - self.tuck_px;
-        Rect::new(r.x + dx, if self.bottom { geom::mirror_y(y, r.h, self.win.1) } else { y }, r.w, r.h)
+        let y = r.y + self.dy();
+        Rect::new(r.x + dx, if self.dock.at_bottom() { geom::mirror_y(y, r.h, self.win.1) } else { y }, r.w, r.h)
+    }
+
+    /// The shell's layout moved by this along the window's y (down): the edge change slides the body out of the window (`tuck_px`), the
+    /// taskbar lifts it off the window's floor into the bar (`lift_px`).
+    fn dy(&self) -> f32 {
+        self.lift_px - self.tuck_px
     }
 
     /// A point of the window (px) in the shell's layout: the inverse of [`IslandView::win_rect`] for the cursor.
     fn shell_pt(&self, p: (f32, f32)) -> (f64, f64) {
         let dx = self.dx_for(&self.core.shell.view());
-        let y = if self.bottom { self.win.1 - p.1 } else { p.1 };
-        ((p.0 - dx) as f64, (y + self.tuck_px) as f64)
+        let y = if self.dock.at_bottom() { self.win.1 - p.1 } else { p.1 };
+        ((p.0 - dx) as f64, (y - self.dy()) as f64)
     }
 
     /// The body of `v` on the window (px).
@@ -629,32 +666,36 @@ impl IslandView {
             self.last_gaze = Some(gaze);
             cx.set_gaze(gaze);
         }
-        if self.last_edge != Some((self.bottom, self.align)) {
-            self.last_edge = Some((self.bottom, self.align));
-            cx.set_edge_bottom(self.bottom);
+        if self.last_edge != Some((self.dock, self.align)) {
+            self.last_edge = Some((self.dock, self.align));
+            cx.set_edge_bottom(self.dock.at_bottom());
             cx.set_edge_align(self.align);
         }
     }
 
     /// Takes the new edge and side: the window moves (`pill_edge`) and the proximity engine watches the matching screen row.
-    fn set_edge(&mut self, (bottom, align): (bool, Align), cx: &mut Cx) {
-        self.bottom = bottom;
+    fn set_edge(&mut self, (dock, align): (Dock, Align), cx: &mut Cx) {
+        self.dock = dock;
         self.align = align;
-        self.last_edge = Some((bottom, align));
-        cx.set_edge_bottom(bottom);
+        self.last_edge = Some((dock, align));
+        cx.set_edge_bottom(dock.at_bottom());
         cx.set_edge_align(align);
         let side = match align {
             Align::Center => "center",
             Align::Left => "left",
             Align::Right => "right",
         };
-        self.call(cx, "pill_edge", json!({ "bottom": bottom, "align": side }), Pending::Fire);
+        let mut args = json!({ "bottom": dock.at_bottom(), "align": side });
+        if dock == Dock::Taskbar {
+            args["bar"] = json!(true);
+        }
+        self.call(cx, "pill_edge", args, Pending::Fire);
     }
 
     /// The settings changed while nothing is on screen (hidden island, reduced motion): there is nothing to slide, take the edge at once.
     fn edge_now(&mut self, cx: &mut Cx) {
-        let want = (self.want_bottom(), self.want_align());
-        if want != (self.bottom, self.align) && self.slide == Slide::Rest && (self.core.shell.is_hidden() || self.core.shell.reduce()) {
+        let want = (self.want_dock(), self.want_align());
+        if want != (self.dock, self.align) && self.slide == Slide::Rest && (self.core.shell.is_hidden() || self.core.shell.reduce()) {
             self.set_edge(want, cx);
         }
     }
@@ -662,8 +703,8 @@ impl IslandView {
     /// One frame of the edge change; true while it needs frames. The slide itself is a spring (`tuck`): out through the old edge, the
     /// window moves while the body is out of sight, in from the new edge. Reduced motion and a hidden island skip the slide.
     fn step_edge(&mut self, v: &ShellView, dt_ms: f64, cx: &mut Cx) -> bool {
-        let (want, now, instant) = ((self.want_bottom(), self.want_align()), cx.now_ms, v.reduced || v.phase == Phase::Hidden);
-        let cur = (self.bottom, self.align);
+        let (want, now, instant) = ((self.want_dock(), self.want_align()), cx.now_ms, v.reduced || v.phase == Phase::Hidden);
+        let cur = (self.dock, self.align);
         match self.slide {
             Slide::Rest if want != cur => {
                 if instant {
@@ -701,9 +742,38 @@ impl IslandView {
             self.tuck.chase(if out { 1.0 } else { 0.0 }, dt_ms);
         }
         // far enough that the body, its liquid edge and a character's legs are all out of the window
-        let off = v.body.top.max(0.0) as f32 + v.body.height as f32 + 48.0 * v.scale as f32;
+        let off = v.body.top.max(0.0) as f32 + self.lift_px.max(0.0) + v.body.height as f32 + 48.0 * v.scale as f32;
         self.tuck_px = self.tuck.at() * off;
         self.slide != Slide::Rest || self.tuck.moving()
+    }
+
+    /// One frame of the taskbar placement; true while it needs frames. The folded capsule stands centred in the bar, the open island (and an
+    /// event card, and a widget taller than the bar) floats above it: `raise_sp` glides between the two and `bar_sp` between this and a plain
+    /// edge placement (the bar appeared / went away). The body's gap above the window's floor is `geom::bar_gap`; `lift_px` is what has to be
+    /// added to where the shell laid the body out (its own rest offset `ty` differs per state) to get it there.
+    fn step_bar(&mut self, v: &ShellView, dt_ms: f64) -> bool {
+        let s = v.scale as f32;
+        let want_bar = if self.in_bar() { 1.0 } else { 0.0 };
+        let tgt_h = self.core.shell.spring_state()[1].2 as f32;
+        let floats = matches!(v.phase, Phase::Expanding | Phase::Expanded | Phase::Cards) || (self.bar_h > 0.0 && tgt_h > geom::bar_fold_cap(self.bar_h) + 0.5);
+        if !floats && tgt_h > 0.0 {
+            self.fold_h = tgt_h;
+        }
+        let want_raise = if floats { 1.0 } else { 0.0 };
+        if v.reduced {
+            self.bar_sp.jump(want_bar);
+            self.raise_sp.jump(want_raise);
+        }
+        self.bar_w = self.bar_sp.chase(want_bar, dt_ms);
+        self.raise_a = self.raise_sp.chase(want_raise, dt_ms);
+        self.lift_px = if self.bar_w > 0.0 {
+            let fold_ty = if self.core.shell.settings().is_capsule() { pill_ui_core::shell::capsule::CAP_TOP as f32 * s } else { 0.0 };
+            let ty = fold_ty + (pill_ui_core::shell::capsule::EXP_TOP as f32 * s - fold_ty) * self.raise_a.clamp(0.0, 1.0);
+            self.bar_w * (geom::bar_gap(self.bar_h, self.fold_h, self.raise_a) - ty)
+        } else {
+            0.0
+        };
+        self.bar_sp.moving() || self.raise_sp.moving()
     }
 
     fn locate(&self, p: (f32, f32)) -> Hit {
@@ -885,6 +955,10 @@ impl View for IslandView {
                         self.eq_seen = cx.now_ms;
                     }
                 }
+                if name == "pill:taskbar" {
+                    // `pill.rs`: the height of the bar the window stands in (logical px, 0 = none); the next frame moves the body
+                    self.bar_h = payload.get("h").and_then(|h| h.as_f64()).unwrap_or(0.0).max(0.0) as f32;
+                }
                 self.core.bus_event(&name, &payload, cx.now_ms);
                 if matches!(name.as_str(), "settings:changed" | "pill:show") {
                     self.apply_settings_side(cx);
@@ -954,11 +1028,18 @@ impl View for IslandView {
         if let Some((w, h)) = self.pending_measure.take() {
             self.core.shell_event(Event::LiveMeasured { w, h }, now);
         }
+        // inside a taskbar the plain folded capsule must fit the bar
+        let cap = self.in_bar().then(|| geom::bar_fold_cap(self.bar_h) as f64);
+        if cap != self.last_cap {
+            self.last_cap = cap;
+            self.core.shell.set_fold_cap(cap);
+        }
         self.core.tick(dt_ms, now);
         self.exec(cx);
         let v = self.core.shell.view();
         let reduced = v.reduced;
         let edge_busy = self.step_edge(&v, dt_ms, cx);
+        let edge_busy = self.step_bar(&v, dt_ms) | edge_busy;
         self.live_a = self.live_sp.chase(if v.live.visible { 1.0 } else { 0.0 }, dt_ms);
         // the panel's content follows the body: it fades in a moment after the body starts to grow, and out quickly
         let want_panel = v.panel.visible && (reduced || v.panel.shown_age_ms >= PANEL_DELAY_MS);
@@ -1244,16 +1325,18 @@ impl View for IslandView {
         let now = cx.now_ms;
         let b = &v.body;
         // `sbody` = the body in the shell's layout (hanging from the top), `body` = where it is on the window (mirrored for the bottom edge)
-        let (bottom, wh) = (self.bottom, self.win.1);
+        let (bottom, wh) = (self.dock.at_bottom(), self.win.1);
         let mut sb = b.clone();
-        sb.top -= self.tuck_px as f64;
+        sb.top += self.dy() as f64;
+        // in a taskbar the capsule is round on the edge side too (a pill in the bar, not a notch of the screen edge) and has no flares
+        sb.radius_top += (sb.radius_bottom - sb.radius_top).max(0.0) * self.bar_w as f64;
         let sbody = Rect::new(sb.left as f32, sb.top as f32, sb.width as f32, sb.height as f32);
         let dx = self.dx_for(&v);
         let body = self.win_body(&v);
-        let (rt, rb) = shapes::clamp_radii(body.w, body.h, b.radius_top as f32, b.radius_bottom as f32);
+        let (rt, rb) = shapes::clamp_radii(body.w, body.h, sb.radius_top as f32, b.radius_bottom as f32);
         self.amb.glow.paint(cv, body, rb.max(rt), s);
         // the silhouette: flat against the screen edge, round on the free side, the flares and the light theme's shadow on the same sides
-        flipped(cv, bottom, wh, dx, |cv| shapes::paint_body(cv, &sb, b.radius_top as f32, b.radius_bottom as f32, self.flare_a, self.fx.shadow(), self.fx.fill()));
+        flipped(cv, bottom, wh, dx, |cv| shapes::paint_body(cv, &sb, sb.radius_top as f32, b.radius_bottom as f32, self.flare_a * (1.0 - self.bar_w), self.fx.shadow(), self.fx.fill()));
         let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq), fx: { let mut f = live::Fx { ring: self.amb.ring.paint(), ..self.fx.fx() }; f.card.phone_open = self.phone.open_target(); f } };
         // ---- everything inside the body is clipped to its silhouette
         let mut painted = Painted::default();
@@ -1348,7 +1431,7 @@ impl View for IslandView {
         if self.comp.take_created() {
             cx.post(Msg::Custom(Box::new(Own::Wake))); // a fresh engine: tick + draw it so it starts moving
         }
-        let strip = (v.strip.x as f32, v.strip.y as f32 - self.tuck_px);
+        let strip = (v.strip.x as f32, v.strip.y as f32 + self.dy());
         flipped(cv, bottom, wh, dx, |cv| shapes::paint_edge(cv, &v.edge, strip, pulse, v.reduced));
         match self.comp.style {
             EdgeStyle::Tail => flipped(cv, bottom, wh, dx, |cv| self.comp.draw_tail(cv, sbody, rb, s)),
@@ -1526,6 +1609,13 @@ impl IslandView {
     /// How far the body has slid out through its edge (window px).
     pub fn dbg_tuck_px(&self) -> f32 {
         self.tuck_px
+    }
+    /// The island stands in a taskbar, and how far the body is lifted off the window's floor (window px).
+    pub fn dbg_bar(&self) -> (bool, f32, f32, f32) {
+        (self.in_bar(), self.lift_px, self.bar_w, self.raise_a)
+    }
+    pub fn dbg_bar_moving(&self) -> bool {
+        self.bar_sp.moving() || self.raise_sp.moving()
     }
     pub fn dbg_align(&self) -> Align {
         self.align

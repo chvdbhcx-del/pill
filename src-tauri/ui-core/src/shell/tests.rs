@@ -1181,6 +1181,30 @@ fn a_big_pet_makes_the_collapsed_capsule_taller_and_back() {
     assert!((h.sh.view().body.height - h0).abs() < 0.5);
 }
 
+#[test]
+fn the_folded_capsule_fits_a_cap_and_gets_its_height_back() {
+    let mut h = H::new();
+    h.ev(Event::LiveMeasured { w: 140.0, h: 30.0 });
+    h.run(2000.0);
+    let h0 = h.sh.view().body.height;
+    h.sh.set_fold_cap(Some(h0 - 8.0));
+    h.run(2000.0);
+    let h1 = h.sh.view().body.height;
+    assert!((h1 - (h0 - 8.0)).abs() < 0.5, "{h0} -> {h1}");
+    // a cap above the natural height changes nothing, and a big pet cannot push through it
+    h.sh.set_fold_cap(Some(h0 + 20.0));
+    h.run(2000.0);
+    assert!((h.sh.view().body.height - h0).abs() < 0.5);
+    h.sh.set_fold_cap(Some(h0 - 8.0));
+    h.sh.reserve_height(46.0);
+    h.run(2000.0);
+    assert!((h.sh.view().body.height - (h0 - 8.0)).abs() < 0.5);
+    h.sh.set_fold_cap(None);
+    h.sh.reserve_height(0.0);
+    h.run(2000.0);
+    assert!((h.sh.view().body.height - h0).abs() < 0.5);
+}
+
 // ---------------- frame loop ----------------
 
 #[test]

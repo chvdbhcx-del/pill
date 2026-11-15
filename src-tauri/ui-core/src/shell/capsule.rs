@@ -149,6 +149,8 @@ pub struct Shell<B: Backend, C: Clock> {
     pub(super) pet_res: f64,
     /// css px the collapsed capsule must be at least tall (a big pet stands in it); 0 = the normal `COL_H`
     pub(super) pet_res_h: f64,
+    /// screen px the plain folded capsule may be tall at most (the island stands inside a taskbar); `None` = no limit
+    pub(super) fold_cap: Option<f64>,
     pub(super) content: LiveContent,
     pub(super) ghost: Option<(LiveContent, f64)>,
     pub(super) swap_epoch: u64,
@@ -219,6 +221,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             measure: (0.0, 0.0),
             pet_res: 0.0,
             pet_res_h: 0.0,
+            fold_cap: None,
             content: LiveContent::None,
             ghost: None,
             swap_epoch: 0,
@@ -535,6 +538,8 @@ impl<B: Backend, C: Clock> Shell<B, C> {
     pub(super) fn col_target(&self) -> Target {
         let s = self.scale();
         let hgt = COL_H.max(self.pet_res_h) * s;
+        // inside a taskbar the plain capsule never outgrows the bar (a card or a tall widget may: it floats above the bar then)
+        let plain = self.fold_cap.map_or(hgt, |c| hgt.min(c.max(1.0)));
         let ev = |x: f64| {
             let x = x.ceil();
             x + (x % 2.0)
@@ -547,7 +552,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             let rr = (24.0 * s).min(hh / 2.0);
             return Target { w: wide, h: hh, r: rr, t: if self.capsule() { rr } else { 0.0 } };
         }
-        Target { w: wide, h: hgt, r: hgt / 2.0, t: if self.capsule() { hgt / 2.0 } else { 0.0 } }
+        Target { w: wide, h: plain, r: plain / 2.0, t: if self.capsule() { plain / 2.0 } else { 0.0 } }
     }
     pub(super) fn exp_target(&mut self) -> Target {
         let s = self.scale();
@@ -954,6 +959,17 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             return;
         }
         self.pet_res_h = px;
+        if self.state == PillState::Collapsed && !self.hidden {
+            self.retarget(false, None, Mode::Resize);
+        }
+    }
+    /// The folded capsule is at most `px` screen px tall (the island stands inside a taskbar and must fit the bar); `None` lifts the limit.
+    pub fn set_fold_cap(&mut self, px: Option<f64>) {
+        let px = px.map(|p| p.max(1.0).round());
+        if px == self.fold_cap {
+            return;
+        }
+        self.fold_cap = px;
         if self.state == PillState::Collapsed && !self.hidden {
             self.retarget(false, None, Mode::Resize);
         }

@@ -18,6 +18,8 @@ use std::sync::{Arc, Mutex};
 /// the island in it.
 pub const VW: f32 = 1500.0;
 pub const VH: f32 = 900.0;
+/// The height (css px) of the imaginary taskbar the island stands in when the edge is the taskbar.
+pub const BAR_H: f32 = 48.0;
 
 pub struct Live {
     pub view: IslandView,
@@ -50,7 +52,15 @@ impl Live {
         cx.refresh_hz = host.refresh_hz;
         let view = IslandView::with_parts(&mut cx, SysClock::real(), os_lang);
         let _ = cx.take_effects();
-        Live { view, cx, q, bus: fakes.bus, st, awake, vnow: 0.0, last_scale: host.scale }
+        let live = Live { view, cx, q, bus: fakes.bus, st, awake, vnow: 0.0, last_scale: host.scale };
+        let taskbar = live.st.lock().unwrap_or_else(|e| e.into_inner()).get("edge.position").and_then(|v| v.as_str()).is_some_and(|p| p == "taskbar");
+        live.bar(taskbar);
+        live
+    }
+
+    /// The imaginary taskbar exists (the edge is the taskbar) or not: the island hears it as `pill.rs` would tell it.
+    fn bar(&self, on: bool) {
+        self.bus.emit("pill:taskbar", json!({ "h": if on { BAR_H } else { 0.0 } }));
     }
 
     /// New settings values (already filtered): the island hears them as the backend's `settings:changed`.
@@ -61,7 +71,11 @@ impl Live {
                 g.insert(k.clone(), v.clone());
             }
         }
+        let edge = patch.get("edge.position").and_then(|v| v.as_str()).map(|p| p == "taskbar");
         self.bus.emit("settings:changed", Value::Object(patch));
+        if let Some(on) = edge {
+            self.bar(on);
+        }
     }
 
     /// An invented backend event.
@@ -139,6 +153,11 @@ impl Live {
     /// The island hangs from the bottom edge of its window (the `edge.position` setting, once the island has slid over).
     pub fn at_bottom(&self) -> bool {
         self.view.at_bottom()
+    }
+
+    /// The island stands inside the imaginary taskbar.
+    pub fn in_bar(&self) -> bool {
+        self.view.in_bar()
     }
 
     /// The side of its edge the island stands at (`edge.align`).

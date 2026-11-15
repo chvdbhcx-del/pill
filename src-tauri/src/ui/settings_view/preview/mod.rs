@@ -311,7 +311,8 @@ impl SettingsView {
             let sh_max = (self.size.1 - TITLE_H - 2.0 - HEAD_H - CAP_H - SIDE_PAD).max(100.0);
             // a corner island needs room beside it on the stage, or the corner cannot be told from the middle
             let room = if live.aligned() == Side::Center { 1.0 } else { 1.7 };
-            let (fw, fh) = ((bw + 2.0 * FOCUS_PAD_X) * room, bh + 6.0);
+            // in a taskbar the stage shows the bar under the island too
+            let (fw, fh) = ((bw + 2.0 * FOCUS_PAD_X) * room, bh + 6.0 + if live.in_bar() { live::BAR_H } else { 0.0 });
             let k = ((PV_W - 2.0 * SIDE_PAD) / fw.max(1.0)).min((sh_max - STAGE_TOP - 12.0) / fh.max(1.0)).clamp(0.1, 2.0);
             let h = (fh * k + STAGE_TOP + 12.0).clamp(84.0, sh_max);
             pv.cx_world = bl + bw / 2.0;
@@ -374,6 +375,14 @@ impl SettingsView {
                             Side::Left => stage.x + SIDE_PAD - bl * k,
                             Side::Right => stage.right() - SIDE_PAD - (bl + bw) * k,
                         };
+                        // the taskbar the island stands in: a strip along the floor of the stage, under the island
+                        if live.in_bar() {
+                            let bar = live::BAR_H * k;
+                            let floor = stage.bottom() - STAGE_TOP;
+                            let strip = Rect::new(stage.x, floor - bar, stage.w, bar + STAGE_TOP);
+                            cv.fill_rect(strip, if p.dark { Color::rgba(0.0, 0.0, 0.0, 0.42) } else { Color::rgba(1.0, 1.0, 1.0, 0.5) });
+                            cv.fill_rect(Rect::new(strip.x, strip.y, strip.w, 1.0), if p.dark { Color::rgba(1.0, 1.0, 1.0, 0.10) } else { Color::rgba(0.0, 0.0, 0.0, 0.12) });
+                        }
                         let m = mul(&scale_about((0.0, 0.0), k, k), &translation(left, top));
                         cv.with_transform(m, |cv| live.draw(cv, d.th, cx));
                     }

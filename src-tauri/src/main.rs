@@ -8,6 +8,7 @@ mod command;
 mod fspeek;
 mod guard;
 mod keepalive;
+mod taskbar;
 mod media;
 mod lyrics;
 mod pill;

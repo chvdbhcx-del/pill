@@ -38,7 +38,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         "pill_set_state" => ok(pill::pill_set_state(app.clone(), a.req("state")?, a.opt("tab")?, a.opt("via")?)),
         "pill_toggle" => ok(pill::pill_toggle(app.clone())),
         "pill_activate" => ok(pill::pill_activate(app.clone(), a.req("on")?)),
-        "pill_edge" => ok(pill::pill_edge(app.clone(), a.req("bottom")?, a.opt("align")?)),
+        "pill_edge" => ok(pill::pill_edge(app.clone(), a.req("bottom")?, a.opt("align")?, a.opt("bar")?)),
         "pill_auto_hide" => ok(pill::pill_auto_hide(app.clone(), a.req("on")?)),
         "pill_monitors" => ok(pill::pill_monitors(app.clone())),
         "pill_set_gaze" => ok(pill::pill_set_gaze(a.req("on")?)),

@@ -582,14 +582,14 @@ fn the_old_page_names_still_find_their_rows() {
 // ------------------------------------------------------------------------------------------------ the screen edge
 
 #[test]
-fn the_screen_edge_row_is_a_two_way_choice_that_defaults_to_the_top() {
+fn the_screen_edge_row_is_a_three_way_choice_that_defaults_to_the_top() {
     let r = schema().row("edge.position").expect("the row exists");
     assert_eq!(r.key, "edge.position");
     assert_eq!(r.default, json!("top"));
     match &r.control {
         Control::Segmented { options, dynamic } => {
             let vals: Vec<_> = options.iter().map(|o| o.value.clone()).collect();
-            assert_eq!(vals, [json!("top"), json!("bottom")]);
+            assert_eq!(vals, [json!("top"), json!("bottom"), json!("taskbar")]);
             assert!(*dynamic == Dynamic::None, "a fixed choice: the preview island may hear it");
             for o in options {
                 assert!(complete(o.label), "both languages: {:?}", o.value);
@@ -613,16 +613,33 @@ fn the_screen_edge_row_is_a_two_way_choice_that_defaults_to_the_top() {
         c => panic!("a segmented choice, not {c:?}"),
     }
     assert!(complete(a.label) && complete(a.hint));
-    assert_eq!(a.enabled_if, super::schema::Cond::Eq("edge.position", json!("bottom")), "it only applies to the bottom edge");
+    assert_eq!(a.enabled_if, super::schema::Cond::Ne("edge.position", json!("top")), "it applies to the bottom edge and to the taskbar");
     let off = schema().row("offsetX").unwrap();
     assert!(off.hint.get(Lang::En).contains("corner"), "the offset says it is not used in a corner");
+    // the taskbar row is named in both languages and the keep-clear switch is greyed out in the bar
+    let edge = schema().row("edge.position").unwrap();
+    assert!(edge.hint.get(Lang::En).contains("taskbar") && edge.hint.get(Lang::Ru).contains("панел"));
+    assert_eq!(under.enabled_if, super::schema::Cond::Ne("edge.position", json!("taskbar")), "a pill inside the bar has nothing to keep clear of");
     // the model takes the two values and refuses anything else
     let mut m = SettingsModel::new("en-US");
     assert_eq!(m.get("edge.position"), json!("top"));
     assert_eq!(m.set("edge.position", json!("bottom")), vec![super::calls::BackendCall::put("edge.position", json!("bottom"))]);
     assert_eq!(m.get("edge.position"), json!("bottom"));
-    assert!(m.try_set("edge.position", json!("left")).is_err(), "only the two edges");
+    assert!(m.try_set("edge.position", json!("left")).is_err(), "only top, bottom and the taskbar");
     assert_eq!(m.get("edge.align"), json!("center"));
+    // the taskbar puts a never-chosen side to the left (beside Start), and keeps a side that was chosen
+    let calls = m.set("edge.position", json!("taskbar"));
+    assert_eq!(m.get("edge.position"), json!("taskbar"));
+    assert_eq!(m.get("edge.align"), json!("left"));
+    match &calls[0] {
+        super::calls::BackendCall::SettingsSet { patch } => assert_eq!((patch.get("edge.position"), patch.get("edge.align")), (Some(&json!("taskbar")), Some(&json!("left")))),
+        c => panic!("{c:?}"),
+    }
+    assert!(m.try_set("edge.align", json!("right")).is_ok());
+    m.set("edge.position", json!("bottom"));
+    m.set("edge.position", json!("taskbar"));
+    assert_eq!(m.get("edge.align"), json!("right"), "a chosen side stays");
+    m.set("edge.position", json!("bottom"));
     assert!(m.try_set("edge.align", json!("left")).is_ok() && m.try_set("edge.align", json!("up")).is_err());
     // it is found by search in both languages
     for (q, lang) in [("bottom", Lang::En), ("снизу", Lang::Ru), ("edge", Lang::En)] {
