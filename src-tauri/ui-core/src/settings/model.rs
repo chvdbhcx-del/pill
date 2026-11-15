@@ -390,7 +390,11 @@ impl SettingsModel {
             let combo = hotkey::check_local(combo, action, &self.bound_hotkeys()).map_err(SetError::Hotkey)?;
             return Ok(vec![BackendCall::HotkeySet { action: action.to_string(), combo }]);
         }
-        let patch = self.normalize(key, &value)?;
+        let mut patch = self.normalize(key, &value)?;
+        // the taskbar is a strip, not a screen edge: its pill belongs beside Start, not in the middle of the icons (only while the side was never chosen)
+        if key == "edge.position" && patch.get(key) == Some(&json!("taskbar")) && self.get("edge.align") == json!("center") {
+            patch.insert("edge.align".to_string(), json!("left"));
+        }
         let mut calls = vec![BackendCall::SettingsSet { patch: patch.clone() }];
         for (k, v) in &patch {
             self.values.insert(k.clone(), v.clone());
