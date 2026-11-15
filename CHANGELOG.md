@@ -2,6 +2,14 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [0.9.0] - 2026-11-16
+
+### Highlights
+- The island can sit at the bottom of the screen, or inside the taskbar itself (Look > Screen edge). At the bottom it opens upward. It can be shifted to the left or right corner like a widget, and can stay above the bar or go over it.
+- The music player can be a separate widget (Media and sound > Player as a separate widget): at the top, at the bottom or inside the taskbar, left, centre or right. While it is on, the island does not show the player a second time, and Home re-flows without a blank hole.
+- The music widget follows the island size setting. Inside the taskbar the capsule fits the bar, the buttons work in place, and a click on the cover or title opens the card upward. The open card is even: equal padding, one corner radius, a concentric cover.
+- Weather: the UV index now comes from the full MET forecast, so the tile shows a value instead of staying empty.
+
 ## [0.8.10] - 2026-11-13
 
 ### Highlights
