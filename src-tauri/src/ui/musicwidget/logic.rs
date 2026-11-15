@@ -175,7 +175,8 @@ pub fn body(dock: Dock, p: f32, dy: f32) -> Rect {
     let h = (CAPSULE_H + (CARD_H - CAPSULE_H) * p).max(8.0);
     let y = match dock {
         Dock::Top => PAD - dy,
-        Dock::Bottom => mirror_y(PAD - dy, h, WIN.1),
+        // the widget only offers top / bottom; a taskbar dock (island-only) stands like the bottom edge
+        Dock::Bottom | Dock::Taskbar => mirror_y(PAD - dy, h, WIN.1),
     };
     Rect::new(PAD, y, BODY_W, h)
 }
