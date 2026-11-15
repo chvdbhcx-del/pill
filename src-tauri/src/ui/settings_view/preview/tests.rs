@@ -381,7 +381,7 @@ fn only_plain_choices_reach_the_preview_never_text_the_user_typed() {
         assert!(shareable(k), "{k} may go to the preview");
     }
     for k in ["weather.city", "mail.user", "mail.host", "capture.folder", "capture.videoFolder", "hotkey.toggle", "search.customUrl", "clipboard.denyList", "hideInApps", "autoHide", "quiet.on",
-        "monitor", "sound.volumeDevice", "settings.preview", "phone.downloadDir", "ai.baseUrl", "settingsWin.x", "nonsense"]
+        "monitor", "sound.volumeDevice", "settings.preview", "phone.downloadDir", "ai.baseUrl", "settingsWin.x", "nonsense", "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset"]
     {
         assert!(!shareable(k), "{k} stays in the window");
     }

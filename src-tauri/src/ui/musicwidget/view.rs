@@ -262,7 +262,7 @@ impl MusicView {
     }
 
     fn commit_seek(&mut self, f: f32, cx: &mut Cx) {
-        let ms = (f as f64 * self.track.duration_ms as f64) as u64;
+        let ms = (f as f64 * self.track.duration_ms as f64).round() as u64;
         let _ = cx.call_async("media_seek", json!({ "ms": ms }));
         self.clock.set(ms, self.track.duration_ms, self.track.playing, cx.now_ms as i64);
         self.prog.to(f);
@@ -417,7 +417,7 @@ impl View for MusicView {
             },
             Msg::Open(_) => return Response::NONE,
         }
-        Response::redraw()
+        if self.vis { Response::redraw() } else { Response::NONE } // a hidden window draws nothing: no frame for it
     }
 
     fn step(&mut self, dt: f64, cx: &mut Cx) -> bool {
@@ -480,7 +480,7 @@ impl View for MusicView {
         let body = lg::body(self.dock, p, dy);
         let rad = (28.0 - 4.0 * p.min(1.0)).min(body.h / 2.0);
         let accent = self.accent(&th);
-        let pos = if let Some(f) = self.seek { (f as f64 * self.track.duration_ms as f64) as u64 } else { self.pos_now(cx.now_ms) };
+        let pos = if let Some(f) = self.seek { (f as f64 * self.track.duration_ms as f64).round() as u64 } else { self.pos_now(cx.now_ms) };
         cv.with_opacity(alpha, |cv| {
             cv.shadow_rr(body, rad, 10.0, if self.dock == Dock::Bottom { -2.0 } else { 3.0 }, Color::rgba(0.0, 0.0, 0.0, 0.45));
             cv.fill_rr(body, rad, th.bg.alpha(0.97));

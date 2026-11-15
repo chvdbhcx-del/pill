@@ -199,6 +199,19 @@ mod tests {
     }
 
     #[test]
+    fn the_music_widget_settings_travel_in_a_backup_with_their_types() {
+        let (p, skipped) = run(json!({ "media.widget": true, "media.widget.edge": "top", "media.widget.align": "center", "media.widget.offset": -12 }));
+        assert_eq!((p.len(), skipped), (4, 0));
+        assert!(run(json!({ "media.widget": "on" })).0.is_empty() && run(json!({ "media.widget.offset": "left" })).0.is_empty(), "a wrong type is refused");
+        let d = settings::defaults();
+        assert_eq!(
+            (d.get("media.widget"), d.get("media.widget.edge"), d.get("media.widget.align"), d.get("media.widget.offset")),
+            (Some(&json!(false)), Some(&json!("bottom")), Some(&json!("left")), Some(&json!(0))),
+            "off by default, bottom left when it is switched on"
+        );
+    }
+
+    #[test]
     fn non_object_and_header_only() {
         assert_eq!(run(json!([1, 2])).0.len(), 0);
         let (p, s) = run(json!({ "_pill": { "version": "x" } }));
