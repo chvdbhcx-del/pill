@@ -344,8 +344,40 @@ fn the_preview_island_stands_on_the_floor_of_its_stage_when_the_edge_is_the_bott
 }
 
 #[test]
+fn the_preview_island_stands_in_the_corner_of_its_stage_for_a_corner_alignment() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("appearance", json!({"language": "en", "edge.position": "bottom"}));
+        let side = |t: &T, img: &Image| {
+            let p = pv_rect(WIDE);
+            let h = t.v.borrow().pv.stage_h.at();
+            let (x, y, w) = (p.x + 16.0, p.y + 48.0, PV_W - 32.0);
+            let black = |r: Rect| img.count(Some(r), |px| px[3] == 255 && px[0].max(px[1]).max(px[2]) < 10);
+            (black(Rect::new(x, y, w / 4.0, h)), black(Rect::new(x + w * 0.75, y, w / 4.0, h)))
+        };
+        let a = shot(&mut t, "preview-align-centre-dark-1x", &th);
+        let (l, r) = side(&t, &a);
+        assert!(l > 100 && r > 100 && (l as f32 / r as f32 - 1.0).abs() < 0.25, "centred: {l} / {r}");
+        set(&mut t, "edge.align", json!("left"));
+        settle(&mut t, WIDE, &th);
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Pill(Look::Island));
+        assert_eq!(t.v.borrow().pv.live.as_ref().unwrap().aligned(), crate::ui::host::geom::Align::Left);
+        let b = shot(&mut t, "preview-align-left-dark-1x", &th);
+        let (l, r) = side(&t, &b);
+        assert!(l > 300 && r * 3 < l, "the island stands in the left corner of the stage: {l} / {r}");
+        set(&mut t, "edge.align", json!("right"));
+        settle(&mut t, WIDE, &th);
+        let c = shot(&mut t, "preview-align-right-dark-1x", &th);
+        let (l, r) = side(&t, &c);
+        assert!(r > 300 && l * 3 < r, "and in the right one: {l} / {r}");
+        assert!(t.calls("pill_edge").is_empty());
+    });
+}
+
+#[test]
 fn only_plain_choices_reach_the_preview_never_text_the_user_typed() {
-    for k in ["showSeconds", "size", "shape", "theme", "pet", "character", "net.weather", "weather.units", "live.copy", "island.colorCustom", "clipClickPaste", "edge.position"] {
+    for k in ["showSeconds", "size", "shape", "theme", "pet", "character", "net.weather", "weather.units", "live.copy", "island.colorCustom", "clipClickPaste", "edge.position", "edge.align"] {
         assert!(shareable(k), "{k} may go to the preview");
     }
     for k in ["weather.city", "mail.user", "mail.host", "capture.folder", "capture.videoFolder", "hotkey.toggle", "search.customUrl", "clipboard.denyList", "hideInApps", "autoHide", "quiet.on",

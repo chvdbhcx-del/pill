@@ -141,9 +141,13 @@ impl Live {
         self.view.at_bottom()
     }
 
+    /// The side of its edge the island stands at (`edge.align`).
+    pub fn aligned(&self) -> crate::ui::host::geom::Align {
+        self.view.aligned()
+    }
+
     /// The folded or open island's body in the imaginary window: `(left, width, height)`.
     pub fn body(&self) -> (f32, f32, f32) {
-        let b = self.view.core.shell.view().body;
-        (b.left as f32, b.width as f32, b.height as f32)
+        self.view.body_in_window()
     }
 }

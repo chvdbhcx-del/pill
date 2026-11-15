@@ -10,7 +10,7 @@ use super::panel::TabHost;
 use super::shapes;
 use super::sys::{self, SysClock};
 use super::tabfx::Act;
-use crate::ui::host::geom::{self, Dock};
+use crate::ui::host::geom::{self, Align, Dock};
 use crate::ui::tabs::fx::TabFx;
 use crate::ui::view::{Cx, CursorShape, DropEvent, DropPayload, DropPhase, Msg, ProximityEvent, Ticket, View, Waker};
 use glasskit::canvas::{scale_about, translation, mul, Canvas};
@@ -197,11 +197,14 @@ pub struct IslandView {
     /// The island hangs from the bottom edge of its window. The whole layout (shell, tabs, header) stays "hanging from the top"; the view
     /// mirrors positions about the window's middle line (`win_rect`, `shell_pt`) and paints pure shapes under a vertical flip (`flipped`).
     bottom: bool,
+    /// Where along the edge the body stands (`edge.align`, the bottom edge only): the shell lays the body out centred in the window, the view
+    /// moves it sideways by `dx_for` (the window itself stands against that side of the monitor, see `pill.rs`).
+    align: Align,
     slide: Slide,
     /// 0 = at rest, 1 = slid out through the edge; `tuck_px` is that in window px, fixed by `step` (draw only reads it)
     tuck: Flow,
     tuck_px: f32,
-    last_edge: Option<bool>,
+    last_edge: Option<(bool, Align)>,
 }
 
 /// Leaving an edge, and arriving at the new one.
@@ -282,6 +285,7 @@ impl IslandView {
             hdr: HeaderFx::new(),
             phone: super::phonecard::PhoneUi::new(&Theme::pill_dark()),
             bottom: false,
+            align: Align::Center,
             slide: Slide::Rest,
             tuck: Flow::new(0.0, TUCK_OUT),
             tuck_px: 0.0,
@@ -291,6 +295,7 @@ impl IslandView {
             device_id: 0,
         };
         v.bottom = v.want_bottom();
+        v.align = v.want_align();
         v.sync_env(cx);
         v.exec_outs(outs, cx);
         v.ask_chips(cx);
@@ -456,6 +461,13 @@ impl IslandView {
             // keyboard focus is the window's: the native Overlay is no-activate until asked
             "pill_activate" => cx.set_focus(args.get("on").and_then(|v| v.as_bool()).unwrap_or(false)),
             "pill_rect" => {
+                let mut args = args;
+                if self.align != Align::Center {
+                    // the shell reports its centred body; the backend wants where the body stands (the edge reveal watches that x range)
+                    let g = |k: &str| args.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let dx = geom::align_body_dx(self.align, self.win.0, g("x") as f32, g("w") as f32, geom::ALIGN_PAD * self.core.shell.scale() as f32);
+                    args["x"] = json!(g("x") + dx as f64);
+                }
                 self.call(cx, "pill_rect", args, Pending::Fire);
             }
             "battery_state" => self.call(cx, cmd, args, Pending::Battery),
@@ -545,33 +557,60 @@ impl IslandView {
         Dock::from_setting(self.core.settings.get("edge.position").and_then(|v| v.as_str()).unwrap_or("top")) == Dock::Bottom
     }
 
-    /// A rectangle of the shell's layout (hanging from the top of the window, y down) as it is on the window now: slid toward its edge by the
-    /// edge change, and mirrored about the window's middle line for the bottom edge.
-    fn win_rect(&self, r: Rect) -> Rect {
+    /// The screen side the settings ask for (`edge.align`); only the bottom edge has one.
+    fn want_align(&self) -> Align {
+        if self.want_bottom() {
+            Align::from_setting(self.core.settings.get("edge.align").and_then(|v| v.as_str()).unwrap_or("center"))
+        } else {
+            Align::Center
+        }
+    }
+
+    /// The island stands at this side of its edge (the side it has slid over to, not the one the settings ask for yet).
+    pub fn aligned(&self) -> Align {
+        self.align
+    }
+
+    /// How far the body of `v` stands from where the shell laid it out (centred in the window): to the pad from the left / right side.
+    fn dx_for(&self, v: &ShellView) -> f32 {
+        geom::align_body_dx(self.align, self.win.0, v.body.left as f32, v.body.width as f32, geom::ALIGN_PAD * v.scale as f32)
+    }
+
+    /// A rectangle of the shell's layout (hanging from the top of the window, y down) as it is on the window now: moved sideways to its
+    /// corner by `dx`, slid toward its edge by the edge change, and mirrored about the window's middle line for the bottom edge.
+    fn win_rect(&self, r: Rect, dx: f32) -> Rect {
         let y = r.y - self.tuck_px;
-        Rect::new(r.x, if self.bottom { geom::mirror_y(y, r.h, self.win.1) } else { y }, r.w, r.h)
+        Rect::new(r.x + dx, if self.bottom { geom::mirror_y(y, r.h, self.win.1) } else { y }, r.w, r.h)
     }
 
     /// A point of the window (px) in the shell's layout: the inverse of [`IslandView::win_rect`] for the cursor.
     fn shell_pt(&self, p: (f32, f32)) -> (f64, f64) {
+        let dx = self.dx_for(&self.core.shell.view());
         let y = if self.bottom { self.win.1 - p.1 } else { p.1 };
-        (p.0 as f64, (y + self.tuck_px) as f64)
+        ((p.0 - dx) as f64, (y + self.tuck_px) as f64)
     }
 
     /// The body of `v` on the window (px).
     fn win_body(&self, v: &ShellView) -> Rect {
         let b = &v.body;
-        self.win_rect(Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32))
+        self.win_rect(Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32), self.dx_for(v))
+    }
+
+    /// (left, width, height) of the body on the window: where the settings preview looks.
+    pub fn body_in_window(&self) -> (f32, f32, f32) {
+        let b = self.win_body(&self.core.shell.view());
+        (b.x, b.w, b.h)
     }
 
     fn hit_region(&self, v: &ShellView) -> Vec<Rect> {
         let s = v.scale as f32;
         let b = &v.body;
+        let dx = self.dx_for(v);
         if v.phase == Phase::AutoHidden || b.away {
-            return vec![self.win_rect(Rect::new(b.left as f32, 0.0, b.width as f32, 2.0))];
+            return vec![self.win_rect(Rect::new(b.left as f32, 0.0, b.width as f32, 2.0), dx)];
         }
         // the body and the liquid strip hanging off its free edge
-        vec![self.win_rect(Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32 + 14.0 * s))]
+        vec![self.win_rect(Rect::new(b.left as f32, b.top as f32, b.width as f32, b.height as f32 + 14.0 * s), dx)]
     }
 
     fn update_window_requests(&mut self, v: &ShellView, cx: &mut Cx) {
@@ -590,24 +629,32 @@ impl IslandView {
             self.last_gaze = Some(gaze);
             cx.set_gaze(gaze);
         }
-        if self.last_edge != Some(self.bottom) {
-            self.last_edge = Some(self.bottom);
+        if self.last_edge != Some((self.bottom, self.align)) {
+            self.last_edge = Some((self.bottom, self.align));
             cx.set_edge_bottom(self.bottom);
+            cx.set_edge_align(self.align);
         }
     }
 
-    /// Takes the new edge: the window moves (`pill_edge`) and the proximity engine watches the matching screen row.
-    fn set_edge(&mut self, bottom: bool, cx: &mut Cx) {
+    /// Takes the new edge and side: the window moves (`pill_edge`) and the proximity engine watches the matching screen row.
+    fn set_edge(&mut self, (bottom, align): (bool, Align), cx: &mut Cx) {
         self.bottom = bottom;
-        self.last_edge = Some(bottom);
+        self.align = align;
+        self.last_edge = Some((bottom, align));
         cx.set_edge_bottom(bottom);
-        self.call(cx, "pill_edge", json!({ "bottom": bottom }), Pending::Fire);
+        cx.set_edge_align(align);
+        let side = match align {
+            Align::Center => "center",
+            Align::Left => "left",
+            Align::Right => "right",
+        };
+        self.call(cx, "pill_edge", json!({ "bottom": bottom, "align": side }), Pending::Fire);
     }
 
     /// The settings changed while nothing is on screen (hidden island, reduced motion): there is nothing to slide, take the edge at once.
     fn edge_now(&mut self, cx: &mut Cx) {
-        let want = self.want_bottom();
-        if want != self.bottom && self.slide == Slide::Rest && (self.core.shell.is_hidden() || self.core.shell.reduce()) {
+        let want = (self.want_bottom(), self.want_align());
+        if want != (self.bottom, self.align) && self.slide == Slide::Rest && (self.core.shell.is_hidden() || self.core.shell.reduce()) {
             self.set_edge(want, cx);
         }
     }
@@ -615,9 +662,10 @@ impl IslandView {
     /// One frame of the edge change; true while it needs frames. The slide itself is a spring (`tuck`): out through the old edge, the
     /// window moves while the body is out of sight, in from the new edge. Reduced motion and a hidden island skip the slide.
     fn step_edge(&mut self, v: &ShellView, dt_ms: f64, cx: &mut Cx) -> bool {
-        let (want, now, instant) = (self.want_bottom(), cx.now_ms, v.reduced || v.phase == Phase::Hidden);
+        let (want, now, instant) = ((self.want_bottom(), self.want_align()), cx.now_ms, v.reduced || v.phase == Phase::Hidden);
+        let cur = (self.bottom, self.align);
         match self.slide {
-            Slide::Rest if want != self.bottom => {
+            Slide::Rest if want != cur => {
                 if instant {
                     self.set_edge(want, cx);
                 } else {
@@ -625,7 +673,7 @@ impl IslandView {
                     self.slide = Slide::Out;
                 }
             }
-            Slide::Out if want == self.bottom => {
+            Slide::Out if want == cur => {
                 self.tuck.set_feel(TUCK_IN);
                 self.slide = Slide::In;
             }
@@ -637,7 +685,7 @@ impl IslandView {
                 self.tuck.set_feel(TUCK_IN);
                 self.slide = Slide::In;
             }
-            Slide::In if want != self.bottom => {
+            Slide::In if want != cur => {
                 self.tuck.set_feel(TUCK_OUT);
                 self.slide = Slide::Out;
             }
@@ -735,10 +783,11 @@ impl IslandView {
 }
 
 /// Runs `f` under the vertical flip of the bottom edge (shapes and characters drawn as for the top edge, in shell coordinates, come out
-/// mirrored about the middle line of the `win_h` tall window); at the top edge it just runs.
-fn flipped(cv: &Canvas, bottom: bool, win_h: f32, f: impl FnOnce(&Canvas)) {
-    if bottom {
-        cv.with_transform(scale_about((0.0, win_h / 2.0), 1.0, -1.0), f);
+/// mirrored about the middle line of the `win_h` tall window) and moved sideways by `dx` (the corner of a left / right aligned island).
+fn flipped(cv: &Canvas, bottom: bool, win_h: f32, dx: f32, f: impl FnOnce(&Canvas)) {
+    let flip = if bottom { scale_about((0.0, win_h / 2.0), 1.0, -1.0) } else { translation(0.0, 0.0) };
+    if bottom || dx != 0.0 {
+        cv.with_transform(mul(&flip, &translation(dx, 0.0)), f);
     } else {
         f(cv);
     }
@@ -1199,11 +1248,12 @@ impl View for IslandView {
         let mut sb = b.clone();
         sb.top -= self.tuck_px as f64;
         let sbody = Rect::new(sb.left as f32, sb.top as f32, sb.width as f32, sb.height as f32);
+        let dx = self.dx_for(&v);
         let body = self.win_body(&v);
         let (rt, rb) = shapes::clamp_radii(body.w, body.h, b.radius_top as f32, b.radius_bottom as f32);
         self.amb.glow.paint(cv, body, rb.max(rt), s);
         // the silhouette: flat against the screen edge, round on the free side, the flares and the light theme's shadow on the same sides
-        flipped(cv, bottom, wh, |cv| shapes::paint_body(cv, &sb, b.radius_top as f32, b.radius_bottom as f32, self.flare_a, self.fx.shadow(), self.fx.fill()));
+        flipped(cv, bottom, wh, dx, |cv| shapes::paint_body(cv, &sb, b.radius_top as f32, b.radius_bottom as f32, self.flare_a, self.fx.shadow(), self.fx.fill()));
         let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq), fx: { let mut f = live::Fx { ring: self.amb.ring.paint(), ..self.fx.fx() }; f.card.phone_open = self.phone.open_target(); f } };
         // ---- everything inside the body is clipped to its silhouette
         let mut painted = Painted::default();
@@ -1299,9 +1349,9 @@ impl View for IslandView {
             cx.post(Msg::Custom(Box::new(Own::Wake))); // a fresh engine: tick + draw it so it starts moving
         }
         let strip = (v.strip.x as f32, v.strip.y as f32 - self.tuck_px);
-        flipped(cv, bottom, wh, |cv| shapes::paint_edge(cv, &v.edge, strip, pulse, v.reduced));
+        flipped(cv, bottom, wh, dx, |cv| shapes::paint_edge(cv, &v.edge, strip, pulse, v.reduced));
         match self.comp.style {
-            EdgeStyle::Tail => flipped(cv, bottom, wh, |cv| self.comp.draw_tail(cv, sbody, rb, s)),
+            EdgeStyle::Tail => flipped(cv, bottom, wh, dx, |cv| self.comp.draw_tail(cv, sbody, rb, s)),
             EdgeStyle::Legs => {
                 let side = char_side(&self.comp.cfg);
                 // the characters' eyes are drawn about 0.75 px lower than the pet's eye line: they sit on the same text line
@@ -1476,6 +1526,9 @@ impl IslandView {
     /// How far the body has slid out through its edge (window px).
     pub fn dbg_tuck_px(&self) -> f32 {
         self.tuck_px
+    }
+    pub fn dbg_align(&self) -> Align {
+        self.align
     }
     pub fn dbg_body_h(&self) -> f64 {
         self.core.shell.view().body.height

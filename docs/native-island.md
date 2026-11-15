@@ -70,7 +70,14 @@ header keep their one layout, "hanging from the top of the window"; `IslandView`
 | command bar | `pill::body_bottom` is `None` at the bottom: the bar hangs from the top of the monitor as always |
 | auto-hide | the `-130 %` slide runs through the flipped body, i.e. downward |
 
-Changing the setting live: the view slides the body out through the old edge (`tuck`, `Slide::Out`), asks for the new edge (`pill_edge`, which
+Side along the edge (`edge.align` = `center` | `left` | `right`, bottom edge only; the top edge is always centred): `geom::dock_position_aligned`
+puts the WINDOW against that side of the monitor (of the work area with `underTaskbar`, so a side taskbar is not covered; `offsetX` does not
+apply), and the view moves the body, which the shell lays out centred, to `geom::ALIGN_PAD` (20 px) from that side of the window
+(`IslandView::dx_for`, `geom::align_body_dx`): the body keeps its edge while it grows, and the open panel (already 20 px inside the frame) is
+where it always was. `win_rect` / `shell_pt` / `flipped` carry the shift, the reported `pill_rect` x is shifted too (the edge reveal watches
+the corner).
+
+Changing the setting live (edge or side): the view slides the body out through the old edge (`tuck`, `Slide::Out`), asks for the new edge (`pill_edge`, which
 moves the window while nothing is visible), waits `EDGE_HOLD_MS` and slides the body in from the new edge (`Slide::In`). Reduce motion and a
 hidden island take the edge at once. `pill.rs` keeps the edge the window is on (`pill::dock`), which follows `edge.position` only through
 `pill_edge`. The settings preview (`settings_view/preview`) runs the same view in its sandbox; its camera stands the island on the floor of the

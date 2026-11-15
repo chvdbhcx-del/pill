@@ -158,16 +158,66 @@ impl Dock {
 /// one; a taskbar on another side changes nothing for the edge), off it uses the physical edge of the monitor. `margin` (physical px) moves the
 /// window away from that edge. Bottom grows UP: the window's bottom edge is the anchor, so a taller window reaches further up.
 pub fn dock_position(dock: Dock, mon: IRect, work: IRect, under_taskbar: bool, margin: i32, size: (i32, i32), offset_pct: f32) -> (i32, i32) {
+    dock_position_aligned(dock, Align::Center, mon, work, under_taskbar, margin, size, offset_pct)
+}
+
+/// Where along the edge the island stands (the `edge.align` setting, used with the bottom edge).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Align {
+    #[default]
+    Center,
+    Left,
+    Right,
+}
+
+impl Align {
+    /// `"left"` / `"right"`; anything else (also an empty or unknown value) = the centre, the default.
+    pub fn from_setting(v: &str) -> Align {
+        match v.to_ascii_lowercase().as_str() {
+            "left" => Align::Left,
+            "right" => Align::Right,
+            _ => Align::Center,
+        }
+    }
+
+    pub fn code(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_code(c: u8) -> Option<Align> {
+        [Align::Center, Align::Left, Align::Right].get(c as usize).copied()
+    }
+}
+
+/// Logical px between the window's side and the body of a left / right aligned island (the open panel is 20 px inside the 720 px frame, so
+/// an open island stands exactly where it would have stood anyway).
+pub const ALIGN_PAD: f32 = 20.0;
+
+/// [`dock_position`] with the island standing at the `align` side: `Left` / `Right` put the WINDOW against that side of the monitor (of the
+/// work area with `under_taskbar`: a taskbar on that side is not covered) and `offset_pct` does not apply; the body is moved to
+/// [`ALIGN_PAD`] from that side inside the window by the view ([`align_body_dx`]), so the island grows from there and never leaves the monitor.
+pub fn dock_position_aligned(dock: Dock, align: Align, mon: IRect, work: IRect, under_taskbar: bool, margin: i32, size: (i32, i32), offset_pct: f32) -> (i32, i32) {
+    let side = |l: i32, r: i32| (l, r);
+    let (wl, wr) = if under_taskbar { side(work.l.max(mon.l), work.r.min(mon.r)) } else { side(mon.l, mon.r) };
+    let x = match align {
+        Align::Center => anchor_top_center(mon, 0, size, offset_pct).0,
+        Align::Left => wl,
+        Align::Right => wr - size.0,
+    };
+    let x = if align == Align::Center { x } else { x.clamp(mon.l, (mon.r - size.0).max(mon.l)) };
     match dock {
-        Dock::Top => {
-            let top = if under_taskbar { work.t.max(mon.t) } else { mon.t } + margin;
-            anchor_top_center(mon, top, size, offset_pct)
-        }
-        Dock::Bottom => {
-            let bottom = if under_taskbar { work.b.min(mon.b) } else { mon.b } - margin;
-            let (x, _) = anchor_top_center(mon, 0, size, offset_pct);
-            (x, (bottom - size.1).max(mon.t))
-        }
+        Dock::Top => (x, (if under_taskbar { work.t.max(mon.t) } else { mon.t } + margin).max(mon.t)),
+        Dock::Bottom => (x, ((if under_taskbar { work.b.min(mon.b) } else { mon.b } - margin) - size.1).max(mon.t)),
+    }
+}
+
+/// How far the view moves a body that the shell laid out centred in the window (`body_left` / `body_w` / `win_w`, all the same unit) so that
+/// it stands `pad` from the left / right side of the window. 0 for the centre.
+pub fn align_body_dx(align: Align, win_w: f32, body_left: f32, body_w: f32, pad: f32) -> f32 {
+    match align {
+        Align::Center => 0.0,
+        Align::Left => pad - body_left,
+        Align::Right => win_w - pad - body_w - body_left,
     }
 }
 
@@ -358,6 +408,84 @@ mod tests {
         assert_eq!(dock_position(Dock::Bottom, m2, m2, true, 0, (720, 120), 0.0), (-1320, 660));
         // a window taller than the monitor is pinned to its top
         assert_eq!(dock_position(Dock::Bottom, m2, m2, true, 0, (720, 2000), 0.0).1, -300);
+    }
+
+    #[test]
+    fn the_left_island_stands_in_the_corner_of_the_work_area_and_grows_up() {
+        let mon = IRect::new(0, 0, 2560, 1440);
+        let work = IRect::new(0, 0, 2560, 1392); // taskbar at the bottom
+        let at = |a, under, size| dock_position_aligned(Dock::Bottom, a, mon, work, under, 0, size, 30.0);
+        assert_eq!(at(Align::Left, true, (720, 120)), (0, 1272), "offsetX does not apply to a corner");
+        assert_eq!(at(Align::Left, true, (720, 480)), (0, 912), "the open frame keeps the corner and reaches up");
+        assert_eq!(at(Align::Left, false, (720, 120)), (0, 1320));
+        assert_eq!(at(Align::Right, true, (720, 120)), (2560 - 720, 1272));
+        assert_eq!(at(Align::Center, true, (720, 120)).0, 920 + 2560 * 30 / 100, "the centre still follows offsetX");
+        // a taskbar on the left keeps the corner clear of it with the switch on, covers it with the switch off
+        let left_bar = IRect::new(60, 0, 2560, 1440);
+        assert_eq!(dock_position_aligned(Dock::Bottom, Align::Left, mon, left_bar, true, 0, (720, 120), 0.0).0, 60);
+        assert_eq!(dock_position_aligned(Dock::Bottom, Align::Left, mon, left_bar, false, 0, (720, 120), 0.0).0, 0);
+        // and a right taskbar for the right corner
+        let right_bar = IRect::new(0, 0, 2500, 1440);
+        assert_eq!(dock_position_aligned(Dock::Bottom, Align::Right, mon, right_bar, true, 0, (720, 120), 0.0).0, 2500 - 720);
+        // a window wider than the monitor never leaves it on the left
+        let tiny = IRect::new(0, 0, 500, 400);
+        assert_eq!(dock_position_aligned(Dock::Bottom, Align::Right, tiny, tiny, true, 0, (720, 120), 0.0).0, 0);
+    }
+
+    #[test]
+    fn alignment_follows_dpi_and_the_monitor_at_both_edges() {
+        for dpi in [96u32, 120, 144, 192] {
+            let s = scale_from_dpi(dpi);
+            let mon = IRect::new(0, 0, (2560.0 * s) as i32, (1440.0 * s) as i32);
+            let work = IRect::new(0, 0, mon.r, mon.b - phys(48.0, s));
+            let size = size_to_phys((720.0, 120.0), s);
+            for dock in [Dock::Top, Dock::Bottom] {
+                let (x, y) = dock_position_aligned(dock, Align::Left, mon, work, true, 0, size, 0.0);
+                assert_eq!(x, 0, "{dpi} dpi {dock:?}");
+                match dock {
+                    Dock::Top => assert_eq!(y, 0),
+                    Dock::Bottom => assert_eq!(y + size.1, work.b),
+                }
+                let (x, _) = dock_position_aligned(dock, Align::Right, mon, work, true, 0, size, 0.0);
+                assert_eq!(x + size.0, mon.r, "{dpi} dpi {dock:?}");
+            }
+        }
+        // a second monitor to the left of the primary, partly above it: the corner is the corner of THAT monitor
+        let m2 = IRect::new(-1920, -300, 0, 780);
+        assert_eq!(dock_position_aligned(Dock::Bottom, Align::Left, m2, m2, true, 0, (720, 120), 0.0), (-1920, 660));
+        assert_eq!(dock_position_aligned(Dock::Bottom, Align::Right, m2, m2, true, 0, (720, 120), 0.0), (-720, 660));
+        // a monitor on the right with 150 % scale
+        let m3 = IRect::new(2560, 0, 4480, 1080);
+        assert_eq!(dock_position_aligned(Dock::Bottom, Align::Left, m3, m3, true, 0, (1080, 180), 0.0), (2560, 900));
+    }
+
+    #[test]
+    fn the_body_moves_inside_the_window_to_its_corner() {
+        // folded capsule 200 wide, centred in a 720 window (left 260); pad 20
+        assert_eq!(align_body_dx(Align::Center, 720.0, 260.0, 200.0, 20.0), 0.0);
+        assert_eq!(align_body_dx(Align::Left, 720.0, 260.0, 200.0, 20.0), -240.0, "260 -> 20");
+        assert_eq!(align_body_dx(Align::Right, 720.0, 260.0, 200.0, 20.0), 240.0, "260 + 200 -> 700");
+        // the open panel (680 wide, left 20) is already where the corner wants it
+        assert_eq!(align_body_dx(Align::Left, 720.0, 20.0, 680.0, 20.0), 0.0);
+        assert_eq!(align_body_dx(Align::Right, 720.0, 20.0, 680.0, 20.0), 0.0);
+        // whatever the width, the left body edge stays on the pad while it grows
+        for w in [118.0, 300.0, 500.0, 680.0] {
+            let left = (720.0 - w) / 2.0;
+            assert_eq!(left + align_body_dx(Align::Left, 720.0, left, w, 20.0), 20.0);
+            assert_eq!(left + w + align_body_dx(Align::Right, 720.0, left, w, 20.0), 700.0);
+        }
+    }
+
+    #[test]
+    fn the_align_setting_defaults_to_the_centre_and_codes_round_trip() {
+        assert_eq!((Align::from_setting("left"), Align::from_setting("RIGHT")), (Align::Left, Align::Right));
+        for v in ["center", "", "middle", "left "] {
+            assert_eq!(Align::from_setting(v), Align::Center, "{v:?}");
+        }
+        for a in [Align::Center, Align::Left, Align::Right] {
+            assert_eq!(Align::from_code(a.code()), Some(a));
+        }
+        assert_eq!(Align::from_code(9), None);
     }
 
     #[test]

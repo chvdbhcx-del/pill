@@ -264,7 +264,7 @@ fn no_row_needs_a_restart() {
 // ------------------------------------------------------------------------------------------------ the re-layout lost nothing
 
 // The settings.json keys of the 16-page schema this one replaced (a snapshot: none may be renamed, dropped or added by a re-layout).
-const OLD_KEYS: [&str; 176] = [
+const OLD_KEYS: [&str; 177] = [
     "shape", "theme", "island.color", "size",
     "monitor", "character", "character.liquid", "pet",
     "pet.side", "pet.size", "pet.keepDuringMusic", "showTime",
@@ -310,7 +310,7 @@ const OLD_KEYS: [&str; 176] = [
     "ai.provider", "ai.baseUrl", "ai.model", "aiSetupDone",
     "updateAuto", "whatsNew",
     // added with the live preview panel and with the bottom edge (the only keys since the re-layout)
-    "settings.preview", "edge.position",
+    "settings.preview", "edge.position", "edge.align",
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
@@ -605,12 +605,25 @@ fn the_screen_edge_row_is_a_two_way_choice_that_defaults_to_the_top() {
     let hint = under.hint.get(Lang::En);
     assert!(hint.contains("bottom") && hint.contains("above"), "{hint}");
     assert!(under.hint.get(Lang::Ru).contains("над"), "{}", under.hint.get(Lang::Ru));
+    // the side along that edge: three values, the middle by default, only meaningful at the bottom
+    let a = schema().row("edge.align").expect("the side row exists");
+    assert_eq!((a.key, &a.default), ("edge.align", &json!("center")));
+    match &a.control {
+        Control::Segmented { options, .. } => assert_eq!(options.iter().map(|o| o.value.clone()).collect::<Vec<_>>(), [json!("center"), json!("left"), json!("right")]),
+        c => panic!("a segmented choice, not {c:?}"),
+    }
+    assert!(complete(a.label) && complete(a.hint));
+    assert_eq!(a.enabled_if, super::schema::Cond::Eq("edge.position", json!("bottom")), "it only applies to the bottom edge");
+    let off = schema().row("offsetX").unwrap();
+    assert!(off.hint.get(Lang::En).contains("corner"), "the offset says it is not used in a corner");
     // the model takes the two values and refuses anything else
     let mut m = SettingsModel::new("en-US");
     assert_eq!(m.get("edge.position"), json!("top"));
     assert_eq!(m.set("edge.position", json!("bottom")), vec![super::calls::BackendCall::put("edge.position", json!("bottom"))]);
     assert_eq!(m.get("edge.position"), json!("bottom"));
     assert!(m.try_set("edge.position", json!("left")).is_err(), "only the two edges");
+    assert_eq!(m.get("edge.align"), json!("center"));
+    assert!(m.try_set("edge.align", json!("left")).is_ok() && m.try_set("edge.align", json!("up")).is_err());
     // it is found by search in both languages
     for (q, lang) in [("bottom", Lang::En), ("снизу", Lang::Ru), ("edge", Lang::En)] {
         let idx = search::build_index(lang);
@@ -624,9 +637,9 @@ fn the_screen_edge_row_is_a_two_way_choice_that_defaults_to_the_top() {
 fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
-    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch and the screen-edge choice
+    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch and the screen-edge choices (edge and side)
     let expect = [
-        ("look", 19), ("edge", 7), ("tabs", 3),
+        ("look", 20), ("edge", 7), ("tabs", 3),
         ("weather", 7), ("media", 14), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
         ("notifications", 18), ("calendar", 12),
         ("phone", 16), ("ai", 14),

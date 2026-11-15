@@ -22,6 +22,7 @@ use super::rows::Dc;
 use super::txt;
 use super::ui::{key, Act};
 use super::{open, SettingsView};
+use crate::ui::host::geom::Align as Side;
 use crate::ui::liquid::{Feel, Flow};
 use crate::ui::view::Cx;
 use glasskit::canvas::{mul, scale_about, translation};
@@ -308,7 +309,9 @@ impl SettingsView {
             // the camera: the island's body decides how much of the sandbox window to look at
             let (bl, bw, bh) = live.body();
             let sh_max = (self.size.1 - TITLE_H - 2.0 - HEAD_H - CAP_H - SIDE_PAD).max(100.0);
-            let (fw, fh) = (bw + 2.0 * FOCUS_PAD_X, bh + 6.0);
+            // a corner island needs room beside it on the stage, or the corner cannot be told from the middle
+            let room = if live.aligned() == Side::Center { 1.0 } else { 1.7 };
+            let (fw, fh) = ((bw + 2.0 * FOCUS_PAD_X) * room, bh + 6.0);
             let k = ((PV_W - 2.0 * SIDE_PAD) / fw.max(1.0)).min((sh_max - STAGE_TOP - 12.0) / fh.max(1.0)).clamp(0.1, 2.0);
             let h = (fh * k + STAGE_TOP + 12.0).clamp(84.0, sh_max);
             pv.cx_world = bl + bw / 2.0;
@@ -364,7 +367,14 @@ impl SettingsView {
                         let k = self.pv.zoom.at().clamp(0.1, 2.0);
                         // the island hangs from the top edge of the sandbox window, or stands on its bottom edge: the camera follows
                         let top = if live.at_bottom() { stage.bottom() - STAGE_TOP - live::VH * k } else { stage.y + STAGE_TOP };
-                        let m = mul(&scale_about((0.0, 0.0), k, k), &translation(stage.cx() - self.pv.cx_world * k, top));
+                        // and a corner island stands in the corner of the stage, a centred one in the middle
+                        let (bl, bw, _) = live.body();
+                        let left = match live.aligned() {
+                            Side::Center => stage.cx() - self.pv.cx_world * k,
+                            Side::Left => stage.x + SIDE_PAD - bl * k,
+                            Side::Right => stage.right() - SIDE_PAD - (bl + bw) * k,
+                        };
+                        let m = mul(&scale_about((0.0, 0.0), k, k), &translation(left, top));
                         cv.with_transform(m, |cv| live.draw(cv, d.th, cx));
                     }
                 });

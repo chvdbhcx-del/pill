@@ -85,7 +85,7 @@ pub enum Placement {
     TopCenter { monitor: MonitorSel, offset_pct: f32, below_taskbar: bool, margin_top: f32 },
     /// Centred horizontally at the BOTTOM of a monitor, growing upward (the island with `edge.position` = bottom). `above_taskbar`: end at the
     /// work-area bottom (just above a bottom taskbar) instead of the monitor bottom; `margin_bottom` is logical px above that.
-    BottomCenter { monitor: MonitorSel, offset_pct: f32, above_taskbar: bool, margin_bottom: f32 },
+    BottomCenter { monitor: MonitorSel, offset_pct: f32, above_taskbar: bool, margin_bottom: f32, align: geom::Align },
     /// Centred on a monitor.
     Center(MonitorSel),
     /// Exactly here (screen px, top-left).
@@ -99,10 +99,10 @@ pub enum Placement {
 impl Placement {
     /// The same rules for the bottom edge: `TopCenter` becomes `BottomCenter` (below the taskbar -> above it, the top margin -> the bottom
     /// one); every other placement is returned as it is.
-    pub fn at_bottom(&self) -> Placement {
+    pub fn at_bottom(&self, align: geom::Align) -> Placement {
         match self {
             Placement::TopCenter { monitor, offset_pct, below_taskbar, margin_top } => {
-                Placement::BottomCenter { monitor: monitor.clone(), offset_pct: *offset_pct, above_taskbar: *below_taskbar, margin_bottom: *margin_top }
+                Placement::BottomCenter { monitor: monitor.clone(), offset_pct: *offset_pct, above_taskbar: *below_taskbar, margin_bottom: *margin_top, align }
             }
             p => p.clone(),
         }
@@ -643,8 +643,8 @@ mod tests {
         assert_eq!((p.size, p.visible, p.activate_on_show, p.hide_on_blur), ((560.0, 350.0), false, true, true));
         assert!(matches!(p.placement, Placement::TopCenter { monitor: MonitorSel::UnderCursor, margin_top, .. } if margin_top == 7.0));
         // at the bottom edge the island's rules mirror: below the taskbar -> above it
-        assert!(matches!(o.placement.at_bottom(), Placement::BottomCenter { above_taskbar: true, margin_bottom, .. } if margin_bottom == 0.0));
-        assert_eq!(NativeWindow::fullscreen("c", MonitorSel::Primary).spec.placement.at_bottom(), Placement::Cover(MonitorSel::Primary));
+        assert!(matches!(o.placement.at_bottom(geom::Align::Left), Placement::BottomCenter { above_taskbar: true, margin_bottom, align: geom::Align::Left, .. } if margin_bottom == 0.0));
+        assert_eq!(NativeWindow::fullscreen("c", MonitorSel::Primary).spec.placement.at_bottom(geom::Align::Center), Placement::Cover(MonitorSel::Primary));
         let n = NativeWindow::normal("settings").into_spec();
         assert_eq!((n.size, n.min_size, n.resizable), ((840.0, 760.0), Some((700.0, 520.0)), true));
         assert_eq!(n.clear[3], 1.0, "settings are opaque");

@@ -485,7 +485,7 @@ fn changing_the_edge_slides_out_moves_the_window_unseen_and_slides_in() {
     // it left through the top edge and arrived through the bottom: the swap happens with the body out of the window both times
     assert!(before.bottom() <= 0.0, "slid fully out through the top before the window moved: {before:?}");
     assert!(after.y >= 120.0, "and starts below the new window's floor: {after:?}");
-    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true })], "the window is asked once");
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true, "align": "center" })], "the window is asked once");
     assert!(ys.iter().cloned().fold(f32::MAX, f32::min) < top_body.y - 20.0, "it really moved out first");
     let end = g.v.borrow().dbg_body_win();
     assert!(end.bottom() <= 120.0 && end.y > 60.0, "settled on the floor: {end:?}");
@@ -500,8 +500,93 @@ fn changing_the_edge_slides_out_moves_the_window_unseen_and_slides_in() {
     g.sim.run(400);
     let _ = g.draw_h(120);
     assert!(!g.v.borrow().at_bottom());
-    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true }), json!({ "bottom": false })]);
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true, "align": "center" }), json!({ "bottom": false, "align": "center" })]);
     assert!(g.v.borrow().dbg_body_win().y < 12.0);
+}
+
+#[test]
+fn the_left_corner_island_stands_against_the_left_side_and_grows_up() {
+    use crate::ui::host::geom::Align;
+    let mut g = G::with(json!({ "edge.position": "bottom", "edge.align": "left" }));
+    let img = g.draw_h(120);
+    assert_eq!(g.v.borrow().dbg_align(), Align::Left);
+    let body = g.v.borrow().dbg_body_win();
+    assert!((body.x - 20.0).abs() < 1.0, "the folded body stands on the 20 px pad: {body:?}");
+    assert!(body.bottom() > 100.0 && body.y > 60.0, "and on the floor: {body:?}");
+    assert!(opaque(&img, Rect::new(0.0, 60.0, 360.0, 60.0)) > 800 && opaque(&img, Rect::new(380.0, 0.0, 340.0, 120.0)) == 0, "only the left part of the window is painted");
+    let hit = g.v.borrow().dbg_hit();
+    assert!(hit[0].x >= 19.0 && hit[0].right() < 380.0, "the click area follows the body: {:?}", hit[0]);
+    // the pointer is mapped back into the shell's centred layout
+    let (sx, _) = g.v.borrow().dbg_shell_pt((body.cx(), body.cy()));
+    let sb = g.v.borrow().core.shell.view().body;
+    assert!((sx - (sb.left + sb.width / 2.0)).abs() < 0.5, "{sx} vs {}", sb.left + sb.width / 2.0);
+    // the host is told about the side too, and the open panel (already 20 px in) is where it always was
+    let fx = g.sim.take_fx();
+    assert_eq!((fx.edge_bottom, fx.edge_align), (Some(true), Some(Align::Left)));
+    g.expand("home");
+    let _ = g.draw();
+    let open = g.v.borrow().dbg_body_win();
+    assert!((open.x - 20.0).abs() < 1.0 && open.bottom() > 460.0, "{open:?}");
+    // a click on a tab still lands on it
+    let clip = g.v.borrow().dbg_tab_center("clipboard").expect("clipboard tab");
+    click_at(&mut g, clip);
+    assert_eq!(g.v.borrow().dbg_tab().as_deref(), Some("clipboard"));
+    // the top edge ignores the setting: the island stays in the middle
+    let mut t = G::with(json!({ "edge.position": "top", "edge.align": "left" }));
+    let _ = t.draw_h(120);
+    assert_eq!(t.v.borrow().dbg_align(), Align::Center);
+    let tb = t.v.borrow().dbg_body_win();
+    assert!((tb.cx() - 360.0).abs() < 1.0, "{tb:?}");
+}
+
+#[test]
+fn the_right_corner_island_stands_against_the_right_side() {
+    let mut g = G::with(json!({ "edge.position": "bottom", "edge.align": "right" }));
+    let _ = g.draw_h(120);
+    let body = g.v.borrow().dbg_body_win();
+    assert!((720.0 - body.right() - 20.0).abs() < 1.0, "{body:?}");
+    let sx = g.v.borrow().dbg_shell_pt((body.cx(), body.cy())).0;
+    let sb = g.v.borrow().core.shell.view().body;
+    assert!((sx - (sb.left + sb.width / 2.0)).abs() < 0.5);
+}
+
+#[test]
+fn changing_the_side_slides_out_asks_for_the_corner_and_slides_in() {
+    use crate::ui::host::geom::Align;
+    let _m = crate::ui::host::testing::motion_on();
+    let mut g = bottom_island();
+    let _ = g.draw_h(120);
+    let centre = g.v.borrow().dbg_body_win();
+    g.emit("settings:changed", json!({ "edge.align": "left" }));
+    assert_eq!(g.v.borrow().dbg_align(), Align::Center, "nothing jumps: the slide comes first");
+    assert!(g.calls("pill_edge").is_empty());
+    let mut lowest = 0.0f32;
+    for _ in 0..400 {
+        g.sim.step_frame();
+        let _ = g.draw_h(120);
+        lowest = lowest.max(g.v.borrow().dbg_body_win().y);
+    }
+    assert!(lowest >= 120.0, "the body left through the floor before the window moved: {lowest}");
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true, "align": "left" })]);
+    let end = g.v.borrow().dbg_body_win();
+    assert!((end.x - 20.0).abs() < 1.0 && end.x < centre.x - 50.0 && end.bottom() <= 120.0 && end.y > 60.0, "settled in the corner: {end:?}");
+    assert!(!g.v.borrow().dbg_sliding());
+    // leaving the bottom edge brings the middle back whatever the side said
+    g.emit("settings:changed", json!({ "edge.position": "top" }));
+    g.sim.run(400);
+    let _ = g.draw_h(120);
+    assert_eq!(g.v.borrow().dbg_align(), Align::Center);
+    assert_eq!(g.calls("pill_edge").last(), Some(&json!({ "bottom": false, "align": "center" })));
+}
+
+#[test]
+fn the_backend_hears_where_the_body_stands_in_a_corner() {
+    let mut g = G::with(json!({ "edge.position": "bottom", "edge.align": "left" }));
+    let _ = g.draw_h(120);
+    g.settle(10);
+    let rects = g.calls("pill_rect");
+    let last = rects.last().expect("the shell reported its body");
+    assert!((last["x"].as_f64().unwrap() - 20.0).abs() < 1.0, "the edge reveal watches the corner, not the middle: {last}");
 }
 
 #[test]
@@ -513,7 +598,7 @@ fn with_reduced_motion_the_edge_changes_at_once() {
     g.sim.run(20);
     let _ = g.draw_h(120);
     assert!(g.v.borrow().at_bottom(), "no slide");
-    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true })]);
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true, "align": "center" })]);
     assert!(g.v.borrow().dbg_tuck_px() == 0.0 && g.v.borrow().dbg_body_win().y > 60.0);
 }
 
@@ -524,7 +609,7 @@ fn a_hidden_island_takes_the_new_edge_without_a_slide() {
     g.emit("pill:hide", json!({ "reason": "guard" }));
     g.emit("settings:changed", json!({ "edge.position": "bottom" }));
     assert!(g.v.borrow().at_bottom(), "nothing is on screen, so nothing to animate");
-    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true })]);
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": true, "align": "center" })]);
 }
 
 #[test]

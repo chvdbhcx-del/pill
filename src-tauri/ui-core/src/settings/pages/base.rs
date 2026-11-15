@@ -158,12 +158,24 @@ pub fn appearance() -> Page {
                         json!("top"),
                     )
                     .kw(&["edge", "position", "bottom", "top", "taskbar", "край", "положение", "снизу", "сверху", "внизу", "панель задач"]),
+                    seg(
+                        "edge.align",
+                        tr("Где у нижнего края", "Where along the bottom edge"),
+                        tr(
+                            "Посередине или в углу, как виджет: остров встаёт в левый или правый нижний угол и растёт вверх, не выходя за монитор. Нужен нижний край",
+                            "In the middle, or in a corner like a widget: the pill stands in the bottom left or right corner and grows upward, never leaving the monitor. Needs the bottom edge",
+                        ),
+                        so(&[("center", tr("Посередине", "Middle")), ("left", tr("Слева", "Left")), ("right", tr("Справа", "Right"))]),
+                        json!("center"),
+                    )
+                    .enabled(Cond::Eq("edge.position", json!("bottom")))
+                    .kw(&["align", "corner", "left", "right", "widget", "угол", "слева", "справа", "виджет", "положение"]),
                     slider(
                         "offsetX",
                         tr("Положение вдоль края", "Position along the edge"),
                         tr(
-                            "0 — посередине, минус — левее, плюс — правее. Свёрнутый остров стоит над серединой окна, раскрытый может дойти до края монитора",
-                            "0 is the middle, minus is further left, plus further right. The folded pill stays above the middle; the open one can reach the monitor edge",
+                            "0 — посередине, минус — левее, плюс — правее. Свёрнутый остров стоит над серединой окна, раскрытый может дойти до края монитора. Не нужно, когда остров прижат к углу",
+                            "0 is the middle, minus is further left, plus further right. The folded pill stays above the middle; the open one can reach the monitor edge. Not used when the pill stands in a corner",
                         ),
                         -50.0,
                         50.0,

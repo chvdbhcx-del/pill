@@ -551,6 +551,8 @@ pub struct Effects {
     pub gaze: Option<bool>,
     /// Overlay: the island hangs from the bottom edge of the monitor, so the edge dwell (`ProximityEvent::TopEdge`) watches the bottom row.
     pub edge_bottom: Option<bool>,
+    /// Overlay: where along its edge the island stands (`edge.align`); the host re-places the window by it.
+    pub edge_align: Option<crate::ui::host::geom::Align>,
     /// Take (`true`) or give back (`false`) keyboard focus; an Overlay is no-activate until asked.
     pub focus: Option<bool>,
     pub show: bool,
@@ -727,6 +729,11 @@ impl Cx {
     /// Overlay: the edge dwell watches the monitor's bottom row (`true`) or its top row (`false`, the default).
     pub fn set_edge_bottom(&mut self, on: bool) {
         self.fx.edge_bottom = Some(on);
+    }
+
+    /// Overlay: the island stands at this side of its edge.
+    pub fn set_edge_align(&mut self, a: crate::ui::host::geom::Align) {
+        self.fx.edge_align = Some(a);
     }
 
     /// Ask for keyboard focus (`true`) or give it back to the previous foreground window (`false`).

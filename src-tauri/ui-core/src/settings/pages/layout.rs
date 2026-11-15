@@ -165,7 +165,7 @@ pub(super) fn look(p: &mut Pool) -> Page {
         tr("Внешний вид", "Appearance"),
         vec![
             part(
-                vec![p.sec(tr("Вид острова", "Island look"), &["shape", "theme", "island.color", "size", "edge.position", "monitor"])],
+                vec![p.sec(tr("Вид острова", "Island look"), &["shape", "theme", "island.color", "size", "edge.position", "edge.align", "monitor"])],
                 vec![p.sec(tr("Цвет, прозрачность, положение", "Colour, transparency, position"), &["island.colorCustom", "opacityCol", "opacityExp", "offsetX", "underTaskbar"]).adv()],
             ),
             part(vec![p.sec(tr("Часы и дата", "Clock and date"), &["showTime", "showDate", "showSeconds", "clock24"])], vec![]),

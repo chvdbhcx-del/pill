@@ -78,7 +78,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `pill_set_state` | `state: String, tab: Option<String>, via: Option<String>` | `()` | pill.rs |
 | `pill_toggle` | - | `()` | pill.rs |
 | `pill_activate` | `on: bool` | `()` | pill.rs |
-| `pill_edge` | `bottom: bool` | `()` | pill.rs |
+| `pill_edge` | `bottom: bool, align: Option<String>` | `()` | pill.rs |
 | `pill_auto_hide` | `on: bool` | `()` | pill.rs |
 | `pill_monitors` | - | `Vec<String>` | pill.rs |
 | `pill_set_gaze` | `on: bool` | `()` | pill.rs |

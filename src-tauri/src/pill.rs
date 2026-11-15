@@ -8,7 +8,7 @@
 use crate::ui::bus;
 use serde_json::{json, Map, Value};
 use std::ffi::c_void;
-use crate::ui::host::geom::{self, Dock};
+use crate::ui::host::geom::{self, Align, Dock};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use tauri::menu::{Menu, MenuItem};
@@ -98,6 +98,18 @@ fn layout(expanded: bool) -> Option<Lay> {
 static DOCK: AtomicU8 = AtomicU8::new(DOCK_UNSET);
 const DOCK_UNSET: u8 = 2;
 
+static ALIGN: AtomicU8 = AtomicU8::new(DOCK_UNSET);
+
+/// Where along the edge the window stands right now (`edge.align`; the centre for the top edge). Follows the setting only through `pill_edge`.
+pub fn align() -> Align {
+    if let Some(a) = Align::from_code(ALIGN.load(Ordering::Relaxed)) {
+        return a;
+    }
+    let a = if dock() == Dock::Bottom { Align::from_setting(&crate::settings::get_str("edge.align", "center")) } else { Align::Center };
+    ALIGN.store(a.code(), Ordering::Relaxed);
+    a
+}
+
 pub fn dock() -> Dock {
     match DOCK.load(Ordering::Relaxed) {
         0 => Dock::Top,
@@ -110,9 +122,13 @@ pub fn dock() -> Dock {
     }
 }
 
-/// The island view slid out and asks for the new edge (`bottom`): re-place the window there.
-pub fn pill_edge(app: AppHandle, bottom: bool) {
-    if DOCK.swap(bottom as u8, Ordering::Relaxed) != bottom as u8 {
+/// The island view slid out and asks for the new edge (`bottom`) and side (`align`, the centre unless it is the bottom edge): re-place the
+/// window there.
+pub fn pill_edge(app: AppHandle, bottom: bool, align: Option<String>) {
+    let a = if bottom { Align::from_setting(align.as_deref().unwrap_or("center")) } else { Align::Center };
+    let moved = DOCK.swap(bottom as u8, Ordering::Relaxed) != bottom as u8;
+    let moved = ALIGN.swap(a.code(), Ordering::Relaxed) != a.code() || moved;
+    if moved {
         on_main(&app, place);
     }
 }
@@ -129,7 +145,7 @@ fn frame_for(m: &crate::ui::host::MonitorInfo, expanded: bool) -> Lay {
     // `offsetX` (-50..50 % of the monitor width, 0 = middle) moves the window centre; the window stays inside the monitor.
     let off = crate::settings::get_f64("offsetX", 0.0).clamp(-50.0, 50.0);
     let under = crate::settings::get_bool("underTaskbar", true);
-    let (x, y) = geom::dock_position(dock(), m.rect, m.work, under, 0, (w, h), off as f32);
+    let (x, y) = geom::dock_position_aligned(dock(), align(), m.rect, m.work, under, 0, (w, h), off as f32);
     Lay { x, y, w, h, mon: [ml, mt, ml + mw, mt + mh], scale: sf }
 }
 

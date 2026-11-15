@@ -181,10 +181,10 @@ pub(crate) fn resolve_placement(p: &Placement, size_l: (f32, f32), mons: &[Monit
             let (x, y) = geom::anchor_top_center(mon.rect, top, sz, *offset_pct);
             Resolved { rect: IRect::from_xywh(x, y, sz.0, sz.1), mon }
         }
-        Placement::BottomCenter { monitor, offset_pct, above_taskbar, margin_bottom } => {
+        Placement::BottomCenter { monitor, offset_pct, above_taskbar, margin_bottom, align } => {
             let mon = pick_monitor(monitor, mons, cursor);
             let sz = geom::size_to_phys(size_l, mon.scale);
-            let (x, y) = geom::dock_position(geom::Dock::Bottom, mon.rect, mon.work, *above_taskbar, geom::phys(*margin_bottom, mon.scale), sz, *offset_pct);
+            let (x, y) = geom::dock_position_aligned(geom::Dock::Bottom, *align, mon.rect, mon.work, *above_taskbar, geom::phys(*margin_bottom, mon.scale), sz, *offset_pct);
             Resolved { rect: IRect::from_xywh(x, y, sz.0, sz.1), mon }
         }
         Placement::Center(monitor) => {
@@ -493,6 +493,7 @@ struct Win {
     force_ignore: Option<bool>,
     /// The island hangs from the bottom edge (`Cx::set_edge_bottom`): re-placing it by its spec and a DPI change keep the BOTTOM centre.
     edge_bottom: bool,
+    edge_align: geom::Align,
     ignore_applied: bool,
     prev_fg: isize,
     blur: BlurGuard,
@@ -671,6 +672,7 @@ impl Host {
             poll_at: 0.0,
             force_ignore: None,
             edge_bottom: false,
+            edge_align: geom::Align::Center,
             ignore_applied: false,
             prev_fg: 0,
             blur: BlurGuard::default(),
@@ -738,7 +740,7 @@ impl Host {
         let Some(win) = self.wins.get_mut(&id) else { return };
         let size_l = if win.spec.kind == WindowKind::Fullscreen { win.spec.size } else { win.view.size_hint().unwrap_or(win.spec.size) };
         win.size_l = size_l;
-        let placement = if win.edge_bottom { win.spec.placement.at_bottom() } else { win.spec.placement.clone() };
+        let placement = if win.edge_bottom { win.spec.placement.at_bottom(win.edge_align) } else { win.spec.placement.clone() };
         let r = resolve_placement(&placement, size_l, &monitors(), cursor_pos(), below);
         let after = if win.spec.topmost { HWND_TOPMOST } else { HWND_TOP };
         unsafe {
@@ -1048,6 +1050,9 @@ impl Host {
             if let Some(v) = fx.edge_bottom {
                 p.set_edge_bottom(v);
                 win.edge_bottom = v;
+            }
+            if let Some(a) = fx.edge_align {
+                win.edge_align = a;
             }
         }
         if let Some(c) = fx.fps_cap {
@@ -1952,7 +1957,7 @@ mod tests {
     #[test]
     fn the_bottom_island_ends_on_the_work_area_or_the_monitor_edge_and_follows_dpi() {
         // the work area of the second monitor ends 40 px above its bottom (a bottom taskbar); the first has its taskbar on top
-        let p = |m, above| Placement::BottomCenter { monitor: m, offset_pct: 0.0, above_taskbar: above, margin_bottom: 0.0 };
+        let p = |m, above| Placement::BottomCenter { monitor: m, offset_pct: 0.0, above_taskbar: above, margin_bottom: 0.0, align: geom::Align::Center };
         let r = resolve_placement(&p(MonitorSel::Primary, true), (720.0, 120.0), &mons(), (0, 0), None);
         assert_eq!(r.rect, IRect::from_xywh(920, 1320, 720, 120), "a top taskbar leaves the bottom edge alone");
         let r = resolve_placement(&p(MonitorSel::Index(1), true), (720.0, 120.0), &mons(), (0, 0), None);
@@ -1960,8 +1965,19 @@ mod tests {
         assert_eq!(r.rect, IRect::from_xywh(2560 + (1920 - 1080) / 2, 1040 - 180, 1080, 180), "150 %: 120 logical = 180 physical, above the taskbar");
         let r = resolve_placement(&p(MonitorSel::Index(1), false), (720.0, 120.0), &mons(), (0, 0), None);
         assert_eq!(r.rect.b, 1080, "over the taskbar: the monitor edge");
-        let r = resolve_placement(&Placement::BottomCenter { monitor: MonitorSel::Primary, offset_pct: -50.0, above_taskbar: true, margin_bottom: 8.0 }, (720.0, 480.0), &mons(), (0, 0), None);
+        let r = resolve_placement(&Placement::BottomCenter { monitor: MonitorSel::Primary, offset_pct: -50.0, above_taskbar: true, margin_bottom: 8.0, align: geom::Align::Center }, (720.0, 480.0), &mons(), (0, 0), None);
         assert_eq!(r.rect, IRect::from_xywh(0, 1440 - 8 - 480, 720, 480));
+    }
+
+    #[test]
+    fn the_corner_island_hugs_the_left_or_right_side_of_its_monitor() {
+        let p = |m, align| Placement::BottomCenter { monitor: m, offset_pct: 25.0, above_taskbar: true, margin_bottom: 0.0, align };
+        let r = resolve_placement(&p(MonitorSel::Primary, geom::Align::Left), (720.0, 120.0), &mons(), (0, 0), None);
+        assert_eq!(r.rect, IRect::from_xywh(0, 1320, 720, 120), "offsetX does not move a corner");
+        let r = resolve_placement(&p(MonitorSel::Index(1), geom::Align::Left), (720.0, 480.0), &mons(), (0, 0), None);
+        assert_eq!(r.rect, IRect::from_xywh(2560, 1040 - 720, 1080, 720), "the second monitor's own corner, 150 %, above its taskbar, the open frame grows up");
+        let r = resolve_placement(&p(MonitorSel::Index(1), geom::Align::Right), (720.0, 120.0), &mons(), (0, 0), None);
+        assert_eq!(r.rect.r, 4480);
     }
 
     #[test]
