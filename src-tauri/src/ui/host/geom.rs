@@ -305,6 +305,98 @@ pub fn bar_gap(bar_h: f32, body_h: f32, raised: f32) -> f32 {
     folded + (floating - folded) * raised.clamp(0.0, 1.0)
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// The music widget in the taskbar strip (`media.widget.edge` = taskbar)
+// ---------------------------------------------------------------------------------------------------------------------------------------
+
+/// The widget lives in bars up to this tall (logical px); a taller strip is the plain bottom edge for it (its window has room for this much).
+pub const WIDGET_BAR_MAX_H: f32 = 72.0;
+/// Logical px of the bar the widget keeps clear on the island's side when both stand in it (the folded island is 118..500 wide, 300 at the
+/// default size is the usual width of a capsule with a title). A ceiling, not a measurement: the two windows do not talk to each other.
+pub const ISLAND_BAR_W: f32 = 300.0;
+
+/// Where the island stands in the same bar (`edge.position` = taskbar), read from its settings: what the widget must stay clear of.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct IslandBar {
+    pub align: Align,
+    /// `offsetX`
+    pub offset_pct: f32,
+    /// the width kept for it, physical px
+    pub w: i32,
+}
+
+/// Where the folded widget's body stands in the bar (physical px): the side it is anchored to and its left edge / width. A relocated widget
+/// (`align` differs from the one asked for) is what the view lays itself out by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BarSlot {
+    pub align: Align,
+    pub x: i32,
+    pub w: i32,
+}
+
+/// The taskbar the widget can live in: [`bottom_bar`] that is not taller than [`WIDGET_BAR_MAX_H`].
+pub fn widget_bar(mon: IRect, work: IRect, scale: f32, tray: Option<IRect>) -> Option<Bar> {
+    bottom_bar(mon, work, scale, tray).filter(|b| b.h <= phys(WIDGET_BAR_MAX_H, scale))
+}
+
+/// The widget's slot in `bar`: `align` / `offset_pct` (only for the centre) as asked, a folded body `body_w` wide. When the island stands in the
+/// same bar and the asked place is not clear of it by a side pad, the widget goes to the OPPOSITE side (left <-> right); a centred widget (or one
+/// whose opposite side is taken too) takes the larger free stretch beside the island's side, centred in it. Pure.
+pub fn widget_bar_slot(align: Align, mon: IRect, bar: &Bar, scale: f32, body_w: i32, offset_pct: f32, island: Option<IslandBar>) -> BarSlot {
+    let side = phys(BAR_SIDE_PAD, scale);
+    let (lo, hi) = (bar.span.0 + side, (bar.span.1 - side).max(bar.span.0 + side));
+    let w = body_w.min(hi - lo).max(0);
+    let at = |a: Align, pct: f32, w: i32| -> i32 {
+        let shift = (pct.clamp(-50.0, 50.0) as f64 / 100.0 * mon.w() as f64).round() as i32;
+        match a {
+            Align::Left => (lo + shift).clamp(lo, hi - w),
+            Align::Right => (hi + shift).clamp(lo + w, hi) - w,
+            Align::Center => ((lo + hi) / 2 + shift).clamp(lo + w / 2, hi - w / 2) - w / 2,
+        }
+    };
+    let own = BarSlot { align, x: at(align, if align == Align::Center { offset_pct } else { 0.0 }, w), w };
+    let Some(isl) = island else { return own };
+    let iw = isl.w.clamp(0, hi - lo);
+    let il = at(isl.align, isl.offset_pct, iw);
+    let ir = il + iw;
+    let clear = |x: i32| x + w + side <= il || x >= ir + side;
+    if clear(own.x) {
+        return own;
+    }
+    if align != Align::Center {
+        let other = if align == Align::Left { Align::Right } else { Align::Left };
+        let x = at(other, 0.0, w);
+        if clear(x) {
+            return BarSlot { align: other, x, w };
+        }
+    }
+    // the free stretches left and right of the island; the side away from it first (right of a left / centred island)
+    let (left, right) = ((lo, il - side), (ir + side, hi));
+    let (first, second) = if isl.align == Align::Right { (left, right) } else { (right, left) };
+    let room = |f: (i32, i32)| f.1 - f.0;
+    let f = if room(first) >= w {
+        first
+    } else if room(second) >= w {
+        second
+    } else if room(first) >= room(second) {
+        first
+    } else {
+        second
+    };
+    BarSlot { align: Align::Center, x: ((f.0 + f.1 - w) / 2).clamp(lo, hi - w), w }
+}
+
+/// Window position (screen, physical) of the widget window of `size` for `slot`: its bottom is the monitor's bottom (it covers the bar and the
+/// room above it for the open card), its body stands where the slot says, `pad` from the window's side for a left / right slot.
+pub fn widget_bar_window(mon: IRect, slot: &BarSlot, pad: i32, size: (i32, i32)) -> (i32, i32) {
+    let x = match slot.align {
+        Align::Left => slot.x - pad,
+        Align::Right => slot.x + slot.w + pad - size.0,
+        Align::Center => slot.x + slot.w / 2 - size.0 / 2,
+    };
+    (x, (mon.b - size.1).max(mon.t))
+}
+
 /// Mirrors a rectangle's vertical position inside a window `h` tall: the island is laid out hanging from the top; for the bottom dock every
 /// vertical position is `h - (y + height)`.
 pub fn mirror_y(y: f32, height: f32, h: f32) -> f32 {
@@ -797,5 +889,145 @@ mod tests {
         assert_eq!(resize_edge(799, 599, w, h, b), Edge::BottomRight);
         assert_eq!(resize_edge(-1, 10, w, h, b), Edge::None);
         assert_eq!(resize_edge(800, 10, w, h, b), Edge::None);
+    }
+
+    // ----- the music widget in the bar
+
+    const W_BODY: f32 = 288.0;
+    const W_PAD: f32 = 12.0;
+
+    fn slot_in(dpi: u32, bar: f32, tray_w: f32, align: Align, off: f32, island: Option<(Align, f32)>) -> (IRect, Bar, BarSlot) {
+        let (mon, work, s) = bar_screen(dpi, bar);
+        let tray = (tray_w > 0.0).then(|| IRect::new(mon.r - phys(tray_w, s), work.b, mon.r, mon.b));
+        let b = widget_bar(mon, work, s, tray).unwrap_or_else(|| panic!("{bar} px at {dpi} dpi"));
+        let isl = island.map(|(a, o)| IslandBar { align: a, offset_pct: o, w: phys(ISLAND_BAR_W, s) });
+        (mon, b, widget_bar_slot(align, mon, &b, s, phys(W_BODY, s), off, isl))
+    }
+
+    #[test]
+    fn the_widget_stands_in_every_common_bar_at_its_side_and_never_over_the_tray() {
+        for dpi in [96u32, 120, 144, 192] {
+            for bar in [40.0f32, 48.0, 52.0] {
+                for tray in [0.0f32, 300.0] {
+                    for align in [Align::Left, Align::Center, Align::Right] {
+                        let (mon, b, slot) = slot_in(dpi, bar, tray, align, 0.0, None);
+                        let s = scale_from_dpi(dpi);
+                        let (lo, hi) = (b.span.0 + phys(BAR_SIDE_PAD, s), b.span.1 - phys(BAR_SIDE_PAD, s));
+                        assert_eq!((slot.align, slot.w), (align, phys(W_BODY, s)), "{bar}@{dpi} {align:?}");
+                        assert!(slot.x >= lo && slot.x + slot.w <= hi, "{bar}@{dpi} {align:?} tray {tray}: [{}, {}) in [{lo}, {hi})", slot.x, slot.x + slot.w);
+                        match align {
+                            Align::Left => assert_eq!(slot.x, lo, "a side pad from the monitor edge"),
+                            Align::Right => assert_eq!(slot.x + slot.w, hi, "a side pad before the tray (or the edge)"),
+                            Align::Center => assert!((slot.x + slot.w / 2 - (lo + hi) / 2).abs() <= 1),
+                        }
+                        let size = (phys(344.0, s), phys(276.0, s));
+                        let (x, y) = widget_bar_window(mon, &slot, phys(W_PAD, s), size);
+                        assert_eq!(y + size.1, mon.b, "the window's floor is the monitor's bottom");
+                        match align {
+                            Align::Left => assert_eq!(x + phys(W_PAD, s), slot.x),
+                            Align::Right => assert_eq!(x + size.0 - phys(W_PAD, s), slot.x + slot.w),
+                            Align::Center => assert!((x + size.0 / 2 - (slot.x + slot.w / 2)).abs() <= 1),
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_visible_plain_bottom_bar_of_a_sensible_height_holds_the_widget() {
+        let mon = IRect::new(0, 0, 2560, 1440);
+        assert!(widget_bar(mon, IRect::new(0, 0, 2560, 1440 - 48), 1.0, None).is_some());
+        assert!(widget_bar(mon, IRect::new(0, 0, 2560, 1440 - 72), 1.0, None).is_some(), "72 px is the tallest");
+        assert!(widget_bar(mon, IRect::new(0, 0, 2560, 1440 - 73), 1.0, None).is_none(), "taller: the plain bottom edge");
+        assert!(widget_bar(mon, IRect::new(0, 48, 2560, 1440), 1.0, None).is_none(), "a bar on top");
+        assert!(widget_bar(mon, IRect::new(60, 0, 2560, 1440), 1.0, None).is_none(), "a bar on the left");
+        assert!(widget_bar(mon, IRect::new(0, 0, 2500, 1440), 1.0, None).is_none(), "a bar on the right");
+        assert!(widget_bar(mon, mon, 1.0, None).is_none(), "an auto-hidden bar");
+        // the limit is in logical px: 72 logical at 200 % is 144 px
+        assert!(widget_bar(IRect::new(0, 0, 5120, 2880), IRect::new(0, 0, 5120, 2880 - 144), 2.0, None).is_some());
+        assert!(widget_bar(IRect::new(0, 0, 5120, 2880), IRect::new(0, 0, 5120, 2880 - 150), 2.0, None).is_none());
+    }
+
+    #[test]
+    fn a_centred_widget_moves_with_the_offset_and_stops_at_the_tray() {
+        let (_, b, mid) = slot_in(96, 48, 300.0, Align::Center, 0.0, None);
+        assert_eq!(b.span.1, 2560 - 300 - 8);
+        let (_, _, left) = slot_in(96, 48, 300.0, Align::Center, -50.0, None);
+        assert_eq!(left.x, 8, "all the way left: a side pad from the monitor edge");
+        let (_, _, right) = slot_in(96, 48, 300.0, Align::Center, 50.0, None);
+        assert_eq!(right.x + right.w, b.span.1 - 8, "all the way right: before the tray");
+        assert!(left.x < mid.x && mid.x < right.x);
+        // the offset belongs to the centre: a left widget ignores it
+        let (_, _, l) = slot_in(96, 48, 300.0, Align::Left, 30.0, None);
+        assert_eq!(l.x, 8);
+    }
+
+    #[test]
+    fn beside_an_island_on_the_same_side_the_widget_takes_the_other_side() {
+        let (_, b, s) = slot_in(96, 48, 300.0, Align::Left, 0.0, Some((Align::Left, 0.0)));
+        assert_eq!((s.align, s.x + s.w), (Align::Right, b.span.1 - 8), "left + left: the widget goes right");
+        let (_, _, s) = slot_in(96, 48, 300.0, Align::Right, 0.0, Some((Align::Right, 0.0)));
+        assert_eq!((s.align, s.x), (Align::Left, 8), "right + right: the widget goes left");
+        // different sides: nothing to avoid
+        let (_, _, s) = slot_in(96, 48, 300.0, Align::Left, 0.0, Some((Align::Right, 0.0)));
+        assert_eq!((s.align, s.x), (Align::Left, 8));
+        let (_, _, s) = slot_in(96, 48, 300.0, Align::Right, 0.0, Some((Align::Left, 0.0)));
+        assert_eq!(s.align, Align::Right);
+    }
+
+    #[test]
+    fn a_centred_widget_keeps_clear_of_the_island() {
+        let clear = |slot: &BarSlot, island: (i32, i32)| slot.x + slot.w + 8 <= island.0 || slot.x >= island.1 + 8;
+        // an island on the left leaves the middle alone
+        let (_, _, s) = slot_in(96, 48, 300.0, Align::Center, 0.0, Some((Align::Left, 0.0)));
+        assert_eq!(s.align, Align::Center);
+        assert!(clear(&s, (8, 308)));
+        let (_, _, own) = slot_in(96, 48, 300.0, Align::Center, 0.0, None);
+        assert_eq!(s.x, own.x, "and the widget stays where it was asked to stand");
+        // dragged over the island by its offset: pushed to the free stretch on its far side
+        let (_, b, s) = slot_in(96, 48, 300.0, Align::Center, -50.0, Some((Align::Left, 0.0)));
+        assert!(clear(&s, (8, 308)) && s.x >= 308, "{s:?}");
+        assert!(s.x + s.w <= b.span.1 - 8);
+        // an island in the middle: the widget goes to its right
+        let (_, b, s) = slot_in(96, 48, 300.0, Align::Center, 0.0, Some((Align::Center, 0.0)));
+        let il = (b.span.0 + 8 + b.span.1 - 8) / 2 - 150;
+        assert!(clear(&s, (il, il + 300)) && s.x > il, "{s:?}");
+        // an island on the right, the widget dragged over it: it goes to the island's left
+        let (_, b, s) = slot_in(96, 48, 300.0, Align::Center, 50.0, Some((Align::Right, 0.0)));
+        let ir_l = b.span.1 - 8 - 300;
+        assert!(clear(&s, (ir_l, b.span.1 - 8)) && s.x + s.w < ir_l, "{s:?}");
+    }
+
+    #[test]
+    fn a_widget_beside_a_middle_island_flips_only_when_it_has_to() {
+        // island centred: a left widget is far enough away already, a right one too
+        let (_, _, l) = slot_in(96, 48, 300.0, Align::Left, 0.0, Some((Align::Center, 0.0)));
+        let (_, _, r) = slot_in(96, 48, 300.0, Align::Right, 0.0, Some((Align::Center, 0.0)));
+        assert_eq!((l.align, r.align), (Align::Left, Align::Right));
+        // a narrow bar (a small monitor): the island takes most of it, the widget takes what is left (centred in the larger stretch)
+        let mon = IRect::new(0, 0, 700, 400);
+        let b = bottom_bar(mon, IRect::new(0, 0, 700, 352), 1.0, None).unwrap();
+        let isl = IslandBar { align: Align::Left, offset_pct: 0.0, w: 300 };
+        let s = widget_bar_slot(Align::Left, mon, &b, 1.0, 288, 0.0, Some(isl));
+        assert_eq!(s.align, Align::Right);
+        assert!(s.x >= 8 + 300 + 8 && s.x + s.w <= 700 - 8, "{s:?}");
+        // no room anywhere: it still stands inside the bar
+        let tiny = IRect::new(0, 0, 500, 400);
+        let b = bottom_bar(tiny, IRect::new(0, 0, 500, 352), 1.0, None).unwrap();
+        let s = widget_bar_slot(Align::Left, tiny, &b, 1.0, 288, 0.0, Some(isl));
+        assert!(s.x >= 8 && s.x + s.w <= 492, "{s:?}");
+    }
+
+    #[test]
+    fn the_widget_slot_survives_absurd_input() {
+        let mon = IRect::new(0, 0, 300, 200);
+        let b = Bar { h: 48, span: (0, 100) };
+        for align in [Align::Left, Align::Center, Align::Right] {
+            for isl in [None, Some(IslandBar { align: Align::Center, offset_pct: 900.0, w: 5000 })] {
+                let s = widget_bar_slot(align, mon, &b, 1.0, 288, -900.0, isl);
+                assert!(s.w <= 84 && s.x >= 8, "{s:?}");
+            }
+        }
     }
 }
