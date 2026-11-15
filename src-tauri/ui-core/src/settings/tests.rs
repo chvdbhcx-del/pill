@@ -131,7 +131,7 @@ fn ranges_and_steps_are_sane() {
             _ => {}
         }
     }
-    assert_eq!(sliders, 5, "size, opacityCol, opacityExp, offsetX, passThroughOpacity and no others");
+    assert_eq!(sliders, 6, "size, opacityCol, opacityExp, offsetX, passThroughOpacity, media.widget.offset and no others");
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn no_row_needs_a_restart() {
 // ------------------------------------------------------------------------------------------------ the re-layout lost nothing
 
 // The settings.json keys of the 16-page schema this one replaced (a snapshot: none may be renamed, dropped or added by a re-layout).
-const OLD_KEYS: [&str; 177] = [
+const OLD_KEYS: [&str; 181] = [
     "shape", "theme", "island.color", "size",
     "monitor", "character", "character.liquid", "pet",
     "pet.side", "pet.size", "pet.keepDuringMusic", "showTime",
@@ -310,7 +310,7 @@ const OLD_KEYS: [&str; 177] = [
     "ai.provider", "ai.baseUrl", "ai.model", "aiSetupDone",
     "updateAuto", "whatsNew",
     // added with the live preview panel and with the bottom edge (the only keys since the re-layout)
-    "settings.preview", "edge.position", "edge.align",
+    "settings.preview", "edge.position", "edge.align", "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset",
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
@@ -631,16 +631,62 @@ fn the_screen_edge_row_is_a_two_way_choice_that_defaults_to_the_top() {
     }
 }
 
+#[test]
+fn the_music_widget_rows_default_to_off_and_to_the_bottom_left_corner() {
+    let get = |k: &str| schema().row(k).unwrap_or_else(|| panic!("{k} has a row"));
+    let w = get("media.widget");
+    assert_eq!((&w.control, &w.default), (&Control::Toggle, &json!(false)), "off by default: nothing changes for anybody");
+    let e = get("media.widget.edge");
+    assert_eq!(e.default, json!("bottom"));
+    let a = get("media.widget.align");
+    assert_eq!(a.default, json!("left"));
+    let opts = |r: &Row| match &r.control {
+        Control::Segmented { options, .. } => options.iter().map(|o| o.value.clone()).collect::<Vec<_>>(),
+        c => panic!("a segmented choice, not {c:?}"),
+    };
+    assert_eq!(opts(e), [json!("top"), json!("bottom")]);
+    assert_eq!(opts(a), [json!("left"), json!("center"), json!("right")]);
+    let off = get("media.widget.offset");
+    assert!(matches!(off.control, Control::Slider { min, max, .. } if min == -50.0 && max == 50.0) && off.default == json!(0));
+    for r in [w, e, a, off] {
+        assert!(complete(r.label) && complete(r.hint), "{}", r.id);
+        assert!(!r.restart_needed, "{} applies live", r.id);
+    }
+    // the placement rows wait for the switch, the offset also for the middle position
+    assert_eq!(e.enabled_if, super::schema::Cond::On("media.widget"));
+    let at = |align: &str, on: bool| {
+        let get = |k: &str| match k {
+            "media.widget" => json!(on),
+            "media.widget.align" => json!(align),
+            _ => json!(null),
+        };
+        off.enabled_if.eval(&get)
+    };
+    assert!(at("center", true) && !at("left", true) && !at("center", false));
+    // they stand on the "Media and sound" page, in their own section, and the model takes the values
+    let (page, _) = schema().all_rows().find(|(_, r)| r.id == "media.widget").unwrap();
+    assert_eq!(page.id, "media");
+    let mut m = SettingsModel::new("en-US");
+    assert_eq!((m.get("media.widget"), m.get("media.widget.edge"), m.get("media.widget.align")), (json!(false), json!("bottom"), json!("left")));
+    assert!(m.try_set("media.widget.edge", json!("left")).is_err() && m.try_set("media.widget.align", json!("up")).is_err());
+    assert!(m.try_set("media.widget.edge", json!("top")).is_ok() && m.try_set("media.widget.offset", json!(-20)).is_ok());
+    // found by search in both languages
+    for (q, lang) in [("widget", Lang::En), ("виджет", Lang::Ru), ("player widget", Lang::En)] {
+        let idx = search::build_index(lang);
+        assert!(search::search(&idx, q, 300).iter().any(|e| e.row_id == "media.widget"), "{q:?} finds the switch");
+    }
+}
+
 // ------------------------------------------------------------------------------------------------ rows per page
 
 #[test]
 fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
-    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch and the screen-edge choices (edge and side)
+    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch, the screen-edge choices (edge and side) and the four rows of the music widget
     let expect = [
         ("look", 20), ("edge", 7), ("tabs", 3),
-        ("weather", 7), ("media", 14), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
+        ("weather", 7), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
         ("notifications", 18), ("calendar", 12),
         ("phone", 16), ("ai", 14),
         ("general", 25), ("hotkeys", 19), ("updates", 5),

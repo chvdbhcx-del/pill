@@ -184,6 +184,7 @@ pub fn auto_hidden() -> bool {
 
 /// Called by the guard poll (500 ms): re-place when monitor / DPI / taskbar / size changed.
 pub fn relayout(app: &AppHandle) {
+    crate::ui::musicwidget::relayout(); // the standalone music widget: its monitor / DPI / taskbar may have changed too
     on_main(app, |a| {
         let (exp, last) = {
             let s = st();
@@ -226,6 +227,22 @@ pub fn is_hidden() -> bool {
     st().hidden != 0
 }
 
+/// The fullscreen guard (or a peek over it, which the music widget must not follow) is what keeps the island away right now: the standalone
+/// music widget (ui/musicwidget) hides with it.
+pub fn widget_guard() -> bool {
+    st().hidden & HIDE_GUARD != 0 || crate::fspeek::peek() != crate::fspeek::PEEK_NONE
+}
+
+static WIDGET_GUARD: AtomicBool = AtomicBool::new(false);
+
+/// Tell the music widget when `widget_guard` changed (event `pill:guard`).
+fn sync_guard() {
+    let g = widget_guard();
+    if WIDGET_GUARD.swap(g, Ordering::Relaxed) != g {
+        let _ = bus::emit(crate::ui::musicwidget::GUARD_EVENT, json!({ "hidden": g }));
+    }
+}
+
 /// Set or clear HIDE_* bits (mask). UI thread only; helper threads use `set_hidden_bg`.
 pub fn set_hidden(app: &AppHandle, mask: u8, on: bool, reason: &str) {
     {
@@ -237,6 +254,7 @@ pub fn set_hidden(app: &AppHandle, mask: u8, on: bool, reason: &str) {
         }
     }
     apply_vis(app, reason);
+    sync_guard();
 }
 
 pub fn set_hidden_bg(app: &AppHandle, mask: u8, on: bool, reason: &'static str) {
@@ -270,8 +288,12 @@ pub fn peek(app: &AppHandle, via: &'static str) {
 
 /// A peek is over (the island folded): the guard hides the island again at once if it still wants to.
 pub fn end_peek(app: &AppHandle) {
-    if crate::fspeek::end_peek() && crate::fspeek::hides(crate::fspeek::why(), crate::fspeek::PEEK_NONE) {
-        set_hidden_bg(app, HIDE_GUARD, true, "guard");
+    if crate::fspeek::end_peek() {
+        if crate::fspeek::hides(crate::fspeek::why(), crate::fspeek::PEEK_NONE) {
+            set_hidden_bg(app, HIDE_GUARD, true, "guard");
+        } else {
+            sync_guard(); // the peek was all that kept the music widget away
+        }
     }
 }
 

@@ -1190,7 +1190,8 @@ fn mod_on(key: &str) -> bool {
 fn tab_on(id: &str) -> bool {
     match id {
         // Home stays while any of its parts is on; a tab taken off the strip (`tabs.hidden`) is still offered here
-        "home" => pill_ui_core::panel::a::home_mods::PARTS.iter().any(|p| settings::get_bool(p.key, p.default)),
+        // (the player is no part of Home while the standalone music widget owns it)
+        "home" => pill_ui_core::panel::a::home_mods::PARTS.iter().any(|p| settings::get_bool(p.key, p.default) && !(p.key == "module.media" && settings::get_bool("media.widget", false))),
         "clipboard" | "shelf" | "text" | "chat" | "note" | "weather" | "controls" => mod_on(&format!("module.{id}")),
         _ => true,
     }

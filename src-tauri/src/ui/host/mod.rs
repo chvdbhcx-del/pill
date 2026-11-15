@@ -86,6 +86,10 @@ pub enum Placement {
     /// Centred horizontally at the BOTTOM of a monitor, growing upward (the island with `edge.position` = bottom). `above_taskbar`: end at the
     /// work-area bottom (just above a bottom taskbar) instead of the monitor bottom; `margin_bottom` is logical px above that.
     BottomCenter { monitor: MonitorSel, offset_pct: f32, above_taskbar: bool, margin_bottom: f32, align: geom::Align },
+    /// Standing against one edge of a monitor, on either side or in the middle: a free-standing widget (the music widget). `dock` picks the top or
+    /// the bottom edge, `align` the side (`geom::dock_position_aligned`: the window is put against that side of the work area with `inside_work`),
+    /// `offset_pct` only applies to `Align::Center`; `margin` is logical px away from the edge.
+    Docked { monitor: MonitorSel, dock: geom::Dock, align: geom::Align, offset_pct: f32, inside_work: bool, margin: f32 },
     /// Centred on a monitor.
     Center(MonitorSel),
     /// Exactly here (screen px, top-left).

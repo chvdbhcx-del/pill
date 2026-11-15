@@ -86,6 +86,7 @@ fn main() {
             guard::init(app);
             watchdog::init();
             media::init(app);
+            ui::musicwidget::start(app.handle()); // the standalone music widget (off unless media.widget is on)
             audio::init(app);
             clipboard::init(app);
             updater::init(app);

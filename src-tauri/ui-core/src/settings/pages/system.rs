@@ -491,6 +491,51 @@ pub fn sound() -> Page {
                 ],
             ),
             group(
+                tr("Виджет плеера", "Player widget"),
+                vec![
+                    toggle(
+                        "media.widget",
+                        tr("Плеер отдельным виджетом", "Player as a separate widget"),
+                        tr(
+                            "Маленькое окно с обложкой и кнопками, которое можно поставить в угол экрана отдельно от острова. Оно появляется, пока играет музыка (или недавно была пауза), и сворачивается само. Пока оно включено, остров не показывает плеер: ни полоску с названием, ни плеер на «Главной». Выключите, чтобы всё вернулось",
+                            "A small window with the cover and the buttons that you can park in a corner of the screen, apart from the pill. It shows while music plays (or was paused a moment ago) and goes away by itself. While it is on the pill shows no player: no title strip, no player on Home. Switch off to get it all back",
+                        ),
+                        false,
+                    )
+                    .kw(&["widget", "player", "music", "separate", "corner", "виджет", "плеер", "музыка", "отдельно", "угол"]),
+                    seg(
+                        "media.widget.edge",
+                        tr("Край экрана виджета", "Widget screen edge"),
+                        tr("Сверху виджет висит у верхнего края и раскрывается вниз. Снизу он стоит на нижнем краю, у панели задач, и раскрывается вверх. Монитор тот же, что у острова", "Top: the widget hangs from the top edge and opens downward. Bottom: it stands on the bottom edge, at the taskbar, and opens upward. Same monitor as the pill"),
+                        so(&[("top", tr("Сверху", "Top")), ("bottom", tr("Снизу", "Bottom"))]),
+                        json!("bottom"),
+                    )
+                    .enabled(Cond::On("media.widget"))
+                    .kw(&["widget", "edge", "bottom", "top", "виджет", "край", "снизу", "сверху"]),
+                    seg(
+                        "media.widget.align",
+                        tr("Где у края", "Where along the edge"),
+                        tr("В левом или правом углу, или посередине (тогда его можно сдвинуть ползунком ниже)", "In the left or right corner, or in the middle (then the slider below moves it)"),
+                        so(&[("left", tr("Слева", "Left")), ("center", tr("Посередине", "Middle")), ("right", tr("Справа", "Right"))]),
+                        json!("left"),
+                    )
+                    .enabled(Cond::On("media.widget"))
+                    .kw(&["widget", "align", "corner", "left", "right", "виджет", "угол", "слева", "справа"]),
+                    slider(
+                        "media.widget.offset",
+                        tr("Сдвиг виджета вдоль края", "Widget position along the edge"),
+                        tr("0 — посередине, минус — левее, плюс — правее. Нужен только когда виджет стоит посередине", "0 is the middle, minus is further left, plus further right. Only used when the widget stands in the middle"),
+                        -50.0,
+                        50.0,
+                        1.0,
+                        Unit::Percent,
+                        0.0,
+                    )
+                    .enabled(Cond::All(vec![Cond::On("media.widget"), Cond::Eq("media.widget.align", json!("center"))]))
+                    .kw(&["widget", "position", "offset", "виджет", "положение", "смещение"]),
+                ],
+            ),
+            group(
                 tr("Музыка", "Music"),
                 vec![
                     toggle(

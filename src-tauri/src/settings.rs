@@ -69,6 +69,10 @@ pub(crate) fn defaults() -> Cfg {
     // song lyrics (lyrics.rs, opt-in: sends the playing track's title/artist/album/duration to lrclib.net) and the Home player (tab-home): style mirror | fill | compact, lyrics column
     let Value::Object(lyr) = json!({ "music.lyrics": false, "home.player": "mirror", "home.lyrics": true }) else { unreachable!() };
     m.extend(lyr);
+    // the music widget (ui/musicwidget): the player as its own small window, off by default. While it is on the island shows no player of its own.
+    // edge top | bottom, align left | center | right along that edge, offset = percent of the monitor width (-50..50), only for the centred position
+    let Value::Object(mw) = json!({ "media.widget": false, "media.widget.edge": "bottom", "media.widget.align": "left", "media.widget.offset": 0 }) else { unreachable!() };
+    m.extend(mw);
     // VPN (vpn.rs): the whole feature is behind module.vpn; the own client is a name plus a connect and a disconnect command (or client:// link)
     let Value::Object(vpn) = json!({ "module.vpn": true, "vpn.own.name": "", "vpn.own.connect": "", "vpn.own.disconnect": "", "vpn.admin": false }) else { unreachable!() };
     m.extend(vpn);
@@ -263,6 +267,7 @@ pub fn apply_patch(app: &tauri::AppHandle, mut patch: Cfg) -> (Cfg, Result<(), S
         }
     }
     crate::pill::on_settings(app, &patch);
+    crate::ui::musicwidget::on_settings(app, &patch);
     crate::media::on_settings(&patch);
     crate::vdesk::on_settings(&patch);
     crate::agent_bridge::on_settings(&patch);

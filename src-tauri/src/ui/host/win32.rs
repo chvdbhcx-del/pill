@@ -187,6 +187,12 @@ pub(crate) fn resolve_placement(p: &Placement, size_l: (f32, f32), mons: &[Monit
             let (x, y) = geom::dock_position_aligned(geom::Dock::Bottom, *align, mon.rect, mon.work, *above_taskbar, geom::phys(*margin_bottom, mon.scale), sz, *offset_pct);
             Resolved { rect: IRect::from_xywh(x, y, sz.0, sz.1), mon }
         }
+        Placement::Docked { monitor, dock, align, offset_pct, inside_work, margin } => {
+            let mon = pick_monitor(monitor, mons, cursor);
+            let sz = geom::size_to_phys(size_l, mon.scale);
+            let (x, y) = geom::dock_position_aligned(*dock, *align, mon.rect, mon.work, *inside_work, geom::phys(*margin, mon.scale), sz, *offset_pct);
+            Resolved { rect: IRect::from_xywh(x, y, sz.0, sz.1), mon }
+        }
         Placement::Center(monitor) => {
             let mon = pick_monitor(monitor, mons, cursor);
             let sz = geom::size_to_phys(size_l, mon.scale);
@@ -1606,6 +1612,10 @@ impl Host {
                                 let _ = SetWindowPos(hwnd, None, m.rect.l, m.rect.t, m.rect.w(), m.rect.h(), SWP_NOZORDER | SWP_NOACTIVATE);
                             }
                         }
+                        WindowKind::Overlay if self.wins.get(&id).is_some_and(|w| matches!(w.spec.placement, Placement::Docked { .. })) => {
+                            // a free-standing widget: its side of its edge, not a centre, is what has to stay put
+                            self.place(id, None, SWP_NOACTIVATE);
+                        }
                         WindowKind::Overlay | WindowKind::Popup => {
                             let (size_l, bottom) = self.wins.get(&id).map(|w| (w.size_l, w.edge_bottom))?;
                             let sz = geom::size_to_phys(size_l, scale);
@@ -1978,6 +1988,19 @@ mod tests {
         assert_eq!(r.rect, IRect::from_xywh(2560, 1040 - 720, 1080, 720), "the second monitor's own corner, 150 %, above its taskbar, the open frame grows up");
         let r = resolve_placement(&p(MonitorSel::Index(1), geom::Align::Right), (720.0, 120.0), &mons(), (0, 0), None);
         assert_eq!(r.rect.r, 4480);
+    }
+
+    #[test]
+    fn a_docked_widget_stands_in_its_corner_of_either_edge() {
+        let p = |m, dock, align| Placement::Docked { monitor: m, dock, align, offset_pct: 0.0, inside_work: true, margin: 0.0 };
+        let (bl, tl) = (p(MonitorSel::Primary, geom::Dock::Bottom, geom::Align::Left), p(MonitorSel::Primary, geom::Dock::Top, geom::Align::Left));
+        // bottom left: against the left side, its floor on the monitor's bottom edge (the first monitor's taskbar is on top)
+        assert_eq!(resolve_placement(&bl, (344.0, 200.0), &mons(), (0, 0), None).rect, IRect::from_xywh(0, 1440 - 200, 344, 200));
+        // top left: below the top taskbar
+        assert_eq!(resolve_placement(&tl, (344.0, 200.0), &mons(), (0, 0), None).rect, IRect::from_xywh(0, 48, 344, 200));
+        // the second monitor: its own corner, 150 %, above its bottom taskbar
+        let r = resolve_placement(&p(MonitorSel::Index(1), geom::Dock::Bottom, geom::Align::Right), (344.0, 200.0), &mons(), (0, 0), None);
+        assert_eq!((r.rect.r, r.rect.b, r.rect.w(), r.rect.h(), r.mon.scale), (4480, 1040, 516, 300, 1.5));
     }
 
     #[test]

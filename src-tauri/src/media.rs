@@ -142,7 +142,7 @@ fn enabled() -> bool {
 
 /// settings.rs calls this after every patch: wake the worker / the audio thread when a switch that gates them changed.
 pub fn on_settings(patch: &serde_json::Map<String, serde_json::Value>) {
-    if ["module.media", "live.music", "audio.reactive", "media.legacyPlayers"].iter().any(|k| patch.contains_key(*k)) {
+    if ["module.media", "live.music", "audio.reactive", "media.legacyPlayers", "media.widget"].iter().any(|k| patch.contains_key(*k)) {
         wake();
         if enabled() {
             notify(Msg::Refresh);
@@ -437,9 +437,15 @@ fn read_media(known: Option<u64>) -> windows::core::Result<MediaState> {
     out
 }
 
-/// extplayer.rs: the pill is visible and the Media module is on (otherwise legacy players are not polled).
+/// The standalone music widget (`media.widget`, ui/musicwidget) is on: it is its own window, so the state keeps flowing while the island
+/// is hidden (the island pauses it on `pill:hide`). Audio capture for the equaliser still follows the island alone (`want_capture`).
+fn widget_on() -> bool {
+    crate::settings::get_bool("media.widget", false)
+}
+
+/// extplayer.rs: the pill is visible (or the music widget is on) and the Media module is on (otherwise legacy players are not polled).
 pub fn is_active() -> bool {
-    ACTIVE.load(Ordering::Relaxed) && crate::settings::get_bool("module.media", true)
+    (ACTIVE.load(Ordering::Relaxed) || widget_on()) && crate::settings::get_bool("module.media", true)
 }
 
 /// extplayer.rs: a legacy player changed, read and emit again.
@@ -507,7 +513,7 @@ fn worker(_app: tauri::AppHandle, tx: Sender<Msg>, rx: Receiver<Msg>) {
             resub(&m, &tx, &mut subs);
         }
         // module.media off: no reads, no media:changed events, no audio capture (live.music only gates the widget and audio)
-        if !ACTIVE.load(Ordering::Relaxed) || !crate::settings::get_bool("module.media", true) {
+        if !(ACTIVE.load(Ordering::Relaxed) || widget_on()) || !crate::settings::get_bool("module.media", true) {
             continue;
         }
         let st = read_media(Some(EMITTED_THUMB.load(Ordering::Relaxed))).unwrap_or_default();

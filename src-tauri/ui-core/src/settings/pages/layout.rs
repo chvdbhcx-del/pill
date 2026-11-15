@@ -328,6 +328,10 @@ pub(super) fn media(p: &mut Pool) -> Page {
                 vec![p.sec(tr("Медиаплеер", "Media player"), &["module.media", "live.music", "musicPill", "audio.reactive", "music.lyrics", "home.player", "home.lyrics"])],
                 vec![p.sec(tr("Источники звука", "Sound sources"), &["audio.perApp", "media.legacyPlayers"]).adv()],
             ),
+            part(
+                vec![p.sec(tr("Виджет плеера", "Player widget"), &["media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset"])],
+                vec![],
+            ),
             part(vec![p.note(tr("Громкость и микрофон", "Volume and microphone"), read, &["live.volume", "sound.volumeDevice", "audio.volumeTarget", "sound.micDevice", "live.micCam"])], vec![]),
         ],
     )
