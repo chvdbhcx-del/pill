@@ -43,7 +43,6 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `media:changed` | pill | `&st` | media.rs |
 | `pill:collapse` | pill | `()` | pill.rs |
 | `pill:expand` | pill | `json!({ "tab": tab, "via": via })` | pill.rs |
-| `pill:guard` | pill | `json!({ "hidden": g })` (the fullscreen guard, or a peek over it, keeps the island away; only the music widget listens) | pill.rs |
 | `pill:hide` | pill | `json!({ "reason": reason })` | pill.rs |
 | `pill:open-tab` | pill | `p` | command.rs |
 | `pill:show` | pill | `json!({ "reason": reason })` | pill.rs |
