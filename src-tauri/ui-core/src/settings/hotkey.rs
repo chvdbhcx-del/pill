@@ -35,7 +35,7 @@ pub const ACTIONS: [HotkeyAction; 19] = [
     a("mic", tr("Микрофон: выключить / включить", "Microphone: mute / unmute"), Tr::NONE, "Ctrl+Alt+M"),
     a("pipette", tr("Пипетка", "Colour picker"), Tr::NONE, "Ctrl+Alt+C"),
     a("qr", tr("QR-код с экрана", "QR code from the screen"), Tr::NONE, "Ctrl+Alt+Shift+Q"),
-    a("keys", tr("Остров с клавиатуры", "Keyboard control of the pill"), tr("Открывает карточку острова для стрелок, Tab, Enter и Esc; второе нажатие переходит к плееру-виджету, третье выключает", "Opens the island card for the arrow keys, Tab, Enter and Esc; a second press moves to the music widget, a third ends it"), "Win+Alt+J"),
+    a("keys", tr("Остров с клавиатуры", "Keyboard control of the pill"), tr("Открывает карточку острова для стрелок, Tab, Enter и Esc; второе нажатие переходит к плееру-виджету, третье выключает", "Opens the island card for the arrow keys, Tab, Enter and Esc; a second press moves to the music widget, a third ends it"), "Alt+Win+J"),
     a("passThrough", tr("Сквозной режим: включить / выключить", "Pass-through mode: on / off"), Tr::NONE, ""),
     a("theme", tr("Тема острова: тёмная / светлая", "Island theme: dark / light"), tr("Переключает тему; выбранный цвет острова при этом сбрасывается, у цвета свой светлый или тёмный текст", "Switches the theme; a chosen island colour is cleared, because a colour has light or dark text of its own"), ""),
     a("musicView", tr("Музыка: вид пилюли по кругу", "Music: cycle the pill view"), tr("Пока играет музыка: название, мини-плеер, текст песни (если выбран). Тихо, без карточки", "While music plays: title, mini player, lyrics (if chosen). Silent, no card"), ""),
