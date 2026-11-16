@@ -1,7 +1,8 @@
 // The relay connector (docs/phone-relay.md, docs/pc-link.md): one outbound WebSocket per paired phone or PC that has v2 keys (phones only while "Phone
 // link" and `phone.relay` are on, PCs while `pc.enabled` is on, always with `phone.relayUrl` set). A PC pair has no fixed "PC": the side that showed the
-// pairing token is the relay's `pc` end, the side that entered it the `phone` end (`Device::joiner`), each seals with the key of its own direction. Frames are end-to-end encrypted (v2.rs); what the phone sends is fed into the same handler the LAN socket
-// uses (`Shared::on_value`) and replies go out through the same `Conn::send_text`, so notifications, replies, status and files work unchanged.
+// pairing token is the relay's `pc` end, the side that entered it the `phone` end (`Device::joiner`), each seals with the key of its own direction.
+// Frames are end-to-end encrypted (v2.rs); what the phone sends is fed into the same handler the LAN socket uses (`Shared::on_value`)
+// and replies go out through the same `Conn::send_text`, so notifications, replies, status and files work unchanged.
 // Threads: one per phone, blocked on its socket (nothing polls); they exist only while the switches are on. Nothing here logs keys or message text.
 use super::server::{Conn, Shared};
 use super::v2::{self, AuthFails, Dir, Keys, Replay};

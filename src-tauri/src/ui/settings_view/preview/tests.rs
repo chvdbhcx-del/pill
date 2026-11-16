@@ -944,6 +944,7 @@ const NO_PREVIEW: &[(&str, &str)] = &[
     ("phone.clipFromPhone", "phone clipboard sync"),
     ("phone.autoAccept", "phone files"),
     ("phone.relay", "phone relay"),
+    ("pc.enabled", "the PC link: no island scene"),
     ("phone.maxFileMB", "phone files"),
     ("phone.relayMaxFileMB", "phone relay"),
 ];
