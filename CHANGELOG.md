@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Highlights
+- Music widget: proper motion. The folded capsule now morphs into the card instead of swapping: the cover grows, the buttons and the progress bar travel, the corners round off, only the album and the times fade in, and a click or hover that reverses it turns it around smoothly from where it is. A new track fades the old title and artist away, brings the new ones in one after the other, cross-fades the cover and eases the accent colour; skipping tracks quickly no longer flashes old text. The widget lands softly when it appears and leaves without a bounce, slightly scaled; when its place changes (another monitor, new placement settings, turning it off) it slides out before the window goes. Play/pause icons shrink and grow while they cross-fade, previous / next nudge their way, the progress knob grows under the pointer and again while dragging, and the bar follows the pointer closely. A size change glides without an elastic overshoot. Reduce motion still lands everything at once, and nothing moves while nothing animates.
+
 ### Changed
 - The player is back on the island while the separate player widget is on: the title strip, the music reaction at the edge and the player on Home work as before, and the widget is a second view of the same player (it used to take the player off the island). Each part is still governed by its own switches (Media module, live music, Home player).
 

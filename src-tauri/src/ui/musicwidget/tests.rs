@@ -12,6 +12,8 @@ use glasskit::input::{Buttons, InputEvent, Modifiers, MouseButton};
 use glasskit::theme::Theme;
 use serde_json::json;
 
+mod motion; // contact sheets of the motion (PILL_SNAP_DIR)
+
 // ------------------------------------------------------------------------------------------------------------------------------ helpers
 
 struct Blank;
@@ -789,11 +791,13 @@ fn a_new_place_while_it_is_away_is_taken_without_ceremony() {
     media(&mut s, &f, state(true, "Song", 0));
     let r = hit_rect(&show(&mut s));
     assert!((r.cx() - lg::WIN_BAR_REAL.0 / 2.0).abs() < 0.3 && r.w == lg::BAR_FOLD_W, "it came in at the place it was told: {r:?}");
-    // the other docks ignore the event altogether
+    // the other docks do the same for the new place their window is given (another monitor, DPI): out, re-placed, in
     let (mut s, f) = on_screen(Dock::Bottom);
-    slot_event(&mut s, &f, 48.0, "right");
-    s.run(100);
-    assert!(!s.take_fx().relayout && !s.frame.wants_frame());
+    slot_event(&mut s, &f, 0.0, "right");
+    assert!(s.run(4000) > 5, "the body slides out and in");
+    let fx = s.take_fx();
+    assert!(fx.relayout && !fx.hide, "the window is re-placed while the body is away and stays");
+    assert!(!s.frame.wants_frame(), "settled again");
 }
 
 #[test]
@@ -810,6 +814,106 @@ fn the_bar_widget_leaves_with_the_guard_and_its_pending_move_does_not_bring_it_b
     f.bus.emit(GUARD_EVENT, json!({ "hidden": false }));
     s.pump();
     assert!(s.take_fx().show, "and comes back when the guard lets go");
+}
+
+// ------------------------------------------------------------------------------------------------------------------------------ a window that is replaced
+
+/// A widget of generation `gen` on screen, settled.
+fn on_screen_gen(gen: u64) -> (Sim, Fakes) {
+    let (svc, f) = Services::fake();
+    f.api.reply("settings_get", Ok(cfg(json!({}))));
+    let mut s = Sim::with_services(Box::new(Blank), svc);
+    let v = MusicView::new(&mut s.cx, Dock::Bottom).with_gen(gen);
+    s.view = Box::new(v);
+    s.pump();
+    media(&mut s, &f, state(true, "Song", 61_000));
+    let _ = show(&mut s);
+    (s, f)
+}
+
+#[test]
+fn a_replaced_window_slides_out_before_it_closes_and_a_newer_one_is_left_alone() {
+    let _m = motion_on();
+    let (mut s, f) = on_screen_gen(3);
+    f.bus.emit(RETIRE_EVENT, json!({ "before": 3 }));
+    s.pump();
+    assert!(s.run(4000) <= 1 && !s.take_fx().close && !s.frame.wants_frame(), "its own generation is not retired");
+    f.bus.emit(RETIRE_EVENT, json!({ "before": 4 }));
+    s.pump();
+    let fx = s.take_fx();
+    assert!(!fx.close && !fx.hide, "it does not vanish at once");
+    let mut last = base(Dock::Bottom).rect_to_real(lg::hit_rect(Dock::Bottom, 0.0, 0.0));
+    let mut frames = 0;
+    let mut closed = false;
+    while s.frame.wants_frame() && frames < 4000 {
+        s.step_frame();
+        frames += 1;
+        let fx = s.take_fx();
+        if let Some(r) = fx.hit_region.as_ref().and_then(|r| r.first()) {
+            assert!(r.y >= last.y - 0.01, "it only goes down, to its edge: no bounce on the way out ({} after {})", r.y, last.y);
+            last = *r;
+        }
+        closed |= fx.close;
+    }
+    assert!(frames > 8, "a slide, not a cut: {frames} frames");
+    assert!(closed, "and when it has left, the window closes itself");
+    // media events no longer bring it back
+    media(&mut s, &f, state(true, "Another", 0));
+    s.run(4000);
+    let fx = s.take_fx();
+    assert!(!fx.show && !fx.hide, "a track that starts now does not bring a retired window back");
+}
+
+#[test]
+fn a_window_that_never_showed_closes_at_once_when_it_is_replaced_and_a_preview_is_never_retired() {
+    let (svc, f) = Services::fake();
+    f.api.reply("settings_get", Ok(cfg(json!({}))));
+    let mut s = Sim::with_services(Box::new(Blank), svc);
+    let v = MusicView::new(&mut s.cx, Dock::Bottom).with_gen(1);
+    s.view = Box::new(v);
+    s.pump();
+    f.bus.emit(RETIRE_EVENT, json!({ "before": 2 }));
+    s.pump();
+    assert!(s.take_fx().close, "nothing to slide out");
+    let (svc, f) = Services::fake();
+    f.api.reply("settings_get", Ok(cfg(json!({}))));
+    let mut p = Sim::with_services(Box::new(Blank), svc);
+    let v = MusicView::new(&mut p.cx, Dock::Bottom); // the settings preview's widget has no generation
+    p.view = Box::new(v);
+    p.pump();
+    f.bus.emit(RETIRE_EVENT, json!({ "before": u64::MAX - 1 }));
+    p.pump();
+    assert!(!p.take_fx().close);
+}
+
+#[test]
+fn leaving_has_no_bounce_and_the_enter_lands_softly() {
+    let _m = motion_on();
+    let (mut s, f) = sim(Dock::Bottom, cfg(json!({})));
+    media(&mut s, &f, state(true, "Song", 61_000));
+    s.show();
+    let mut ys = Vec::new();
+    while s.frame.wants_frame() && ys.len() < 4000 {
+        s.step_frame();
+        if let Some(r) = s.take_fx().hit_region.and_then(|r| r.first().copied()) {
+            ys.push(r.y);
+        }
+    }
+    let rest = *ys.last().unwrap();
+    assert!(ys.iter().any(|y| *y < rest - 0.05), "it overshoots its place a little before settling (a soft landing)");
+    assert!(ys.iter().all(|y| *y > rest - 8.0), "but only a little");
+    media(&mut s, &f, json!({ "has_session": false }));
+    let mut last = rest;
+    let mut n = 0;
+    while s.frame.wants_frame() && n < 4000 {
+        s.step_frame();
+        n += 1;
+        if let Some(r) = s.take_fx().hit_region.and_then(|r| r.first().copied()) {
+            assert!(r.y >= last - 0.01, "the way out only goes down: {} after {}", r.y, last);
+            last = r.y;
+        }
+    }
+    assert!(last > rest + 20.0, "and it goes a good way");
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------ the bar capsule, looked at

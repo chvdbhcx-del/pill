@@ -42,7 +42,7 @@ impl MusicView {
             return Vec::new();
         }
         let (p, dy) = (self.open(), self.slide());
-        let (cap, card) = lg::frames(self.stand, p, dy);
+        let pt = lg::parts(self.stand, p, dy);
         let ru = self.kbd.ru;
         let play = match (self.track.playing, ru) {
             (true, true) => "Пауза",
@@ -53,12 +53,11 @@ impl MusicView {
         let names = [if ru { "Предыдущий трек" } else { "Previous track" }, play, if ru { "Следующий трек" } else { "Next track" }];
         let mut out = Vec::new();
         let open = p >= lg::CARD_AT;
-        let btn = if open { lg::card_layout(card).btn } else { lg::capsule_layout_in(self.stand, cap).btn };
-        for (i, r) in btn.iter().enumerate() {
+        for (i, r) in pt.btn.iter().enumerate() {
             out.push(Control::new(1 + i as u32, names[i], Role::Button, self.stand.rect_to_real(*r)));
         }
         if open && self.track.duration_ms > 0 {
-            let bar = lg::card_layout(card).bar;
+            let bar = pt.bar;
             let cur = self.seek.map_or(self.clock.pos(self.kbd.now as i64), |f| (f as f64 * self.track.duration_ms as f64) as u64);
             out.push(
                 Control::new(SEEK, if ru { "Позиция в треке" } else { "Track position" }, Role::Slider, self.stand.rect_to_real(bar))

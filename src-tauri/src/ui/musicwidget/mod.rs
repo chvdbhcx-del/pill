@@ -21,7 +21,9 @@
 //! * No de-duplication: the widget is a second view of the same player. The island keeps its title strip, its edge reaction and the player
 //!   on Home while `media.widget` is on (each is still governed by `module.media`, `live.music` and `home.player` alone).
 //! * The window exists only while the setting is on. Its placement is part of its spec, so a change of the placement settings re-creates it
-//!   (`sync`); a change of the monitors, DPI or the taskbar re-places it (`relayout`, from the guard poll like the island's).
+//!   (`sync`): the old window is told to retire (`RETIRE_EVENT`), slides out and closes itself while the new one comes in; a change of the
+//!   monitors, DPI or the taskbar re-places it (`relayout`, from the guard poll like the island's): the body slides out, the window is moved
+//!   and it slides back in (`SLOT_EVENT`, for every dock).
 //! * In the taskbar (`edge` = `taskbar`): the window is taller ([`logic::WIN_BAR`]), its floor is the monitor's bottom (over the bar), the folded
 //!   capsule is a compact one that fits the strip (its own prev / play / next: hovering does not open it, a click on its cover or title opens the card, which floats above the bar) (`Placement::InBar` -> `geom::widget_place`). Where the
 //!   monitor has no bar it can live in (top / left / right / auto-hidden / too tall) it is the plain bottom placement, like the island. When the
@@ -35,7 +37,7 @@ mod view;
 #[cfg(test)]
 mod tests;
 
-pub use view::{MusicView, GUARD_EVENT, SLOT_EVENT};
+pub use view::{MusicView, GUARD_EVENT, RETIRE_EVENT, SLOT_EVENT};
 
 use crate::ui::host::geom::{self, Align, Dock};
 use crate::ui::host::{self, MonitorSel, NativeWindow, Placement, WinEvent};
@@ -143,6 +145,8 @@ fn spec(s: &Sig) -> NativeWindow {
 // ------------------------------------------------------------------------------------------------------------------------------ the window
 
 static ID: AtomicU64 = AtomicU64::new(0);
+/// The generation of the newest window (`MusicView::with_gen`): a window that is replaced or closed is told to retire (`RETIRE_EVENT`).
+static GEN: AtomicU64 = AtomicU64::new(0);
 /// the settings the live window was made from, and the geometry of its monitor it was placed for
 static LIVE: Mutex<Option<(Sig, Probe)>> = Mutex::new(None);
 /// the app handle, for the island's width news (`island_width_changed`, which comes from the island's thread)
@@ -169,15 +173,17 @@ pub fn sync(app: &tauri::AppHandle) {
     }
     let host = crate::ui::native::ensure_host(app);
     let old = ID.swap(0, Ordering::SeqCst);
+    let gen = GEN.fetch_add(1, Ordering::SeqCst) + 1;
     if old != 0 {
-        host.close(WindowId(old));
+        // the old window slides out and closes itself (a hidden one closes at once); the new one comes in as it leaves
+        let _ = crate::ui::bus::emit(RETIRE_EVENT, json!({ "before": gen }));
     }
     *cur = None;
     let Some(sig) = want else { return };
     let dock = sig.dock;
     let look = probe(&host, &sig);
     let (bar, align) = (look.bar, look.align);
-    let id = spec(&sig).spawn(&host, move |cx| Box::new(view::MusicView::new(cx, dock).with_slot(bar, align)));
+    let id = spec(&sig).spawn(&host, move |cx| Box::new(view::MusicView::new(cx, dock).with_slot(bar, align).with_gen(gen)));
     ID.store(id.0, Ordering::SeqCst);
     FOLLOWING.store(false, Ordering::Relaxed); // a new window: the next poll points the foreground hook at it
     crate::taskbar::follow_widget(windows::Win32::Foundation::HWND::default(), false);
@@ -305,7 +311,8 @@ pub fn relayout(app: &tauri::AppHandle) {
                 let _ = crate::ui::bus::emit(SLOT_EVENT, json!({ "bar": look.bar, "align": align_name(look.align) }));
             }
         } else {
-            host.relayout(WindowId(id));
+            // a plain dock: the same way as in the bar, the body slides out where it stands, the window is re-placed and it slides back in
+            let _ = crate::ui::bus::emit(SLOT_EVENT, json!({ "bar": 0.0, "align": align_name(look.align) }));
         }
     }
     if sig.dock == Dock::Taskbar {
