@@ -170,7 +170,7 @@ pub(super) fn look(p: &mut Pool) -> Page {
             ),
             part(vec![p.sec(tr("Часы и дата", "Clock and date"), &["showTime", "showDate", "showSeconds", "clock24"])], vec![]),
             part(vec![p.sec(tr("Поделиться оформлением", "Share your look"), &["look.share"])], vec![]),
-            part(vec![p.sec(tr("Анимация", "Animation"), &["reduceMotion"])], vec![p.sec(tr("Частота кадров и видеокарта", "Frame rate and GPU"), &["fps", "edgeIdleFps", "ui.gpu"]).adv()]),
+            part(vec![p.sec(tr("Анимация и контраст", "Motion and contrast"), &["reduceMotion", "a11y.contrast"])], vec![p.sec(tr("Частота кадров и видеокарта", "Frame rate and GPU"), &["fps", "edgeIdleFps", "ui.gpu"]).adv()]),
             part(vec![], vec![p.sec(tr("Энергия", "Power"), &["energy.saver", "energy.battery", "energy.pauseLocked", "energy.pauseDisplayOff", "energy.pauseRdp", "energy.cost"]).adv()]),
         ],
     )
@@ -264,9 +264,10 @@ pub(super) fn hotkeys(p: &mut Pool) -> Page {
         tr("Горячие клавиши", "Hotkeys"),
         vec![part(
             vec![
-                p.sec(tr("Остров, поиск, чат, диктовка и буфер", "Island, command bar, chat, dictation and clipboard"), &["hotkey.toggle", "hotkey.command", "hotkey.chat", "hotkey.voice", "hotkey.clipboard", "hotkey.pastePlain", "hotkey.mic"]),
+                p.sec(tr("Остров, поиск, чат, диктовка и буфер", "Island, command bar, chat, dictation and clipboard"), &["hotkey.toggle", "hotkey.keys", "hotkey.command", "hotkey.chat", "hotkey.voice", "hotkey.clipboard", "hotkey.pastePlain", "hotkey.mic"]),
                 p.sec(tr("Экран: запись, снимки, текст и цвет", "Screen: recording, shots, text and colour"), &["hotkey.record", "hotkey.shotArea", "hotkey.shotFull", "hotkey.ocr", "hotkey.pipette", "hotkey.qr"]),
                 p.sec(tr("Ярлыки лаунчера", "Launcher shortcuts"), &["hotkeys.launcher"]),
+                p.sec(tr("Приставки командной строки", "Command bar prefixes"), &["command.shortcuts"]),
             ],
             vec![p.sec(tr("Пока без сочетания", "Not assigned yet"), &["hotkey.uninstall", "hotkey.passThrough", "hotkey.theme", "hotkey.musicView", "hotkey.vpn"]).adv()],
         )],

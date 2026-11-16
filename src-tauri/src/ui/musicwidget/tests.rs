@@ -1025,3 +1025,59 @@ fn the_open_card_has_one_and_the_same_corner_at_all_four_corners() {
         }
     });
 }
+
+// ------------------------------------------------------------------------------------------------------------------------------ keyboard mode, UIA, high contrast
+
+fn key(s: &mut Sim, code: glasskit::input::KeyCode, mods: Modifiers) -> glasskit::input::Response {
+    let r = s.send(&InputEvent::Key { code, mods, down: true, repeat: false });
+    s.run(400);
+    r
+}
+
+#[test]
+fn the_widget_lists_its_buttons_and_the_position_slider() {
+    use crate::ui::a11y::nav::{Role, Value as CV};
+    let (mut s, f) = on_screen(Dock::Bottom);
+    // folded: the three buttons only
+    let cs = s.view.controls();
+    assert_eq!(cs.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Previous track", "Pause", "Next track"], "a playing track offers Pause");
+    assert!(cs.iter().all(|c| c.role == Role::Button && c.rect.w > 10.0));
+    // opened (hover): the position slider joins, with the track's own range and value
+    s.send_proximity(&ProximityEvent::Hover);
+    s.run(4000);
+    let cs = s.view.controls();
+    let bar = cs.iter().find(|c| c.role == Role::Slider).expect("the position bar");
+    assert!(matches!(bar.value, CV::Range { min, max, cur, .. } if min == 0.0 && max == 200_000.0 && (cur - 61_000.0).abs() < 3000.0), "{:?}", bar.value);
+    // the slider is set by a screen reader: a seek to that position
+    let taken = s.view.control_act(bar.id, crate::ui::a11y::nav::Act::Set(100_000.0), &mut s.cx);
+    assert!(taken);
+    assert_eq!(calls(&f, "media_seek").last(), Some(&json!({ "ms": 100_000 })));
+    // a pause changes the name of the middle button
+    media(&mut s, &f, state(false, "Song", 61_000));
+    assert_eq!(s.view.controls()[1].name, "Play");
+}
+
+#[test]
+fn keyboard_mode_space_arrows_and_escape() {
+    use glasskit::input::KeyCode as K;
+    let (mut s, f) = on_screen(Dock::Bottom);
+    f.bus.emit("a11y:keys", json!({ "target": "widget" }));
+    s.pump();
+    s.run(4000);
+    assert!(s.view.focused_control().is_some(), "keyboard mode: the ring stands on a button");
+    assert!(s.view.controls().iter().any(|c| c.role == crate::ui::a11y::nav::Role::Slider), "the card opened for the keys");
+    key(&mut s, K::Space, Modifiers::NONE);
+    assert_eq!(calls(&f, "media_control").last(), Some(&json!({ "action": "play_pause" })));
+    key(&mut s, K::Right, Modifiers::NONE);
+    let seek = calls(&f, "media_seek").last().cloned().expect("Right seeks");
+    assert!((seek["ms"].as_u64().unwrap() as i64 - 66_000).abs() < 3000, "5 s forward: {seek}");
+    key(&mut s, K::Left, Modifiers::SHIFT);
+    assert_eq!(calls(&f, "media_control").last(), Some(&json!({ "action": "prev" })), "Shift+Left is the previous track");
+    // a letter is not ours; Tab moves the ring and Enter presses what it stands on
+    assert!(!key(&mut s, K::Char('a'), Modifiers::NONE).consumed);
+    let before = s.view.focused_control();
+    key(&mut s, K::Tab, Modifiers::NONE);
+    assert_ne!(s.view.focused_control(), before);
+    key(&mut s, K::Escape, Modifiers::NONE);
+    assert_eq!(s.view.focused_control(), None, "Esc leaves");
+}

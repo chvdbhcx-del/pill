@@ -30,6 +30,9 @@ use pill_ui_core::shell::settings::ShellSettings;
 use serde_json::{json, Value};
 use std::time::Duration;
 
+#[path = "view_kbd.rs"]
+mod kbd; // keyboard mode, UIA controls and high contrast of the widget
+
 const TITLE: Style = Style::new(13.0, 600).ellipsis();
 const SUB: Style = Style::new(11.5, 450).ellipsis();
 /// The artist's line box is a little lower than the title's so that the two share a baseline (their centres differ with the size).
@@ -97,6 +100,8 @@ pub struct MusicView {
     last_hit: Option<Rect>,
     gpu_s: Gpu,
     gpu_l: Gpu,
+    /// keyboard mode (the focus ring) and the high-contrast palette (view_kbd.rs)
+    kbd: kbd::Kbd,
 }
 
 fn flows<const N: usize>(x: f32, f: Feel) -> [Flow; N] {
@@ -105,7 +110,7 @@ fn flows<const N: usize>(x: f32, f: Feel) -> [Flow; N] {
 
 impl MusicView {
     pub fn new(cx: &mut Cx, dock: Dock) -> MusicView {
-        for e in ["media:changed", "settings:changed", GUARD_EVENT, SLOT_EVENT] {
+        for e in ["media:changed", "settings:changed", GUARD_EVENT, SLOT_EVENT, crate::ui::a11y::target::EVENT, crate::ui::a11y::contrast::EVENT] {
             cx.subscribe(e);
         }
         let mut v = MusicView {
@@ -147,6 +152,7 @@ impl MusicView {
             last_hit: None,
             gpu_s: Gpu::new(),
             gpu_l: Gpu::new(),
+            kbd: kbd::Kbd::new(),
         };
         // settings first (theme, the module switch), then the first reading; both answer at once, the cover comes with the reply
         if let Ok(s) = cx.call("settings_get", json!({})) {
@@ -231,6 +237,8 @@ impl MusicView {
             return;
         }
         self.settings.apply_json(s);
+        self.contrast_refresh();
+        self.refresh_lang();
         self.widget_on = s.get("media.widget").and_then(Value::as_bool).unwrap_or(false);
         self.module_on = s.get("module.media") != Some(&Value::Bool(false));
         self.presence.set_enabled(self.widget_on && self.module_on);
@@ -246,6 +254,9 @@ impl MusicView {
     }
 
     fn theme(&self) -> Theme {
+        if let Some(p) = &self.kbd.hc {
+            return crate::ui::a11y::contrast::theme(p); // high contrast: the system colours, flat and opaque
+        }
         let light = self.settings.resolved_theme(self.os_light) == ShellTheme::Light;
         let base = if light { Theme::pill_light() } else { Theme::pill_dark() };
         match self.settings.island_color() {
@@ -255,6 +266,9 @@ impl MusicView {
     }
 
     fn accent(&self, th: &Theme) -> Color {
+        if self.kbd.hc.is_some() {
+            return th.accent; // the cover's colour has no place in high contrast
+        }
         self.track.accent.map_or(th.accent, |[r, g, b]| Color::rgb8(r, g, b))
     }
 
@@ -328,6 +342,7 @@ impl MusicView {
     /// Re-decide whether the widget is wanted, start / stop its window and its tick. Cheap; call after anything that may change the answer.
     fn sync(&mut self, cx: &mut Cx) {
         let want = self.widget_on && !self.guard && self.reseat.is_none() && self.presence.visible(cx.now_ms);
+        crate::ui::a11y::target::set_widget_up(want);
         if want != self.want {
             self.want = want;
             self.shown.to(want as u8 as f32);
@@ -347,7 +362,7 @@ impl MusicView {
     }
 
     fn retarget(&mut self) {
-        let open = if self.hover_opens() { self.near } else { self.pinned && self.near } || self.seek.is_some();
+        let open = if self.hover_opens() { self.near } else { self.pinned && self.near } || self.seek.is_some() || self.kbd.on;
         self.expand.to((self.want && open) as u8 as f32);
     }
 
@@ -395,6 +410,7 @@ impl MusicView {
             || self.pp.moving()
             || self.prog.moving()
             || self.hov.iter().chain(self.press.iter()).any(Flow::moving)
+            || self.kbd.ring.moving()
     }
 }
 
@@ -402,6 +418,18 @@ impl View for MusicView {
     fn accessible(&self) -> Option<String> {
         let (h, s) = (self.track.heading(), self.track.sub());
         Some(if s.is_empty() { format!("Music: {h}") } else { format!("Music: {h} - {s}") })
+    }
+
+    fn controls(&self) -> Vec<crate::ui::a11y::nav::Control> {
+        self.kbd_controls()
+    }
+
+    fn control_act(&mut self, id: u32, act: crate::ui::a11y::nav::Act, cx: &mut Cx) -> bool {
+        self.kbd_act(id, act, cx)
+    }
+
+    fn focused_control(&self) -> Option<u32> {
+        self.kbd.on.then(|| self.kbd.focus).flatten()
     }
 
     fn size_hint(&self) -> Option<(f32, f32)> {
@@ -429,6 +457,9 @@ impl View for MusicView {
     }
 
     fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
+        if let Some(r) = self.kbd_input(ev, cx) {
+            return r; // keyboard mode took the key
+        }
         match ev {
             InputEvent::MouseMove { pos, .. } => {
                 if self.seek.is_some() {
@@ -521,6 +552,8 @@ impl View for MusicView {
                     }
                     self.sync(cx);
                 }
+                crate::ui::a11y::target::EVENT => self.kbd_event(&name, &payload, cx),
+                crate::ui::a11y::contrast::EVENT => self.contrast_refresh(),
                 GUARD_EVENT => {
                     self.guard = payload.get("hidden").and_then(Value::as_bool).unwrap_or(false);
                     self.sync(cx);
@@ -577,12 +610,13 @@ impl View for MusicView {
         for f in self.hov.iter_mut().chain(self.press.iter_mut()) {
             f.step(dt);
         }
+        let kbd_busy = self.kbd_step(dt, cx);
         let body = self.body_now();
         if self.last_hit != Some(body) {
             self.last_hit = Some(body);
             cx.set_hit_region(vec![body]);
         }
-        let moving = self.moving();
+        let moving = self.moving() || kbd_busy;
         if !self.want && self.vis && !moving {
             if let Some(to) = self.reseat.take() {
                 // it has left to be re-placed: take the new place, put the window there and come back in
@@ -652,9 +686,12 @@ impl View for MusicView {
             // does not reach the floor, so it is never cut off, growing to the island's own while the card rises. Elsewhere the shadow stays
             // inside the window's PAD on every side, at the top edge too (it falls the other way there)
             let (blur, sdy) = if self.stand.in_bar() { (4.0 + 4.0 * p.clamp(0.0, 1.0), -1.0) } else { (lg::SHADOW_BLUR, if self.stand.dock.at_bottom() { -lg::SHADOW_DY } else { lg::SHADOW_DY }) };
-            cv.shadow_rr(body, rad, blur, sdy, Color::rgba(0.0, 0.0, 0.0, 0.45));
-            cv.fill_rr(body, rad, th.bg.alpha(0.97));
-            cv.stroke_rr(body, rad, 1.0, th.border);
+            let hc = self.kbd.hc.is_some();
+            if !hc {
+                cv.shadow_rr(body, rad, blur, sdy, Color::rgba(0.0, 0.0, 0.0, 0.45));
+            }
+            cv.fill_rr(body, rad, th.bg.alpha(if hc { 1.0 } else { 0.97 }));
+            cv.stroke_rr(body, rad, if hc { crate::ui::a11y::contrast::OUTLINE_W } else { 1.0 }, th.border);
             let (cap, card) = lg::frames(self.stand, p, dy);
             let cap_a = (1.0 - p * 1.7).clamp(0.0, 1.0);
             let card_a = ((p - 0.3) / 0.7).clamp(0.0, 1.0);
@@ -668,6 +705,7 @@ impl View for MusicView {
                 }
             });
         })));
+        self.kbd_paint(cv, &th, alpha);
     }
 }
 

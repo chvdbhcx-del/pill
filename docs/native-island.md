@@ -9,6 +9,7 @@ before. `pill.exe --web-ui` / `PILL_WEB_UI=1` beat the flag (`ui::flags`).
 ```
 island/start.rs      enabled(), start(app): host thread, fonts, FacadeApi (ui::api::call), the Overlay, hand-over to pill.rs (PillWin)
 island/view.rs       IslandView: the View impl: events, proximity, drops, step (animation + wake-ups), draw (silhouette, row, panel, pet, edge)
+island/view_kbd.rs   keyboard mode (Win+Alt+J, the focus ring), the controls list for UI Automation, high contrast: docs/native-a11y.md
 island/core.rs       Core: shell model + live hub + glue (event routing, LiveCmd application, notices -> outs). No window, no GPU: unit tested
 island/rows.rs       live-row layout (Elem vocabulary -> boxes, generic over a text meter) and painting
 island/live.rs       clock row (3 equal columns, digit roll), event cards, content measure / paint, row enter animations

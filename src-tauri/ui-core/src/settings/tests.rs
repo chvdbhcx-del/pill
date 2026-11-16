@@ -264,7 +264,7 @@ fn no_row_needs_a_restart() {
 // ------------------------------------------------------------------------------------------------ the re-layout lost nothing
 
 // The settings.json keys of the 16-page schema this one replaced (a snapshot: none may be renamed, dropped or added by a re-layout).
-const OLD_KEYS: [&str; 187] = [
+const OLD_KEYS: [&str; 190] = [
     "shape", "theme", "island.color", "size",
     "monitor", "character", "character.liquid", "pet",
     "pet.side", "pet.size", "pet.keepDuringMusic", "showTime",
@@ -313,6 +313,8 @@ const OLD_KEYS: [&str; 187] = [
     "settings.preview", "edge.position", "edge.align", "edge.monitor", "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset",
     // Power (ui/host/energy.rs)
     "energy.saver", "energy.battery", "energy.pauseLocked", "energy.pauseDisplayOff", "energy.pauseRdp",
+    // keyboard-first use and accessibility: the keyboard-mode hotkey, high contrast, the command bar shortcuts
+    "hotkey.keys", "a11y.contrast", "command.shortcuts",
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
@@ -710,11 +712,11 @@ fn rows_per_page() {
     eprintln!("rows per page: {counts:?}");
     // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch, the screen-edge choices (edge, side and follow-the-active-window) and the four rows of the music widget
     let expect = [
-        ("look", 28), ("edge", 7), ("tabs", 3),
+        ("look", 29), ("edge", 7), ("tabs", 3),
         ("weather", 7), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
         ("notifications", 18), ("calendar", 12),
         ("phone", 16), ("ai", 14),
-        ("general", 25), ("hotkeys", 19), ("updates", 6),
+        ("general", 25), ("hotkeys", 21), ("updates", 6),
     ];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");
@@ -885,6 +887,9 @@ const UI_ONLY: &[(&str, &str)] = &[
     ("hotkey.qr", "settingswin::ACTIONS default"),
     ("hotkey.passThrough", "settingswin::ACTIONS default"),
     ("hotkey.vpn", "settingswin::ACTIONS default"),
+    ("hotkey.keys", "settingswin::ACTIONS default"),
+    ("a11y.contrast", "ui/a11y/contrast.rs: default auto (follow Windows high contrast)"),
+    ("command.shortcuts", "command/shortcuts.rs: default empty list"),
     ("hotkey.theme", "settingswin::ACTIONS default"),
     ("hotkey.musicView", "settingswin::ACTIONS default"),
 ];
@@ -966,7 +971,7 @@ fn hotkey_table_matches_settingswin() {
             Some((id.to_string(), combo.to_string()))
         })
         .collect();
-    assert_eq!(rust.len(), 17, "settingswin::ACTIONS parsed");
+    assert_eq!(rust.len(), 18, "settingswin::ACTIONS parsed");
     for a in hotkey::ACTIONS.iter() {
         match rust.get(a.id) {
             Some(c) => assert_eq!(c, a.default, "default combo of {}", a.id),

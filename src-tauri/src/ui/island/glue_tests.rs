@@ -1076,3 +1076,86 @@ fn the_island_publishes_its_real_folded_width_while_it_stands_in_the_bar() {
     let _ = rest_in(&mut g, OPEN_WIN);
     assert_eq!(g.v.borrow().dbg_fold_w(), 0);
 }
+
+// ---------------------------------------------------------------------------------------------------- keyboard mode, UIA controls, high contrast
+
+fn key(g: &mut G, code: KeyCode, mods: Modifiers) {
+    g.sim.send(&InputEvent::Key { code, mods, down: true, repeat: false });
+    g.settle(4);
+}
+
+#[test]
+fn keyboard_mode_lists_the_card_walks_it_with_the_ring_and_leaves_on_escape() {
+    use crate::ui::a11y::nav::Role;
+    let mut g = G::new();
+    g.expand("home");
+    let cs = g.v.borrow().controls();
+    let tabs: Vec<&str> = cs.iter().filter(|c| c.role == Role::Tab).map(|c| c.name.as_str()).collect();
+    assert!(tabs.len() >= 4 && tabs.contains(&"Home"), "the strip's tabs are listed with their names: {tabs:?}");
+    assert!(cs.iter().any(|c| c.name == "Settings" && c.role == Role::Button), "the header buttons too");
+    assert!(cs.iter().any(|c| c.role == Role::Slider), "the Home tab's own sliders (volume, seek) are listed too: {:?}", cs.iter().map(|c| &c.name).collect::<Vec<_>>());
+    assert_eq!(g.v.borrow().focused_control(), None, "no keyboard mode, no focus");
+    // the hotkey: the ring stands on the selected tab
+    g.emit("a11y:keys", json!({ "target": "island" }));
+    let _ = g.draw();
+    g.settle(30);
+    let _ = g.draw();
+    let first = g.v.borrow().focused_control().expect("the ring has a control");
+    let sel = g.v.borrow().controls().into_iter().find(|c| c.id == first).unwrap();
+    assert_eq!((sel.role, sel.name.as_str()), (Role::Tab, "Home"), "it starts on the selected tab");
+    // Tab moves on, Shift+Tab comes back; Right switches to the next tab; Alt+1 jumps to the first
+    key(&mut g, KeyCode::Tab, Modifiers::default());
+    assert_ne!(g.v.borrow().focused_control(), Some(first));
+    key(&mut g, KeyCode::Tab, Modifiers { shift: true, ..Modifiers::default() });
+    assert_eq!(g.v.borrow().focused_control(), Some(first));
+    key(&mut g, KeyCode::Right, Modifiers::default());
+    let _ = g.draw();
+    g.settle(60);
+    assert_ne!(g.v.borrow().dbg_tab().as_deref(), Some("home"), "Right on a tab opens the next tab");
+    key(&mut g, KeyCode::Char('1'), Modifiers { alt: true, ..Modifiers::default() });
+    let _ = g.draw();
+    g.settle(60);
+    assert_eq!(g.v.borrow().dbg_tab().as_deref(), Some("home"), "Alt+1 is the first tab");
+    // typing is not navigation: a letter is not consumed
+    let r = g.sim.send(&InputEvent::Key { code: KeyCode::Char('a'), mods: Modifiers::default(), down: true, repeat: false });
+    assert!(!r.consumed);
+    // Esc ends it and folds the card
+    key(&mut g, KeyCode::Escape, Modifiers::default());
+    assert_eq!(g.v.borrow().focused_control(), None, "keyboard mode is over");
+    g.settle(80);
+    assert!(!g.v.borrow().core.shell.view().panel.visible, "the card folded");
+}
+
+#[test]
+fn a_click_ends_keyboard_mode_and_the_hotkey_toggles_it() {
+    let mut g = G::new();
+    g.expand("home");
+    g.emit("a11y:keys", json!({ "target": "island" }));
+    let _ = g.draw();
+    g.settle(30);
+    assert!(g.v.borrow().focused_control().is_some());
+    g.emit("a11y:keys", json!({ "target": "off" }));
+    assert_eq!(g.v.borrow().focused_control(), None, "the hotkey's third press");
+    g.emit("a11y:keys", json!({ "target": "island" }));
+    let _ = g.draw();
+    g.settle(30);
+    assert!(g.v.borrow().focused_control().is_some());
+    g.sim.send(&InputEvent::MouseDown { pos: (5.0, 5.0), button: glasskit::input::MouseButton::Left, mods: Modifiers::default(), clicks: 1 });
+    assert_eq!(g.v.borrow().focused_control(), None, "a click: the user is using the mouse now");
+}
+
+#[test]
+fn high_contrast_drops_the_glass_and_follows_the_setting() {
+    let mut g = G::with(json!({ "a11y.contrast": "on", "opacityExp": 30, "opacityCol": 20 }));
+    assert!(g.v.borrow().dbg_hc(), "On: always, even without a Windows theme");
+    {
+        let v = g.v.borrow();
+        let s = v.core.shell.settings();
+        assert_eq!((s.op_col(), s.op_exp()), (1.0, 1.0), "no translucent glass whatever the transparency settings say");
+        assert_eq!(s.island_color().map(|c| (c.r, c.g, c.b)), Some((0, 0, 0)), "the body is the system window colour");
+    }
+    g.emit("settings:changed", json!({ "a11y.contrast": "off" }));
+    assert!(!g.v.borrow().dbg_hc());
+    let v = g.v.borrow();
+    assert!(v.core.shell.settings().op_exp() < 1.0 && v.core.shell.settings().island_color().is_none(), "Off gives the normal look back");
+}

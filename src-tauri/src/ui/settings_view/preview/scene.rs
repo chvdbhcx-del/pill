@@ -215,7 +215,7 @@ impl Scene {
 pub fn of_key(key: &str) -> Option<Scene> {
     use Scene::*;
     Some(match key {
-        "shape" | "theme" | "island.color" | "island.colorCustom" | "size" | "opacityCol" | "opacityExp" | "language" | "edge.position" | "edge.align" => Pill(Look::Island),
+        "shape" | "theme" | "island.color" | "island.colorCustom" | "size" | "opacityCol" | "opacityExp" | "language" | "edge.position" | "edge.align" | "a11y.contrast" => Pill(Look::Island),
         "offsetX" | "underTaskbar" => Pill(Look::Place),
         "media.widget" | "media.widget.edge" | "media.widget.align" | "media.widget.offset" => Widget,
         "showTime" | "showDate" | "showWxIcon" | "showTemp" | "showSeconds" | "clock24" | "showBattery" => Pill(Look::Clock),

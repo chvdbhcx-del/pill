@@ -294,6 +294,11 @@ impl TabHost {
         self.slots.get_mut(&id).map(|s| &mut s.view)
     }
 
+    /// The open tab's controls (UI Automation, keyboard mode), in the tab view's own coordinates; empty for a view that lists none.
+    pub fn controls(&self) -> Vec<crate::ui::a11y::nav::Control> {
+        self.cur.as_ref().and_then(|id| self.slots.get(id)).map(|s| s.view.controls()).unwrap_or_default()
+    }
+
     /// An input event in the tab view's own coordinates.
     pub fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
         if self.overlay_open {

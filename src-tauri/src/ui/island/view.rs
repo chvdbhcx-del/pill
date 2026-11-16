@@ -29,6 +29,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+#[path = "view_kbd.rs"]
+mod kbd; // keyboard mode, UIA controls and high contrast of the island
+
 /// Messages the view posts to itself.
 enum Own {
     /// the timer thread: something is due
@@ -227,6 +230,8 @@ pub struct IslandView {
     mon_move: bool,
     /// files are dragged over the folded island (the shelf's pull): it must not leave under them
     dragging: bool,
+    /// keyboard mode (the focus ring, `Win+Alt+J`) and the high-contrast palette (view_kbd.rs)
+    kbd: kbd::Kbd,
 }
 
 /// Leaving an edge, and arriving at the new one.
@@ -260,6 +265,8 @@ impl IslandView {
                 cx.subscribe(e);
             }
         }
+        cx.subscribe(crate::ui::a11y::target::EVENT);
+        cx.subscribe(crate::ui::a11y::contrast::EVENT);
         let mut core = Core::new(os_lang, clock);
         let settings = cx.call("settings_get", Value::Null).ok().filter(|v| v.is_object()).unwrap_or_else(|| json!({}));
         let outs = core.start(settings, cx.now_ms);
@@ -326,12 +333,14 @@ impl IslandView {
             last_edge: None,
             mon_move: false,
             dragging: false,
+            kbd: kbd::Kbd::new(),
             now: cx.now_ms,
             started: false,
             device_id: 0,
         };
         v.dock = v.want_dock();
         v.align = v.want_align();
+        v.contrast_refresh(cx);
         v.sync_env(cx);
         v.exec_outs(outs, cx);
         v.ask_chips(cx);
@@ -495,7 +504,11 @@ impl IslandView {
     fn run_cmd(&mut self, cx: &mut Cx, cmd: &str, args: Value) {
         match cmd {
             // keyboard focus is the window's: the native Overlay is no-activate until asked
-            "pill_activate" => cx.set_focus(args.get("on").and_then(|v| v.as_bool()).unwrap_or(false)),
+            "pill_activate" => {
+                let on = args.get("on").and_then(|v| v.as_bool()).unwrap_or(false);
+                self.kbd_activate_hint(on); // a tab asking for the keyboard (a text field) ends keyboard mode
+                cx.set_focus(on)
+            }
             "pill_rect" => {
                 let mut args = args;
                 if self.align != Align::Center {
@@ -873,6 +886,9 @@ impl IslandView {
     // ------------------------------------------------------------------------------------------------ drawing
 
     fn theme(&self) -> Theme {
+        if let Some(p) = &self.kbd.hc {
+            return crate::ui::a11y::contrast::theme(p); // high contrast: the system colours, flat and opaque
+        }
         let base = if self.light() { Theme::pill_light() } else { Theme::pill_dark() };
         match self.core.shell.settings().island_color() {
             Some(c) => super::tint::tinted(base, c),
@@ -964,6 +980,18 @@ impl View for IslandView {
         Some(spoken(&self.core.shell.view().live.content))
     }
 
+    fn controls(&self) -> Vec<crate::ui::a11y::nav::Control> {
+        self.kbd_controls()
+    }
+
+    fn control_act(&mut self, id: u32, act: crate::ui::a11y::nav::Act, cx: &mut Cx) -> bool {
+        self.kbd_act(id, act, cx)
+    }
+
+    fn focused_control(&self) -> Option<u32> {
+        self.kbd.on.then_some(self.kbd.focus).flatten()
+    }
+
     fn on_dpi(&mut self, _scale: f32, cx: &mut Cx) {
         self.sync_env(cx);
         self.exec(cx);
@@ -993,6 +1021,7 @@ impl View for IslandView {
                     self.bar_h = payload.get("h").and_then(|h| h.as_f64()).unwrap_or(0.0).max(0.0) as f32;
                 }
                 self.core.bus_event(&name, &payload, cx.now_ms);
+                self.kbd_event(&name, &payload, cx);
                 if matches!(name.as_str(), "settings:changed" | "pill:show") {
                     self.apply_settings_side(cx);
                 }
@@ -1117,6 +1146,7 @@ impl View for IslandView {
         self.comp.set_theme(self.light());
         let pets_busy = self.comp.tick(now);
         self.arm_alarm(now);
+        let kbd_busy = self.kbd_step(dt_ms, cx);
         self.update_window_requests(&v, cx);
         let host_busy = self.host.step(dt_ms, now, cx);
         // a tab whose only motion is ambient (the weather sky) does not hold the window at the full rate
@@ -1141,12 +1171,15 @@ impl View for IslandView {
             ("edge", edge_busy),
         ]);
         self.pace_ambient(&v, cx, now, hdr_busy || host_busy || fx_busy || phone_busy || fades || amb_busy || edge_busy);
-        edge_busy || v.wants_frames || phone_busy || self.pending_measure.is_some() || pets_busy || host_busy || hdr_busy || rows_busy || fx_busy || self.gpu.gliding() || fades || amb_busy || amb_loop || self.tab_amb
+        edge_busy || v.wants_frames || phone_busy || self.pending_measure.is_some() || pets_busy || host_busy || hdr_busy || rows_busy || fx_busy || self.gpu.gliding() || fades || amb_busy || amb_loop || self.tab_amb || kbd_busy
     }
 
     fn event(&mut self, ev: &InputEvent, cx: &mut Cx) -> Response {
         self.now = cx.now_ms;
         self.wake_full_rate(cx);
+        if let Some(r) = self.kbd_input(ev, cx) {
+            return r; // keyboard mode took the key
+        }
         // a phone card on screen: its reply field and arrow come first, the rest (hover, buttons, dismissal) stays with the shell
         let pr = if self.phone.active() {
             let local = ev.pos().map(|p| self.local_live(p));
@@ -1448,6 +1481,7 @@ impl View for IslandView {
             }
         });
         self.painted = painted;
+        self.kbd_paint(cv, &th, body, rb.max(rt));
         // privacy dots in the top-right corner: they pop in, and the other one slides over when one leaves
         let (mic, cam) = (self.fx.dot(0), self.fx.dot(1));
         if (cam > 0.002 || mic > 0.002) && self.live_a > 0.0 {

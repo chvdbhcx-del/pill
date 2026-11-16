@@ -1,6 +1,6 @@
 // Global hotkeys of every module in ONE place (GateGuard note: new file of the Pill app; used by main.rs, settings.rs and
 // settingswin.rs; user request: "делай все оставшееся" = rebinding a hotkey on the settings page works at once, no restart).
-// Owner: settings lane. Handled here: toggle, command, clipboard, chat, record, shotArea, shotFull, ocr, pipette, qr, pastePlain,
+// Owner: settings lane. Handled here: toggle, keys (keyboard mode of the island card / music widget), command, clipboard, chat, record, shotArea, shotFull, ocr, pipette, qr, pastePlain,
 // mic, passThrough, vpn (vpn.rs) and every `hotkey.launcher.<id>`. NOT handled here: `voice` (voice.rs follows settings:changed itself),
 // Ctrl+Alt+Q = quit (raw RegisterHotKey thread in pill.rs, fixed on purpose).
 //
@@ -96,6 +96,7 @@ fn run(app: &AppHandle, action: &str) {
         }
         "theme" => crate::islandkeys::toggle_theme(app),
         "musicView" => crate::islandkeys::cycle_music_view(app),
+        "keys" => crate::islandkeys::keyboard_mode(app),
         a if a.starts_with("launcher.") => {
             if let Ok(id) = a["launcher.".len()..].parse::<i64>() {
                 std::thread::spawn(move || {

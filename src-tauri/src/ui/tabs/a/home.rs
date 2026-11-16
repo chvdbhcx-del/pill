@@ -22,6 +22,7 @@
 //! Animation cues (`title`, `artist`, `play`, `art`, `launcher`, `link:<id>`) play on the kit `Player`; hover, press, the volume glide, the device
 //! list, the cover tint and the reorder shifts are glasskit tweens. Reduce motion jumps all of them to their end state.
 mod css;
+mod ctl;
 mod layout;
 mod paint;
 mod target;
@@ -774,6 +775,10 @@ fn hit_rounded(r: Rect, rad: f32, p: Pt) -> bool {
 }
 
 impl View for HomeView {
+    fn controls(&self) -> Vec<crate::ui::a11y::nav::Control> {
+        self.a11y_controls()
+    }
+
     fn size_hint(&self) -> Option<(f32, f32)> {
         // as tall as the parts that are on (the classic 260 with everything on)
         Some((super::W, self.slots.content_h()))

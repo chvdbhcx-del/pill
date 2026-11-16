@@ -1,4 +1,5 @@
 // The native UI: host (windows, GPU, input), views (island, tabs, bar, settings, capture), the command facade and the in-process event bus.
+pub mod a11y;
 pub mod api;
 #[allow(dead_code)] // test-only accessors
 pub mod bar_view;

@@ -14,6 +14,8 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `agents:done` | pill | `json!({ "session": s.session, "tool": s.tool, "title": s.title, "cwd": s.cwd })` | agents.rs |
 | `agents:ask` | pill | `json!({ "id", "kind": "permission"\|"question", "toolName", "summary", "question", "options", "project", "session", "cwd" })` (only while `agents.answerFromIsland` is on) | agent_bridge.rs |
 | `agents:ask-gone` | pill | `json!({ "id" })` (the hook was cancelled: answered in the terminal) | agent_bridge.rs |
+| `a11y:keys` | pill, widget | `json!({ "target": "island" \| "widget" \| "off" })` (keyboard mode: who has the keys now, see `ui/a11y/target.rs`) | islandkeys.rs |
+| `a11y:contrast` | pill, widget | `null` (Windows' colour scheme or high-contrast switch changed: the views re-read it) | ui/host/win32.rs |
 | `aisetup:progress` | all windows | `json!({ "id": id, "item": item, "done": done, "total": total, "phase": phase, "message": message })` | aisetup.rs |
 | `audio:bands` | pill | `&Frame { b, rms: (rms * 1000.0).round() / 1000.0, t }` | audio.rs |
 | `capture:begin` | capture-N overlay | `json!({ "id": id })` | capture.rs |
