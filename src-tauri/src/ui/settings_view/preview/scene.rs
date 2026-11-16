@@ -38,6 +38,11 @@ pub enum Flash {
     Music,
     Privacy,
     Toast,
+    /// Caps Lock / Num Lock chips, the Bluetooth chip and the Focus Assist hold (`indicators.rs`, `focus.rs`)
+    Caps,
+    Num,
+    Bluetooth,
+    Focus,
 }
 
 impl Flash {
@@ -57,6 +62,10 @@ impl Flash {
             Flash::Music => "live.music",
             Flash::Privacy => "live.micCam",
             Flash::Toast => return None,
+            Flash::Caps => "live.capsLock",
+            Flash::Num => "live.numLock",
+            Flash::Bluetooth => "live.btBattery",
+            Flash::Focus => "notify.respectFocus",
         })
     }
 
@@ -75,6 +84,10 @@ impl Flash {
             Flash::Music => tr("Событие: музыка", "Event: music"),
             Flash::Privacy => tr("Событие: микрофон и камера", "Event: microphone and camera"),
             Flash::Toast => tr("Карточка на острове", "A card on the island"),
+            Flash::Caps => tr("Индикатор: Caps Lock", "Indicator: Caps Lock"),
+            Flash::Num => tr("Индикатор: Num Lock", "Indicator: Num Lock"),
+            Flash::Bluetooth => tr("Индикатор: Bluetooth-устройство", "Indicator: Bluetooth device"),
+            Flash::Focus => tr("«Фокусировка» Windows: карточка ждёт", "Windows Focus Assist: a card waits"),
         }
     }
 }
@@ -162,6 +175,10 @@ pub fn of_key(key: &str) -> Option<Scene> {
         "live.recording" | "capture.format" | "capture.fps" | "capture.recordSystemAudio" | "capture.recordMic" => Flash(self::Flash::Recording),
         "live.music" | "musicPill" | "audio.reactive" => Flash(self::Flash::Music),
         "live.micCam" => Flash(self::Flash::Privacy),
+        "live.capsLock" => Flash(self::Flash::Caps),
+        "live.numLock" => Flash(self::Flash::Num),
+        "live.btBattery" => Flash(self::Flash::Bluetooth),
+        "notify.respectFocus" => Flash(self::Flash::Focus),
         "cards.duration" | "capture.shotAction" | "capture.revealAfterSave" => Flash(self::Flash::Toast),
         k if k.starts_with("module.") => Panel(Tab::Home),
         _ => return None,

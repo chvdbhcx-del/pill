@@ -475,6 +475,10 @@ fn every_reaction_has_a_scene_and_the_pages_a_start() {
         ("live.keyboardLayout", Flash::Kbd),
         ("live.virtualDesktopFlash", Flash::Vdesk),
         ("cards.duration", Flash::Toast),
+        ("live.capsLock", Flash::Caps),
+        ("live.numLock", Flash::Num),
+        ("live.btBattery", Flash::Bluetooth),
+        ("notify.respectFocus", Flash::Focus),
     ];
     for (k, f) in keys {
         assert_eq!(of_key(k), Some(Scene::Flash(f)), "{k}");
@@ -487,6 +491,28 @@ fn every_reaction_has_a_scene_and_the_pages_a_start() {
     assert_eq!(of_key("module.weather"), Some(Scene::Panel(Tab::Home)));
     assert_eq!(of_key("showTemp"), Some(Scene::Pill(Look::Clock)));
     assert_eq!(of_key("capture.encoder"), None);
+}
+
+#[test]
+fn the_indicator_scenes_draw_a_chip_on_the_folded_island() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("notifications", json!({"language": "en"}));
+        let base = shot(&mut t, "preview-ind-base", &th);
+        for (k, f) in [("live.capsLock", Flash::Caps), ("live.btBattery", Flash::Bluetooth)] {
+            set(&mut t, k, json!(false));
+            settle(&mut t, WIDE, &th);
+            set(&mut t, k, json!(true));
+            t.sim.pump();
+            t.sim.run(60);
+            let _ = t.sim.render(WIDE, &th);
+            t.sim.run(60);
+            let img = shot(&mut t, &format!("preview-ind-{k}"), &th);
+            assert_eq!(t.v.borrow().pv.scene(), Scene::Flash(f), "{k}");
+            assert!(img.diff(&base, 3) > 150, "{k}: the chip is on the island");
+        }
+    });
 }
 
 #[test]

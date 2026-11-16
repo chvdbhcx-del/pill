@@ -85,6 +85,8 @@ impl Live {
 
     /// Takes down what a reaction left on the folded island: the card on show, the music row, the recording capsule, the privacy dots.
     pub fn clear_reactions(&mut self) {
+        // the Focus Assist scene leaves Windows "quiet" with a card held: let go of it first, so the card it releases is taken down below
+        self.view.core.bus_event("focus:changed", &json!({ "quiet": false }), self.vnow);
         self.view.core.shell_event(Event::CardTtl(0.0), self.vnow);
         self.bus.emit("media:changed", json!({ "has_session": false, "playing": false }));
         self.bus.emit("rec:state", json!({ "recording": false }));

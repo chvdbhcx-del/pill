@@ -130,6 +130,15 @@ pub fn flash_events(kind: super::scene::Flash, flip: bool) -> Vec<(f64, &'static
             json!({ "has_session": true, "playing": true, "title": "Sample Track", "artist": "Sample Artist", "album": "", "session_id": "sample", "app": "Player.exe",
                 "position_ms": 61000, "duration_ms": 243000, "thumb_id": 0, "accent": "#2a7bc8" }),
         )],
+        Caps => vec![(0.0, "ind:lock", json!({ "key": "caps", "on": true }))],
+        Num => vec![(0.0, "ind:lock", json!({ "key": "num", "on": true }))],
+        Bluetooth => vec![(0.0, "ind:bt", json!({ "kind": "connect", "name": "Sample headset", "percent": 64 }))],
+        // Windows goes quiet, a card arrives and waits (the counter chip beside the time), then Windows is open again and the card shows
+        Focus => vec![
+            (0.0, "focus:changed", json!({ "state": "quiet-time", "quiet": true })),
+            (500.0, "capture:done", json!({ "kind": "screenshot", "path": "C:\\Sample\\Pictures\\sample-shot.png", "copied": true, "w": 1920, "h": 1080 })),
+            (3500.0, "focus:changed", json!({ "state": "open", "quiet": false })),
+        ],
         Privacy => vec![(0.0, "live:privacy", json!({ "mic": true, "cam": false, "apps": ["Sample app"] }))],
         Toast => vec![(0.0, "capture:done", json!({ "kind": "screenshot", "path": "C:\\Sample\\Pictures\\sample-shot.png", "copied": true, "w": 1920, "h": 1080 }))],
     }
