@@ -102,6 +102,7 @@ pub const ACTIONS: &[(&str, &str)] = &[
     ("mic", "Ctrl+Alt+M"),
     ("pipette", "Ctrl+Alt+C"),
     ("qr", "Ctrl+Alt+Shift+Q"), // Ctrl+Alt+Q is the always-on quit hotkey of pill.rs
+    ("keys", "Win+Alt+J"),      // keyboard mode of the island card / the music widget (islandkeys.rs)
     ("passThrough", ""),
     ("theme", ""),
     ("musicView", ""),

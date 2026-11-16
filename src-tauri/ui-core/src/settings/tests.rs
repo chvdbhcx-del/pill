@@ -264,7 +264,7 @@ fn no_row_needs_a_restart() {
 // ------------------------------------------------------------------------------------------------ the re-layout lost nothing
 
 // The settings.json keys of the 16-page schema this one replaced (a snapshot: none may be renamed, dropped or added by a re-layout).
-const OLD_KEYS: [&str; 181] = [
+const OLD_KEYS: [&str; 184] = [
     "shape", "theme", "island.color", "size",
     "monitor", "character", "character.liquid", "pet",
     "pet.side", "pet.size", "pet.keepDuringMusic", "showTime",
@@ -311,6 +311,8 @@ const OLD_KEYS: [&str; 181] = [
     "updateAuto", "whatsNew",
     // added with the live preview panel and with the bottom edge (the only keys since the re-layout)
     "settings.preview", "edge.position", "edge.align", "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset",
+    // keyboard-first use and accessibility: the keyboard-mode hotkey, high contrast, the command bar shortcuts
+    "hotkey.keys", "a11y.contrast", "command.shortcuts",
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
@@ -883,6 +885,9 @@ const UI_ONLY: &[(&str, &str)] = &[
     ("hotkey.qr", "settingswin::ACTIONS default"),
     ("hotkey.passThrough", "settingswin::ACTIONS default"),
     ("hotkey.vpn", "settingswin::ACTIONS default"),
+    ("hotkey.keys", "settingswin::ACTIONS default"),
+    ("a11y.contrast", "ui/a11y/contrast.rs: default auto (follow Windows high contrast)"),
+    ("command.shortcuts", "command/shortcuts.rs: default empty list"),
     ("hotkey.theme", "settingswin::ACTIONS default"),
     ("hotkey.musicView", "settingswin::ACTIONS default"),
 ];
@@ -964,7 +969,7 @@ fn hotkey_table_matches_settingswin() {
             Some((id.to_string(), combo.to_string()))
         })
         .collect();
-    assert_eq!(rust.len(), 17, "settingswin::ACTIONS parsed");
+    assert_eq!(rust.len(), 18, "settingswin::ACTIONS parsed");
     for a in hotkey::ACTIONS.iter() {
         match rust.get(a.id) {
             Some(c) => assert_eq!(c, a.default, "default combo of {}", a.id),

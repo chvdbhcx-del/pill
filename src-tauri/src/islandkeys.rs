@@ -1,8 +1,33 @@
-// Two global hotkeys about the look of the island (run from hotkeys.rs): the dark / light theme toggle and the silent cycle of the
-// pill's music view. Both only write a setting; the island follows `settings:changed` by itself, and no card is shown.
+// Global hotkeys about the island itself (run from hotkeys.rs): the dark / light theme toggle and the silent cycle of the pill's music
+// view (both only write a setting; the island follows `settings:changed` by itself, and no card is shown), and keyboard mode (`keys`).
+use crate::ui::a11y::target::{self, Target};
 use pill_ui_core::shell::tint;
 use serde_json::{json, Map};
 use tauri::AppHandle;
+
+/// Hotkey "keys" (default Win+Alt+J): keyboard control of the island card. First press: the card opens and the keys are its (Tab / arrows move
+/// the focus ring, Enter and Space act, Esc closes and returns the focus); second press: the music widget takes the keys, when it is on screen;
+/// third: off. The views do the rest: they listen to `a11y:keys` (see `ui/a11y/target.rs`, `island/view_kbd.rs`, `musicwidget/view.rs`).
+pub fn keyboard_mode(app: &AppHandle) {
+    let (now, up) = (target::active(), target::widget_up());
+    let next = target::next(now, up);
+    if next == Some(Target::Island) {
+        crate::pill::expand(app, None, "hotkey");
+    }
+    let say = move |t: Option<Target>| {
+        let _ = crate::ui::bus::emit(target::EVENT, json!({ "target": Target::name(t) }));
+    };
+    if now.is_some() && next.is_some() {
+        // the keyboard changes hands: the old owner gives it back first (so the user's window is the one the new owner remembers), then the new one takes it
+        say(None);
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(140));
+            say(next);
+        });
+    } else {
+        say(next);
+    }
+}
 
 /// Next value of `musicPill`: title -> mini -> lyrics -> title. Lyrics take part only when `lyrics_on` (the lyrics feature is chosen, or
 /// the view already is lyrics); an unknown value starts the round at the title.

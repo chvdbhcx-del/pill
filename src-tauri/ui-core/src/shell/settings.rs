@@ -136,6 +136,9 @@ pub struct ShellSettings {
     /// `island.color` (a ready colour or any hex) and `island.colorCustom` (typed hex, wins): the body colour of the capsule, see `tint`.
     pub color_pick: Option<Rgba>,
     pub color_custom: Option<Rgba>,
+    /// `a11y.hc.bg` (not a stored setting: the island view sends it while high contrast is on, see `ui/a11y/contrast.rs`): the system window colour.
+    /// While set, the body is this colour and fully opaque, whatever the colour and transparency settings say.
+    pub hc_bg: Option<Rgba>,
     /// `cards.duration` as a factor on every card's lifetime (short 0.6, normal 1, long 2).
     pub card_scale: f64,
     /// Chips beside the time, filled by the island (keyboard layout, virtual desktop): left column, right column. Not a setting.
@@ -182,6 +185,7 @@ impl Default for ShellSettings {
             quiet: QuietSettings::default(),
             color_pick: None,
             color_custom: None,
+            hc_bg: None,
             card_scale: 1.0,
             chips: [Vec::new(), Vec::new()],
             raw: Map::new(),
@@ -317,6 +321,7 @@ impl ShellSettings {
                 "monitor" => self.monitor = text(val),
                 "island.color" => self.color_pick = crate::shell::tint::parse_hex(&text(val)),
                 "island.colorCustom" => self.color_custom = crate::shell::tint::parse_hex(&text(val)),
+                "a11y.hc.bg" => self.hc_bg = crate::shell::tint::parse_hex(&text(val)),
                 "cards.duration" => self.card_scale = crate::shell::tint::card_scale(&text(val)),
                 "quiet.on" => self.quiet.on = *val == Value::Bool(true),
                 "quiet.from" => self.quiet.from = if val.is_null() { "22:00".into() } else { js_string(val) },
@@ -339,7 +344,9 @@ impl ShellSettings {
 
     /// `--op-col`: folded opacity (the pass-through mode has its own transparency, 0..80 %).
     pub fn op_col(&self) -> f64 {
-        if self.pass_through {
+        if self.hc_bg.is_some() {
+            1.0 // high contrast: no glass
+        } else if self.pass_through {
             1.0 - self.pass_through_opacity.clamp(0.0, 80.0) / 100.0
         } else {
             1.0 - self.opacity_col.clamp(0.0, 60.0) / 100.0
@@ -348,12 +355,15 @@ impl ShellSettings {
 
     /// `--op-exp`: expanded opacity.
     pub fn op_exp(&self) -> f64 {
+        if self.hc_bg.is_some() {
+            return 1.0;
+        }
         1.0 - self.opacity_exp.clamp(0.0, 60.0) / 100.0
     }
 
     /// The body colour the user chose (the typed hex beats the ready colour); `None` = the theme's own.
     pub fn island_color(&self) -> Option<Rgba> {
-        self.color_custom.or(self.color_pick)
+        self.hc_bg.or(self.color_custom).or(self.color_pick)
     }
 
     /// `data-theme` after the `auto` setting is resolved against the OS preference. A chosen body colour decides by its brightness.

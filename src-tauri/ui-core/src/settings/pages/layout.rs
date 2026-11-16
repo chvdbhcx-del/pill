@@ -169,7 +169,7 @@ pub(super) fn look(p: &mut Pool) -> Page {
                 vec![p.sec(tr("Цвет, прозрачность, положение", "Colour, transparency, position"), &["island.colorCustom", "opacityCol", "opacityExp", "offsetX", "underTaskbar"]).adv()],
             ),
             part(vec![p.sec(tr("Часы и дата", "Clock and date"), &["showTime", "showDate", "showSeconds", "clock24"])], vec![]),
-            part(vec![p.sec(tr("Анимация", "Animation"), &["reduceMotion"])], vec![p.sec(tr("Частота кадров и видеокарта", "Frame rate and GPU"), &["fps", "edgeIdleFps", "ui.gpu"]).adv()]),
+            part(vec![p.sec(tr("Анимация и контраст", "Motion and contrast"), &["reduceMotion", "a11y.contrast"])], vec![p.sec(tr("Частота кадров и видеокарта", "Frame rate and GPU"), &["fps", "edgeIdleFps", "ui.gpu"]).adv()]),
         ],
     )
 }
@@ -239,7 +239,7 @@ pub(super) fn general(p: &mut Pool) -> Page {
                 p.sec(tr("Запуск и язык", "Start and language"), &["language", "general.autostart"]),
                 p.sec(tr("Прятать остров", "Hiding the pill"), &["hideInFullscreen", "fullscreenPeek", "autoHide"]),
                 p.sec(tr("Тихие часы", "Quiet hours"), &["quiet.on", "quiet.from", "quiet.to", "quiet.days"]),
-                p.note(tr("Поиск в командной строке", "Command bar search"), browser, &["module.fileSearch", "search.engine", "search.customUrl"]),
+                p.note(tr("Поиск в командной строке", "Command bar search"), browser, &["module.fileSearch", "search.engine", "search.customUrl", "command.shortcuts"]),
                 p.sec(tr("Окно настроек", "Settings window"), &["settings.preview"]),
             ],
             vec![
@@ -262,7 +262,7 @@ pub(super) fn hotkeys(p: &mut Pool) -> Page {
         tr("Горячие клавиши", "Hotkeys"),
         vec![part(
             vec![
-                p.sec(tr("Остров, поиск, чат, диктовка и буфер", "Island, command bar, chat, dictation and clipboard"), &["hotkey.toggle", "hotkey.command", "hotkey.chat", "hotkey.voice", "hotkey.clipboard", "hotkey.pastePlain", "hotkey.mic"]),
+                p.sec(tr("Остров, поиск, чат, диктовка и буфер", "Island, command bar, chat, dictation and clipboard"), &["hotkey.toggle", "hotkey.keys", "hotkey.command", "hotkey.chat", "hotkey.voice", "hotkey.clipboard", "hotkey.pastePlain", "hotkey.mic"]),
                 p.sec(tr("Экран: запись, снимки, текст и цвет", "Screen: recording, shots, text and colour"), &["hotkey.record", "hotkey.shotArea", "hotkey.shotFull", "hotkey.ocr", "hotkey.pipette", "hotkey.qr"]),
                 p.sec(tr("Ярлыки лаунчера", "Launcher shortcuts"), &["hotkeys.launcher"]),
             ],

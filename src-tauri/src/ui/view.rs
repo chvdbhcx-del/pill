@@ -44,6 +44,24 @@ pub trait View {
         None
     }
 
+    /// The controls a keyboard or a screen reader can reach (window logical client px, see `ui::a11y::nav`): UI Automation shows them as the
+    /// children of the window's pane, keyboard mode walks them. Built from the same rectangles the view hit-tests with; empty = the pane alone.
+    /// Called on the UI thread, cheap, no side effects.
+    fn controls(&self) -> Vec<crate::ui::a11y::nav::Control> {
+        Vec::new()
+    }
+
+    /// The control that has the keyboard focus in keyboard mode (UIA `HasKeyboardFocus` / `GetFocus`), `None` outside it.
+    fn focused_control(&self) -> Option<u32> {
+        None
+    }
+
+    /// A screen reader (or keyboard mode) acts on control `id`. Return whether it was taken. The default does nothing.
+    fn control_act(&mut self, id: u32, act: crate::ui::a11y::nav::Act, cx: &mut Cx) -> bool {
+        let _ = (id, act, cx);
+        false
+    }
+
     /// The size (logical px) the view wants for its window, `None` = "whatever the window has". The host asks before every frame; a changed
     /// answer resizes the window (Overlay and Popup keep their anchor: the top centre; Normal windows only use it for their first size;
     /// Fullscreen ignores it). Return a stable frame and animate inside it: resizing a swap chain per frame is slow.

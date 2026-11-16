@@ -440,6 +440,19 @@ pub fn search() -> Page {
                     .kw(&["search", "engine", "google", "yandex", "bing", "duckduckgo", "поисковик", "яндекс", "поиск в браузере"]),
                     text("search.customUrl", tr("Адрес своего поисковика", "Custom search URL"), tr("Адрес с {q} на месте запроса, например https://example.com/?s={q}", "An address with {q} where the query goes, for example https://example.com/?s={q}"), TextKind::Url, same("https://…/?q={q}"), "")
                         .enabled(Cond::Eq("search.engine", json!("custom"))),
+                    Row::new(
+                        "command.shortcuts",
+                        "command.shortcuts",
+                        tr("Свои префиксы и закладки", "Your prefixes and bookmarks"),
+                        Control::Lines { rows: 4, mono: true, placeholder: same("g = https://www.google.com/search?q={query}"), exe_suffix: false },
+                        json!([]),
+                    )
+                    .hint(tr(
+                        "По одной на строку: приставка = адрес. С {query} в адресе «g кошки» откроет страницу с этим запросом, без него (gh = https://github.com) «gh» откроет закладку. До 20 записей, адрес http или https без запятых и «;»",
+                        "One per line: prefix = address. With {query} in the address, \"g cats\" opens the page for that query; without it (gh = https://github.com) \"gh\" opens the bookmark. Up to 20 entries, an http or https address without commas or \";\"",
+                    ))
+                    .kw(&["bookmark", "shortcut", "prefix", "search", "закладка", "приставка", "ярлык", "быстрый поиск", "алиас"])
+                    .block(),
                 ],
             ),
         ],

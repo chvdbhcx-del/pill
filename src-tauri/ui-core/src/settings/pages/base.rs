@@ -209,6 +209,17 @@ pub fn appearance() -> Page {
                     seg("clock24", tr("Формат часов", "Clock format"), Tr::NONE, vec![opt(json!(false), same("12 h")), opt(json!(true), same("24 h"))], json!(true)).kw(&["12", "24", "clock format", "формат времени"]),
                     toggle("showBattery", tr("Заряд батареи", "Battery charge"), tr("На компьютере с батареей", "On a computer that has a battery"), true),
                     toggle("reduceMotion", tr("Уменьшить анимацию", "Reduce motion"), Tr::NONE, false).kw(&["animation", "motion", "анимация", "движение", "accessibility", "reduced"]),
+                    seg(
+                        "a11y.contrast",
+                        tr("Высокая контрастность", "High contrast"),
+                        tr(
+                            "Остров без стекла и цветных оттенков: системные цвета, плотный контур в 2 px. «Авто» следует теме контрастности Windows; «Вкл» работает и без неё",
+                            "The island without glass or tints: the system colours and a solid 2 px outline. Auto follows the Windows contrast theme; On works without one too",
+                        ),
+                        vec![opt(json!("auto"), tr("Авто", "Auto")), opt(json!("on"), tr("Вкл", "On")), opt(json!("off"), tr("Выкл", "Off"))],
+                        json!("auto"),
+                    )
+                    .kw(&["contrast", "accessibility", "forced colors", "контраст", "контрастность", "доступность", "высокий контраст"]),
                 ],
             ),
             group(

@@ -50,6 +50,16 @@ use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const WM_APP_WAKE: u32 = WM_APP + 1;
+
+/// Windows said the colour scheme may have changed (every window gets the message: tell the views once). The views re-read the high-contrast
+/// state themselves (`ui::a11y::contrast`), the bus event only wakes them.
+fn note_contrast_change() {
+    static LAST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+    if now.saturating_sub(LAST.swap(now, std::sync::atomic::Ordering::Relaxed)) > 150 {
+        let _ = crate::ui::bus::emit(crate::ui::a11y::contrast::EVENT, serde_json::Value::Null);
+    }
+}
 const WM_MOUSELEAVE: u32 = 0x02A3;
 const T_MODAL: usize = 1;
 /// How long a window may want a frame without getting one before it stops waiting for its swap chain's latency handle (see `render_due`).
@@ -1526,9 +1536,19 @@ impl Host {
                 unsafe { super::uia::get_object(hwnd, wp, lp, text.map(|t| super::uia::announce(&t))) }
             }
             super::uia::WM_A11Y_REFRESH => {
-                let text = self.wins.get(&id).and_then(|w| w.view.accessible());
-                super::uia::store(hwnd, text.map(|t| super::uia::announce(&t)));
+                self.a11y_sync(id, hwnd, false);
                 Some(LRESULT(1))
+            }
+            super::uia::WM_A11Y_ACT => {
+                // a screen reader invoked / toggled / selected / set a control: the view runs the same code a key press does
+                let Some((cid, act)) = super::uia::take_act() else { return Some(LRESULT(0)) };
+                let mut taken = false;
+                self.call_view(id, |v, cx| {
+                    taken = v.control_act(cid, act, cx);
+                    Response::redraw()
+                });
+                self.a11y_sync(id, hwnd, true);
+                Some(LRESULT(taken as isize))
             }
             WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP | WM_LBUTTONDBLCLK | WM_RBUTTONDOWN | WM_RBUTTONUP | WM_RBUTTONDBLCLK | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_MBUTTONDBLCLK
             | WM_XBUTTONDOWN | WM_XBUTTONUP | WM_XBUTTONDBLCLK | WM_MOUSEWHEEL | WM_MOUSEHWHEEL | WM_MOUSELEAVE | WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP | WM_CHAR
@@ -1640,7 +1660,19 @@ impl Host {
                 self.sync_size(id);
                 Some(LRESULT(0))
             }
+            WM_SYSCOLORCHANGE | WM_THEMECHANGED => {
+                note_contrast_change(); // a high-contrast theme was switched on / off, or the colours of one changed
+                None
+            }
+            // Alt+1..9 are keyboard mode's tab shortcuts: swallow the mnemonic char so that DefWindowProc does not beep
+            WM_SYSCHAR if (b'1' as usize..=b'9' as usize).contains(&wp.0) => Some(LRESULT(0)),
             WM_DISPLAYCHANGE | WM_SETTINGCHANGE => {
+                if msg == WM_SETTINGCHANGE {
+                    let text = (lp.0 != 0).then(|| unsafe { PCWSTR(lp.0 as *const u16).to_string().unwrap_or_default() });
+                    if crate::ui::a11y::contrast::setting_change_matters(wp.0, text.as_deref()) {
+                        note_contrast_change();
+                    }
+                }
                 // refresh rate / monitor layout / "show animations" may have changed
                 for w in self.wins.values_mut() {
                     w.frame.request();
@@ -1660,6 +1692,23 @@ impl Host {
                 Some(LRESULT(0))
             }
             _ => None,
+        }
+    }
+
+    /// Store what the view says about itself (text, controls with screen bounds, keyboard focus) for the UIA provider. `raise`: also tell the
+    /// clients when the keyboard focus moved (only from our own thread flow, never from inside a provider's refresh).
+    fn a11y_sync(&mut self, id: WindowId, hwnd: HWND, raise: bool) {
+        let Some(win) = self.wins.get(&id) else { return };
+        super::uia::store(hwnd, win.view.accessible().map(|t| super::uia::announce(&t)));
+        let mut o = POINT::default();
+        unsafe {
+            let _ = ClientToScreen(hwnd, &mut o);
+        }
+        let items = win.view.controls().into_iter().map(|c| super::uia::Item { screen: super::uia::screen_rect((o.x, o.y), win.scale, c.rect), c }).collect();
+        if let Some(f) = super::uia::store_controls(hwnd, items, win.view.focused_control()) {
+            if raise {
+                super::uia::raise_focus(hwnd, f);
+            }
         }
     }
 
@@ -1705,6 +1754,9 @@ impl Host {
             }
         }
         let resp = self.call_view(id, |v, cx| v.event(&ev, cx));
+        if matches!(ev, InputEvent::Key { down: true, .. }) && super::uia::listening() {
+            self.a11y_sync(id, hwnd, true); // keyboard mode moved the focus: a screen reader should say where it is now
+        }
         let Some(win) = self.wins.get_mut(&id) else { return };
         unsafe {
             if resp.capture && !win.captured && matches!(ev, InputEvent::MouseDown { .. } | InputEvent::MouseMove { .. }) {
