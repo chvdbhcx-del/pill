@@ -87,7 +87,7 @@ Closed, Geometry(Geometry), Blur`. It is how `ui/lazy.rs` (`note_hidden` / `note
   display's refresh rate (60 / 75 / 144 / 240 Hz...), driven by the display, not by a timer. Nothing in the host caps the rate. The only
   throttles: `fps_cap` / `cx.set_fps_cap` (a caller's explicit choice), and a runaway guard that engages only if frames arrive closer
   than half a refresh period (an off-screen / covered / asleep swap chain that stopped pacing; it can never fire on a healthy window).
-* **Energy rules** (`ui/host/energy.rs`, Settings > Look > Advanced > Power). Explicit, visible rules; nothing is lowered silently.
+* **Energy rules** (`ui/host/energy.rs`, Settings > Performance > Power). Explicit, visible rules; nothing is lowered silently.
   Sensing is by OS notifications only (a hidden top-level `PillEnergy` window on the UI thread; message-only windows get neither power
   settings nor session events): Energy Saver (`GUID_POWER_SAVING_STATUS`, start value from `GetSystemPowerStatus`), AC / battery
   (`GUID_ACDC_POWER_SOURCE`), display (`GUID_CONSOLE_DISPLAY_STATE`; `GUID_SESSION_DISPLAY_STATE` is what a Remote Desktop session reports

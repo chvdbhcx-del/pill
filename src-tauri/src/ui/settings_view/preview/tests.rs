@@ -494,7 +494,7 @@ fn every_reaction_has_a_scene_and_the_pages_a_start() {
             assert!(pill_ui_core::settings::schema::schema().row_for_key(sw).is_some(), "{sw}");
         }
     }
-    assert_eq!(of_key("module.weather"), Some(Scene::Panel(Tab::Home)));
+    assert_eq!(of_key("module.weather"), Some(Scene::Panel(Tab::Home))); // the old key is still a Home-tab setting for the camera
     assert_eq!(of_key("showTemp"), Some(Scene::Pill(Look::Clock)));
     assert_eq!(of_key("capture.encoder"), None);
 }
@@ -571,6 +571,7 @@ fn every_function_page_opens_the_matching_scene() {
         let cases = [
             ("look", Scene::Pill(Look::Island)),
             ("edge", Scene::Pill(Look::Edge)),
+            ("performance", Scene::Pill(Look::Motion)),
             ("tabs", Scene::Panel(Tab::Home)),
             ("tools", Scene::Panel(Tab::Home)),
             ("weather", Scene::Panel(Tab::Weather)),
@@ -613,8 +614,8 @@ fn every_function_page_opens_the_matching_scene() {
     });
 }
 
-/// The sixteen pages of the sidebar, in order.
-const PAGES16: [&str; 16] = ["look", "edge", "tabs", "weather", "media", "voice", "clipboard", "capture", "tools", "phone", "ai", "notifications", "calendar", "general", "hotkeys", "updates"];
+/// The seventeen pages of the sidebar, in order.
+const PAGES16: [&str; 17] = ["look", "edge", "tabs", "weather", "media", "voice", "clipboard", "capture", "tools", "phone", "ai", "notifications", "calendar", "general", "performance", "hotkeys", "updates"];
 
 fn pages_with_the_panel(lang: &str, themes: &[(&str, Theme)]) {
     const SIZE: (f32, f32) = (1180.0, 760.0);
@@ -631,7 +632,7 @@ fn pages_with_the_panel(lang: &str, themes: &[(&str, Theme)]) {
     }
 }
 
-/// `PILL_SNAP_DIR=<dir> cargo test --release --locked -p pill the_function_pages_with_the_panel` writes the sixteen pages as PNGs (1180 x 760, English, dark and light).
+/// `PILL_SNAP_DIR=<dir> cargo test --release --locked -p pill the_function_pages_with_the_panel` writes the seventeen pages as PNGs (1180 x 760, English, dark and light).
 #[test]
 fn the_function_pages_with_the_panel() {
     gfx(|| {
@@ -926,7 +927,6 @@ const NO_PREVIEW: &[(&str, &str)] = &[
     ("capture.encoder", "which video encoder"),
     ("timer.sound", "the sound of a timer"),
     ("vpn.admin", "how the VPN client is started"),
-    ("history.keep", "the notification history is not a preview tab"),
     ("history.mail", "the notification history is not a preview tab"),
     ("search.engine", "the command bar is a window of its own"),
     ("everything.autostart", "starts a program"),
