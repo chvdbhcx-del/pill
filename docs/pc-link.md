@@ -11,8 +11,8 @@ LAN connection (M3), remote commands (never).
   connects it like a phone. The relay server needs no change: it knows only the labels `pc` and `phone` and forwards opaque frames.
 * Roles: the two ends of one room must use different labels. The PC that **showed** the pairing token is the relay's `pc` end (it seals with `c2p`,
   opens `p2c`), the one that **entered** it is the `phone` end (`Device::joiner`, seals `p2c`, opens `c2p`). Phones keep `pc` on the PC side.
-* `devices.json` is backward compatible: `kind`, `joiner`, `clipTo`, `clipFrom`, `revokedAt` have defaults (phone, off, on, on, none) and are not
-  written for a phone, so an old file loads unchanged and an old Pill reading a new file only sees records it ignores. `me` is this PC's id.
+* `devices.json` is backward compatible: `kind`, `joiner`, `clipTo`, `clipFrom`, `revokedAt` default to phone / off / off / off / none and are not
+  written for a phone (a paired PC is stored with both clipboard switches on), so an old file loads unchanged. `me` is this PC's id.
 * A PC has no bearer token (`tokenHash` is empty, `by_token("")` never matches): it proves itself with its keys only.
 
 ## Pairing (relay, one pasted token)
