@@ -9,6 +9,9 @@
 //!   `{kind: offer, status: pending}` -> "The phone wants to send: name" with Accept / Decline.
 //! * `phone:clip {device, name}` (a text from a phone was put on the PC clipboard) -> "Clipboard from <name>" for 2 s. The event never carries the text.
 //! * A badge with the number of listed notifications sits on the Phone tab.
+//! * The PC link (docs/pc-link.md): `pc:state {pair: {mode: show, state: request, peer: {name}}}` -> card `pc-pair` "<PC> wants to pair" with Allow / Deny
+//!   (45 s, urgent: shown even in quiet hours, the user just started it on the other PC; the same request does not pop up again); `pc:clip {name}` -> the
+//!   chip "Clipboard from <PC>" for 2 s. Neither carries the token or clipboard text.
 //!
 //! PRIVACY: message text only goes into the card data; nothing here logs or stores it.
 
@@ -39,6 +42,8 @@ fn s(v: &Value) -> String {
 pub struct PhoneLive {
     /// keys of the notifications on the phone tab's list (ongoing and replayed ones are not counted)
     listed: HashSet<String>,
+    /// the PC whose pairing request is on screen
+    asked: Option<String>,
 }
 
 impl PhoneLive {
@@ -115,15 +120,32 @@ impl PhoneLive {
         vec![LiveCmd::Toast(c)]
     }
 
-    fn clip(&self, env: &dyn Env, p: &Value) -> Vec<LiveCmd> {
-        if !env.live_on("phone") {
+    /// A text from a phone or (`pc`) a paired PC was put on the clipboard. One id: a second text replaces the chip instead of stacking.
+    fn clip(&self, env: &dyn Env, p: &Value, pc: bool) -> Vec<LiveCmd> {
+        if !pc && !env.live_on("phone") {
             return Vec::new();
         }
         let name = cut(&s(&p["name"]), 40);
-        let name = if name.is_empty() { env.tr("телефона", "phone") } else { name };
-        // one id: a second text while the card is still up replaces it instead of stacking
+        let name = if !name.is_empty() { name } else if pc { env.tr("компьютера", "PC") } else { env.tr("телефона", "phone") };
         let title = format!("{} {}", env.tr("Буфер от", "Clipboard from"), name);
-        vec![LiveCmd::Toast(CardSpec::text("phone-clip", CLIP_TTL_MS, title, None).icon(IconName::Clipboard))]
+        vec![LiveCmd::Toast(CardSpec::text(if pc { "pc-clip" } else { "phone-clip" }, CLIP_TTL_MS, title, None).icon(IconName::Clipboard))]
+    }
+
+    fn pair_request(&mut self, env: &dyn Env, p: &Value) -> Vec<LiveCmd> {
+        let pair = &p["pair"];
+        let who = (pair["mode"] == "show" && pair["state"] == "request").then(|| cut(&s(&pair["peer"]["name"]), 40));
+        if who == self.asked {
+            return Vec::new();
+        }
+        self.asked = who.clone();
+        let Some(who) = who else { return Vec::new() };
+        let mut c = CardSpec::text("pc-pair", 45_000, format!("{who} {}", env.tr("хочет подключиться", "wants to pair")), Some(env.tr("Общий буфер обмена с этим компьютером?", "Share the clipboard with this PC?"))).icon(IconName::Clipboard).tone(Tone::Accent);
+        c.urgent = true;
+        c.actions = vec![
+            CardAction::new(env.tr("Отклонить", "Deny"), ActionKind::Normal, Action::invoke("pc_pair", json!({ "op": "deny" }))),
+            CardAction::new(env.tr("Разрешить", "Allow"), ActionKind::White, Action::invoke("pc_pair", json!({ "op": "allow" }))),
+        ];
+        vec![LiveCmd::Toast(c)]
     }
 
     fn file(&self, env: &dyn Env, p: &Value) -> Vec<LiveCmd> {
@@ -160,7 +182,7 @@ impl Provider for PhoneLive {
         "phone"
     }
     fn events(&self) -> &'static [&'static str] {
-        &["phone:notif", "phone:files", "phone:state", "phone:clip"]
+        &["phone:notif", "phone:files", "phone:state", "phone:clip", "pc:state", "pc:clip"]
     }
     fn on_event(&mut self, env: &dyn Env, name: &str, p: &Value, _now: i64) -> Vec<LiveCmd> {
         match name {
@@ -183,7 +205,8 @@ impl Provider for PhoneLive {
                 _ => Vec::new(),
             },
             "phone:files" => self.file(env, p),
-            "phone:clip" => self.clip(env, p),
+            "phone:clip" | "pc:clip" => self.clip(env, p, name == "pc:clip"),
+            "pc:state" => self.pair_request(env, p),
             // the link went off or the phone left: nothing of it is listed any more
             "phone:state" if p["connected"].as_u64() == Some(0) || p["running"] == json!(false) => {
                 if self.listed.is_empty() {
@@ -253,6 +276,32 @@ mod tests {
         let mut off = MemEnv::en();
         off.set("live.phone", json!(false));
         assert!(toast(&p.on_event(&off, "phone:clip", &json!({ "name": "x" }), T0)).is_none());
+    }
+
+    fn asking(name: &str) -> Value {
+        json!({ "pair": { "mode": "show", "state": "request", "token": "PILL-X", "peer": { "name": name, "os": "Windows" } }, "peers": [] })
+    }
+
+    #[test]
+    fn a_pc_request_becomes_an_allow_deny_card_once_and_a_pc_text_a_chip_without_the_text() {
+        let (mut p, env) = (PhoneLive::default(), MemEnv::en());
+        let cmds = p.on_event(&env, "pc:state", &asking("LAPTOP-X"), T0);
+        let c = toast(&cmds).expect("a card");
+        assert_eq!((c.id.as_str(), c.ttl_ms, c.urgent), ("pc-pair", 45_000, true));
+        assert!(matches!(&c.body, CardBody::Text { title, sub: Some(_) } if title == "LAPTOP-X wants to pair"));
+        let acts: Vec<_> = c.actions.iter().map(|a| (a.label.as_str(), a.action.clone())).collect();
+        assert_eq!(acts, [("Deny", Action::invoke("pc_pair", json!({ "op": "deny" }))), ("Allow", Action::invoke("pc_pair", json!({ "op": "allow" })))]);
+        assert!(p.on_event(&env, "pc:state", &asking("LAPTOP-X"), T0).is_empty(), "the same request does not pop up again");
+        for st in [json!({ "pair": null }), json!({ "pair": { "mode": "enter", "state": "request", "peer": { "name": "X" } } })] {
+            assert!(p.on_event(&env, "pc:state", &st, T0).is_empty(), "{st}");
+        }
+        assert!(toast(&p.on_event(&env, "pc:state", &asking("LAPTOP-X"), T0)).is_some(), "after it ended, a new request is news");
+        let ru = PhoneLive::default().on_event(&MemEnv::default(), "pc:state", &asking("LAPTOP-X"), T0);
+        assert!(matches!(&toast(&ru).unwrap().body, CardBody::Text { title, .. } if title == "LAPTOP-X хочет подключиться"));
+        let chip = p.on_event(&env, "pc:clip", &json!({ "device": "d1", "name": "LAPTOP-X", "text": "must never be read" }), T0);
+        let c = toast(&chip).expect("a chip");
+        assert_eq!((c.id.as_str(), c.ttl_ms), ("pc-clip", 2000));
+        assert!(matches!(&c.body, CardBody::Text { title, sub: None } if title == "Clipboard from LAPTOP-X"));
     }
 
     #[test]

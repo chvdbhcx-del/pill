@@ -25,7 +25,6 @@ use super::indicators::IndicatorsLive;
 use super::ext::{NotificationLive, ObsLive, SteamLive, UninstallLive};
 use super::media::MediaLive;
 use super::model::{LiveCmd, Query};
-use super::pcs::PcLive;
 use super::phone::PhoneLive;
 use super::plus::{BatteryLive, CalendarLive, FileDoneLive, MailLive, UsbLive};
 use super::powertimer::PowerTimerLive;
@@ -100,7 +99,6 @@ impl Hub {
             Box::new(VpnLive::default()),
             Box::new(ShelfLive::default()),
             Box::new(PhoneLive::default()),
-            Box::new(PcLive::default()),
             Box::new(ActivityLive::default()),
         ])
     }
