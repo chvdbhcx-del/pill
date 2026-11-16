@@ -200,7 +200,7 @@ fn custom_widgets_and_actions_are_a_closed_vocabulary() {
     // the renderer must implement exactly these; adding one means adding it here and to the renderer
     let known: BTreeSet<&str> = [
         "character.reactions", "general.backup", "hotkeys.launcher", "modules.home", "modules.profiles", "modules.tabs", "search.everything", "ai.providers", "aisetup.intro", "aisetup.whisper", "aisetup.chat",
-        "voice.providers", "weather.city", "updates.whatsnew", "phone.link", "phone.devices", "phone.apps", "energy.cost",
+        "voice.providers", "weather.city", "updates.whatsnew", "phone.link", "phone.devices", "phone.apps", "energy.cost", "look.share",
     ]
     .into_iter()
     .collect();
@@ -316,7 +316,7 @@ const OLD_KEYS: [&str; 186] = [
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
-const OLD_UNSTORED: [&str; 38] = [
+const OLD_UNSTORED: [&str; 39] = [
     "character.reactions", "general.autostart", "behavior.hideAddActive",
     "behavior.showAddActive", "search.everything", "general.backup",
     "general.wizard", "hotkeys.launcher", "modules.profiles",
@@ -328,7 +328,7 @@ const OLD_UNSTORED: [&str; 38] = [
     "phone.devices", "phone.apps", "ai.key",
     "ai.list", "ai.test", "aisetup.intro",
     "aisetup.whisper", "aisetup.cloud-voice", "aisetup.chat",
-    "updates.check", "updates.whatsnew", "updates.report", "energy.cost", "updates.issue",
+    "updates.check", "updates.whatsnew", "updates.report", "energy.cost", "updates.issue", "look.share",
 ];
 
 /// Ids of rows that are gone on purpose (and why): "Set up a cloud AI" only jumped to the assistant section that now stands right above it,
@@ -710,7 +710,7 @@ fn rows_per_page() {
     eprintln!("rows per page: {counts:?}");
     // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch, the screen-edge choices (edge and side) and the four rows of the music widget
     let expect = [
-        ("look", 26), ("edge", 7), ("tabs", 3),
+        ("look", 27), ("edge", 7), ("tabs", 3),
         ("weather", 7), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
         ("notifications", 18), ("calendar", 12),
         ("phone", 16), ("ai", 14),

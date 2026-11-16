@@ -55,6 +55,8 @@ pub struct Data {
     /// the Phone page (QR, paired phones, apps)
     pub phone: super::cw_phone::PhoneData,
     pub energy: super::cw_energy::EnergyData,
+    /// Share your look (look.rs)
+    pub look: super::look::LookState,
 }
 
 impl Default for Data {
@@ -85,6 +87,7 @@ impl Default for Data {
             home: crate::ui::tabs::a::home::slots::Slots::new(),
             phone: Default::default(),
             energy: Default::default(),
+            look: Default::default(),
         }
     }
 }
@@ -134,6 +137,7 @@ impl SettingsView {
             "voice.providers" => self.w_providers(d, false, full, paint),
             "character.reactions" => self.w_reactions(d, full, paint),
             "general.backup" => self.w_backup(d, r, full, paint),
+            "look.share" => self.w_look(d, r, full, paint),
             "updates.whatsnew" => self.w_whatsnew(d, full, paint),
             "hotkeys.launcher" => self.w_launcher(d, r, full, paint),
             "modules.profiles" => self.w_profiles(d, r, full, paint),
@@ -183,6 +187,7 @@ impl SettingsView {
         }
         self.data.pops.retain(|_, p| p.moving());
         busy |= self.step_home_preview(dt as f64 * 1000.0);
+        busy |= self.step_look(dt);
         busy || self.data.job.is_some()
     }
 

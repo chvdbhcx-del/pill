@@ -136,6 +136,7 @@ impl SettingsView {
             Act::Import => {
                 self.call(cx, C::UiPickFile, "general.backup");
             }
+            Act::Look(a) => self.look_act(a, cx),
             Act::Disclosure => {
                 self.data.whatsnew_open = !self.data.whatsnew_open;
                 let to = self.data.whatsnew_open as u8 as f32;
@@ -207,6 +208,7 @@ impl SettingsView {
                 self.data.job_result = Some(("everything-".into(), m));
             }
             C::SettingsExport => self.row_message(&tag, flows::export_result(lang, &v)),
+            C::LookExport { .. } => self.look_export_reply(&v),
             C::SettingsImport { .. } => {
                 let (m, good) = flows::import_result(lang, &v);
                 self.row_message(&tag, m);

@@ -79,6 +79,8 @@ pub enum Act {
     PhoneRenew,
     PhoneRevoke(String),
     PhoneMute(String),
+    // share your look (look.rs)
+    Look(super::look::LookAct),
 }
 
 #[derive(Clone, Debug)]

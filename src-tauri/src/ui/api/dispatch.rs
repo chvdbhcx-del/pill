@@ -91,6 +91,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         "settings_set" => ok(settings::settings_set(app.clone(), a.req("patch")?)),
         "settings_export" => ok(settings_backup::settings_export()),
         "settings_import" => ok(settings_backup::settings_import(app.clone(), a.req("json_text")?)),
+        "look_export" => ok(settings_backup::look_export(a.req("file_name")?, a.req("text")?)),
         "sys_state" => ok(blk(system::sys_state())),
         "sys_set" => ok(blk(system::sys_set(a.req("key")?, a.req("value")?))),
         "sys_power" => ok(system::sys_power(a.req("action")?, a.req("confirmed")?)),

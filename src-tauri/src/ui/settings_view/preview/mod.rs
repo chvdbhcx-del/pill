@@ -305,8 +305,9 @@ impl SettingsView {
         let now = cx.now_ms;
         let model = &self.model;
         if pv.live.is_none() {
-            let values = shared_values(model.values());
-            pv.snap = seen_values(model.values());
+            let ov = self.data.look.overlay(model.values());
+            let values = shared_values(&ov);
+            pv.snap = seen_values(&ov);
             let live = Live::new(cx, values, &open::system_lang());
             live.emit("weather:current", sample::weather_now());
             pv.live = Some(live);
@@ -318,7 +319,7 @@ impl SettingsView {
             pv.touch(now);
         }
         // the settings that changed, at once (the window's own copy, not what the backend has saved yet)
-        let (patch, sc, touched) = pv.sync(model.values());
+        let (patch, sc, touched) = pv.sync(&self.data.look.overlay(model.values()));
         if touched {
             pv.touch(now);
         }

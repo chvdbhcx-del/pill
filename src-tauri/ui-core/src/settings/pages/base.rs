@@ -284,6 +284,16 @@ pub fn appearance() -> Page {
                     custom("energy.cost", tr("Стоимость кадра", "Frame cost"), Tr::NONE, "energy.cost").kw(&["cost", "cpu", "ms", "fps", "нагрузка", "процессор", "кадр", "performance"]),
                 ],
             ),
+            group(
+                tr("Поделиться оформлением", "Share your look"),
+                vec![custom(
+                    "look.share",
+                    tr("Файл или текст с оформлением", "A look file or text"),
+                    tr("Файл или текст только с видом острова: тема, цвета, размер, место, часы, питомец. Без переключателей модулей, ключей и личных данных", "A file or a text with the looks of the island only: theme, colours, size, place, clock, pet. No module switches, keys or personal data"),
+                    "look.share",
+                )
+                .kw(&["share", "look", "theme", "preset", "export", "import", "pilllook", "поделиться", "оформление", "вид", "пресет", "тема", "экспорт", "импорт"])],
+            ),
         ],
     )
 }
