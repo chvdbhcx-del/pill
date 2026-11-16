@@ -83,16 +83,18 @@ impl Live {
 
     /// New settings values (already filtered): the island hears them as the backend's `settings:changed`.
     pub fn patch(&mut self, patch: Map<String, Value>) {
-        {
+        let full = {
             let mut g = self.st.lock().unwrap_or_else(|e| e.into_inner());
             for (k, v) in &patch {
                 g.insert(k.clone(), v.clone());
             }
-        }
+            g.clone()
+        };
         let edge = patch.get("edge.position").and_then(|v| v.as_str()).map(|p| p == "taskbar");
         let island_moved = patch.contains_key("edge.position") || patch.contains_key("edge.align");
         if let Some(p) = self.player.as_ref().filter(|p| !p.leaving) {
-            p.bus.emit("settings:changed", Value::Object(patch.clone()));
+            // the widget reads the whole settings on every event, as the backend sends them (a patch alone would read as "the widget is off")
+            p.bus.emit("settings:changed", Value::Object(full));
         }
         self.bus.emit("settings:changed", Value::Object(patch));
         if let Some(on) = edge {
@@ -156,7 +158,7 @@ impl Live {
     }
 
     /// Takes down what a reaction left on the folded island: the card on show, the music row, the recording capsule, the privacy dots, the rows
-    /// of a download, the agents, OBS, the shelf and the load.
+    /// of a download, the agents, OBS and the shelf.
     pub fn clear_reactions(&mut self) {
         self.view.core.shell_event(Event::CardTtl(0.0), self.vnow);
         for (name, payload) in sample::clear_events() {

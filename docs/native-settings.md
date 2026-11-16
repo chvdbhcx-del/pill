@@ -106,8 +106,8 @@ preview on the right"; default on, the only settings key that the preview added)
 | file | what |
 |---|---|
 | `preview/mod.rs` | `Preview` (state), `step_preview` (panel width, sync of the settings, sandbox step, camera), `paint_preview` (stage, caption, the two buttons) |
-| `preview/live.rs` | the sandbox: a second `IslandView` on a `Cx` of its own |
-| `preview/scene.rs` | key -> `Scene` lookup (`of_key`), page start (`of_page`), `shareable` filter, captions |
+| `preview/live.rs` | the sandbox: a second `IslandView` on a `Cx` of its own, and beside it the standalone music widget (`Player`: a real `MusicView` on a `Cx` of its own) |
+| `preview/scene.rs` | key -> `Scene` lookup (`of_key`), page start (`of_page`), `shareable` filter and the `CAMERA` keys (`handled` = either), captions |
 | `preview/sample.rs` | `SampleApi` (the sandbox's backend), sample weather / clipboard, the payloads of the reactions |
 | `preview/tests.rs` | headless tests (see below) |
 
@@ -123,14 +123,32 @@ clipboard has invented lines, a notification is "Sample sender: ...".
 
 | setting(s) | scene |
 |---|---|
-| `shape` `theme` `island.color` `island.colorCustom` `size` `opacityCol` `opacityExp` `language` | the folded island |
+| `shape` `theme` `island.color` `island.colorCustom` `size` `opacityCol` `opacityExp` `language` `edge.position` `edge.align` | the folded island (close up; the edge and the side move it to the ceiling / the floor / a corner of the stage, the taskbar draws a strip under it) |
+| `offsetX` `underTaskbar` | the island on the SKETCH OF A MONITOR (below): shifted along the edge, standing above or over the taskbar strip |
+| `media.widget` `media.widget.edge` `media.widget.align` `media.widget.offset` (and the music reaction while the widget is on: `live.music` `musicPill` `audio.reactive`, the Media page) | the music widget on the sketch of a monitor, the island without a player; with the switch off the caption says it will not appear |
 | `showTime` `showDate` `showWxIcon` `showTemp` `showSeconds` `clock24` `showBattery` | the folded clock row (weather and 76 % battery are samples) |
 | `pet` `pet.*` / `character` `character.liquid` | the folded island with the pet / the edge style |
 | `reduceMotion` `fps` `edgeIdleFps` | the folded island, Replay shows the motion |
 | `net.weather` `weather.units` | the weather tab with the sample forecast |
 | `clipboard.*` `clipClickPaste` | the clipboard tab with sample items |
-| `module.*` `home.*` `music.lyrics` | the open island on Home (the tab strip changes) |
+| `module.*` `home.*` (the chips of "What is on Home": `home.volume` `home.recent` `home.tile.*`) `tabs.hidden` `music.lyrics` `audio.volumeTarget` | the open island on Home (the tab strip and the parts change) |
 | `live.copy` `live.keyboardLayout` `live.virtualDesktop*` `live.volume` `live.notifications` `live.battery` `live.usb` `live.dlDone` `live.reminders` `sound.reminder*` `live.recording` `live.music` `musicPill` `live.micCam` `cards.duration` `capture.shotAction` | the folded island with that reaction played from sample events; with the switch off the caption says it will not appear |
+| `live.downloads` `live.downloadRing` / `live.steam` / `live.shelf` / `live.agents` `agents.answerFromIsland` / `live.phone` / `live.calendar` / `live.mail` / `live.obs` | a download in progress (chip or ring) / a Steam download / the file-count chip / a working agent that then asks for an answer / a phone message card / a meeting card / a mail card / the REC chip. Invented data only (`sample::flash_events`); `live.calendar`, `live.mail` and `live.obs` are opt-in, so the caption says "switched off" until they are on |
+
+**The sketch of a monitor** (`Scene::Widget`, `Look::Place`; `Scene::screen`). Close up on the island cannot say where something stands on the screen, so these two scenes
+look at a fixed-scale sketch of a monitor (`SCREEN_W` x `SCREEN_H` = 880 x 480 css px) with its taskbar strip along the floor: the island and the widget are drawn at their real
+size on it, the island in its sandbox window (hung from the ceiling, standing on the floor, or in a corner), the widget in ITS window (`musicwidget::logic::WIN_REAL`, 688 x 448; in the
+taskbar `WIN_BAR_REAL`) against the edge it is docked to. The camera's own settings are read from the window's model, not sent to the sandbox (`scene::CAMERA`): `offsetX` /
+`media.widget.offset` shift a centred body along the edge (a percent of the screen width, kept on the screen; `dx_i` / `dx_w` Flows), `underTaskbar` raises a bottom body over the strip (`lift_i` /
+`lift_w`), `strip` fades the taskbar in, `mode` blends the close-up camera into the sketch. All targets are set in `step_preview`; Reduce motion lands them at once. In `Look::Place` the widget
+is drawn too when `media.widget` is on. The widget is made when the scene opens and again when its edge or side changes (the real window is re-created then too, so it slides in at the
+new place); a change of `size` only grows it, as in the real program. In the taskbar next to an island that is in the bar too, it takes the island's opposite side (a simplified `geom::widget_bar_slot`).
+The `Player` gets the WHOLE settings on every `settings:changed` (as the backend sends them; a patch alone would read as "the widget is off"), one invented track (`sample::widget_track`),
+and parks with the sandbox (`MusicView::preview_sleep` stops its 1 Hz tick; a `Tick` message restarts it on wake).
+
+**Nothing is silently missing.** `tests.rs` holds every keyed row of the schema to a scene (`handled` + `of_key`) or to `NO_PREVIEW`, the documented list of settings that show nothing
+(typed text and devices, things that would hide the preview, dictation, phone sync, ...) with the reason, and every section of every page to the same; a new visual setting fails the
+test until it is wired in `scene.rs` or listed there.
 
 A setting that is not in the table keeps the scene on show; opening a page starts the scene of its FIRST function (`of_page`: Weather -> weather tab, Tabs and Home, Tools -> Home tab, Clipboard ->
 clipboard tab, Notifications and cards -> a notification, Media and sound -> music, Voice to text -> the folded island, Screen capture -> a toast, Look, Edge and character -> the look of the folded island, the rest -> the folded island). On a merged page the scene follows the
@@ -149,7 +167,8 @@ weather sky do not count). Then `Live::sleep`: its queue stops waking the window
 change, Replay or page. A drawn re-measure posted while parked wakes it once. Reduce motion: the camera and the panel land at once and the island itself
 is told (`Cx::reduced_motion`).
 
-Tests (`preview/tests.rs`, all pixel tests run on one long-lived thread, see `gfx`): the panel follows `showSeconds` / `net.weather` / `live.copy` /
+Tests (`preview/tests.rs`, all pixel tests run on one long-lived thread, see `gfx`; write PNGs with `PILL_SNAP_DIR=<dir>`, one such test per `cargo test` run): the widget on the sketch (side, edge, centre
+and shifted, size, taskbar, off / on), the island above / over the taskbar and shifted, the eight added reactions, the Home chips and `tabs.hidden`, the widget parked and under Reduce motion, the coverage tables above; the panel follows `showSeconds` / `net.weather` / `live.copy` /
 `clipClickPaste` in the dark theme (PNG per step), light theme at 2x, Reduce motion, no panel below the threshold, Hide / the switch, Replay, parked and idle
 once settled, nothing typed by the user reaches the sandbox and the real backend is never called, no mouse / wheel effect, every reaction has a scene and
 sample events.

@@ -81,7 +81,7 @@ Changing the setting live (edge or side): the view slides the body out through t
 moves the window while nothing is visible), waits `EDGE_HOLD_MS` and slides the body in from the new edge (`Slide::In`). Reduce motion and a
 hidden island take the edge at once. `pill.rs` keeps the edge the window is on (`pill::dock`), which follows `edge.position` only through
 `pill_edge`. The settings preview (`settings_view/preview`) runs the same view in its sandbox; its camera stands the island on the floor of the
-stage when `Live::at_bottom`.
+stage when `Live::at_bottom`; `offsetX` and `underTaskbar` (the host's placement, not the view's) are read by the camera and shown on the sketch of a monitor.
 
 ## The music widget (`media.widget`): the player as its own window
 
@@ -127,8 +127,9 @@ island's z-order hook.
 
 De-duplication: while `media.widget` is on the island does not show the player. `ui-core` `live::media::update_live` gives no row and no `music` edge reaction
 (it re-reads on `settings:changed`, so the switch acts at once); `panel::a::home` treats the player part as off (`parts_on`, `media_on`) and `command::tab_on("home")` ignores the player when it is the only part on.
-The other Home parts re-flow to fill the freed place (no blank cell; the panel height follows through Flow, see "Home without the player"). The settings preview keeps its sample player
-(`media.widget*` are not shareable to the preview island). Turning the switch off gives everything back.
+The other Home parts re-flow to fill the freed place (no blank cell; the panel height follows through Flow, see "Home without the player"). The settings preview shows
+the widget itself: `media.widget*` go to its sandbox, which runs a real `MusicView` beside the island (invented track) on a sketch of a monitor with the chosen edge, side, offset and size, and the
+island there has no player (docs/native-settings.md, "The sketch of a monitor"). Turning the switch off gives everything back.
 
 ### Home without the player
 

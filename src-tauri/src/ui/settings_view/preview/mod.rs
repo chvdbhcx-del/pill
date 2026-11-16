@@ -31,7 +31,7 @@ use glasskit::geom::Rect;
 use glasskit::text::{Align, Style, VAlign};
 use live::Live;
 use pill_ui_core::settings::schema::schema;
-use scene::{handled, of_focus, of_key, of_page, shareable, Flash, Scene, CAMERA};
+use scene::{handled, of_focus, of_key, of_page, shareable, Flash, Look, Scene, CAMERA};
 use serde_json::{json, Map, Value};
 
 /// Width of the panel (css px) and the least width the page needs next to it (a card, 24 px on each side): below that the panel stays away.
@@ -203,7 +203,14 @@ impl Preview {
         }
         self.due.clear();
         let Some(live) = &mut self.live else { return };
-        if prev == Scene::Widget && sc != Scene::Widget {
+        // the music widget stands on the stage in its own scene, and on the sketch of the screen that shows where the island stands (when it is on)
+        if sc == Scene::Widget || (sc == Scene::Pill(Look::Place) && self.snap.get("media.widget") == Some(&json!(true))) {
+            if self.replay {
+                live.widget_restart();
+            } else {
+                live.widget_show();
+            }
+        } else {
             live.widget_leave();
         }
         // what the last reaction left on the island (a card, the music row, the recording capsule) goes before the next scene
@@ -227,12 +234,6 @@ impl Preview {
                 if self.open {
                     live.emit("pill:collapse", Value::Null);
                     self.open = false;
-                }
-                // Replay: the widget comes in again
-                if self.replay {
-                    live.widget_restart();
-                } else {
-                    live.widget_show();
                 }
             }
             Scene::Flash(f) => {

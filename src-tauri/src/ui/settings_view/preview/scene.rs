@@ -43,7 +43,6 @@ pub enum Flash {
     Progress,
     Steam,
     Shelf,
-    Sysmon,
     Agents,
     Phone,
     Calendar,
@@ -53,7 +52,7 @@ pub enum Flash {
 
 impl Flash {
     /// Every reaction the preview can play.
-    pub const ALL: [Flash; 22] = [
+    pub const ALL: [Flash; 21] = [
         Flash::Copy,
         Flash::Kbd,
         Flash::Vdesk,
@@ -70,7 +69,6 @@ impl Flash {
         Flash::Progress,
         Flash::Steam,
         Flash::Shelf,
-        Flash::Sysmon,
         Flash::Agents,
         Flash::Phone,
         Flash::Calendar,
@@ -96,7 +94,6 @@ impl Flash {
             Flash::Progress => "live.downloads",
             Flash::Steam => "live.steam",
             Flash::Shelf => "live.shelf",
-            Flash::Sysmon => "live.sysmon",
             Flash::Agents => "live.agents",
             Flash::Phone => "live.phone",
             Flash::Calendar => "live.calendar",
@@ -124,7 +121,6 @@ impl Flash {
             Flash::Progress => tr("Событие: загрузка идёт", "Event: download in progress"),
             Flash::Steam => tr("Событие: загрузка Steam", "Event: Steam download"),
             Flash::Shelf => tr("Событие: полка файлов", "Event: file shelf"),
-            Flash::Sysmon => tr("Событие: нагрузка системы", "Event: system load"),
             Flash::Agents => tr("Событие: ИИ-агенты", "Event: AI agents"),
             Flash::Phone => tr("Событие: сообщение с телефона", "Event: message from the phone"),
             Flash::Calendar => tr("Событие: календарь", "Event: calendar"),
@@ -186,8 +182,8 @@ impl Scene {
         }
         match self {
             Scene::Pill(Look::Motion) => tr("Нажмите «Повторить», чтобы увидеть движение ещё раз", "Press Replay to see the motion again"),
-            Scene::Pill(_) => tr("Так выглядит свёрнутый остров с этими настройками", "This is the folded island with these settings"),
             Scene::Pill(Look::Place) => tr("Набросок монитора с панелью задач внизу: край, сторона и сдвиг вдоль края", "A sketch of a monitor with its taskbar at the bottom: the edge, the side and the shift along it"),
+            Scene::Pill(_) => tr("Так выглядит свёрнутый остров с этими настройками", "This is the folded island with these settings"),
             Scene::Widget => tr("Пример трека: ваша музыка здесь не показывается. Остров без плеера, пока виджет включён", "A sample track: your own music is never shown here. The island has no player while the widget is on"),
             Scene::Panel(_) => tr("Пример данных: ваши данные здесь не показываются", "Sample data: your own data is never shown here"),
             Scene::Flash(_) => tr("Пример: так это появится на острове", "A sample of how it appears on the island"),
@@ -240,7 +236,6 @@ pub fn of_key(key: &str) -> Option<Scene> {
         "live.downloads" | "live.downloadRing" => Flash(self::Flash::Progress),
         "live.steam" => Flash(self::Flash::Steam),
         "live.shelf" => Flash(self::Flash::Shelf),
-        "live.sysmon" => Flash(self::Flash::Sysmon),
         "live.agents" | "agents.answerFromIsland" => Flash(self::Flash::Agents),
         "live.phone" => Flash(self::Flash::Phone),
         "live.calendar" => Flash(self::Flash::Calendar),

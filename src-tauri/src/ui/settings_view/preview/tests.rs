@@ -886,6 +886,7 @@ const NO_PREVIEW: &[(&str, &str)] = &[
     ("settings.preview", "the switch of the preview itself"),
     // behaviour without a look
     ("ui.gpu", "which renderer draws the windows"),
+    ("live.sysmon", "the load chip needs ten seconds of sustained load and then rests five minutes, and the meters are in the Controls tab"),
     ("audio.perApp", "which sources the player list reads"),
     ("media.legacyPlayers", "which players are read"),
     ("capture.annotate", "opens the editor after a screenshot"),
@@ -972,4 +973,268 @@ fn every_reaction_is_wired_to_a_key_a_switch_and_events() {
             assert!(sc.row_for_key(sw).is_some_and(|r| of_key(r.key) == Some(Scene::Flash(f))), "{sw} brings up {f:?}");
         }
     }
+}
+
+// ------------------------------------------------------------------------------------------------ the music widget and the island's place
+
+/// The stage of the panel on the window's pixels.
+fn stage_of(t: &T) -> Rect {
+    let p = pv_rect(WIDE);
+    Rect::new(p.x + 16.0, p.y + 48.0, PV_W - 32.0, t.v.borrow().pv.stage_h.at())
+}
+
+/// Opaque black (the body of an island or a widget) inside `r`.
+fn black_in(img: &Image, r: Rect) -> usize {
+    img.count(Some(r), |px| px[3] == 255 && px[0].max(px[1]).max(px[2]) < 10)
+}
+
+/// The black of the stage in its four quarters: (top left, top right, bottom left, bottom right).
+fn quarters(t: &T, img: &Image) -> (usize, usize, usize, usize) {
+    let s = stage_of(t);
+    let (w, h) = (s.w / 2.0, s.h / 2.0);
+    (black_in(img, Rect::new(s.x, s.y, w, h)), black_in(img, Rect::new(s.x + w, s.y, w, h)), black_in(img, Rect::new(s.x, s.y + h, w, h)), black_in(img, Rect::new(s.x + w, s.y + h, w, h)))
+}
+
+#[test]
+fn the_music_widget_stands_on_the_sketch_of_the_monitor_where_the_settings_put_it() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        // the island at the top in the middle, the widget at the bottom left (the defaults of the widget)
+        let mut t = wide("media", json!({"language": "en", "media.widget": true}));
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Widget, "the music reaction is the widget while the widget is on");
+        {
+            let v = t.v.borrow();
+            let g = v.pv.live.as_ref().unwrap().player().expect("the widget is in the sandbox");
+            assert_eq!((g.dock, g.align), (Dock::Bottom, Side::Left));
+            assert!(v.pv.mode.at01() > 0.99, "the camera looks at the sketch of the monitor");
+        }
+        let a = shot(&mut t, "widget-bottom-left", &th);
+        let (tl, tr, bl, br) = quarters(&t, &a);
+        assert!(bl > 150 && br * 6 < bl, "the capsule stands in the bottom left corner: {bl} / {br}");
+        assert!(tl + tr > 20, "the island hangs from the top: {tl} {tr}");
+        // the other side, the other edge
+        set(&mut t, "media.widget.align", json!("right"));
+        settle(&mut t, WIDE, &th);
+        let b = shot(&mut t, "widget-bottom-right", &th);
+        let (_, _, bl, br) = quarters(&t, &b);
+        assert!(br > 150 && bl * 6 < br, "and in the bottom right one: {bl} / {br}");
+        set(&mut t, "media.widget.edge", json!("top"));
+        settle(&mut t, WIDE, &th);
+        let c = shot(&mut t, "widget-top-right", &th);
+        let (tl, tr, bl, br) = quarters(&t, &c);
+        assert!(tr > 150 && bl + br < 60 && tl < tr, "at the top of the screen now: {tl} {tr} {bl} {br}");
+        // the middle, and shifted along the edge
+        set(&mut t, "media.widget.align", json!("center"));
+        settle(&mut t, WIDE, &th);
+        let img = shot(&mut t, "widget-top-centre", &th);
+        let (tl, tr, ..) = quarters(&t, &img);
+        assert!(tl > 100 && tr > 100, "the capsule sits across the middle: {tl} {tr}");
+        set(&mut t, "media.widget.offset", json!(30));
+        settle(&mut t, WIDE, &th);
+        let d = shot(&mut t, "widget-top-centre-shifted", &th);
+        let (tl2, tr2, ..) = quarters(&t, &d);
+        assert!(tr2 > tr + 60 && tl2 < tl, "30 % of the screen to the right: {tl} {tr} -> {tl2} {tr2}");
+        // the bigger the size, the bigger the widget (it follows the island's size)
+        set(&mut t, "media.widget.offset", json!(0));
+        settle(&mut t, WIDE, &th);
+        let img = shot(&mut t, "widget-top-centre-100", &th);
+        let (a1, a2, ..) = quarters(&t, &img);
+        set(&mut t, "size", json!(200));
+        settle(&mut t, WIDE, &th);
+        let img = shot(&mut t, "widget-top-centre-200", &th);
+        let (b1, b2, ..) = quarters(&t, &img);
+        assert!(b1 + b2 > (a1 + a2) * 2, "twice the size: {} -> {}", a1 + a2, b1 + b2);
+        assert!(t.calls("pill_edge").is_empty() && t.calls("settings_set").len() == 0, "nothing of it reaches the real windows");
+    });
+}
+
+#[test]
+fn the_music_widget_in_the_taskbar_goes_when_it_is_off_and_steps_aside_for_an_island_in_the_bar() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("media", json!({"language": "en", "media.widget": true, "media.widget.edge": "taskbar", "media.widget.align": "left"}));
+        {
+            let v = t.v.borrow();
+            let live = v.pv.live.as_ref().unwrap();
+            assert!(live.player_in_bar() && live.player().unwrap().dock == Dock::Taskbar);
+            assert!(v.pv.strip.at01() > 0.99, "the taskbar is on the stage");
+        }
+        let a = shot(&mut t, "widget-taskbar-left", &th);
+        let (_, _, bl, br) = quarters(&t, &a);
+        assert!(bl > 100 && br < bl / 3, "the capsule is inside the strip at the left: {bl} / {br}");
+        // the island stands in the bar at the left too: the widget is put at the right
+        let mut t2 = wide("media", json!({"language": "en", "media.widget": true, "media.widget.edge": "taskbar", "media.widget.align": "left", "edge.position": "taskbar", "edge.align": "left"}));
+        assert_eq!(t2.v.borrow().pv.live.as_ref().unwrap().player().unwrap().align, Side::Right);
+        let b = shot(&mut t2, "widget-taskbar-clear-of-the-island", &th);
+        let (_, _, bl, br) = quarters(&t2, &b);
+        assert!(bl > 20 && br > 100, "the island at the left, the widget at the right: {bl} / {br}");
+        // the switch off: the widget slides out (the caption says it is off); on again, it comes back
+        set(&mut t, "media.widget", json!(false));
+        settle(&mut t, WIDE, &th);
+        let c = shot(&mut t, "widget-switched-off", &th);
+        let (_, _, bl, _) = quarters(&t, &c);
+        assert!(bl < 40, "the widget has slid out: {bl}");
+        set(&mut t, "media.widget", json!(true));
+        settle(&mut t, WIDE, &th);
+        let d = shot(&mut t, "widget-switched-on-again", &th);
+        let (_, _, bl, _) = quarters(&t, &d);
+        assert!(bl > 100, "and slides in again: {bl}");
+    });
+}
+
+#[test]
+fn the_island_stands_where_offset_and_the_taskbar_rule_put_it_on_the_sketch() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("look", json!({"language": "en", "edge.position": "bottom"}));
+        set(&mut t, "offsetX", json!(10));
+        settle(&mut t, WIDE, &th);
+        set(&mut t, "offsetX", json!(0));
+        settle(&mut t, WIDE, &th);
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Pill(Look::Place), "a position row shows where the island stands on the screen");
+        let (lo, hi) = {
+            let s = stage_of(&t);
+            let a = shot(&mut t, "place-above-the-taskbar", &th);
+            // the rows of the island's body from the floor up: it stands above the strip
+            let strip = live::BAR_H * t.v.borrow().pv.zoom.at();
+            (black_in(&a, Rect::new(s.x, s.bottom() - strip, s.w, strip)), black_in(&a, Rect::new(s.x, s.bottom() - strip - 14.0, s.w, 14.0)))
+        };
+        assert!(hi > 100 && lo < hi / 2, "above the taskbar, not on it: {hi} over / {lo} on");
+        set(&mut t, "underTaskbar", json!(false));
+        settle(&mut t, WIDE, &th);
+        let s = stage_of(&t);
+        let b = shot(&mut t, "place-over-the-taskbar", &th);
+        let strip = live::BAR_H * t.v.borrow().pv.zoom.at();
+        let on = black_in(&b, Rect::new(s.x, s.bottom() - strip, s.w, strip));
+        assert!(on > lo + 80, "at the very edge, over the bar: {on}");
+        // the shift along the edge moves a centred island, and not a corner one
+        let (l0, r0) = (black_in(&b, Rect::new(s.x, s.y, s.w / 2.0, s.h)), black_in(&b, Rect::new(s.x + s.w / 2.0, s.y, s.w / 2.0, s.h)));
+        set(&mut t, "offsetX", json!(-40));
+        settle(&mut t, WIDE, &th);
+        let c = shot(&mut t, "place-shifted-left", &th);
+        let (l1, r1) = (black_in(&c, Rect::new(s.x, s.y, s.w / 2.0, s.h)), black_in(&c, Rect::new(s.x + s.w / 2.0, s.y, s.w / 2.0, s.h)));
+        assert!(l1 > l0 + 30 && r1 < r0, "40 % to the left: {l0} {r0} -> {l1} {r1}");
+    });
+}
+
+/// How many pixels of the stage differ between two shots (the caption under it changes with every scene, so the whole window cannot tell).
+fn stage_diff(t: &T, a: &Image, b: &Image) -> usize {
+    let s = stage_of(t);
+    let mut n = 0;
+    for y in s.y as i32..(s.y + s.h) as i32 {
+        for x in s.x as i32..(s.x + s.w) as i32 {
+            let (p, q) = (a.at(x as f32, y as f32), b.at(x as f32, y as f32));
+            if (0..3).any(|i| p[i].abs_diff(q[i]) > 3) {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+/// The reactions that had no scene before the preview showed them: each one is switched off and on in the window and plays with invented data
+/// (a download, a game, a file on the shelf, an agent, a phone message, a meeting, a mail, an OBS recording).
+#[test]
+fn the_other_live_events_play_on_the_folded_island_with_sample_data() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("look", json!({"language": "en"}));
+        let mut weak = Vec::new();
+        for (k, f) in [
+            ("live.downloads", Flash::Progress),
+            ("live.steam", Flash::Steam),
+            ("live.shelf", Flash::Shelf),
+            ("live.agents", Flash::Agents),
+            ("live.phone", Flash::Phone),
+            ("live.calendar", Flash::Calendar),
+            ("live.mail", Flash::Mail),
+            ("live.obs", Flash::Obs),
+        ] {
+            set(&mut t, k, json!(false));
+            settle(&mut t, WIDE, &th);
+            let base = shot(&mut t, &format!("preview-live-{k}-off"), &th);
+            set(&mut t, k, json!(true));
+            t.sim.pump();
+            t.sim.run(60);
+            let _ = t.sim.render(WIDE, &th);
+            t.sim.run(500);
+            let img = shot(&mut t, &format!("preview-live-{k}"), &th);
+            assert_eq!(t.v.borrow().pv.scene(), Scene::Flash(f), "{k}");
+            let d = stage_diff(&t, &img, &base);
+            eprintln!("LIVE {k}: {d}");
+            if d < 120 {
+                weak.push((k, d));
+            }
+        }
+        assert!(weak.is_empty(), "these reactions put nothing on the island: {weak:?}");
+    });
+}
+
+#[test]
+fn the_music_widget_costs_nothing_once_it_has_settled_and_respects_reduce_motion() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("media", json!({"language": "en", "media.widget": true}));
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Widget);
+        settle(&mut t, WIDE, &th);
+        assert!(!t.sim.frame.wants_frame(), "the window is idle");
+        let before = t.sim.frames_run;
+        for _ in 0..20 {
+            t.sim.now_ms += 500.0;
+            t.sim.pump();
+            t.sim.run(50);
+        }
+        assert_eq!(t.sim.frames_run, before, "no frames, and the widget's one-second tick has stopped with the park");
+        {
+            let v = t.v.borrow();
+            assert!(!v.pv.active() && v.pv.live.as_ref().is_some_and(|l| !l.is_awake() && l.player().is_some()), "parked, the widget still on the stage");
+        }
+        // a change wakes it again and it parks again
+        set(&mut t, "media.widget.align", json!("right"));
+        settle(&mut t, WIDE, &th);
+        assert!(!t.v.borrow().pv.active());
+        // reduced motion: the camera and the shift stand at their targets without a spring
+        glasskit::ease::force_reduced(Some(true));
+        set(&mut t, "reduceMotion", json!(true));
+        t.sim.cx.reduced_motion = true;
+        set(&mut t, "media.widget.offset", json!(20));
+        set(&mut t, "media.widget.align", json!("center"));
+        for _ in 0..3 {
+            t.sim.pump();
+            t.sim.run(3);
+            let _ = t.sim.render(WIDE, &th);
+        }
+        {
+            let v = t.v.borrow();
+            assert!(!v.pv.mode.moving() && !v.pv.dx_w.moving() && !v.pv.lift_w.moving() && !v.pv.strip.moving(), "reduced motion: nothing glides");
+        }
+        glasskit::ease::force_reduced(None);
+    });
+}
+
+/// What is on Home follows the chips of "What is on Home" and the tab strip at once (they write keys no schema row has).
+#[test]
+fn the_home_chips_and_the_tab_strip_change_the_open_island_in_the_preview() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("tabs", json!({"language": "en"}));
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Panel(Tab::Home));
+        let a = shot(&mut t, "preview-home", &th);
+        for (k, v) in [("home.volume", json!(false)), ("home.tile.qr", json!(false)), ("tabs.hidden", json!(["weather", "chat"]))] {
+            let before = shot(&mut t, "preview-home-before", &th);
+            set(&mut t, k, v);
+            settle(&mut t, WIDE, &th);
+            let after = shot(&mut t, &format!("preview-home-{k}"), &th);
+            assert_eq!(t.v.borrow().pv.scene(), Scene::Panel(Tab::Home), "{k}");
+            assert!(stage_diff(&t, &after, &before) > 60, "{k} changes the open island: {}", stage_diff(&t, &after, &before));
+        }
+        let end = shot(&mut t, "preview-home-end", &th);
+        assert!(stage_diff(&t, &end, &a) > 200);
+    });
 }

@@ -141,7 +141,6 @@ pub fn flash_events(kind: super::scene::Flash, flip: bool) -> Vec<(f64, &'static
             .collect(),
         // the first count is the baseline (no chip on a first listing): the shelf goes empty and then gets files, so the chip always shows
         Shelf => vec![(0.0, "shelf:changed", json!({ "count": 0, "items": [] })), (120.0, "shelf:changed", json!({ "count": 3, "items": [{ "id": 1 }, { "id": 2 }, { "id": 3 }] }))],
-        Sysmon => vec![(0.0, "sysmon:tick", json!({ "cpu": 97.0, "ram": { "usedMb": 21000, "totalMb": 32768 }, "gpus": [] }))],
         Agents => vec![
             (0.0, "agents:changed", agents_snapshot("working")),
             (1500.0, "agents:changed", agents_snapshot("waiting")),
@@ -174,7 +173,6 @@ pub fn clear_events() -> Vec<(&'static str, Value)> {
         ("live:download", json!({ "state": "gone", "id": "sample-dl" })),
         ("live:steam", json!({ "state": "idle" })),
         ("live:obs", json!({ "recording": false, "streaming": false, "recMs": 0, "streamMs": 0 })),
-        ("sysmon:tick", json!({ "cpu": 8.0, "ram": { "usedMb": 9000, "totalMb": 32768 }, "gpus": [] })),
         ("agents:changed", json!({ "working": 0, "waiting": 0, "sessions": [] })),
         ("agents:ask-gone", json!({ "id": "sample-ask" })),
         ("shelf:changed", json!({ "count": 0, "items": [] })),
