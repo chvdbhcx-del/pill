@@ -103,6 +103,9 @@ windows = { version = "0.58", features = [
   "Win32_System_Diagnostics_Debug", # watchdog.rs: MiniDumpWriteDump (needs Win32_System_Kernel too)
   "Win32_System_Kernel",
   "Win32_System_RemoteDesktop", # watchdog.rs: session unlock notification
+  "Win32_System_Pipes", # liveact.rs: the live-activity named pipe
+  "Win32_System_IO", # liveact.rs: CancelIoEx
+  "Win32_Security_Authorization", # liveact.rs: the pipe's access list (SDDL)
   # @windows-features
 ] }
 

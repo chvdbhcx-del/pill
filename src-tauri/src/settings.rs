@@ -41,6 +41,8 @@ pub(crate) fn defaults() -> Cfg {
     // third literal (recursion limit again): mail notifications (mail.rs), opt-in; the password lives DPAPI-encrypted in mail.passwordEnc, never plain
     let Value::Object(mail) = json!({ "live.mail": false, "mail.host": "", "mail.port": 993, "mail.user": "", "mail.mailbox": "INBOX" }) else { unreachable!() };
     m.extend(mail);
+    // liveact.rs: local live activities (a named pipe for the user's own programs), opt-in
+    m.insert("live.local".into(), json!(false));
     // capture.rs: markup on the selection, and the sound of a screen recording (PC sound on, microphone off; both stay on this PC)
     let Value::Object(cap) = json!({ "capture.annotate": true, "capture.recordSystemAudio": true, "capture.recordMic": false }) else { unreachable!() };
     m.extend(cap);

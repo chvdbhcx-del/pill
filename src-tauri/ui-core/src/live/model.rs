@@ -503,6 +503,8 @@ pub enum CardBody {
     Notification { title: String, body: Option<String>, app: String, max_title_lines: u8, max_body_lines: u8 },
     /// A phone notification with its own hover layout (see [`PhoneCard`]).
     Phone(PhoneCard),
+    /// A local live activity (`live::activity`): title, subtitle, a progress bar (0..1) and a short chip.
+    Activity { title: String, sub: Option<String>, progress: Option<f32>, chip: Option<String> },
     /// Picked colour: big swatch, `hex`, `rgb(..) · copied`, up to 9 recent colours.
     Color { hex: String, rgb: String, copied: String, history: Vec<Swatch> },
 }

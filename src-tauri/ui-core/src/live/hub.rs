@@ -15,6 +15,7 @@ use std::any::Any;
 
 use serde_json::Value;
 
+use super::activity::ActivityLive;
 use super::agents::{AgentsIo, AgentsLive};
 use super::board::{filter_quiet, Board, QUIET_SRC};
 use super::capture::{CaptureCards, RecLive};
@@ -96,6 +97,7 @@ impl Hub {
             Box::new(VpnLive::default()),
             Box::new(ShelfLive::default()),
             Box::new(PhoneLive::default()),
+            Box::new(ActivityLive::default()),
         ])
     }
 

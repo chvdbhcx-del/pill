@@ -24,6 +24,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `chat:focus` | pill | `()` | hotkeys.rs |
 | `clip:added` | pill | `item` | clipboard.rs |
 | `clip:open` | pill | `()` | hotkeys.rs |
+| `liveact:state` | pill | `s.reg.snapshot()` (`{ acts: [{ id, title, sub, icon, progress, chip, actions }], queued, expand: [id] }`; only while `live.local` is on) | liveact.rs |
 | `kbd:layout` | pill | `info(new)` | watch.rs |
 | `kbd:now` | pill | `info(lid)` | watch.rs |
 | `vdesk:now` | pill | `v` | vdesk.rs |
@@ -183,6 +184,9 @@ inside the taskbar" section of `native-island.md`). The `media.widget.edge` sett
 | `timer_state` | - | `TimerState` | timers.rs |
 | `sound_play` | `tone: Option<String>` | `()` | timers.rs |
 | `alert_ack` | `id: Option<i64>` | `()` | alert.rs |
+| `liveact_dismiss` | `id: String` | `bool` | liveact.rs |
+| `liveact_action` | `id: String, action: String` | `bool` | liveact.rs |
+| `liveact_test` | - | `Value` | liveact.rs |
 | `kbd_state` | - | `Option<Value>` | watch.rs |
 | `vdesk_state` | - | `Value` | vdesk.rs |
 | `vdesk_switch` | `dir: i64, wrap: Option<bool>` | `bool` | vdesk.rs |

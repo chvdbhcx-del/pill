@@ -310,6 +310,16 @@ pub fn live() -> Page {
         .enabled(on.clone()),
     );
     rows.push(button("live.mail.test", tr("Проверить подключение", "Test connection"), Tr::NONE, tr("Проверить подключение", "Test connection"), Action::MailTest, ButtonStyle::Small).enabled(on));
+    // local live activities (live::activity, liveact.rs): opt-in, off by default; the pipe does not exist while the switch is off
+    let (la_t, la_h) = (
+        tr("Живые активности от программ", "Live activities from programs"),
+        tr(
+            "Любая программа на этом ПК может показать на острове одну текущую задачу (сборка, экспорт, загрузка): название, полоску прогресса и до двух кнопок. Связь только локальная: именованный канал, открытый только вам, без сети. До трёх активностей сразу, любую можно закрыть, каждая сама пропадёт через заданное время (по умолчанию 10 минут, не дольше часа). Пока выключено, канал не открыт",
+            "Any program on this PC can show one ongoing task on the island (a build, an export, a download): a title, a progress bar and up to two buttons. Local only: a named pipe that only you can open, no network. Up to three at once, you can close any of them, and each ends by itself after its time-out (10 minutes by default, one hour at most). While the switch is off the pipe is not open",
+        ),
+    );
+    rows.push(toggle("live.local", la_t, la_h, false).kw(&["live activity", "activities", "pipe", "cli", "progress", "build", "export", "живая активность", "активности", "прогресс", "скрипт"]));
+    rows.push(button("live.local.test", tr("Проверить активность", "Test activity"), tr("Показывает пример на острове: так выглядят активности ваших программ", "Shows a sample on the island: this is how your programs' activities look"), tr("Показать пример", "Show a sample"), Action::LiveActTest, ButtonStyle::Small).enabled(Cond::On("live.local")));
     let mut p = page("live", "live", tr("Живые события", "Live events"), vec![group(Tr::NONE, rows)]);
     p.footnote = tr(
         "Что читается. Громкость: только уровень и «без звука» устройства вывода по умолчанию. Микрофон и камера: в реестре Windows (только чтение, ветка вашего пользователя) отметки о том, какое приложение сейчас пользуется устройством; звук и изображение не открываются и не читаются. Загрузки: только имена и размеры файлов во временных браузерных файлах (.crdownload, .part, .tmp) в папке «Загрузки»; содержимое файлов не читается. Готовый файл: только имена и размеры файлов в «Загрузках». Съёмные диски: список букв дисков. Батарея: уровень заряда и подключено ли питание. Календарь: только файл .ics, который вы указали. Пока переключатель выключен, ничего из этого не опрашивается.",

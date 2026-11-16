@@ -172,7 +172,7 @@ impl SettingsView {
             C::AiTest => self.row_message(&tag, flows::ai_test_result(lang, &v)),
             C::VoiceTestMic => self.row_message(&tag, flows::voice_mic_result(lang, &v)),
             C::VoiceTestService => self.row_message(&tag, flows::voice_service_result(lang, &v)),
-            C::MailTest => self.row_message(&tag, flows::mail_test_result(lang, &v)),
+            C::MailTest | C::LiveActTest => self.row_message(&tag, flows::mail_test_result(lang, &v)), // both answer `{ ok, message }`
             C::ReportProblem => self.row_message(&tag, flows::report_result(lang, &v)),
             C::AgentsHookSnippets => self.row_message(&tag, FMsg::plain(flows::snippets_text(lang, &v))),
             C::UpdateCheck => {

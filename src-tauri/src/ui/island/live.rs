@@ -263,6 +263,11 @@ pub fn layout_card_open(c: &lm::CardSpec, m: &dyn Meter, open: bool) -> CardLayo
             (tw.max(bw), 18.0 + if body.is_some() { 4.0 + 16.0 * body_lines as f32 } else { 0.0 })
         }
         CardBody::Phone(_) => (0.0, 0.0),
+        CardBody::Activity { title, sub, progress, chip } => {
+            let chip_w = chip.as_deref().map_or(0.0, |c| m.w(c, SUB) + 10.0);
+            let tw = (m.w(title, TITLE) + chip_w).max(sub.as_deref().map_or(0.0, |s| m.w(s, SUB))).max(if progress.is_some() { 140.0 } else { 0.0 }) + 6.0;
+            (tw, 18.0 + if sub.is_some() { 4.0 + 16.0 } else { 0.0 } + if progress.is_some() { 6.0 + 4.0 } else { 0.0 })
+        }
         CardBody::Color { hex, rgb, history, .. } => (m.w(rgb, SUB).max(m.w(hex, TITLE)).max(history.len() as f32 * 20.0), 18.0 + 4.0 + 16.0 + if history.is_empty() { 0.0 } else { 24.0 }),
     };
     let w = (pad_x * 2.0 + icon_w + if icon_w > 0.0 { gap } else { 0.0 } + tw + if actions_w > 0.0 { gap + actions_w - 8.0 } else { 0.0 }).clamp(160.0, MAX_W);
@@ -344,6 +349,26 @@ pub fn paint_card(cv: &Canvas, th: &Theme, gpu: &mut Gpu, c: &lm::CardSpec, lay:
             }
         }
         CardBody::Phone(_) => {}
+        CardBody::Activity { title, sub, progress, chip } => {
+            let cw = chip.as_deref().map_or(0.0, |c| cv.text_width(c, SUB) + 10.0);
+            cv.text(Rect::new(tr.x, tr.y, (tr.w - cw).max(0.0), 18.0), title, TITLE, th.text);
+            if let Some(c) = chip {
+                cv.text(Rect::new(tr.x + tr.w - cw, tr.y + 1.0, cw, 18.0), c, SUB.right(), th.accent);
+            }
+            let mut y = tr.y + 18.0;
+            if let Some(s) = sub {
+                cv.text(Rect::new(tr.x, tr.y + 22.0, tr.w, 16.0), s, SUB, th.dim);
+                y += 20.0;
+            }
+            if let Some(p) = progress {
+                // the bar sweeps to its value while the card comes in (`check` is the card's own 0..1 entry ramp)
+                let k = 1.0 - (1.0 - check.clamp(0.0, 1.0)).powi(3);
+                let bar = Rect::new(tr.x, y + 6.0, (tr.w - 6.0).max(0.0), 4.0);
+                cv.fill_rr(bar, 2.0, th.raised2);
+                let w = if *p > 0.0 { (bar.w * p.clamp(0.0, 1.0) * k).max(4.0) } else { 0.0 };
+                cv.fill_rr(Rect::new(bar.x, bar.y, w, bar.h), 2.0, th.accent);
+            }
+        }
         CardBody::Color { hex, rgb, copied, history } => {
             cv.text(Rect::new(tr.x, tr.y, tr.w, 18.0), hex, TITLE, th.text);
             cv.text(Rect::new(tr.x, tr.y + 22.0, tr.w, 16.0), &format!("{rgb} · {copied}"), SUB, th.dim);

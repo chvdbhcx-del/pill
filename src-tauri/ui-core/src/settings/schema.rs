@@ -117,6 +117,8 @@ pub enum Action {
     ObsSetPassword,
     MailSetPassword,
     MailTest,
+    /// Settings > Live activities: post a sample activity to the island.
+    LiveActTest,
     NotifAllow,
     ProfileSave,
     AiSetupLater,

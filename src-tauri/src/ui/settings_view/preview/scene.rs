@@ -38,6 +38,8 @@ pub enum Flash {
     Music,
     Privacy,
     Toast,
+    /// a local live activity (the sample)
+    Activity,
 }
 
 impl Flash {
@@ -56,6 +58,7 @@ impl Flash {
             Flash::Recording => "live.recording",
             Flash::Music => "live.music",
             Flash::Privacy => "live.micCam",
+            Flash::Activity => "live.local",
             Flash::Toast => return None,
         })
     }
@@ -74,6 +77,7 @@ impl Flash {
             Flash::Recording => tr("Событие: запись экрана", "Event: screen recording"),
             Flash::Music => tr("Событие: музыка", "Event: music"),
             Flash::Privacy => tr("Событие: микрофон и камера", "Event: microphone and camera"),
+            Flash::Activity => tr("Живая активность", "Live activity"),
             Flash::Toast => tr("Карточка на острове", "A card on the island"),
         }
     }
@@ -162,6 +166,7 @@ pub fn of_key(key: &str) -> Option<Scene> {
         "live.recording" | "capture.format" | "capture.fps" | "capture.recordSystemAudio" | "capture.recordMic" => Flash(self::Flash::Recording),
         "live.music" | "musicPill" | "audio.reactive" => Flash(self::Flash::Music),
         "live.micCam" => Flash(self::Flash::Privacy),
+        "live.local" | "live.local.test" => Flash(self::Flash::Activity),
         "cards.duration" | "capture.shotAction" | "capture.revealAfterSave" => Flash(self::Flash::Toast),
         k if k.starts_with("module.") => Panel(Tab::Home),
         _ => return None,
