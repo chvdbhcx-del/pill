@@ -207,7 +207,7 @@ private fun ScanArt() {
         val n = 9
         val pad = card * 0.12f
         val cell = (card - 2 * pad) / n
-        val ink = if (c.dark) c.text else Color(0xFF14141C)
+        val ink = if (c.dark) c.text else Color(0xFF161616)
         // deterministic pseudo-QR
         for (y in 0 until n) for (x in 0 until n) {
             val finder = (x < 3 && y < 3) || (x >= n - 3 && y < 3) || (x < 3 && y >= n - 3)

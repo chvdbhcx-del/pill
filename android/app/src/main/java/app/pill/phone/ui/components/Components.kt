@@ -77,7 +77,7 @@ fun Modifier.pressable(
         .clickable(interactionSource = source, indication = null, enabled = enabled, role = role, onClick = onClick)
 }
 
-/** Page background with two soft violet glows, like the desktop island's ambient light. */
+/** Page background with two soft accent glows, like the desktop island's ambient light. */
 @Composable
 fun PillBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
     val c = Pill.colors
@@ -95,13 +95,13 @@ private fun Modifier.drawAmbient(glow: Color, dark: Boolean): Modifier = drawBeh
     val h = size.height
     drawRect(
         Brush.radialGradient(
-            listOf(glow.copy(alpha = if (dark) 0.20f else 0.16f), Color.Transparent),
+            listOf(glow.copy(alpha = if (dark) 0.12f else 0.10f), Color.Transparent),
             center = Offset(w * 0.15f, -h * 0.02f), radius = w * 1.15f,
         ),
     )
     drawRect(
         Brush.radialGradient(
-            listOf(glow.copy(alpha = 0.10f), Color.Transparent),
+            listOf(glow.copy(alpha = 0.06f), Color.Transparent),
             center = Offset(w * 1.0f, h * 1.0f), radius = w * 1.2f,
         ),
     )
@@ -118,7 +118,7 @@ fun GlassCard(
     val c = Pill.colors
     val shape = RoundedCornerShape(PillShapes.Card)
     var m = modifier
-    if (!c.dark) m = m.shadow(10.dp, shape, ambientColor = c.accent.copy(alpha = 0.10f), spotColor = c.accent.copy(alpha = 0.16f))
+    if (!c.dark) m = m.shadow(10.dp, shape, ambientColor = Color.Black.copy(alpha = 0.06f), spotColor = Color.Black.copy(alpha = 0.10f))
     m = m.clip(shape)
         .background(Brush.verticalGradient(if (c.dark) listOf(c.surfaceHigh.copy(alpha = 0.85f), c.surface) else listOf(c.surface, c.surface)))
         .border(BorderStroke(1.dp, if (accentBorder) c.accent.copy(alpha = 0.45f) else c.border), shape)
@@ -151,7 +151,7 @@ fun PillButton(
         ButtonKind.Primary -> base
             .shadow(if (enabled) 14.dp else 0.dp, shape, ambientColor = c.accent.copy(alpha = 0.3f), spotColor = c.accent.copy(alpha = 0.55f))
             .clip(shape)
-            .background(Brush.horizontalGradient(if (c.dark) listOf(c.accentSoft, c.accent) else listOf(c.accent, Color(0xFF8E7BFF))))
+            .background(Brush.horizontalGradient(if (c.dark) listOf(c.accentSoft, c.accent) else listOf(c.accent, c.accentSoft)))
         ButtonKind.Glass -> base.clip(shape).background(c.surfaceHigh).border(1.dp, c.border, shape)
         ButtonKind.Danger -> base.clip(shape).background(c.bad.copy(alpha = 0.12f)).border(1.dp, c.bad.copy(alpha = 0.35f), shape)
         ButtonKind.Quiet -> base.clip(shape)
@@ -266,7 +266,7 @@ fun PillSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: M
             checkedTrackColor = c.accent,
             checkedBorderColor = Color.Transparent,
             uncheckedThumbColor = if (c.dark) c.textDim else Color.White,
-            uncheckedTrackColor = if (c.dark) c.surfaceHigh else Color(0xFFC9C7D8),
+            uncheckedTrackColor = if (c.dark) c.surfaceHigh else Color(0xFFC9C9C9),
             uncheckedBorderColor = c.border,
         ),
     )

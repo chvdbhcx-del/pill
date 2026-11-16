@@ -16,10 +16,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineBreak
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.pill.phone.R
 
 /** Design tokens shared with the desktop Pill (docs/phone-protocol.md, "App design notes"). */
 @Immutable
@@ -40,38 +43,40 @@ data class PillColors(
     val glow: Color,
 )
 
+// The colours of the desktop Pill itself (glasskit `Theme::pill_dark` / `pill_light`, `theme.css`): a pure black body with neutral grey cards,
+// white text and the periwinkle accent; green / amber / red are the island's own status colours. No violet tint anywhere.
 val DarkPillColors = PillColors(
     dark = true,
-    background = Color(0xFF0B0B0F),
-    surface = Color(0xFF15151C),
-    surfaceHigh = Color(0xFF1D1D27),
-    border = Color(0x14FFFFFF),
-    text = Color(0xFFF2F2F7),
-    textDim = Color(0xFF9A9AA8),
-    accent = Color(0xFF8E7BFF),
-    accentSoft = Color(0xFFB9AEFF),
-    onAccent = Color(0xFF110C33),
-    good = Color(0xFF5BE3A4),
-    warn = Color(0xFFFFC66B),
-    bad = Color(0xFFFF7A8A),
-    glow = Color(0xFF8E7BFF),
+    background = Color(0xFF000000),
+    surface = Color(0xFF0F0F0F),
+    surfaceHigh = Color(0xFF1C1C1C),
+    border = Color(0x1AFFFFFF),
+    text = Color(0xFFFFFFFF),
+    textDim = Color(0xFFABABAB),
+    accent = Color(0xFF8F96FF),
+    accentSoft = Color(0xFFB4B9FF),
+    onAccent = Color(0xFF0B0B14),
+    good = Color(0xFF58DDAB),
+    warn = Color(0xFFFFB340),
+    bad = Color(0xFFFF453A),
+    glow = Color(0xFF8F96FF),
 )
 
 val LightPillColors = PillColors(
     dark = false,
-    background = Color(0xFFF4F3FA),
-    surface = Color(0xFFFFFFFF),
-    surfaceHigh = Color(0xFFEDEBF8),
-    border = Color(0x140B0B1F),
-    text = Color(0xFF14141C),
-    textDim = Color(0xFF6A6A7C),
-    accent = Color(0xFF6B57F0),
-    accentSoft = Color(0xFF8E7BFF),
+    background = Color(0xFFF6F6F6),
+    surface = Color(0xFFE9E9E9),
+    surfaceHigh = Color(0xFFDEDEDE),
+    border = Color(0x1F000000),
+    text = Color(0xFF161616),
+    textDim = Color(0xFF555555),
+    accent = Color(0xFF5B63E6),
+    accentSoft = Color(0xFF8F96FF),
     onAccent = Color(0xFFFFFFFF),
-    good = Color(0xFF12945F),
-    warn = Color(0xFFB9710A),
-    bad = Color(0xFFD3394C),
-    glow = Color(0xFF8E7BFF),
+    good = Color(0xFF11805A),
+    warn = Color(0xFFB26A00),
+    bad = Color(0xFFD92D20),
+    glow = Color(0xFF5B63E6),
 )
 
 object PillShapes {
@@ -96,26 +101,35 @@ object Pill {
         @Composable @ReadOnlyComposable get() = LocalPillColors.current
 }
 
-private val Sans = FontFamily.Default
+/** Inter (bundled, OFL, Latin + Cyrillic): the same face on every phone, with real 400 / 600 / 700 weights. */
+private val Sans = FontFamily(
+    Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_bold, FontWeight.Bold),
+)
 
-private fun style(size: Int, weight: FontWeight, line: Int, spacing: Float = 0f) =
-    TextStyle(fontFamily = Sans, fontWeight = weight, fontSize = size.sp, lineHeight = line.sp, letterSpacing = spacing.sp)
+/** `breaks`: headings are wrapped balanced (no lone last word), running text with the high-quality paragraph breaker (no short last lines). */
+private fun style(size: Int, weight: FontWeight, line: Int, spacing: Float = 0f, breaks: LineBreak = LineBreak.Simple) =
+    TextStyle(fontFamily = Sans, fontWeight = weight, fontSize = size.sp, lineHeight = line.sp, letterSpacing = spacing.sp, lineBreak = breaks)
 
-/** One typeface (the system sans), three weights: 500 / 600 / 700. */
+/**
+ * One typeface, three weights, a clear ladder: headlines 700 and tight, titles and labels 600, running text 400 (it was all 500, so nothing stood out).
+ * Inter wants tighter tracking the bigger it gets and a touch of air when it is small; line heights run about 1.4 for text, 1.2 for headlines.
+ */
 val PillTypography = Typography(
-    displayMedium = style(34, FontWeight.Bold, 40, -0.4f),
-    headlineLarge = style(30, FontWeight.Bold, 36, -0.3f),
-    headlineMedium = style(26, FontWeight.Bold, 32, -0.2f),
-    headlineSmall = style(22, FontWeight.Bold, 28),
-    titleLarge = style(20, FontWeight.SemiBold, 26),
-    titleMedium = style(17, FontWeight.SemiBold, 22),
-    titleSmall = style(15, FontWeight.SemiBold, 20),
-    bodyLarge = style(16, FontWeight.Medium, 24),
-    bodyMedium = style(14, FontWeight.Medium, 20),
-    bodySmall = style(12, FontWeight.Medium, 16),
-    labelLarge = style(15, FontWeight.SemiBold, 20, 0.1f),
-    labelMedium = style(13, FontWeight.SemiBold, 16, 0.2f),
-    labelSmall = style(11, FontWeight.SemiBold, 14, 0.4f),
+    displayMedium = style(34, FontWeight.Bold, 40, -0.8f, breaks = LineBreak.Heading),
+    headlineLarge = style(30, FontWeight.Bold, 36, -0.7f, breaks = LineBreak.Heading),
+    headlineMedium = style(26, FontWeight.Bold, 32, -0.5f, breaks = LineBreak.Heading),
+    headlineSmall = style(22, FontWeight.Bold, 28, -0.35f, breaks = LineBreak.Heading),
+    titleLarge = style(20, FontWeight.SemiBold, 26, -0.25f, breaks = LineBreak.Heading),
+    titleMedium = style(17, FontWeight.SemiBold, 23, -0.15f, breaks = LineBreak.Heading),
+    titleSmall = style(15, FontWeight.SemiBold, 21, -0.1f, breaks = LineBreak.Heading),
+    bodyLarge = style(16, FontWeight.Normal, 24, -0.05f, breaks = LineBreak.Paragraph),
+    bodyMedium = style(14, FontWeight.Normal, 21, breaks = LineBreak.Paragraph),
+    bodySmall = style(12, FontWeight.Normal, 17, 0.05f, breaks = LineBreak.Paragraph),
+    labelLarge = style(15, FontWeight.SemiBold, 20, -0.05f),
+    labelMedium = style(13, FontWeight.SemiBold, 17, 0.05f),
+    labelSmall = style(11, FontWeight.SemiBold, 14, 0.2f),
 )
 
 private fun PillColors.toMaterial(): ColorScheme =

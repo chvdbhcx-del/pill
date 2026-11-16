@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.getValue
 import app.pill.phone.ui.PcUi
 import androidx.compose.animation.animateContentSize
@@ -290,23 +291,31 @@ private fun QuickActions(ui: HomeUi, a: HomeActions, modifier: Modifier) {
 private fun ActionPill(text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier, badge: Int? = null) {
     val c = Pill.colors
     val tint = if (c.dark) c.accentSoft else c.accent
-    // the pill is clipped to its shape, the badge sits on its rim (a notification-style count, never steals label width)
-    Box(modifier.pressable(onClick = onClick)) {
-        Row(
-            Modifier.fillMaxWidth().height(52.dp).clip(CircleShape).background(c.surfaceHigh).border(1.dp, c.border, CircleShape).padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    // the count rides on the icon (a notification-style badge, inside the pill so no parent clips it); the label makes room for it
+    val gap by animateDpAsState(if (badge != null) 12.dp else 8.dp, Motion.soft(), label = "actionGap")
+    Row(
+        modifier.pressable(onClick = onClick).fillMaxWidth().height(52.dp).clip(CircleShape).background(c.surfaceHigh).border(1.dp, c.border, CircleShape).padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(20.dp)) {
             Icon(icon, null, Modifier.size(20.dp), tint = tint)
-            Spacer(Modifier.width(8.dp))
-            Text(text, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            CountBadge(badge, Modifier.align(Alignment.TopEnd).offset(x = 14.dp, y = (-10).dp).wrapContentWidth(Alignment.End, unbounded = true)) // unbounded: the 20 dp icon box must not squeeze the digits
         }
-        AnimatedVisibility(badge != null, Modifier.align(Alignment.TopEnd).offset(x = (-12).dp, y = (-6).dp), enter = Motion.enterItem, exit = Motion.exitItem) {
-            Box(
-                Modifier.defaultMinSize(minWidth = 22.dp, minHeight = 22.dp).clip(CircleShape).background(c.accent).padding(horizontal = 6.dp),
-                contentAlignment = Alignment.Center,
-            ) { Text("${badge ?: 0}", style = MaterialTheme.typography.labelSmall, color = c.onAccent, maxLines = 1) }
-        }
+        Spacer(Modifier.width(gap))
+        Text(text, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** The small accent count on an action icon; it scales in and out with the number (a plain function so it gets the top-level AnimatedVisibility, not the Row's). */
+@Composable
+private fun CountBadge(count: Int?, modifier: Modifier) {
+    val c = Pill.colors
+    AnimatedVisibility(count != null, modifier, enter = Motion.enterItem, exit = Motion.exitItem) {
+        Box(
+            Modifier.defaultMinSize(minWidth = 16.dp, minHeight = 16.dp).clip(CircleShape).background(c.accent).padding(horizontal = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text("${count ?: 0}", style = MaterialTheme.typography.labelSmall, color = c.onAccent, maxLines = 1) }
     }
 }
 
