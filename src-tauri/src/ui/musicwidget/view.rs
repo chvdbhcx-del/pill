@@ -2,21 +2,24 @@
 //! (`media:changed`, `media_state`), sends the same commands (`media_control`, `media_seek`) and draws with the island's own pieces (`island::gpu`
 //! icons and covers, the liquid `Flow` / `Feel` springs). Behaviour lives in `logic.rs`; this file is the glue and the pixels.
 //!
+//! Look: the island's own player, see `view_paint.rs` (the open card is the Home player card, the folded capsule the music strip); the card's progress
+//! track is the loudness of the track as thin bars (`loud`).
+//!
 //! Motion (every value is a spring, every target is set in `step`/an event, never in `draw`):
 //! * enter / leave: `shown` slides the body from the screen edge (with a slight scale), `fade` is its opacity; it arrives with a soft landing and
 //!   leaves without a bounce; when it has left, the view hides its window. A window that is replaced (new placement settings) or moved (another
 //!   monitor, DPI, the bar) leaves the same way first and the new one comes in (`RETIRE_EVENT`, `SLOT_EVENT`);
 //! * hover: the cursor reaching the body (`ProximityEvent::Hover`) opens the capsule into the card (`expand`), leaving closes it. The parts the
 //!   two share (cover, title and artist, the buttons, the progress bar) MORPH between their places (`logic::parts`): the cover grows, the buttons
-//!   travel, the corners round off; only the album and the times fade in. A click while it moves turns it around from where it is (springs keep
+//!   travel, the corners round off; only the card's own things (tint, reflections, the lines, the times, the loudness bars) fade in. A click while it moves turns it around from where it is (springs keep
 //!   their velocity). In the TASKBAR the folded capsule has its own buttons, so hovering opens nothing there: a click on its cover or title opens
 //!   the card (`pinned`), a click on the card's cover / title (or the strip under it) or the cursor leaving folds it again;
 //! * a new track: the old title and artist (a `Ghost` each, so several in a row never flash) fade up and away while the new ones arrive one after
 //!   the other (`swap`), the cover cross-fades (`Gpu::cover_sized`), the accent colour eases to the new cover's (`acc`);
 //! * play / pause: the two icons cross-fade, turning small and back, with a pop (`pp`), a pressed button dips (`press`), a hovered one lights
 //!   (`hov`), prev / next nudge their way (`kick`);
-//! * the progress bar glides to each reading (`prog`; a step under one device px just lands), follows the pointer closely while scrubbing, and its
-//!   knob grows when it is hovered and again when it is dragged (`knob`).
+//! * the progress glides to each reading (`prog`; a step under one device px just lands), follows the pointer closely while scrubbing, and its
+//!   bars swell when it is hovered and again when it is dragged (`knob`); a bar that gets measured grows to its height (`loud`).
 //! Idle cost: nothing runs while the widget is hidden; while it shows, one 1 Hz tick (a `Ticker`) moves the clock and ends the grace of a pause,
 //! and frames run only while a spring moves.
 use super::logic::{self as lg, Btn, Hit, Presence, Stand, Track, BTNS};
@@ -364,7 +367,7 @@ impl MusicView {
     /// The cover worker (the island's Home player does the same): the cover's two colours (the card's tint) and its 24 x 24 sample, which smoothed up
     /// is the blurred cover the reflections are made of. Asked once per cover.
     fn request_cover(&mut self, cx: &mut Cx) {
-        let Some(url) = self.art_url.clone() else { return };
+        let Some(url) = self.art_url.clone().filter(|_| self.widget_on) else { return };
         let key = format!("cover:{}:{}", self.art_id, url.len());
         if self.cov_key.as_deref() == Some(&key) {
             return;

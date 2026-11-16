@@ -16,7 +16,11 @@
 //!   body grows from its corner / side. In the taskbar the capsule is still capped by the bar's height (`Stand::fold_h`) and the slot asked of the
 //!   bar is as wide as the scaled capsule (`taskbar::widget_place`). It uses the island's monitor (`monitor`; with `edge.monitor` = active the monitor the
 //!   island stands on right now, `MonitorSel::Island`: the island moves first, then `pill_edge` re-places the widget with it), the work area (`underTaskbar`) and `showInCapture`.
-//! * `view.rs` draws it and `logic.rs` decides everything (when it shows, the geometry, what a click hits); both are fed by the SAME backend
+//! * Look: the island's own player. The open card is the Home player card (the island's geometry, tint, reflections of the cover, text styles and
+//!   transport, in the style `home.player` says), the folded capsule is the island's music strip (cover, name, previous / play / next), all colours
+//!   from the island's theme and settings. The card's progress track is drawn as the loudness of the track (`wave.rs`, `view_wave.rs`: the player's
+//!   peak level is read ~8 times a second while it plays, kept per track; nothing is recorded).
+//! * `view.rs` draws it (`view_paint.rs`) and `logic.rs` decides everything (when it shows, the geometry, what a click hits); both are fed by the SAME backend
 //!   the island's player uses (`media:changed`, `media_state`, `media_control`, `media_seek`): there is no second media backend.
 //! * No de-duplication: the widget is a second view of the same player. The island keeps its title strip, its edge reaction and the player
 //!   on Home while `media.widget` is on (each is still governed by `module.media`, `live.music` and `home.player` alone).

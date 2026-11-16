@@ -591,7 +591,7 @@ pub fn parts(st: impl Into<Stand>, p: f32, dy: f32) -> Parts {
     let (ah, asub, ar) = if st.in_bar() {
         (a.text, a.text, bar_cover_radius(cap.h))
     } else {
-        (Rect::new(a.text.x, a.text.y + 3.0, a.text.w, 18.0), Rect::new(a.text.x, a.text.y + 21.0, a.text.w, 15.0), 7.0)
+        (Rect::new(a.text.x, a.text.y + 3.0, a.text.w, 18.0), Rect::new(a.text.x, a.text.y + 21.0, a.text.w, 15.0), CAP_COVER_R)
     };
     // a bar capsule too thin for a progress bar has none to grow from: the card's own shows
     let bar = if a.bar.h > 0.0 { mix(a.bar, b.bar, t) } else { b.bar };

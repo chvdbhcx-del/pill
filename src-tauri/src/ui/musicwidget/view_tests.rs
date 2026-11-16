@@ -214,3 +214,45 @@ fn the_bar_follows_the_pointer_closely_while_scrubbing_and_settles_back_to_its_o
     h.v.event(&InputEvent::MouseUp { pos: at(0.7), button: MouseButton::Left, mods: Modifiers::NONE }, &mut h.cx);
     assert_eq!(h.v.prog.feel(), Feel::DRAG, "released: the ordinary glide again");
 }
+
+#[test]
+fn the_card_takes_the_islands_player_style_from_the_settings() {
+    use pill_ui_core::panel::a::home_player::PlayerStyle;
+    let mut h = shown("Song");
+    assert_eq!(h.v.stand.style, PlayerStyle::Mirror, "the island's default");
+    let mirror = lg::parts(h.v.stand, 1.0, 0.0);
+    h.v.take_settings(&json!({ "media.widget": true, "home.player": "compact" }));
+    assert_eq!(h.v.stand.style, PlayerStyle::Compact);
+    let compact = lg::parts(h.v.stand, 1.0, 0.0);
+    assert!(compact.cover.x < mirror.cover.x && compact.cover.w > mirror.cover.w, "the compact card has the big cover at the left");
+    h.v.take_settings(&json!({ "media.widget": true }));
+    assert_eq!(h.v.stand.style, PlayerStyle::Mirror, "no setting: the default again");
+}
+
+#[test]
+fn the_cover_worker_brings_the_blurred_cover_and_the_tint_which_ease_from_the_last_cover() {
+    use crate::ui::tabs::a::draw::solid;
+    let _m = motion_on();
+    let mut h = shown("Song");
+    let red = (Color::rgb8(200, 50, 70), Color::rgb8(90, 20, 40));
+    let blue = (Color::rgb8(40, 90, 210), Color::rgb8(20, 30, 90));
+    let with_cover = |id: u64| json!({ "has_session": true, "playing": true, "title": "Song", "artist": "Band", "app": "Spotify.exe", "position_ms": 0, "duration_ms": 200_000, "thumb_id": id, "thumbnail": "data:image/png;base64,AAAA" });
+    h.apply(with_cover(7));
+    let key = h.v.cov_key.clone().expect("the worker was asked for this cover");
+    h.apply(with_cover(7));
+    assert_eq!(h.v.cov_key.as_deref(), Some(key.as_str()), "once per cover, not per reading");
+    assert!(!h.v.cover_ready(CoverReady { key: "cover:1:1".into(), colors: Some(red), tiny: None }), "an older cover's answer is ignored");
+    assert!(h.v.cover_ready(CoverReady { key: key.clone(), colors: Some(red), tiny: Some(solid(24, 24, [200, 50, 70, 255])) }));
+    assert!(h.v.images.contains(h.v.blur.as_deref().unwrap()) && h.v.cov_tint() == Some(red), "the first tint lands at once");
+    // another cover: the tint eases from the last one, and lands exactly
+    h.apply(with_cover(8));
+    let key2 = h.v.cov_key.clone().unwrap();
+    assert!(h.v.cover_ready(CoverReady { key: key2, colors: Some(blue), tiny: None }));
+    assert!(h.v.moving(), "it eases");
+    h.run(100.0);
+    let mid = h.v.cov_tint().unwrap();
+    assert!(mid != red && mid != blue, "between the two");
+    h.run(1500.0);
+    assert_eq!(h.v.cov_tint(), Some(blue));
+    assert!(!h.v.moving());
+}

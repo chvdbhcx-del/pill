@@ -393,7 +393,8 @@ impl SettingsView {
             go(&mut pv.dx_i, if live.aligned() == Side::Center && !in_bar { shift(off_island, bw) } else { 0.0 }, reduce);
             go(&mut pv.lift_i, if live.at_bottom() && !in_bar && clear_of_bar { live::BAR_H } else { 0.0 }, reduce);
             let pg = live.player();
-            go(&mut pv.dx_w, pg.filter(|g| g.align == Side::Center).map_or(0.0, |g| shift(off_widget, g.win.0)), reduce);
+            // the sketch's monitor is small: the room the widget has is measured by its window at 100 % (the window is as big as the largest size needs)
+            go(&mut pv.dx_w, pg.filter(|g| g.align == Side::Center).map_or(0.0, |g| shift(off_widget, g.win.0 / crate::ui::musicwidget::logic::KMAX)), reduce);
             go(&mut pv.lift_w, if pg.is_some_and(|g| g.dock == Dock::Bottom) && clear_of_bar { live::BAR_H } else { 0.0 }, reduce);
             go(&mut pv.strip, (screen || in_bar || live.player_in_bar()) as u8 as f32, reduce);
             if pv.placed && !reduce {
@@ -483,7 +484,7 @@ impl SettingsView {
                                 Dock::Bottom => stage.bottom() - lift_w * k - wh,
                                 Dock::Taskbar => stage.bottom() - wh,
                             };
-                            let xf = mul(&scale_about((0.0, 0.0), k, k), &translation(x.clamp(stage.x, (stage.right() - ww).max(stage.x)), y));
+                            let xf = mul(&scale_about((0.0, 0.0), k, k), &translation(x, y));
                             cv.with_transform(xf, |cv| live.draw_player(cv, d.th, cx));
                         }
                     }

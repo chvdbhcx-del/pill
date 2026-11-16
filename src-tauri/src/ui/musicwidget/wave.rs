@@ -96,11 +96,13 @@ impl Profile {
         self.lv
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.lv.iter().all(|v| *v == 0)
     }
 
     /// Bars that have a measurement.
+    #[cfg(test)]
     pub fn known(&self) -> usize {
         self.lv.iter().filter(|v| **v > 0).count()
     }
@@ -211,6 +213,7 @@ impl Memory {
         }
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.rows.len()
     }

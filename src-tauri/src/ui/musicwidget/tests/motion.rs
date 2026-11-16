@@ -230,8 +230,8 @@ fn open_sim(extra: Value, known: usize, url: &str, accent: &str) -> Sim {
     cover_worker(&mut s);
     s.send_proximity(&ProximityEvent::Hover);
     s.run(4000);
-    let _ = s.render(lg::WIN_REAL, &Theme::pill_dark());
-    s.run(4000);
+    // a few drawn frames: the cover is decoded by its first draw and fades in over the next ones
+    let _ = film(&mut s, &Theme::pill_dark(), lg::WIN_REAL, region(base(Dock::Bottom)), 30.0, 14);
     s
 }
 

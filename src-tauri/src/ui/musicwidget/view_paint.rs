@@ -129,7 +129,7 @@ impl Ink<'_> {
             });
         }
         // the progress: the capsule's hairline (the island's 4 px track, thinner) becomes the loudness bars of the card
-        let tc = track_color(self.th).mix(ink.fade(0.28), fk);
+        let tc = if self.hc { self.th.border } else { track_color(self.th) }.mix(ink.fade(0.28), fk);
         let acc = self.accent.mix(ink, fk);
         if card_a < 0.99 {
             cv.with_opacity(1.0 - card_a, |cv| self.hairline(cv, pt.bar, tc, acc));
