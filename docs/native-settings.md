@@ -172,7 +172,7 @@ sample events.
 `ai.providers`, `voice.providers` (chips, help, region warning, "Get a key" link) / `character.reactions` (reaction chips driving every preview) /
 `hotkeys.launcher` (list from `launcher_list`, one recorder each) / `modules.profiles` (list, Apply, Delete, name field + Save) / `weather.city`
 (field, results list, `weather_set_city`) / `search.everything` (status, Download, Run installer, progress box, 5 s status poll) /
-`general.backup` (Export, Import through the system file dialog) / `updates.whatsnew` (animated disclosure with the CHANGELOG notes) /
+`general.backup` (Export, Import through the system file dialog) / `look.share` (Share your look: file, text, built-in looks, preview before Apply, Undo toast; docs/native-look-share.md) / `updates.whatsnew` (animated disclosure with the CHANGELOG notes) /
 `aisetup.intro` (text) / `aisetup.whisper` (model chips, plan, progress, switch, delete-with-confirm) / `aisetup.chat` (found servers, Ollama installer
 and model catalog). Download jobs come from `aisetup:progress`.
 

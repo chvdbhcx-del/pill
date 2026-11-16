@@ -137,6 +137,7 @@ inside the taskbar" section of `native-island.md`). The `media.widget.edge` sett
 | `settings_set` | `patch: Cfg` | `Cfg` | settings.rs |
 | `settings_export` | - | `Value` | settings_backup.rs |
 | `settings_import` | `json_text: String` | `Value` | settings_backup.rs |
+| `look_export` | `file_name: String, text: String` | `Value` | settings_backup.rs (a `.pilllook` into Downloads, see native-look-share.md) |
 | `sys_state` | - | `SysState` | system.rs |
 | `sys_set` | `key: String, value: Value` | `Value` | system.rs |
 | `sys_power` | `action: String, confirmed: bool` | `Value` | system.rs |

@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Highlights
+- Share your look (Look > Share your look): save the island's appearance as a small `.pilllook` file or copy it as one line of text (`pill-look:...`) for a chat, and open one from a file or the clipboard. A look is shown in the live preview first; Apply writes it, Cancel leaves everything as it was, and a toast offers Undo. Four built-in looks (Midnight, Paper, Neon, Quiet) go through the same door. Only appearance travels: theme, colours, size, transparency, place, clock and date, edge style, pet, the player widget's place. No module or privacy switches, hotkeys, accounts, addresses or paths.
+
 ## [0.9.0] - 2026-11-16
 
 ### Highlights

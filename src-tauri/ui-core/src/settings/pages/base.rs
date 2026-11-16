@@ -247,7 +247,7 @@ pub fn appearance() -> Page {
                 tr("Поделиться оформлением", "Share your look"),
                 vec![custom(
                     "look.share",
-                    tr("Поделиться оформлением", "Share your look"),
+                    tr("Файл или текст с оформлением", "A look file or text"),
                     tr("Файл или текст только с видом острова: тема, цвета, размер, место, часы, питомец. Без переключателей модулей, ключей и личных данных", "A file or a text with the looks of the island only: theme, colours, size, place, clock, pet. No module switches, keys or personal data"),
                     "look.share",
                 )

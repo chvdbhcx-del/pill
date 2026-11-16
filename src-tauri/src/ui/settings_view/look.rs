@@ -42,17 +42,17 @@ pub enum LookAct {
 
 pub struct LookState {
     /// the look under preview (validated, not applied)
-    plan: Option<Plan>,
+    pub(super) plan: Option<Plan>,
     /// which built-in look it came from (its chip is lit)
     sample: Option<usize>,
     /// the banner's text while it is open or closing: (name, changes)
     info: Option<(String, usize)>,
-    banner: Flow,
+    pub(super) banner: Flow,
     /// the keys the preview was fed from the plan: they are put back when it ends
     shown: Vec<&'static str>,
     revert: Option<Map<String, Value>>,
-    undo: Option<Undo>,
-    toast: Flow,
+    pub(super) undo: Option<Undo>,
+    pub(super) toast: Flow,
     toast_at: f64,
     expiring: bool,
 }
@@ -252,7 +252,7 @@ impl SettingsView {
     }
 
     /// Text (a file, a paste, a built-in look) -> validated -> pending, shown in the preview. Nothing is written.
-    fn look_stage(&mut self, text: &str, sample: Option<usize>) {
+    pub(super) fn look_stage(&mut self, text: &str, sample: Option<usize>) {
         let lang = self.lang();
         let reduce = self.reduce();
         match look::parse(text).and_then(|l| look::plan(&l, &self.model)) {
