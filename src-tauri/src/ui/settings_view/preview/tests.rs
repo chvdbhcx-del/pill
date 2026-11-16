@@ -880,6 +880,7 @@ const NO_PREVIEW: &[(&str, &str)] = &[
     ("passThroughOpacity", "click-through: the preview takes no clicks anyway"),
     ("showInCapture", "whether screenshots of the screen show the island"),
     ("quiet.on", "quiet hours would mute the sample reactions"),
+    ("edge.monitor", "which monitor the island stands on: the preview has one sandbox screen"),
     ("energy.saver", "an energy rule: it would slow or pause the preview itself"),
     ("energy.battery", "an energy rule: it would slow or pause the preview itself"),
     ("energy.pauseLocked", "an energy rule: it would slow or pause the preview itself"),
