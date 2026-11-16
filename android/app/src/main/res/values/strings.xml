@@ -321,8 +321,8 @@
     <string name="upd_status_permission">Allow installing updates</string>
     <string name="upd_status_failed">Update didn’t work</string>
     <string name="upd_perm_body">Android asks you to allow Pill Phone to install apps. Switch it on in the settings that open, then come back.</string>
-    <string name="upd_last_checked">checked %1$s</string>
-    <string name="upd_never_checked">never checked</string>
+    <string name="upd_last_checked">Checked %1$s</string>
+    <string name="upd_never_checked">Never checked</string>
     <string name="upd_notes_title">What’s new</string>
     <string name="upd_btn_update">Update</string>
     <string name="upd_btn_update_to">Update to %1$s</string>
@@ -331,7 +331,8 @@
     <string name="upd_btn_check">Check now</string>
     <string name="upd_dismiss">Dismiss</string>
     <string name="upd_auto">Check for updates automatically</string>
-    <string name="upd_auto_body">Only a small version file is fetched from GitHub, when the app opens and at most every 12 hours. Nothing about you is sent, and nothing runs while the app is closed.</string>
+    <string name="upd_auto_short">When the app opens, at most every 12 hours.</string>
+    <string name="upd_auto_body">Only a small version file is fetched from GitHub. Nothing about you is sent, and nothing runs while the app is closed.</string>
     <string name="upd_fail_check">Couldn’t reach GitHub. Check your connection and try again.</string>
     <string name="upd_fail_server">The update information on GitHub couldn’t be read. Try again later.</string>
     <string name="upd_fail_download">The download was interrupted. Try again.</string>

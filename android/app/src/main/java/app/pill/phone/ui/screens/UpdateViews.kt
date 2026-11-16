@@ -204,7 +204,7 @@ fun UpdatesCard(ui: UpdateUi, version: String, a: UpdateActions, modifier: Modif
             } else stringResource(R.string.upd_never_checked)
             val sub = when (phase) {
                 UpdatePhase.Failed, UpdatePhase.NeedsPermission -> detail(ui)
-                else -> stringResource(R.string.settings_version, version) + "  ·  " + last
+                else -> stringResource(R.string.settings_version, version) + "\n" + last
             }
             SettingRow(stringResource(title, ui.latest.orEmpty()), subtitle = sub, icon = icon, iconTint = tint)
         }
@@ -219,8 +219,9 @@ fun UpdatesCard(ui: UpdateUi, version: String, a: UpdateActions, modifier: Modif
                 Progress(ui, Modifier.padding(top = 14.dp))
                 Spacer(Modifier.padding(top = 14.dp))
                 val busy = ui.phase.busy
-                AnimatedContent((ui.phase == UpdatePhase.Failed) to (ui.phase == UpdatePhase.NeedsPermission), transitionSpec = { fadeIn(Motion.calm()) togetherWith fadeOut(Motion.calm()) }, label = "updBtn") { (failed, perm) ->
+                AnimatedContent(Triple(ui.phase == UpdatePhase.Failed, ui.phase == UpdatePhase.NeedsPermission, busy), transitionSpec = { fadeIn(Motion.calm()) togetherWith fadeOut(Motion.calm()) }, label = "updBtn") { (failed, perm, _) ->
                     val text = when {
+                        busy -> detail(ui)   // "Downloading… 42%", "Verifying…", "Installing…"
                         failed -> stringResource(R.string.btn_try_again)
                         perm -> stringResource(R.string.upd_btn_allow_installs)
                         else -> stringResource(R.string.upd_btn_update_to, ui.latest.orEmpty())
@@ -235,8 +236,9 @@ fun UpdatesCard(ui: UpdateUi, version: String, a: UpdateActions, modifier: Modif
             kind = if (ui.latest != null) ButtonKind.Quiet else ButtonKind.Glass, loading = ui.phase == UpdatePhase.Checking, enabled = !ui.phase.busy,
         )
         Divider(Modifier.padding(vertical = 8.dp))
-        SettingRow(stringResource(R.string.upd_auto), subtitle = stringResource(R.string.upd_auto_body), icon = Icons.Rounded.Update) {
+        SettingRow(stringResource(R.string.upd_auto), subtitle = stringResource(R.string.upd_auto_short), icon = Icons.Rounded.Update) {
             PillSwitch(ui.auto, a.onAuto)
         }
+        Text(stringResource(R.string.upd_auto_body), Modifier.padding(top = 10.dp), style = MaterialTheme.typography.bodySmall, color = c.textDim)
     }
 }
