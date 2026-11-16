@@ -13,6 +13,8 @@ pub enum BackendCall {
     SettingsInfo,
     SettingsExport,
     SettingsImport { json_text: String },
+    /// Share your look: write `<file_name>` (a `.pilllook`) with `text` into Downloads and show it in Explorer
+    LookExport { file_name: String, text: String },
     ProfileSave { name: String },
     ProfileApply { name: String },
     ProfileDelete { name: String },
@@ -112,6 +114,7 @@ impl BackendCall {
             SettingsInfo => "settings_info",
             SettingsExport => "settings_export",
             SettingsImport { .. } => "settings_import",
+            LookExport { .. } => "look_export",
             ProfileSave { .. } => "profile_save",
             ProfileApply { .. } => "profile_apply",
             ProfileDelete { .. } => "profile_delete",
@@ -186,6 +189,7 @@ impl BackendCall {
         match self {
             SettingsSet { patch } => json!({ "patch": patch }),
             SettingsImport { json_text } => json!({ "jsonText": json_text }),
+            LookExport { file_name, text } => json!({ "fileName": file_name, "text": text }),
             ProfileSave { name } | ProfileApply { name } | ProfileDelete { name } => json!({ "name": name }),
             SettingsOpen { page } => json!({ "page": page }),
             AutostartSet { on } => json!({ "on": on }),
@@ -265,6 +269,8 @@ mod tests {
         assert_eq!(BackendCall::WeatherGet { force: true, tz_minutes: 180 }.args(), json!({"force": true, "tz": 180}));
         assert_eq!(BackendCall::AisetupWhisperSet { on: false, model: None }.args(), json!({"on": false, "model": null}));
         assert_eq!(BackendCall::SettingsExport.args(), Value::Null);
+        let c = BackendCall::LookExport { file_name: "a.pilllook".into(), text: "{}".into() };
+        assert_eq!((c.command(), c.args()), ("look_export", json!({"fileName": "a.pilllook", "text": "{}"})));
         let c = BackendCall::PhonePairCode { renew: true };
         assert_eq!((c.command(), c.args()), ("phone_pair_code", json!({"renew": true})));
         let c = BackendCall::PhoneRevoke { id: "d1".into() };

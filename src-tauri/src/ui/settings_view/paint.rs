@@ -92,6 +92,7 @@ impl SettingsView {
                     if let Some(pv) = parts.preview {
                         self.paint_preview(&d, pv, cx);
                     }
+                    self.paint_look_toast(&d, parts.content);
                 }
                 self.paint_title(&d, parts.title);
                 if self.loaded && !wizard {

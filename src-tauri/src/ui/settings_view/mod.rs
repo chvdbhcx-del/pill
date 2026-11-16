@@ -34,6 +34,7 @@ mod cw3b;
 mod cw_phone;
 mod cw_home;
 mod customacts;
+mod look;
 mod preview;
 mod prim;
 mod replies;
@@ -100,6 +101,8 @@ pub(crate) enum Local {
     Tick,
     /// the file the user picked for the settings import
     Picked(Result<String, String>),
+    /// the file the user picked for "Open file" of Share your look
+    LookPicked(Result<String, String>),
     /// the live preview's island has something for the window (a wake-up, nothing more)
     Pv,
 }

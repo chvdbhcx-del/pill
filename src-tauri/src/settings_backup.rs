@@ -122,6 +122,37 @@ pub fn settings_export() -> Value {
     json!({ "ok": true, "path": path.to_string_lossy() })
 }
 
+/// A file name for a shared look: letters, digits, `-` `_`, always `.pilllook`, never a path.
+fn safe_look_name(raw: &str) -> String {
+    let stem = raw.rsplit(['\\', '/']).next().unwrap_or("");
+    let stem = stem.strip_suffix(".pilllook").unwrap_or(stem);
+    let stem: String = stem.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' }).take(60).collect();
+    let stem = stem.trim_matches('-');
+    format!("{}.pilllook", if stem.is_empty() { "look" } else { stem })
+}
+
+/// Share your look: `<name>.pilllook` into Downloads (never over an older file: "name (2).pilllook") and selected in Explorer.
+/// The text is the look's JSON, written by the settings window; only its size is checked here (a look is a few hundred bytes).
+pub fn look_export(file_name: String, text: String) -> Value {
+    if text.is_empty() || text.len() > pill_ui_core::settings::look::MAX_FILE_BYTES {
+        return json!({ "ok": false, "error": "size" });
+    }
+    let name = safe_look_name(&file_name);
+    let dir = downloads_dir();
+    let mut path = dir.join(&name);
+    let mut n = 2;
+    while path.exists() && n < 100 {
+        path = dir.join(name.replace(".pilllook", &format!(" ({n}).pilllook")));
+        n += 1;
+    }
+    let written = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, text.as_bytes()));
+    if let Err(e) = written {
+        return json!({ "ok": false, "error": e.to_string() });
+    }
+    let _ = std::process::Command::new("explorer.exe").raw_arg(format!("/select,\"{}\"", path.display())).creation_flags(0x0800_0000).spawn();
+    json!({ "ok": true, "path": path.to_string_lossy() })
+}
+
 pub fn settings_import(app: tauri::AppHandle, json_text: String) -> Value {
     if json_text.len() > MAX_IMPORT {
         return json!({ "ok": false, "applied": 0, "skipped": 0, "error": "file is larger than 1 MB" });
@@ -237,5 +268,16 @@ mod tests {
         assert!(plain_value(&json!("mp4")) && plain_value(&json!(["chrome.exe", "obs64"])) && plain_value(&json!(true)));
         let (patch, skipped) = run(json!({ "capture.folder": "C:\\Videos", "capture.fps": 30 }));
         assert_eq!((patch.len(), skipped), (1, 1));
+    }
+
+    #[test]
+    fn a_shared_look_never_names_a_path() {
+        assert_eq!(safe_look_name("Midnight.pilllook"), "Midnight.pilllook");
+        assert_eq!(safe_look_name("..\\..\\Windows\\evil"), "evil.pilllook");
+        assert_eq!(safe_look_name("C:/x/y z.exe"), "y-z-exe.pilllook");
+        assert_eq!(safe_look_name("***"), "look.pilllook");
+        assert_eq!(safe_look_name("Моё оформление"), "Моё-оформление.pilllook");
+        assert_eq!(look_export("a".into(), String::new())["ok"], json!(false), "empty is refused");
+        assert_eq!(look_export("a".into(), "x".repeat(9000))["ok"], json!(false), "a look is small");
     }
 }
