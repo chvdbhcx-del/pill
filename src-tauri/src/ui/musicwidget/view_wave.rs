@@ -120,6 +120,14 @@ impl Loud {
     }
 }
 
+#[cfg(test)]
+impl MusicView {
+    /// Test hook: a track that was heard before (what the memory would hold), for the contact sheets.
+    pub(crate) fn seed_loudness(&mut self, key: u64, bytes: [u8; BARS]) {
+        self.loud.mem.get_or_insert_with(wave::load).put(key, bytes);
+    }
+}
+
 impl MusicView {
     /// Whether the player's level is being measured now: a track with a length is playing on a visible widget and Pill is not paused.
     pub(super) fn measuring(&self) -> bool {

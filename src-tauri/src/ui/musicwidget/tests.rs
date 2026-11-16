@@ -82,7 +82,7 @@ fn base(dock: Dock) -> lg::Stand {
     lg::Stand::from(dock)
 }
 fn bar_st(align: Align, bar: f32, scale: f32) -> lg::Stand {
-    lg::Stand { dock: Dock::Taskbar, align, bar, scale, k: 1.0, dx: 0.0 }
+    lg::Stand { dock: Dock::Taskbar, align, bar, scale, k: 1.0, dx: 0.0, style: Default::default() }
 }
 
 fn calls(f: &Fakes, name: &str) -> Vec<Value> {
@@ -161,7 +161,7 @@ fn a_playing_track_calls_the_window_up_and_it_settles_in_the_corner_with_the_hit
     assert!(s.run(4000) > 10, "the enter animation runs");
     let fx = s.take_fx();
     let r = hit_rect(&fx);
-    assert_eq!((r.x, r.w, r.h), (lg::PAD, lg::BODY_W, lg::CAPSULE_H), "the capsule, nothing more");
+    assert_eq!((r.x, r.w, r.h), (lg::PAD, lg::CAP_W, lg::CAPSULE_H), "the capsule, nothing more");
     assert!((r.bottom() - (lg::WIN_REAL.1 - lg::PAD)).abs() < 0.2, "standing on the bottom edge: {r:?}");
     assert!(!s.frame.wants_frame(), "settled: no frames at all");
     assert!(!fx.hide, "and it stays");
@@ -316,7 +316,7 @@ fn the_card_seeks_by_a_click_or_a_drag_and_commits_once_on_release() {
     s.send_proximity(&ProximityEvent::Hover);
     s.run(4000);
     let (_, card) = lg::frames(Dock::Bottom, 0.0, 0.0);
-    let bar = base(Dock::Bottom).rect_to_real(lg::card_layout(card).bar);
+    let bar = base(Dock::Bottom).rect_to_real(lg::card_layout(card, pill_ui_core::panel::a::home_player::PlayerStyle::Mirror).bar);
     let y = bar.cy();
     let r = s.send(&down(bar.x + bar.w * 0.25, y));
     assert!(r.capture && r.consumed, "the press is captured so the drag keeps going outside");
@@ -504,7 +504,7 @@ fn the_widget_scales_with_the_island_size_and_a_change_glides_from_its_corner_an
     media(&mut s, &f, state(true, "Song", 61_000));
     let r = hit_rect(&show(&mut s));
     assert_eq!(s.view.size_hint(), Some(lg::WIN_REAL), "the window never changes");
-    assert!((r.w - lg::BODY_W * 1.5).abs() < 0.6 && (r.h - lg::CAPSULE_H * 1.5).abs() < 0.6, "{r:?}");
+    assert!((r.w - lg::CAP_W * 1.5).abs() < 0.6 && (r.h - lg::CAPSULE_H * 1.5).abs() < 0.6, "{r:?}");
     assert!((r.x - lg::PAD * 1.5).abs() < 0.6 && (lg::WIN_REAL.1 - r.bottom() - lg::PAD * 1.5).abs() < 0.6, "it stands off its corner by the scaled margin: {r:?}");
     assert!(!s.frame.wants_frame(), "settled: no frames");
     // the island's slider goes to 100 %: a glide (frames), the corner holds, nothing moves afterwards
@@ -512,7 +512,7 @@ fn the_widget_scales_with_the_island_size_and_a_change_glides_from_its_corner_an
     assert!(s.run(4000) > 8, "the size glides");
     let fx = s.take_fx();
     let r2 = hit_rect(&fx);
-    assert!((r2.w - lg::BODY_W).abs() < 0.6 && (r2.h - lg::CAPSULE_H).abs() < 0.6 && (r2.x - lg::PAD).abs() < 0.6, "{r2:?}");
+    assert!((r2.w - lg::CAP_W).abs() < 0.6 && (r2.h - lg::CAPSULE_H).abs() < 0.6 && (r2.x - lg::PAD).abs() < 0.6, "{r2:?}");
     assert!(!fx.relayout && !fx.hide, "the window is neither moved nor re-created");
     assert!(!s.frame.wants_frame(), "and it idles");
     assert_eq!(s.run(100), 0);
@@ -677,7 +677,7 @@ fn hovering_the_bar_capsule_opens_nothing_a_click_on_the_cover_opens_the_card_up
     assert!(!s.frame.wants_frame() && fx.hit_region.as_ref().map_or(true, |r| (r[0].y - open.y).abs() < 0.01), "and it stays where it is");
     // another click on the card's cover folds it, the cursor leaving folds it too
     let (_, card) = lg::frames(st, 1.0, 0.0);
-    click(&mut s, st.to_real(lg::card_layout(card).title.center()));
+    click(&mut s, st.to_real(lg::card_layout(card, pill_ui_core::panel::a::home_player::PlayerStyle::Mirror).title.center()));
     assert!(s.run(4000) > 10);
     let back = hit_rect(&s.take_fx());
     assert!((back.y - folded.y).abs() < 0.5 && (back.h - folded.h).abs() < 0.5, "back in the bar: {back:?}");
@@ -729,7 +729,7 @@ fn the_open_card_in_the_bar_still_answers_its_buttons_and_the_folded_capsule_its
     assert_eq!(calls(&f, "media_control").last().map(|c| c["action"].clone()), Some(json!("play_pause")), "the compact capsule's play button works");
     open_by_click(&mut s, st);
     let (_, card) = lg::frames(st, 1.0, 0.0);
-    let next = st.to_real(lg::card_layout(card).btn[2].center());
+    let next = st.to_real(lg::card_layout(card, pill_ui_core::panel::a::home_player::PlayerStyle::Mirror).btn[2].center());
     s.send(&down(next.0, next.1));
     s.send(&up(next.0, next.1));
     assert_eq!(calls(&f, "media_control").last().map(|c| c["action"].clone()), Some(json!("next")), "and so does the card that floats above the bar");

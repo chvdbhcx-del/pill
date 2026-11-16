@@ -60,6 +60,12 @@ fn film(s: &mut Sim, th: &Theme, win: (f32, f32), region: Rect, step_ms: f64, n:
     out
 }
 
+/// The cover worker (a pool thread) answers a moment after a track arrives: wait for it and deliver the answer.
+fn cover_worker(s: &mut Sim) {
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    s.pump();
+}
+
 fn dir() -> Option<std::path::PathBuf> {
     let d = std::path::PathBuf::from(std::env::var("PILL_SNAP_DIR").ok()?);
     let _ = std::fs::create_dir_all(&d);
@@ -109,6 +115,7 @@ fn motion_sheets() {
         media(&mut s, &f, playing("Invented Song", 1, &red, "#cc3246", true, 61_000));
         s.show();
         s.run(4000);
+        cover_worker(&mut s);
         let _ = s.render(win, &th); // the cover is on screen (decoded) before it moves
         s.send_proximity(&ProximityEvent::Hover);
         save(&d, "m3-open.png", &film(&mut s, &th, win, r, 24.0, 16));
@@ -140,7 +147,7 @@ fn motion_sheets() {
         media(&mut s, &f, playing("Fourth Tune With A Fairly Long Title", 4, &gold, "#e6be3c", false, 5_000));
         let mut t = film(&mut s, &th, win, r, 24.0, 8);
         let (_, card) = lg::frames(Dock::Bottom, 1.0, 0.0);
-        let c = st.to_real(lg::card_layout(card).btn[1].center());
+        let c = st.to_real(lg::card_layout(card, pill_ui_core::panel::a::home_player::PlayerStyle::Mirror).btn[1].center());
         s.send(&mv(c.0, c.1));
         s.send(&down(c.0, c.1));
         t.extend(film(&mut s, &th, win, r, 24.0, 4));
@@ -150,7 +157,7 @@ fn motion_sheets() {
         save(&d, "m8-press-pause.png", &t);
 
         // 5. the scrub: hover the bar, press, drag
-        let bar = st.rect_to_real(lg::card_layout(card).bar);
+        let bar = st.rect_to_real(lg::card_layout(card, pill_ui_core::panel::a::home_player::PlayerStyle::Mirror).bar);
         s.send(&mv(bar.x + bar.w * 0.2, bar.cy()));
         let mut t = film(&mut s, &th, win, r, 24.0, 3);
         s.send(&down(bar.x + bar.w * 0.2, bar.cy()));
@@ -202,5 +209,96 @@ fn motion_sheets() {
         click(&mut b, bst.to_real(lg::capsule_layout_in(bst, cap).cover.center()));
         t.extend(film(&mut b, &th, lg::WIN_BAR_REAL, br, 24.0, 8));
         save(&d, "m11-bar-open-close.png", &t);
+    });
+}
+
+/// A widget with the card open (settings `extra`; a track heard before up to `known` bars of 32), settled and drawn once so that the cover is decoded.
+fn open_sim(extra: Value, known: usize, url: &str, accent: &str) -> Sim {
+    let (svc, f) = Services::fake();
+    f.api.reply("settings_get", Ok(cfg(extra)));
+    let mut s = Sim::with_services(Box::new(Blank), svc);
+    let mut v = MusicView::new(&mut s.cx, Dock::Bottom);
+    // a loudness profile as if the track had been heard (the memory is keyed by title, artist and length)
+    let bytes: [u8; 32] = std::array::from_fn(|i| if i < known { (60.0 + 190.0 * (0.5 + 0.5 * ((i as f32 * 0.7).sin() * (i as f32 * 0.23).cos()))) as u8 } else { 0 });
+    v.seed_loudness(crate::ui::musicwidget::wave::key_of("Invented Song", "Invented Band", 200_000), bytes);
+    s.view = Box::new(v);
+    s.set_refresh_hz(60.0);
+    s.pump();
+    media(&mut s, &f, playing("Invented Song", 1, url, accent, true, 61_000));
+    s.show();
+    s.run(4000);
+    cover_worker(&mut s);
+    s.send_proximity(&ProximityEvent::Hover);
+    s.run(4000);
+    let _ = s.render(lg::WIN_REAL, &Theme::pill_dark());
+    s.run(4000);
+    s
+}
+
+fn open_variant(extra: Value, known: usize, url: &str, accent: &str) -> Image {
+    let mut s = open_sim(extra, known, url, accent);
+    tile(&s.render(lg::WIN_REAL, &Theme::pill_dark()), region(base(Dock::Bottom)))
+}
+
+/// The bounding box of the pixels inside `r` for which `f` holds.
+fn bounds_in(img: &Image, r: Rect, f: impl Fn([u8; 4]) -> bool) -> Option<(u32, u32, u32, u32)> {
+    let (mut x0, mut y0, mut x1, mut y1) = (u32::MAX, u32::MAX, 0, 0);
+    for y in r.y as u32..r.bottom() as u32 {
+        for x in r.x as u32..r.right() as u32 {
+            if f(img.px(x, y)) {
+                (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x + 1), y1.max(y + 1));
+            }
+        }
+    }
+    (x1 > 0).then_some((x0, y0, x1, y1))
+}
+
+#[test]
+fn the_loudness_bars_are_painted_in_the_accent_up_to_the_playhead_and_in_the_track_colour_after_it() {
+    gfx(|| {
+        let _m = motion_on();
+        let red = art([200, 50, 70, 255], [90, 20, 40, 255]);
+        let st = base(Dock::Bottom);
+        let (_, card) = lg::frames(st, 1.0, 0.0);
+        let bar = st.rect_to_real(lg::card_layout(card, pill_ui_core::panel::a::home_player::PlayerStyle::Mirror).bar);
+        let accent = |p: [u8; 4]| (p[0] as i32 - 204).abs() < 34 && (p[1] as i32 - 50).abs() < 34 && (p[2] as i32 - 70).abs() < 34 && p[3] > 240;
+        let part = |a: f32, b: f32| Rect::new(bar.x + bar.w * a, bar.y, bar.w * (b - a), bar.h);
+        // a measured track: tall bars up to the playhead (61 s of 200 s), none of the accent after it
+        let mut s = open_sim(json!({}), 32, &red, "#cc3246");
+        let img = s.render(lg::WIN_REAL, &Theme::pill_dark());
+        let played = img.count(Some(part(0.0, 0.28)), accent);
+        assert!(played > 30, "the played part is in the accent: {played}");
+        assert_eq!(img.count(Some(part(0.34, 1.0)), accent), 0, "and nothing after the playhead");
+        let (_, y0, _, y1) = bounds_in(&img, part(0.0, 0.28), accent).expect("accent bars");
+        assert!(y1 - y0 >= 8, "measured bars have a height of their own: {}", y1 - y0);
+        // the grey of the rest is drawn (the island's track colour)
+        assert!(img.count(Some(part(0.4, 0.95)), |p| p[3] > 240 && (p[0] as i32 - 0x35).abs() < 10 && (p[1] as i32 - 0x35).abs() < 10) > 20);
+        // a track not heard before: flat placeholders as thin as the island's track
+        let mut s = open_sim(json!({}), 0, &red, "#cc3246");
+        let img = s.render(lg::WIN_REAL, &Theme::pill_dark());
+        let (_, y0, _, y1) = bounds_in(&img, part(0.0, 0.28), |p| accent(p) || (p[3] > 200 && p[0] > 90)).unwrap_or((0, 0, 0, 0));
+        assert!(y1 - y0 <= 5, "unmeasured bars are flat: {}", y1 - y0);
+    });
+}
+
+/// The same card in the island's three player styles, light and dark, and with a measured / half measured / unmeasured track.
+#[test]
+fn variant_sheets() {
+    let Some(d) = dir() else { return };
+    gfx(move || {
+        let _m = motion_on();
+        let red = art([200, 50, 70, 255], [90, 20, 40, 255]);
+        let blue = art([40, 90, 210, 255], [20, 30, 90, 255]);
+        let t = [
+            open_variant(json!({}), 32, &red, "#cc3246"),
+            open_variant(json!({}), 14, &blue, "#2850d2"),
+            open_variant(json!({}), 0, &blue, "#2850d2"),
+            open_variant(json!({ "theme": "light" }), 32, &red, "#cc3246"),
+            open_variant(json!({ "home.player": "compact" }), 32, &red, "#cc3246"),
+            open_variant(json!({ "home.player": "fill" }), 32, &blue, "#2850d2"),
+            open_variant(json!({ "home.player": "compact", "theme": "light" }), 14, &blue, "#2850d2"),
+            open_variant(json!({ "home.player": "fill", "theme": "light" }), 32, &red, "#cc3246"),
+        ];
+        save(&d, "m14-variants.png", &t);
     });
 }

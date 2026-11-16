@@ -131,7 +131,7 @@ fn a_step_of_the_bar_under_a_pixel_just_lands_and_a_bigger_one_glides() {
     let _m = motion_on();
     let mut h = shown("Song");
     h.v.prog.jump(0.5);
-    let one_px = 1.0 / (lg::BODY_W - 2.0 * lg::CARD_PAD) / h.v.stand.bs();
+    let one_px = 1.0 / lg::card_layout(Rect::new(0.0, 0.0, lg::BODY_W, lg::CARD_H), h.v.stand.style).bar.w / h.v.stand.bs();
     h.v.glide_prog(0.5 + 0.5 * one_px);
     assert!(!h.v.prog.moving() && h.v.prog.at() == 0.5 + 0.5 * one_px, "half a device px: it lands, no frames");
     h.v.glide_prog(0.5 + 3.0 * one_px);

@@ -21,18 +21,21 @@
 //! and frames run only while a spring moves.
 use super::logic::{self as lg, Btn, Hit, Presence, Stand, Track, BTNS};
 use loud::Loud;
+use paint::Ink;
 use crate::ui::host::geom::{Align, Dock};
 use crate::ui::island::gpu::Gpu;
 use crate::ui::liquid::{Feel, Flow};
+use crate::ui::tabs::a::draw::ImageCache;
+use crate::ui::tabs::a::home::{css, player::PlayerFx};
 use crate::ui::tabs::a::core::{Tick, Ticker};
 use crate::ui::view::{Cx, Msg, ProximityEvent, Ticket, View};
 use glasskit::canvas::{scale_about, translation, Canvas};
 use glasskit::geom::Rect;
 use glasskit::input::{Cursor, InputEvent, MouseButton, Response};
-use glasskit::text::Style;
 use glasskit::theme::Theme;
 use glasskit::Color;
 use pill_ui_core::live::lyrics::Clock;
+use pill_ui_core::panel::a::home_player::PlayerStyle;
 use pill_ui_core::shell::color::Theme as ShellTheme;
 use pill_ui_core::shell::settings::ShellSettings;
 use serde_json::{json, Value};
@@ -44,18 +47,12 @@ mod kbd; // keyboard mode, UIA controls and high contrast of the widget
 #[path = "view_wave.rs"]
 mod loud; // the loudness of the track as it is learned (the waveform's bars)
 
+#[path = "view_paint.rs"]
+mod paint; // the pixels: the island player's card and the music strip capsule
+
 #[cfg(test)]
 #[path = "view_tests.rs"]
 mod tests; // the view's own motion state: springs, ghosts, accent, bar
-
-const TITLE: Style = Style::new(13.0, 600).ellipsis();
-const SUB: Style = Style::new(11.5, 450).ellipsis();
-/// The artist's line box is a little lower than the title's so that the two share a baseline (their centres differ with the size).
-const SUB_DROP: f32 = 0.5;
-const BIG: Style = Style::new(15.0, 650).ellipsis();
-const MID: Style = Style::new(12.0, 450).ellipsis();
-const SMALL: Style = Style::new(11.0, 450);
-const TIMES: Style = Style::new(11.0, 500).mono();
 
 /// The bus event `pill.rs` emits when the fullscreen guard starts / stops hiding the island: `{ "hidden": bool }`.
 pub const GUARD_EVENT: &str = "pill:guard";
@@ -81,10 +78,19 @@ const PROG_GLIDE_PX: f32 = 1.0;
 /// The scale the body enters / leaves with (at 1 it stands at rest).
 const ENTER_SCALE: f32 = 0.94;
 
+/// The cover worker's answer (`request_cover`).
+struct CoverReady {
+    key: String,
+    colors: Option<(Color, Color)>,
+    tiny: Option<crate::ui::tabs::a::draw::Decoded>,
+}
+
 /// The title and the artist of a track that was replaced: they fade up and away on their own spring, whatever the next track does.
 struct Ghost {
     head: String,
     sub: String,
+    /// the card's second line (artist - album)
+    line: String,
     a: Flow,
 }
 
@@ -145,6 +151,16 @@ pub struct MusicView {
     down_head: bool,
     /// a seek drag in progress: the fraction under the pointer
     seek: Option<f32>,
+    /// the blurred reflections of the cover (the island's `tiny_cover`) and what the cover worker found: its two colours (the card's tint), which ease
+    /// from the last cover's
+    images: ImageCache,
+    blur: Option<String>,
+    cov_key: Option<String>,
+    cov_from: Option<(Color, Color)>,
+    cov_to: Option<(Color, Color)>,
+    cov_t: Flow,
+    /// the geometry and the reflections of the island's player card
+    fx: PlayerFx,
     ticker: Option<Ticker>,
     /// the period the ticker runs at (fast while the player's level is measured, see `loud`) and the host time of the last once-a-second tick
     ticker_ms: u64,
@@ -218,6 +234,13 @@ impl MusicView {
             pinned: false,
             down_head: false,
             seek: None,
+            images: ImageCache::new(1 << 20, 64),
+            blur: None,
+            cov_key: None,
+            cov_from: None,
+            cov_to: None,
+            cov_t: Flow::new(1.0, Feel::FADE.within(420.0)),
+            fx: PlayerFx::new(),
             ticker: None,
             ticker_ms: loud::IDLE_MS,
             slow_at: 0.0,
@@ -269,7 +292,7 @@ impl MusicView {
 
     /// A stand for a bar `bar` px tall (real) and the side `align`, at the current size.
     fn stand_in_bar(&self, align: Align, bar: f32) -> Stand {
-        Stand { dock: self.stand.dock, align, bar: bar / self.stand.k, scale: self.stand.scale, k: self.stand.k, dx: self.stand.dx }
+        Stand { dock: self.stand.dock, align, bar: bar / self.stand.k, scale: self.stand.scale, k: self.stand.k, dx: self.stand.dx, style: self.stand.style }
     }
 
     /// The monitor's DPI scale (the window is a whole number of device px; the layout snaps to them, see `Stand`).
@@ -321,6 +344,8 @@ impl MusicView {
         self.settings.apply_json(s);
         self.contrast_refresh();
         self.refresh_lang();
+        // the island's player style (`home.player`): the card is laid out like the Home card
+        self.stand.style = PlayerStyle::from_setting(s.get("home.player").and_then(Value::as_str).unwrap_or(""));
         self.widget_on = s.get("media.widget").and_then(Value::as_bool).unwrap_or(false);
         self.module_on = s.get("module.media") != Some(&Value::Bool(false));
         self.presence.set_enabled(self.widget_on && self.module_on);
@@ -333,6 +358,74 @@ impl MusicView {
                     self.kf.jump(k); // nobody sees it: no animation, no frames
                 }
             }
+        }
+    }
+
+    /// The cover worker (the island's Home player does the same): the cover's two colours (the card's tint) and its 24 x 24 sample, which smoothed up
+    /// is the blurred cover the reflections are made of. Asked once per cover.
+    fn request_cover(&mut self, cx: &mut Cx) {
+        let Some(url) = self.art_url.clone() else { return };
+        let key = format!("cover:{}:{}", self.art_id, url.len());
+        if self.cov_key.as_deref() == Some(&key) {
+            return;
+        }
+        self.cov_key = Some(key.clone());
+        let w = cx.waker();
+        let job = move || {
+            let (mut tiny, mut colors) = (None, None);
+            if let Some(d) = crate::ui::tabs::a::draw::decode_data_url(&url, 64) {
+                // premultiplied BGRA -> straight RGBA, as the island's worker does
+                let rgba: Vec<u8> = d
+                    .bgra
+                    .chunks_exact(4)
+                    .flat_map(|p| {
+                        let a = p[3] as u32;
+                        let un = |c: u8| if a == 0 || a == 255 { c } else { ((c as u32 * 255 / a).min(255)) as u8 };
+                        [un(p[2]), un(p[1]), un(p[0]), p[3]]
+                    })
+                    .collect();
+                let sample = pill_ui_core::panel::a::cover::downsample(&rgba, d.w as usize, d.h as usize);
+                tiny = Some(crate::ui::tabs::a::home::player::tiny_cover(&sample));
+                colors = pill_ui_core::panel::a::cover::pick_colors(&sample).and_then(|c| Some((css::parse(&c.a)?, css::parse(&c.b)?)));
+            }
+            w.post_custom(CoverReady { key, colors, tiny });
+        };
+        if !glasskit::jobs::pool::global().submit(Box::new(job)) {
+            self.cov_key = None;
+        }
+    }
+
+    /// The answer of the cover worker: the reflections' picture and the card's tint (which eases from the last cover's).
+    fn cover_ready(&mut self, c: CoverReady) -> bool {
+        if self.cov_key.as_deref() != Some(&c.key) {
+            return false; // an older cover's answer
+        }
+        if let Some(t) = c.tiny {
+            let k = c.key.replacen("cover:", "blur:", 1);
+            self.images.insert(&k, t);
+            self.blur = Some(k);
+        }
+        let cur = self.cov_tint();
+        self.cov_from = cur.filter(|_| c.colors.is_some() && self.vis);
+        self.cov_to = c.colors;
+        if self.cov_from.is_some() {
+            self.cov_t.jump(0.0);
+            self.cov_t.to(1.0);
+        } else {
+            self.cov_t.jump(1.0);
+        }
+        true
+    }
+
+    /// The cover tint on screen right now (mid-fade between two covers).
+    fn cov_tint(&self) -> Option<(Color, Color)> {
+        let to = self.cov_to?;
+        match self.cov_from {
+            Some(f) if self.cov_t.moving() => {
+                let t = self.cov_t.at01();
+                Some((f.0.mix(to.0, t), f.1.mix(to.1, t)))
+            }
+            _ => Some(to),
         }
     }
 
@@ -426,13 +519,14 @@ impl MusicView {
             }
             None => {}
         }
+        self.request_cover(cx);
         // another track while the widget is on screen: what it shows now fades away on a spring of its own (so a run of skips never flashes an
         // old line back to full), the new text arrives, the bar starts over
         let changed = self.vis && !self.track.heading().is_empty() && t.identity() != self.track.identity();
         if changed {
             let mut a = Flow::new(arrival(self.swap.at01()).0, Feel::FADE.within(170.0)); // from as visible as it is
             a.to(0.0);
-            self.ghosts.push(Ghost { head: self.track.heading(), sub: self.track.sub(), a });
+            self.ghosts.push(Ghost { head: self.track.heading(), sub: self.track.sub(), line: self.track.artist_line(), a });
             if self.ghosts.len() > 3 {
                 self.ghosts.remove(0);
             }
@@ -462,7 +556,7 @@ impl MusicView {
     /// The progress bar heads for `f`: a step the pixel grid cannot show just lands, a bigger one glides for about as long as it is long (a
     /// short track or a seek is a visible step; an ordinary second of a long one is not).
     fn glide_prog(&mut self, f: f32) {
-        let bar_px = (lg::BODY_W - 2.0 * lg::CARD_PAD) * self.stand.bs();
+        let bar_px = lg::card_layout(Rect::new(0.0, 0.0, lg::BODY_W, lg::CARD_H), self.stand.style).bar.w * self.stand.bs();
         let d = (f - self.prog.at()).abs() * bar_px;
         if d < PROG_GLIDE_PX {
             self.prog.jump(f);
@@ -574,6 +668,7 @@ impl MusicView {
             || self.pp.moving()
             || self.prog.moving()
             || self.loud.moving()
+            || self.cov_t.moving()
             || self.knob.moving()
             || self.ghosts.iter().any(|g| g.a.moving())
             || self.hov.iter().chain(self.press.iter()).chain(self.kick.iter()).chain(self.acc.iter()).any(Flow::moving)
@@ -780,7 +875,14 @@ impl View for MusicView {
             }
             Msg::Custom(b) => match b.downcast::<Tick>() {
                 Ok(_) => return self.tick(cx),
-                Err(_) => return Response::NONE,
+                Err(b) => match b.downcast::<CoverReady>() {
+                    Ok(c) => {
+                        if !self.cover_ready(*c) {
+                            return Response::NONE;
+                        }
+                    }
+                    Err(_) => return Response::NONE,
+                },
             },
             Msg::Open(_) => return Response::NONE,
         }
@@ -800,6 +902,7 @@ impl View for MusicView {
         self.pp.step(dt);
         self.prog.step(dt);
         self.loud.step(dt);
+        self.cov_t.step(dt);
         self.knob.step(dt);
         for f in self.hov.iter_mut().chain(self.press.iter_mut()).chain(self.kick.iter_mut()).chain(self.acc.iter_mut()) {
             f.step(dt);
@@ -904,6 +1007,8 @@ impl View for MusicView {
             st,
             th: &th,
             accent: self.accent(),
+            tint: self.cov_tint().filter(|_| self.kbd.hc.is_none()),
+            hc: self.kbd.hc.is_some(),
             track: &self.track,
             swap: self.swap.at01(),
             ghosts: &self.ghosts,
@@ -922,6 +1027,11 @@ impl View for MusicView {
             art: self.art_id,
             under: self.art_prev,
             url: self.art_url.as_deref(),
+            heights: std::array::from_fn(|i| self.loud.bars[i].at()),
+            known: self.loud.known(),
+            images: &self.images,
+            blur: self.blur.as_deref(),
+            fx: &self.fx,
         };
         let gpu = &mut self.gpu;
         let hc = self.kbd.hc.is_some();
@@ -938,172 +1048,5 @@ impl View for MusicView {
             cv.with_clip_rr(body, rad, |cv| ink.paint(cv, gpu));
         }))));
         self.kbd_paint(cv, &th, alpha);
-    }
-}
-
-/// A text style between two (the title grows into the card's bigger one as the capsule opens).
-fn mix_style(a: Style, b: Style, t: f32) -> Style {
-    Style { size: lg::lerp(a.size, b.size, t), weight: lg::lerp(a.weight as f32, b.weight as f32, t).round() as u16, ..a }
-}
-
-/// Everything `draw` needs, copied out of the view so the cover cache can be borrowed mutably next to it.
-struct Ink<'a> {
-    st: Stand,
-    th: &'a Theme,
-    accent: Color,
-    track: &'a Track,
-    swap: f32,
-    ghosts: &'a [Ghost],
-    pp: f32,
-    hov: &'a [Flow; 3],
-    press: &'a [Flow; 3],
-    /// prev's and next's push (px, signed: toward where the track goes)
-    kick: [f32; 2],
-    frac: f32,
-    knob: f32,
-    pos: u64,
-    now: f64,
-    /// the expansion and the places the shared parts stand in at it
-    p: f32,
-    pt: lg::Parts,
-    cap: Rect,
-    card: Rect,
-    art: u64,
-    under: Option<u64>,
-    url: Option<&'a str>,
-}
-
-impl Ink<'_> {
-    /// The whole body: the shared parts at their morphing places, then what only the card has (album, times) fading in.
-    fn paint(&self, cv: &Canvas, gpu: &mut Gpu) {
-        let (st, p, pt) = (self.st, self.p, self.pt);
-        let (capl, cardl) = (lg::capsule_layout_in(st, self.cap), lg::card_layout(self.card));
-        let card_a = ((p - 0.3) / 0.7).clamp(0.0, 1.0);
-        self.cover(cv, gpu, pt.cover, pt.cover_r);
-        if st.in_bar() {
-            // the capsule's one line and the card's two do not become each other: they cross-fade
-            let cap_a = (1.0 - p * 1.7).clamp(0.0, 1.0);
-            if cap_a > 0.01 {
-                // the line rides up with the cover as the body rises
-                cv.with_opacity(cap_a, |cv| self.line(cv, capl.text.offset(0.0, pt.cover.y - capl.cover.y), TITLE, SUB));
-            }
-            if card_a > 0.01 {
-                cv.with_opacity(card_a, |cv| self.lines(cv, cardl.title, cardl.sub, BIG, MID));
-            }
-        } else {
-            self.lines(cv, pt.head, pt.sub, mix_style(TITLE, BIG, p), mix_style(SUB, MID, p));
-        }
-        if card_a > 0.01 {
-            cv.with_opacity(card_a, |cv| {
-                let album = self.track.album.trim();
-                if !album.is_empty() {
-                    let r = if st.in_bar() { cardl.album } else { Rect::new(pt.sub.x, pt.sub.bottom() + 4.0, pt.sub.w, 16.0) };
-                    cv.text(r, album, SMALL.ellipsis(), self.th.faint);
-                }
-                // the times hang under the ends of the track as it travels
-                cv.text(Rect::new(pt.bar.x, pt.bar.bottom() + 2.0, 80.0, 14.0), &lg::clock_text(self.pos), TIMES, self.th.dim);
-                if self.track.duration_ms > 0 {
-                    cv.text(Rect::new(pt.bar.right() - 80.0, pt.bar.bottom() + 2.0, 80.0, 14.0), &lg::clock_text(self.track.duration_ms), TIMES.right(), self.th.dim);
-                }
-            });
-        }
-        // a bar capsule too thin for a hairline has none to grow from: the card's track fades in instead
-        let bar_a = if st.in_bar() && capl.bar.h <= 0.0 { card_a } else { 1.0 };
-        if bar_a > 0.01 {
-            cv.with_opacity(bar_a, |cv| self.bar(cv, pt.bar, self.knob * card_a));
-        }
-        for b in BTNS {
-            self.button(cv, gpu, b, pt.btn[b.index()]);
-        }
-    }
-
-    /// Two lines of text that cross-fade when the track changes: the old pair rises and fades, the new one rises into place, the artist a beat
-    /// after the title.
-    fn lines(&self, cv: &Canvas, head: Rect, sub: Rect, hs: Style, ss: Style) {
-        let th = self.th;
-        for g in self.ghosts {
-            let a = g.a.at01();
-            let rise = -4.0 * (1.0 - a);
-            cv.with_opacity(a, |cv| {
-                cv.text(head.offset(0.0, rise), &g.head, hs, th.text);
-                cv.text(sub.offset(0.0, rise), &g.sub, ss, th.dim);
-            });
-        }
-        let (h, s) = (self.track.heading(), self.track.sub());
-        let (kh, ks) = arrival(self.swap);
-        cv.with_opacity(kh, |cv| cv.text(head.offset(0.0, 4.0 * (1.0 - kh)), &h, hs, th.text));
-        cv.with_opacity(ks, |cv| cv.text(sub.offset(0.0, 4.0 * (1.0 - ks)), &s, ss, th.dim));
-    }
-
-    fn button(&self, cv: &Canvas, gpu: &mut Gpu, b: Btn, r: Rect) {
-        let th = self.th;
-        let (h, q) = (self.hov[b.index()].at01(), self.press[b.index()].at().clamp(0.0, 1.0));
-        let c = r.center();
-        let rad = r.w / 2.0 * (1.0 - 0.12 * q);
-        if b == Btn::Play {
-            cv.fill_circle(c, rad, self.accent.alpha(0.20 + 0.16 * h));
-        } else if h > 0.01 {
-            cv.fill_circle(c, rad, th.hover.fade(h));
-        }
-        let ir = r.inset(r.w * 0.24 + 0.5 * q * 3.0);
-        match b {
-            Btn::Prev => gpu.icon(cv, "prev", ir.offset(self.kick[0], 0.0), th.text, 1.8),
-            Btn::Next => gpu.icon(cv, "next", ir.offset(self.kick[1], 0.0), th.text, 1.8),
-            Btn::Play => {
-                // the play and pause icons cross-fade, the leaving one shrinking away and the arriving one growing in, with the spring's pop
-                let k = self.pp.clamp(0.0, 1.0);
-                let pop = 1.0 + 0.10 * (self.pp - 1.0).abs().min(1.0) * (self.pp > 1.0) as u8 as f32;
-                cv.with_scale_about(c, pop, |cv| {
-                    cv.with_opacity(1.0 - k, |cv| cv.with_scale_about(c, 1.0 - 0.3 * k, |cv| gpu.icon(cv, "play", ir, th.text, 1.8)));
-                    cv.with_opacity(k, |cv| cv.with_scale_about(c, 0.7 + 0.3 * k, |cv| gpu.icon(cv, "pause", ir, th.text, 1.8)));
-                });
-            }
-        }
-    }
-
-    /// The track; `knob` 0 = no handle, 0.35 = a dot, 0.75 under the pointer, 1 while it is dragged (the track thickens a little with it).
-    fn bar(&self, cv: &Canvas, r: Rect, knob: f32) {
-        let th = self.th;
-        let grow = r.h * 0.4 * ((knob - 0.35) / 0.65).clamp(0.0, 1.0);
-        let r = Rect::new(r.x, r.y - grow / 2.0, r.w, r.h + grow);
-        cv.fill_rr(r, r.h / 2.0, th.track);
-        let w = (r.w * self.frac).clamp(0.0, r.w);
-        if w > 0.5 {
-            cv.fill_rr(Rect::new(r.x, r.y, w.max(r.h), r.h), r.h / 2.0, self.accent);
-        }
-        if knob > 0.01 {
-            // the knob stays inside the track's ends, so the track keeps the card's padding (cover, times and track share their left and right edges)
-            let kr = (r.h * 0.9 + 1.0) * knob.min(1.1) * 0.9;
-            cv.fill_circle(((r.x + w).clamp(r.x + kr, (r.right() - kr).max(r.x + kr)), r.cy()), kr, th.text);
-        }
-    }
-
-    /// The album cover in the base rectangle `r`. The picture is decoded ONCE for the card's size (a whole number of 32 px so a glide of the
-    /// size does not decode it over and over) and drawn scaled into `r` as it grows from the capsule's cover to the card's: sharp at any size
-    /// factor. While a new one fades in the old one stays behind it. `rad` is the corner radius in base px.
-    fn cover(&self, cv: &Canvas, gpu: &mut Gpu, r: Rect, rad: f32) {
-        let px = ((lg::COVER * self.st.bs() / 32.0).ceil().max(1.0) * 32.0) as u32;
-        gpu.cover_sized(cv, self.th, self.art, self.url, r, self.now, rad, px, self.under);
-    }
-
-    /// The track change cross-fade of the bar capsule: ONE line, the heading and then the sub line in the dimmer ink after it (`r` is centred
-    /// vertically by the style). The artist gives way first (`lg::bar_line`): it is cut to what a whole title leaves, and dropped before the title
-    /// is cut. The two sizes share one baseline (`SUB_DROP`).
-    fn line(&self, cv: &Canvas, r: Rect, hs: Style, ss: Style) {
-        let th = self.th;
-        let k = arrival(self.swap).0;
-        let pair = |cv: &Canvas, h: &str, s: &str, dy: f32| {
-            let (hw, sub) = lg::bar_line(r.w, cv.text_width(h, hs), if s.is_empty() { 0.0 } else { cv.text_width(s, ss) });
-            // a hair of slack: a layout box exactly as wide as its text may still decide to cut it
-            cv.text(Rect::new(r.x, r.y + dy, (hw.ceil() + 1.0).min(r.w), r.h), h, hs.ellipsis(), th.text);
-            if let Some((sx, sw)) = sub {
-                cv.text(Rect::new(r.x + sx, r.y + dy + SUB_DROP, (sw.ceil() + 1.0).min(r.w - sx), r.h), s, ss.ellipsis(), th.dim);
-            }
-        };
-        for g in self.ghosts {
-            let a = g.a.at01();
-            cv.with_opacity(a, |cv| pair(cv, &g.head, &g.sub, -3.0 * (1.0 - a)));
-        }
-        cv.with_opacity(k, |cv| pair(cv, &self.track.heading(), &self.track.sub(), 3.0 * (1.0 - k)));
     }
 }

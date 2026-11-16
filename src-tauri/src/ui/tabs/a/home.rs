@@ -21,12 +21,12 @@
 //! ticker otherwise, so a playing track costs four wakes a second (the seek fill moves half a pixel a second) and an idle tab costs nothing.
 //! Animation cues (`title`, `artist`, `play`, `art`, `launcher`, `link:<id>`) play on the kit `Player`; hover, press, the volume glide, the device
 //! list, the cover tint and the reorder shifts are glasskit tweens. Reduce motion jumps all of them to their end state.
-mod css;
+pub(crate) mod css;
 mod ctl;
-mod layout;
+pub(crate) mod layout;
 mod paint;
 mod target;
-mod player;
+pub(crate) mod player;
 mod parts;
 mod recent;
 pub(crate) mod slots;
