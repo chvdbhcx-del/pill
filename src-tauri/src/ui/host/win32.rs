@@ -38,7 +38,7 @@ use std::time::Instant;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
-use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
+use windows::Win32::Graphics::Dwm::{DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMSBT_NONE, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Ole::{OleInitialize, OleUninitialize, RevokeDragDrop};
@@ -644,6 +644,9 @@ impl Host {
         unsafe {
             if spec.kind == WindowKind::Overlay || layered {
                 let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA); // a layered window is invisible without attributes
+            }
+            if spec.kind == WindowKind::Overlay {
+                square_corners(hwnd);
             }
             if spec.kind == WindowKind::Normal {
                 let m = MARGINS { cxLeftWidth: 0, cxRightWidth: 0, cyTopHeight: 0, cyBottomHeight: 1 };
@@ -1745,6 +1748,20 @@ impl Host {
         };
         let ev = crate::ui::view::DropEvent { phase, pos, payload };
         self.call_view(id, |v, cx| v.on_drop(&ev, cx)).consumed
+    }
+}
+
+/// An overlay draws its own body (the shape, the corners, the shadow are all per-pixel alpha), so Windows 11 must not add anything of its own: no
+/// DWM corner rounding (the card's top corners looked rounder than its bottom ones: the system rounded the window's rectangle on top of the drawn
+/// shape), no system backdrop, no border. Best effort: older Windows rejects the attributes, which is fine, it does none of it either.
+fn square_corners(hwnd: HWND) {
+    unsafe {
+        let round = DWMWCP_DONOTROUND;
+        let _ = DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &round as *const _ as *const c_void, std::mem::size_of_val(&round) as u32);
+        let backdrop = DWMSBT_NONE;
+        let _ = DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop as *const _ as *const c_void, std::mem::size_of_val(&backdrop) as u32);
+        let border = DWMWA_COLOR_NONE;
+        let _ = DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &border as *const _ as *const c_void, std::mem::size_of_val(&border) as u32);
     }
 }
 

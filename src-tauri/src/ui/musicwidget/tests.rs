@@ -998,3 +998,24 @@ fn the_open_card_is_even_on_every_side_and_its_shadow_is_not_cut_off() {
         }
     });
 }
+
+#[test]
+fn the_open_card_has_one_and_the_same_corner_at_all_four_corners() {
+    gfx(|| {
+        let _m = motion_on();
+        let th = Theme::pill_dark();
+        for dock in [Dock::Bottom, Dock::Top] {
+            let (mut s, _f) = on_screen(dock);
+            s.send_proximity(&ProximityEvent::Hover);
+            s.run(4000);
+            let img = s.render(lg::WIN_REAL, &th);
+            let open = base(dock).rect_to_real(lg::body(dock, 1.0, 0.0));
+            // solid pixels in the square of one corner radius at each corner: a round corner leaves the same number of them at all four
+            let r = lg::CARD_R;
+            let corner = |x: f32, y: f32| img.count(Some(Rect::new(x, y, r, r)), |p| p[3] > 200);
+            let c = [corner(open.x, open.y), corner(open.right() - r, open.y), corner(open.x, open.bottom() - r), corner(open.right() - r, open.bottom() - r)];
+            let (lo, hi) = (*c.iter().min().unwrap(), *c.iter().max().unwrap());
+            assert!(hi - lo <= (r * r * 0.02) as usize + 2, "{dock:?}: the drawn corners differ (TL, TR, BL, BR): {c:?}");
+        }
+    });
+}
