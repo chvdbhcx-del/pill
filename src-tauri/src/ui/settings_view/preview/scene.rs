@@ -201,7 +201,7 @@ impl Scene {
             Scene::Pill(Look::Motion) => tr("Нажмите «Повторить», чтобы увидеть движение ещё раз", "Press Replay to see the motion again"),
             Scene::Pill(Look::Place) => tr("Набросок монитора с панелью задач внизу: край, сторона и сдвиг вдоль края", "A sketch of a monitor with its taskbar at the bottom: the edge, the side and the shift along it"),
             Scene::Pill(_) => tr("Так выглядит свёрнутый остров с этими настройками", "This is the folded island with these settings"),
-            Scene::Widget => tr("Пример трека: ваша музыка здесь не показывается. Остров без плеера, пока виджет включён", "A sample track: your own music is never shown here. The island has no player while the widget is on"),
+            Scene::Widget => tr("Пример трека: ваша музыка здесь не показывается", "A sample track: your own music is never shown here"),
             Scene::Panel(_) => tr("Пример данных: ваши данные здесь не показываются", "Sample data: your own data is never shown here"),
             Scene::Flash(_) => tr("Пример: так это появится на острове", "A sample of how it appears on the island"),
         }

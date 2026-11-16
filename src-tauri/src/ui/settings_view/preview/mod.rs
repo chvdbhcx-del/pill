@@ -179,7 +179,8 @@ impl Preview {
         (patch, scene, touched)
     }
 
-    /// The scene that really shows `sc` now: the island has no player while the music widget is on, so the music reaction is the widget.
+    /// The scene a page opens with. On the Media page the player widget is what its switches are about, so with the widget on the sketch shows
+    /// the widget; a row that is about the island's own player (focus on it) still shows the island's music reaction: the island keeps its player.
     fn resolve(&self, sc: Scene) -> Scene {
         if sc == Scene::Flash(Flash::Music) && self.snap.get("media.widget") == Some(&json!(true)) {
             Scene::Widget
@@ -190,7 +191,6 @@ impl Preview {
 
     /// Puts the sandbox island into `sc` (animated by the island itself). `fresh`: the scene is new, not a replay.
     fn go_scene(&mut self, sc: Scene, reduce: bool) {
-        let sc = self.resolve(sc);
         let prev = self.scene;
         if sc != self.scene {
             self.scene = sc;
@@ -313,7 +313,7 @@ impl SettingsView {
             pv.live = Some(live);
             pv.open = false;
             pv.page = model.current;
-            let sc = pv.hint.take().unwrap_or_else(|| of_page(model.current));
+            let sc = pv.hint.take().unwrap_or_else(|| pv.resolve(of_page(model.current)));
             pv.scene = sc;
             pv.go_scene(sc, reduce);
             pv.touch(now);
@@ -335,9 +335,9 @@ impl SettingsView {
         } else if pv.page != model.current {
             pv.page = model.current;
             pv.touch(now);
-            let sc = pv.hint.take().unwrap_or_else(|| of_page(model.current));
+            let sc = pv.hint.take().unwrap_or_else(|| pv.resolve(of_page(model.current)));
             pv.go_scene(sc, reduce);
-        } else if let Some(fs) = focus_scene.filter(|s| pv.resolve(*s) != pv.scene) {
+        } else if let Some(fs) = focus_scene.filter(|s| *s != pv.scene) {
             pv.touch(now);
             pv.go_scene(fs, reduce);
         } else if pv.replay {

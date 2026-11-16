@@ -524,8 +524,8 @@ pub fn sound() -> Page {
                         "media.widget",
                         tr("Плеер отдельным виджетом", "Player as a separate widget"),
                         tr(
-                            "Маленькое окно с обложкой и кнопками, которое можно поставить в угол экрана отдельно от острова. Оно появляется, пока играет музыка (или недавно была пауза), и сворачивается само. Пока оно включено, остров не показывает плеер: ни полоску с названием, ни плеер на «Главной». Размер виджета следует за размером острова. Выключите, чтобы всё вернулось",
-                            "A small window with the cover and the buttons that you can park in a corner of the screen, apart from the pill. It shows while music plays (or was paused a moment ago) and goes away by itself. While it is on the pill shows no player: no title strip, no player on Home. The widget's size follows the pill's size. Switch off to get it all back",
+                            "Маленькое окно с обложкой и кнопками, которое можно поставить в угол экрана отдельно от острова. Оно появляется, пока играет музыка (или недавно была пауза), и сворачивается само. Плеер на острове остаётся: можно пользоваться и тем и другим. Размер виджета следует за размером острова",
+                            "A small window with the cover and the buttons that you can park in a corner of the screen, apart from the pill. It shows while music plays (or was paused a moment ago) and goes away by itself. The pill keeps its own player too, so you can use either. The widget's size follows the pill's size",
                         ),
                         false,
                     )

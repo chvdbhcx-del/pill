@@ -112,7 +112,7 @@ the taskbar while the pill stays in the middle, at the top, or on either side of
 
 | key | default | meaning |
 |---|---|---|
-| `media.widget` | `false` | off = nothing changes and no window exists; on = the widget window, and the island shows no player |
+| `media.widget` | `false` | off = nothing changes and no window exists; on = the widget window; the island keeps its own player too |
 | `media.widget.edge` | `bottom` | `top` / `bottom` / `taskbar` (INSIDE the bottom taskbar strip, see "The widget inside the taskbar" below) |
 | `media.widget.align` | `left` | `left` / `center` / `right` along that edge |
 | `media.widget.offset` | `0` | -50..50 % of the monitor width, only for `center` (like `offsetX`) |
@@ -155,7 +155,7 @@ island there has no player (docs/native-settings.md, "The sketch of a monitor").
 
 ### Home without the player
 
-`home_mods::plan` stacks the parts when the player is off (the music widget owns it, or `module.media` is off) and there are tiles: the volume row (and "recently copied") go on top, centred, and the tiles take the full width under them in rows of four (156x56), then the strip. Side by side the short left stack would leave a blank hole above and below it. The panel is as tall as the content (226 with volume, eight tiles and the strip instead of 260); the slots glide there through Flow (Reduce motion: at once). With the player on nothing changes.
+`home_mods::plan` stacks the parts when the player is off (`module.media` is off) and there are tiles: the volume row (and "recently copied") go on top, centred, and the tiles take the full width under them in rows of four (156x56), then the strip. Side by side the short left stack would leave a blank hole above and below it. The panel is as tall as the content (226 with volume, eight tiles and the strip instead of 260); the slots glide there through Flow (Reduce motion: at once). With the player on nothing changes.
 
 ### Size, and the open card
 

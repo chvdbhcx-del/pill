@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Changed
+- The player is back on the island while the separate player widget is on: the title strip, the music reaction at the edge and the player on Home work as before, and the widget is a second view of the same player (it used to take the player off the island). Each part is still governed by its own switches (Media module, live music, Home player).
+
 ## [0.10.0] - 2026-11-16
 
 ### Highlights

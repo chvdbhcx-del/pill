@@ -231,15 +231,18 @@ fn the_device_list_stays_inside_the_tab_when_the_volume_row_is_at_the_top() {
 }
 
 #[test]
-fn the_music_widget_takes_the_player_and_home_leaves_no_blank_hole() {
-    // `media.widget` on: the pill shows no player, the volume row, the tiles and the strip re-flow and the tab shrinks to them
+fn home_without_the_player_leaves_no_blank_hole() {
+    // the Media module off: Home has no player, the volume row, the tiles and the strip re-flow and the tab shrinks to them
+    // (the standalone music widget no longer takes the player away: it is a second view)
     let _m = motion(false);
     let mut r = Rig::playing();
     assert_eq!(height(&r), 260.0);
     change(&mut r, json!({ "home.player": "compact", "media.widget": true }));
+    assert_eq!(height(&r), 260.0, "the player widget is on: Home keeps its player and its height");
+    change(&mut r, json!({ "home.player": "compact", "media.widget": false, "module.media": false }));
     assert_eq!(height(&r), 226.0, "38 volume + 8 + two rows of 56 tiles + 8 + 8 + 52 strip");
     r.sim.cx.scale = 1.0;
-    let img = shoot(&mut *r.sim.view, &r.sim.cx, &Theme::pill_dark(), 1.0, "home", "no-player-widget-on");
+    let img = shoot(&mut *r.sim.view, &r.sim.cx, &Theme::pill_dark(), 1.0, "home", "no-player-module-off");
     let bg = img.at(2.0, 2.0);
     let lit = |x: f32, y: f32| img.at(x, y) != bg;
     // the volume row is at the very top (centred), the first tile row right under it, the strip at the bottom: nothing blank between
@@ -255,7 +258,7 @@ fn the_music_widget_takes_the_player_and_home_leaves_no_blank_hole() {
     // a click on the first tile in its new place works
     r.click((78.0, 46.0 + 28.0));
     assert!(tile_fx(&r), "{:?}", r.fx);
-    // switching the widget off gives the classic tab back
-    change(&mut r, json!({ "home.player": "compact", "media.widget": false }));
+    // switching the module on gives the classic tab back
+    change(&mut r, json!({ "home.player": "compact", "module.media": true }));
     assert_eq!(height(&r), 260.0);
 }

@@ -72,7 +72,7 @@ pub(crate) fn defaults() -> Cfg {
     // song lyrics (lyrics.rs, opt-in: sends the playing track's title/artist/album/duration to lrclib.net) and the Home player (tab-home): style mirror | fill | compact, lyrics column
     let Value::Object(lyr) = json!({ "music.lyrics": false, "home.player": "mirror", "home.lyrics": true }) else { unreachable!() };
     m.extend(lyr);
-    // the music widget (ui/musicwidget): the player as its own small window, off by default. While it is on the island shows no player of its own.
+    // the music widget (ui/musicwidget): the player as its own small window, off by default. The island keeps its own player as well.
     // edge top | bottom, align left | center | right along that edge, offset = percent of the monitor width (-50..50), only for the centred position
     let Value::Object(mw) = json!({ "media.widget": false, "media.widget.edge": "bottom", "media.widget.align": "left", "media.widget.offset": 0 }) else { unreachable!() };
     m.extend(mw);

@@ -190,7 +190,7 @@ impl MediaLive {
     /// `updateLive()`.
     pub fn update_live(&mut self, env: &dyn Env) -> Vec<LiveCmd> {
         let st = match &self.st {
-            Some(s) if env.live_on("music") && env.module_on("module.media") && !env.setting_true("media.widget") && s.has_session => s.clone(),
+            Some(s) if env.live_on("music") && env.module_on("module.media") && s.has_session => s.clone(),
             _ => {
                 let mut out = vec![LiveCmd::unreact("media")];
                 out.extend(self.clear_row());
@@ -647,18 +647,18 @@ mod tests {
     }
 
     #[test]
-    fn the_music_widget_takes_the_player_off_the_island_and_gives_it_back() {
+    fn the_music_widget_does_not_take_the_player_off_the_island() {
         let (mut m, mut env) = live("mini");
         let s = state(true, "Song", 1, Some("u"), None);
         assert!(has_row(&m.on_event(&env, "media:changed", &s, T0)), "off by default: the island shows the row");
         env.set("media.widget", json!(true));
         let cmds = m.on_event(&env, "settings:changed", &Value::Null, T0 + 10);
-        assert!(!has_row(&cmds) && cmds.contains(&LiveCmd::unreact("media")) && cmds.contains(&LiveCmd::clear("media")), "the widget owns it: row and edge reaction go: {cmds:?}");
+        assert!(!cmds.contains(&LiveCmd::unreact("media")) && !cmds.contains(&LiveCmd::clear("media")), "the widget is on too: the island keeps its row and reaction: {cmds:?}");
         let cmds = m.on_event(&env, "media:changed", &state(true, "Other", 1, Some("u"), None), T0 + 20);
-        assert!(!has_row(&cmds), "and new tracks do not bring it back");
+        assert!(has_row(&cmds), "and new tracks still reach the island");
         env.set("media.widget", json!(false));
         let cmds = m.on_event(&env, "settings:changed", &Value::Null, T0 + 30);
-        assert!(has_row(&cmds), "switched off again: the island shows the row at once");
+        assert!(!cmds.contains(&LiveCmd::unreact("media")) && !cmds.contains(&LiveCmd::clear("media")), "switched off again: nothing changes for the island: {cmds:?}");
     }
 
     #[test]
