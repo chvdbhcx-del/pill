@@ -509,7 +509,7 @@ pub(super) fn phone(p: &mut Pool) -> Page {
     pg(
         "phone",
         "phone",
-        tr("Связь с телефоном", "Phone link"),
+        tr("Телефон и другие ПК", "Phone and other PCs"),
         Tr::NONE,
         vec![part(
             vec![
