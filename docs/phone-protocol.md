@@ -68,6 +68,10 @@ Limits: file size cap setting (default 4 GiB), at most 2 transfers at a time, a 
 
 Dark by default (follows system light/dark), background `#0B0B0F`, surface glass `#15151C` with 1 px `#FFFFFF14` border, text `#F2F2F7` / `#9A9AA8`, accent = Pill violet `#8E7BFF` with a softer `#B9AEFF` highlight; large radii (24 dp cards, pill-shaped buttons), generous spacing, one typeface (system, weights 500/600/700), spring animations with soft overshoot (the same feel as Pill's liquid motion), a droplet/pill logo mark. Russian + English strings.
 
+## App updates (phone only, no protocol change)
+
+From app 1.1.0 the app updates itself from the `phone-latest` release: it reads `PillPhone.json` next to `PillPhone.apk` and installs a newer `versionCode` through the system installer. The PC is not involved and the pairing page's download button is unchanged. Details and the release procedure: `docs/phone-updates.md`.
+
 ## Changes by the PC side
 
 Clarifications and details the PC implements; none breaks the text above (the app should rely on them).

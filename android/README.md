@@ -53,7 +53,7 @@ keyAlias=pillphone
 keyPassword=...
 ```
 
-`./gradlew assembleRelease` picks it up. Copy `app/build/outputs/apk/release/app-release.apk` to `dist/PillPhone.apk` (also git-ignored); the PC's pairing page links to a release asset named `PillPhone.apk`.
+`./gradlew assembleRelease` picks it up. Copy `app/build/outputs/apk/release/app-release.apk` to `dist/PillPhone.apk` (also git-ignored); the PC's pairing page links to a release asset named `PillPhone.apk`. The app updates itself from that release: `tools/make-update-manifest.ps1` writes the `PillPhone.json` that goes next to the APK, see `docs/phone-updates.md`.
 
 ## Notes
 

@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Changed
+- Pill Phone (Android) checks for updates and installs them from inside the app: it reads a small version file from the `phone-latest` release on GitHub (on start at most every 12 hours, or "Check now" in Settings > Updates; switchable), shows an "Update available" card on Home and downloads, verifies (size, SHA-256, same signing certificate) and installs the new APK through Android's installer. The manual first install of this version (1.1.0) is still needed on phones that have 1.0.0, which cannot update itself. See `docs/phone-updates.md`.
+
 ## [0.12.0] - 2026-11-16
 
 ### Changed
