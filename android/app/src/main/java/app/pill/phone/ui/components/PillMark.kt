@@ -30,7 +30,7 @@ fun PillMark(modifier: Modifier = Modifier, size: Dp = 48.dp, dim: Float = 1f, d
         val shift = (108f * (1f - zoom) / 2f) * (this.size.minDimension / 108f)
         val light = if (mono) Color.White.copy(alpha = 0.97f * dim) else c.accentSoft.copy(alpha = dim)
         val mid = if (mono) Color.White.copy(alpha = 0.82f * dim) else c.accent.copy(alpha = dim)
-        val deep = if (mono) Color.White.copy(alpha = 0.52f * dim) else Color(0xFF5B63E6).copy(alpha = dim)
+        val deep = if (mono) Color.White.copy(alpha = 0.52f * dim) else (if (c.dark) Color(0xFF9A9A9A) else Color.Black).copy(alpha = dim)
         withTransform({
             translate(shift, shift)
             scale(k, k, pivot = Offset.Zero)
@@ -46,7 +46,7 @@ fun PillMark(modifier: Modifier = Modifier, size: Dp = 48.dp, dim: Float = 1f, d
                     capTopLeft, capSize, corner,
                 )
             }
-            // lower half: deeper indigo, like the other half of a capsule
+            // lower half: deeper grey, like the other half of a capsule
             clipRect(top = 54f, bottom = 82f) {
                 drawRoundRect(
                     Brush.verticalGradient(listOf(mid, deep), startY = 54f, endY = 82f),

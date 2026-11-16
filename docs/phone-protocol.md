@@ -66,7 +66,7 @@ Limits: file size cap setting (default 4 GiB), at most 2 transfers at a time, a 
 
 ## App design notes (shared look)
 
-Dark by default (follows system light/dark), background `#0B0B0F`, surface glass `#15151C` with 1 px `#FFFFFF14` border, text `#F2F2F7` / `#9A9AA8`, accent = Pill violet `#8E7BFF` with a softer `#B9AEFF` highlight; large radii (24 dp cards, pill-shaped buttons), generous spacing, one typeface (system, weights 500/600/700), spring animations with soft overshoot (the same feel as Pill's liquid motion), a droplet/pill logo mark. Russian + English strings.
+Dark by default (follows system light/dark), background `#000000`, surface `#0F0F0F` with 1 px `#FFFFFF1A` border, text `#FFFFFF` / `#ABABAB`, accent = white `#FFFFFF` with a softer `#D9D9D9` highlight (near black `#161616` in the light theme; no violet anywhere); large radii (24 dp cards, pill-shaped buttons), generous spacing, one typeface (system, weights 500/600/700), spring animations with soft overshoot (the same feel as Pill's liquid motion), a droplet/pill logo mark. Russian + English strings.
 
 ## App updates (phone only, no protocol change)
 

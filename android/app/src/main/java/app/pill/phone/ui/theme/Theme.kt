@@ -44,7 +44,7 @@ data class PillColors(
 )
 
 // The colours of the desktop Pill itself (glasskit `Theme::pill_dark` / `pill_light`, `theme.css`): a pure black body with neutral grey cards,
-// white text and the periwinkle accent; green / amber / red are the island's own status colours. No violet tint anywhere.
+// white text and a white accent (near black in the light theme); green / amber / red are the island's own status colours. No violet tint anywhere.
 val DarkPillColors = PillColors(
     dark = true,
     background = Color(0xFF000000),
@@ -53,13 +53,13 @@ val DarkPillColors = PillColors(
     border = Color(0x1AFFFFFF),
     text = Color(0xFFFFFFFF),
     textDim = Color(0xFFABABAB),
-    accent = Color(0xFF8F96FF),
-    accentSoft = Color(0xFFB4B9FF),
-    onAccent = Color(0xFF0B0B14),
+    accent = Color(0xFFFFFFFF),
+    accentSoft = Color(0xFFD9D9D9),
+    onAccent = Color(0xFF0B0B0B),
     good = Color(0xFF58DDAB),
     warn = Color(0xFFFFB340),
     bad = Color(0xFFFF453A),
-    glow = Color(0xFF8F96FF),
+    glow = Color(0xFFFFFFFF),
 )
 
 val LightPillColors = PillColors(
@@ -70,13 +70,13 @@ val LightPillColors = PillColors(
     border = Color(0x1F000000),
     text = Color(0xFF161616),
     textDim = Color(0xFF555555),
-    accent = Color(0xFF5B63E6),
-    accentSoft = Color(0xFF8F96FF),
+    accent = Color(0xFF161616),
+    accentSoft = Color(0xFF4A4A4A),
     onAccent = Color(0xFFFFFFFF),
     good = Color(0xFF11805A),
     warn = Color(0xFFB26A00),
     bad = Color(0xFFD92D20),
-    glow = Color(0xFF5B63E6),
+    glow = Color(0xFF161616),
 )
 
 object PillShapes {
