@@ -563,6 +563,52 @@ pub fn card_layout(c: Rect) -> CardLayout {
     }
 }
 
+/// The parts the capsule and the card share (the cover, the two text lines, the three buttons, the progress bar) at an expansion `p`: each one
+/// stands between its place in the capsule and its place in the card, so the capsule MORPHS into the card (the cover grows, the buttons travel)
+/// instead of one being swapped for the other. Only the card's album line and the times fade in. Window coordinates, like [`body`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Parts {
+    pub cover: Rect,
+    /// the cover's corner radius (base px)
+    pub cover_r: f32,
+    /// the title and the artist line (in the bar the capsule has ONE line and these only mark the card's two: the view cross-fades the text there)
+    pub head: Rect,
+    pub sub: Rect,
+    pub btn: [Rect; 3],
+    pub bar: Rect,
+}
+
+pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+/// A rectangle between `a` and `b` (`t` may pass 0..1 a little: a spring's overshoot).
+pub fn mix(a: Rect, b: Rect, t: f32) -> Rect {
+    Rect::new(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.w, b.w, t).max(0.0), lerp(a.h, b.h, t).max(0.0))
+}
+
+pub fn parts(st: impl Into<Stand>, p: f32, dy: f32) -> Parts {
+    let st = st.into();
+    let (cap, card) = frames(st, p, dy);
+    let (a, b) = (capsule_layout_in(st, cap), card_layout(card));
+    let t = p.clamp(0.0, 1.1);
+    let (ah, asub, ar) = if st.in_bar() {
+        (a.text, a.text, bar_cover_radius(cap.h))
+    } else {
+        (Rect::new(a.text.x, a.text.y + 3.0, a.text.w, 18.0), Rect::new(a.text.x, a.text.y + 21.0, a.text.w, 15.0), 7.0)
+    };
+    // a bar capsule too thin for a progress bar has none to grow from: the card's own shows
+    let bar = if a.bar.h > 0.0 { mix(a.bar, b.bar, t) } else { b.bar };
+    Parts {
+        cover: mix(a.cover, b.cover, t),
+        cover_r: lerp(ar, card_cover_radius(), t),
+        head: mix(ah, b.title, t),
+        sub: mix(asub, b.sub, t),
+        btn: std::array::from_fn(|i| mix(a.btn[i], b.btn[i], t)),
+        bar,
+    }
+}
+
 /// What is under a point of the window.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Hit {
@@ -588,27 +634,23 @@ pub fn hit(st: impl Into<Stand>, p: f32, dy: f32, pos: (f32, f32)) -> Hit {
     if !hit_rect(st, p, dy).contains(pos.0, pos.1) {
         return Hit::None;
     }
-    let (cap, card) = frames(st, p, dy);
+    let (_, card) = frames(st, p, dy);
     let grab = |r: Rect| Rect::new(r.x - 4.0, r.y - 8.0, r.w + 8.0, r.h + 16.0).contains(pos.0, pos.1);
+    // the buttons answer where they are drawn, which is between their two places while the capsule morphs
+    let pt = parts(st, p, dy);
+    if let Some(i) = pt.btn.iter().position(|r| r.contains(pos.0, pos.1)) {
+        return Hit::Button(BTNS[i]);
+    }
     if p >= CARD_AT {
+        if grab(pt.bar) {
+            return Hit::Seek(seek_at(pt.bar, pos.0));
+        }
         let l = card_layout(card);
-        if let Some(i) = l.btn.iter().position(|r| r.contains(pos.0, pos.1)) {
-            return Hit::Button(BTNS[i]);
-        }
-        if grab(l.bar) {
-            return Hit::Seek(seek_at(l.bar, pos.0));
-        }
         if st.in_bar() && (l.cover.contains(pos.0, pos.1) || l.title.contains(pos.0, pos.1) || l.sub.contains(pos.0, pos.1) || pos.1 > card.bottom()) {
             return Hit::Header;
         }
-    } else {
-        let l = capsule_layout_in(st, cap);
-        if let Some(i) = l.btn.iter().position(|r| r.contains(pos.0, pos.1)) {
-            return Hit::Button(BTNS[i]);
-        }
-        if st.in_bar() && pos.0 < l.btn[0].x {
-            return Hit::Header;
-        }
+    } else if st.in_bar() && pos.0 < pt.btn[0].x {
+        return Hit::Header;
     }
     Hit::Body
 }
@@ -743,8 +785,9 @@ mod tests {
         assert_eq!(hit(d, 1.0, 0.0, (mid, c.bar.cy())), Hit::Seek(0.5));
         assert_eq!(hit(d, 1.0, 0.0, (c.bar.x - 3.0, c.bar.cy() + 6.0)), Hit::Seek(0.0), "the grab strip is a little bigger than the bar");
         assert_eq!(hit(d, 1.0, 0.0, c.title.center()), Hit::Body);
-        // half way: the capsule's buttons while it is mostly closed
-        assert_eq!(hit(d, CARD_AT - 0.01, 0.0, play_c), Hit::Button(Btn::Play));
+        // half way: the buttons answer where they are drawn, between their two places (the capsule's while it is mostly closed)
+        assert_eq!(hit(d, CARD_AT - 0.01, 0.0, parts(d, CARD_AT - 0.01, 0.0).btn[1].center()), Hit::Button(Btn::Play));
+        assert_eq!(hit(d, 0.0, 0.0, play_c), Hit::Button(Btn::Play));
         assert_eq!(seek_at(c.bar, c.bar.x + c.bar.w * 3.0), 1.0);
     }
 

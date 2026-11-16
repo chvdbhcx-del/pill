@@ -12,6 +12,8 @@ use glasskit::input::{Buttons, InputEvent, Modifiers, MouseButton};
 use glasskit::theme::Theme;
 use serde_json::json;
 
+mod motion; // contact sheets of the motion (PILL_SNAP_DIR)
+
 // ------------------------------------------------------------------------------------------------------------------------------ helpers
 
 struct Blank;
@@ -789,11 +791,13 @@ fn a_new_place_while_it_is_away_is_taken_without_ceremony() {
     media(&mut s, &f, state(true, "Song", 0));
     let r = hit_rect(&show(&mut s));
     assert!((r.cx() - lg::WIN_BAR_REAL.0 / 2.0).abs() < 0.3 && r.w == lg::BAR_FOLD_W, "it came in at the place it was told: {r:?}");
-    // the other docks ignore the event altogether
+    // the other docks do the same for the new place their window is given (another monitor, DPI): out, re-placed, in
     let (mut s, f) = on_screen(Dock::Bottom);
-    slot_event(&mut s, &f, 48.0, "right");
-    s.run(100);
-    assert!(!s.take_fx().relayout && !s.frame.wants_frame());
+    slot_event(&mut s, &f, 0.0, "right");
+    assert!(s.run(4000) > 5, "the body slides out and in");
+    let fx = s.take_fx();
+    assert!(fx.relayout && !fx.hide, "the window is re-placed while the body is away and stays");
+    assert!(!s.frame.wants_frame(), "settled again");
 }
 
 #[test]

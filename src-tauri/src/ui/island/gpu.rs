@@ -40,6 +40,8 @@ struct Cover {
     fade: Flow,
     t: f64,
     px: u32,
+    /// the picture was asked for with a URL (a cover first asked for with none is decoded again when the URL arrives)
+    had_url: bool,
 }
 
 /// A value that follows its target on a spring, stepped by the host clock of the draws that ask for it.
@@ -139,7 +141,15 @@ impl Gpu {
     #[allow(clippy::too_many_arguments)]
     pub fn cover_r(&mut self, cv: &Canvas, th: &Theme, id: u64, url: Option<&str>, r: Rect, t: f64, rad: f32) {
         let px = (r.w * cv.scale).ceil().max(1.0) as u32;
-        let stale = self.covers.get(&id).is_none_or(|c| c.px != px);
+        self.cover_sized(cv, th, id, url, r, t, rad, px, None);
+    }
+
+    /// [`Gpu::cover_r`] for a cover whose rectangle changes size every frame (the music widget's morph): decoded ONCE at `px` x `px` and
+    /// drawn scaled into `r`. While the new picture fades in, the cover `under` (the one it replaces, when it is still cached) stays behind it,
+    /// so a track change cross-fades instead of flashing the placeholder.
+    #[allow(clippy::too_many_arguments)]
+    pub fn cover_sized(&mut self, cv: &Canvas, th: &Theme, id: u64, url: Option<&str>, r: Rect, t: f64, rad: f32, px: u32, under: Option<u64>) {
+        let stale = self.covers.get(&id).is_none_or(|c| c.px != px || (!c.had_url && url.is_some()));
         if stale {
             let bmp = url
                 .and_then(data_url_bytes)
@@ -147,12 +157,12 @@ impl Gpu {
                 .and_then(|p| cv.gfx.from_bgra(px, px, &p).ok());
             let mut fade = Flow::new(0.0, Feel::FADE.within(250.0));
             fade.to(1.0);
-            self.covers.insert(id, Cover { bmp, fade, t, px });
+            self.covers.insert(id, Cover { bmp, fade, t, px, had_url: url.is_some() });
             if self.covers.len() > 8 {
-                let keep = id;
-                self.covers.retain(|k, _| *k == keep);
+                self.covers.retain(|k, _| *k == id || Some(*k) == under);
             }
         }
+        let behind = under.filter(|u| *u != id).and_then(|u| self.covers.get(&u)).and_then(|c| c.bmp.clone());
         let c = self.covers.get_mut(&id).expect("just inserted");
         let dt = (t - c.t).clamp(0.0, 100.0);
         c.t = t;
@@ -164,8 +174,16 @@ impl Gpu {
         };
         cv.with_clip_rr(r, rad, |cv| unsafe {
             let d = D2D_RECT_F { left: r.x, top: r.y, right: r.right(), bottom: r.bottom() };
+            if let (Some(u), true) = (&behind, a < 1.0) {
+                cv.dc.DrawBitmap(u, Some(&d), 1.0, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, None, None);
+            }
             cv.dc.DrawBitmap(b, Some(&d), a, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, None, None);
         });
+    }
+
+    /// The cover `id` is still fading in (only its own draws move it).
+    pub fn cover_fading(&self, id: u64) -> bool {
+        self.covers.get(&id).is_some_and(|c| c.bmp.is_some() && c.fade.moving())
     }
 
     fn icon_placeholder(&mut self, cv: &Canvas, th: &Theme, r: Rect) {
