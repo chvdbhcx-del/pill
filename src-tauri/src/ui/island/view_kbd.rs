@@ -299,6 +299,11 @@ impl IslandView {
         }
     }
 
+    /// (tests) high contrast is on
+    pub fn dbg_hc(&self) -> bool {
+        self.kbd.hc.is_some()
+    }
+
     /// The ring, and under high contrast the 2 px outline of the body. Called at the end of `draw`, in window logical px.
     pub(super) fn kbd_paint(&self, cv: &Canvas, th: &Theme, body: Rect, radius: f32) {
         if let Some(p) = &self.kbd.hc {
