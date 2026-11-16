@@ -15,20 +15,20 @@ use pill_ui_core::live::activity::{self as act, Op, RateLimit, Reason, Registry}
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::windows::io::{AsRawHandle, FromRawHandle};
+use std::os::windows::io::AsRawHandle;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Listener};
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL, INVALID_HANDLE_VALUE};
 use windows::Win32::Security::Authorization::{ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW};
 use windows::Win32::Security::{GetTokenInformation, TokenUser, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER};
-use windows::Win32::Storage::FileSystem::{FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX};
+use windows::Win32::Storage::FileSystem::{ReadFile, WriteFile, FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, PIPE_ACCESS_DUPLEX};
 use windows::Win32::System::Console::{AttachConsole, GetStdHandle, SetStdHandle, ATTACH_PARENT_PROCESS, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE};
 use windows::Win32::System::Pipes::{ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT};
-use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-use windows::Win32::System::IO::CancelIoEx;
+use windows::Win32::System::Threading::{CreateEventW, GetCurrentProcess, OpenProcessToken};
+use windows::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 
 pub const PIPE: &str = r"\\.\pipe\pill-live-v1";
 const MAX_CONNS: usize = 8;
@@ -64,7 +64,7 @@ fn now_ms() -> i64 {
 
 /// Tells the island the whole state (the snapshot hands each new activity's card out once), and wakes the clock.
 fn publish(s: &mut State) {
-    let _ = bus::emit(act::STATE_EVENT, s.reg.snapshot());
+    let _ = bus::emit("liveact:state", s.reg.snapshot()); // = act::STATE_EVENT (asserted in the tests)
     crate::wake::bump(&TICK);
 }
 
@@ -197,9 +197,74 @@ fn security() -> Option<SECURITY_ATTRIBUTES> {
     }
 }
 
+/// One server end of the pipe, opened OVERLAPPED: a synchronous handle serialises a pending read with every write on the same file object,
+/// so the reader thread would block the writer thread for good. Each call here has its own event, so both can wait at once.
+struct Pipe(HANDLE);
+
+// the handle is only used through the calls below, each of which is safe to make from any thread
+unsafe impl Send for Pipe {}
+unsafe impl Sync for Pipe {}
+
+impl Drop for Pipe {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = DisconnectNamedPipe(self.0);
+            let _ = CloseHandle(self.0);
+        }
+    }
+}
+
+const ERROR_IO_PENDING: i32 = 997;
+const ERROR_PIPE_CONNECTED: i32 = 535;
+
+impl Pipe {
+    /// Starts one overlapped call with a private event and waits for it. A failure with these codes is the end of the stream, not an error.
+    fn run(&self, start: impl FnOnce(*mut OVERLAPPED) -> windows::core::Result<()>) -> std::io::Result<usize> {
+        unsafe {
+            let ev = CreateEventW(None, true, false, None).map_err(std::io::Error::from)?;
+            let mut ov = OVERLAPPED { hEvent: ev, ..Default::default() };
+            let mut n = 0u32;
+            let r = match start(&mut ov) {
+                Ok(()) => GetOverlappedResult(self.0, &ov, &mut n, true),
+                Err(e) if e.code() == windows::core::HRESULT::from_win32(ERROR_IO_PENDING as u32) => GetOverlappedResult(self.0, &ov, &mut n, true),
+                Err(e) if e.code() == windows::core::HRESULT::from_win32(ERROR_PIPE_CONNECTED as u32) => Ok(()),
+                Err(e) => Err(e),
+            };
+            let _ = CloseHandle(ev);
+            match r {
+                Ok(()) => Ok(n as usize),
+                // broken pipe (109), operation aborted (995, our own CancelIoEx), no process on the other end (233): the client is gone
+                Err(e) if [109, 995, 233].iter().any(|c| e.code() == windows::core::HRESULT::from_win32(*c)) => Ok(0),
+                Err(e) => Err(e.into()),
+            }
+        }
+    }
+    fn connect(&self) -> std::io::Result<()> {
+        self.run(|ov| unsafe { ConnectNamedPipe(self.0, Some(ov)) }).map(|_| ())
+    }
+}
+
+impl std::io::Read for &Pipe {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.run(|ov| unsafe { ReadFile(self.0, Some(buf), None, Some(ov)) })
+    }
+}
+
+impl std::io::Write for &Pipe {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self.run(|ov| unsafe { WriteFile(self.0, Some(buf), None, Some(ov)) })? {
+            0 => Err(std::io::ErrorKind::BrokenPipe.into()),
+            n => Ok(n),
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 fn create_instance(name: &str, first: bool, sa: &SECURITY_ATTRIBUTES) -> std::io::Result<HANDLE> {
     let wide: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
-    let mut open = PIPE_ACCESS_DUPLEX;
+    let mut open = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED;
     if first {
         open |= FILE_FLAG_FIRST_PIPE_INSTANCE; // a squatter that already owns the name makes this fail instead of receiving our clients
     }
@@ -232,23 +297,19 @@ fn listen(name: String, g: u64) {
             }
         };
         first = false;
+        let pipe = Arc::new(Pipe(h));
         // blocks until a client connects (or `stop` connects to wake us)
-        let connected = match unsafe { ConnectNamedPipe(h, None) } {
-            Ok(()) => true,
-            Err(e) => e.code() == windows::core::HRESULT::from_win32(535), // ERROR_PIPE_CONNECTED: the client was faster than us
-        };
+        let connected = pipe.connect().is_ok();
         if !connected || GEN.load(Ordering::SeqCst) != g {
-            let _ = unsafe { CloseHandle(h) };
-            continue;
+            continue; // the pipe is closed on drop
         }
-        let file = unsafe { std::fs::File::from_raw_handle(h.0 as _) };
-        std::thread::spawn(move || serve(g, file));
+        std::thread::spawn(move || serve(g, pipe));
     }
 }
 
-fn serve(g: u64, file: std::fs::File) {
-    let raw = file.as_raw_handle() as isize;
-    let Ok(mut out) = file.try_clone() else { return };
+fn serve(g: u64, pipe: Arc<Pipe>) {
+    let raw = pipe.0 .0 as isize;
+    let mut out = &*pipe;
     let (tx, rx) = sync_channel::<String>(64);
     let id = {
         let mut s = st();
@@ -262,14 +323,16 @@ fn serve(g: u64, file: std::fs::File) {
         id
     };
     // every write goes through one thread, so a client that never reads cannot block a command; its events are dropped when the queue is full
+    let wp = pipe.clone();
     std::thread::spawn(move || {
+        let mut out = &*wp;
         for line in rx {
             if writeln!(out, "{line}").is_err() {
                 break;
             }
         }
     });
-    let mut rd = BufReader::new(file);
+    let mut rd = BufReader::new(&*pipe);
     let mut limit = RateLimit::new(now_ms());
     loop {
         let mut buf = Vec::new();
@@ -489,6 +552,11 @@ mod tests {
         let v: Value = serde_json::from_str(&line).unwrap();
         assert_eq!((v["chip"].clone(), v["subtitle"].clone(), wait), (Value::Null, Value::Null, false));
         assert_eq!(cli_to_line(&a(&["end", "--id", "b1"])).unwrap().0, r#"{"id":"b1","op":"end"}"#);
+    }
+
+    #[test]
+    fn the_event_name_is_the_one_the_island_listens_to() {
+        assert_eq!(act::STATE_EVENT, "liveact:state");
     }
 
     #[test]

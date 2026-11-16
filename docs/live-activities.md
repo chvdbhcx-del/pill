@@ -137,4 +137,4 @@ If you read button events too, read one line per message you send *and* handle l
 
 ## Not verified live
 
-The pipe, the access list, the `pill live` console output, emoji icons and the compact row's look were written and unit tested, not seen on a running Pill.
+The pipe (with its access list), the replies and the button / dismiss events are covered by a test that opens the real pipe. Not seen on a running Pill: the compact row and the card (layout, the look of the progress bar), emoji icons, the `pill live` console output from a real shell, and the x button on the hovering capsule.
