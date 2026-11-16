@@ -31,6 +31,7 @@ mod cw1;
 mod cw2;
 mod cw3;
 mod cw3b;
+mod cw_energy;
 mod cw_phone;
 mod cw_home;
 mod customacts;
@@ -269,6 +270,9 @@ impl View for SettingsView {
     }
 
     fn on_show(&mut self, cx: &mut Cx) {
+        if self.model.current == "look" {
+            self.sample_cost(cx);
+        }
         let reduce = self.reduce();
         flow::from_to(&mut self.win_t, 0.0, 1.0, reduce);
         self.shown_ms = cx.now_ms;
@@ -278,6 +282,7 @@ impl View for SettingsView {
     fn on_hide(&mut self, cx: &mut Cx) {
         self.model.recorder.stop();
         self.stop_ticker();
+        crate::ui::host::perf::set_sampling(false);
         let _ = cx;
     }
 

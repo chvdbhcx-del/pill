@@ -44,7 +44,7 @@ panics when a row is left over). No settings key was renamed, dropped or given a
 
 | group | pages (id: sections) |
 |---|---|
-| Island | `look`: Island look (shape, theme, colour, size, monitor), Clock and date, Animation (Reduce motion); Advanced: colour / transparency / position, frame rate and GPU / `edge`: Island edge (style list + reactions), Pet (gallery, side, size) / `tabs`: island tabs, what is on Home, profiles |
+| Island | `look`: Island look (shape, theme, colour, size, monitor), Clock and date, Animation (Reduce motion); Advanced: colour / transparency / position, frame rate and GPU, Power (Energy Saver / battery 30 fps, pause while locked / display off / RDP minimised, the frame-cost line) / `edge`: Island edge (style list + reactions), Pet (gallery, side, size) / `tabs`: island tabs, what is on Home, profiles |
 | Features | `weather` / `media`: Media player, Volume and microphone (devices, mic and camera dots); Advanced: sound sources / `voice`: Voice to text (+ local Whisper; one function, one page: its provider chips and installer are long); Advanced: recognition service / `clipboard`; Advanced: pasting, exclusions, limits / `capture`: Screenshots, Screen recording; Advanced: details, encoder / `tools`: Notes and timer, Launcher, File shelf, Text tools, System controls, VPN; Advanced: own sound, your own VPN client / `phone`: Phone link, apps, shared clipboard, files, relay; Advanced: file details, relay address and cap / `ai`: AI assistant and chat, AI agents in the terminal, Local AI chat on this computer |
 | Events | `notifications`: Notifications, Downloads (+ Steam), Battery, Keyboard layout, Virtual desktops, USB drives; Advanced: display time and history, download details / `calendar`: Calendar, Mail (IMAP), OBS; Advanced: OBS connection |
 | App | `general`: ONE page of the general settings, in this order: Start and language (`language`, autostart), Hiding the pill (fullscreen, peek, auto-hide), Quiet hours, Command bar search (file search + browser engine), Settings window (the live-preview switch `settings.preview`); Advanced: hiding details and program lists, pass-through, Everything, settings backup (+ the data folder note), first run / `hotkeys`: every key on ONE page (the recorder checks a combo against all others) / `updates`: version and updates, what is new, help |
@@ -167,7 +167,7 @@ sample events.
 * Frames run only while something moves; the Edge and character page loops its previews (per-card `PetEngine` / `Characters`). A ticker thread runs only
   on Notifications and cards, Calendar and mail (status polling) and Phone link, while Everything is being installed and so on.
 
-## The 12 `Custom` widgets
+## The 12 `Custom` widgets (+ `energy.cost`, the read-only frame-cost line of Look > Power: `cw_energy.rs`)
 
 `ai.providers`, `voice.providers` (chips, help, region warning, "Get a key" link) / `character.reactions` (reaction chips driving every preview) /
 `hotkeys.launcher` (list from `launcher_list`, one recorder each) / `modules.profiles` (list, Apply, Delete, name field + Save) / `weather.city`

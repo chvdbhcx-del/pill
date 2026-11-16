@@ -25,13 +25,17 @@ pub struct FrameState {
     last_ms: f64,
     nominal_ms: f64,
     cap_ms: Option<f64>,
+    /// the energy rules' cap (`host::energy`): applied on top of `cap_ms`, the slower of the two wins
+    energy_ms: Option<f64>,
+    /// the energy rules say nothing may be drawn (locked, display off, remote session hidden): no frame is wanted until they lift
+    paused: bool,
     frames: u64,
 }
 
 impl FrameState {
     /// A new window wants its first frame.
     pub fn new(refresh_hz: f32) -> FrameState {
-        FrameState { dirty: true, animating: false, active: false, last_ms: f64::NEG_INFINITY, nominal_ms: nominal(refresh_hz), cap_ms: None, frames: 0 }
+        FrameState { dirty: true, animating: false, active: false, last_ms: f64::NEG_INFINITY, nominal_ms: nominal(refresh_hz), cap_ms: None, energy_ms: None, paused: false, frames: 0 }
     }
 
     pub fn set_refresh_hz(&mut self, hz: f32) {
@@ -43,13 +47,28 @@ impl FrameState {
         self.cap_ms = fps.filter(|&n| n > 0).map(|n| 1000.0 / n as f64);
     }
 
+    /// The energy rules (`host::energy`): `Some(n)` caps the rate at `n` fps on top of `set_cap`, `paused` stops all frames. Lifting a pause
+    /// asks for one frame at once and restarts the clock, so the springs do not leap over the gap.
+    pub fn set_energy(&mut self, fps: Option<u32>, paused: bool) {
+        self.energy_ms = fps.filter(|&n| n > 0).map(|n| 1000.0 / n as f64);
+        if self.paused && !paused {
+            self.dirty = true;
+            self.active = false;
+        }
+        self.paused = paused;
+    }
+
+    pub fn paused(&self) -> bool {
+        self.paused
+    }
+
     /// Something visible changed.
     pub fn request(&mut self) {
         self.dirty = true;
     }
 
     pub fn wants_frame(&self) -> bool {
-        self.dirty || self.animating
+        !self.paused && (self.dirty || self.animating)
     }
 
     pub fn animating(&self) -> bool {
@@ -73,7 +92,7 @@ impl FrameState {
         if !self.wants_frame() {
             return None;
         }
-        let gap = self.cap_ms.unwrap_or(0.0).max(self.nominal_ms * GUARD);
+        let gap = self.cap_ms.unwrap_or(0.0).max(self.energy_ms.unwrap_or(0.0)).max(self.nominal_ms * GUARD);
         Some((self.last_ms + gap - now_ms).max(0.0))
     }
 
@@ -172,6 +191,31 @@ mod tests {
         assert_eq!(f.wait_ms(1000.0 / 240.0), Some(0.0));
         f.set_cap(Some(0));
         assert_eq!(f.wait_ms(1000.0 / 240.0), Some(0.0), "0 means no cap");
+    }
+
+    #[test]
+    fn the_energy_cap_stacks_on_the_callers_and_a_pause_costs_nothing() {
+        let mut f = FrameState::new(240.0);
+        f.begin(0.0);
+        f.end(true);
+        f.set_energy(Some(30), false);
+        assert!((f.wait_ms(10.0).unwrap() - (1000.0 / 30.0 - 10.0)).abs() < 1e-9, "30 fps from the energy rule");
+        f.set_cap(Some(15));
+        assert!((f.wait_ms(10.0).unwrap() - (1000.0 / 15.0 - 10.0)).abs() < 1e-9, "the slower of the two wins");
+        f.set_cap(Some(60));
+        assert!((f.wait_ms(10.0).unwrap() - (1000.0 / 30.0 - 10.0)).abs() < 1e-9);
+        // paused: nothing wanted, nothing to wait for, a request is remembered
+        f.set_energy(None, true);
+        assert!(f.paused() && !f.wants_frame() && f.wait_ms(1e6).is_none());
+        f.request();
+        assert!(!f.wants_frame());
+        // lifting the pause: one frame at once, and the clock restarts (dt is one nominal frame, not the gap)
+        f.set_energy(None, false);
+        assert!(f.wants_frame());
+        assert_eq!(f.wait_ms(1e6), Some(0.0));
+        assert!((f.begin(1e6) - 1000.0 / 240.0).abs() < 1e-9);
+        f.end(false);
+        assert!(!f.wants_frame());
     }
 
     #[test]

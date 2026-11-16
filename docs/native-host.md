@@ -87,6 +87,21 @@ Closed, Geometry(Geometry), Blur`. It is how `ui/lazy.rs` (`note_hidden` / `note
   display's refresh rate (60 / 75 / 144 / 240 Hz...), driven by the display, not by a timer. Nothing in the host caps the rate. The only
   throttles: `fps_cap` / `cx.set_fps_cap` (a caller's explicit choice), and a runaway guard that engages only if frames arrive closer
   than half a refresh period (an off-screen / covered / asleep swap chain that stopped pacing; it can never fire on a healthy window).
+* **Energy rules** (`ui/host/energy.rs`, Settings > Look > Advanced > Power). Explicit, visible rules; nothing is lowered silently.
+  Sensing is by OS notifications only (a hidden top-level `PillEnergy` window on the UI thread; message-only windows get neither power
+  settings nor session events): Energy Saver (`GUID_POWER_SAVING_STATUS`, start value from `GetSystemPowerStatus`), AC / battery
+  (`GUID_ACDC_POWER_SOURCE`), display (`GUID_CONSOLE_DISPLAY_STATE`; `GUID_SESSION_DISPLAY_STATE` is what a Remote Desktop session reports
+  while its client is minimised), session lock / unlock / connect / disconnect (`WTS_SESSION_*`), `SM_REMOTESESSION`, and a re-read after
+  resume from sleep. The pure `energy::resolve(rules, sensed)` decides, in this order: paused (locked, display off, RDP client minimised),
+  else 30 fps (Energy Saver, then battery), else free; the `Verdict` carries the reason. Switches (all `energy.*`): `saver` 30 fps in
+  Energy Saver (on), `battery` 30 fps on battery (off), `pauseLocked`, `pauseDisplayOff`, `pauseRdp` (on). The window posts `WM_ENERGY`;
+  `Host::apply_energy` hands the verdict to every window's `FrameState::set_energy`: the cap stacks on the view's own (`fps_cap`, the
+  slower wins), a pause makes `wants_frame()` false (no frame, no frame handle in the wait set, no cursor poll: zero cost). Lifting a pause
+  asks for a frame at once, restarts the `dt` clock (springs do not leap) and fades the window in with a `Flow` (Reduce motion: at once).
+  Real input to a window while "paused" lifts the pause (a missed unlock must never leave the island invisible). All windows follow
+  the same verdict, so the island and the music widget stay consistent. Settings shows `energy::cost_lines`: ms per frame, fps and CPU of
+  the island window (the `PILL_PERF` meter, switched on by `perf::set_sampling` only while the Look page is open; reports every 2 s to
+  `perf::last()`, nothing is logged) and the cap with its reason, e.g. "30 fps: Energy Saver".
 * **Idle = zero.** A window renders only after input that returned `redraw`, a `Msg`, `cx.request_frame()`, or while the last `step`
   returned `true`. Settled windows are not even in the loop's wait set; the loop then sleeps on messages (the cursor poll of an Overlay
   aside, see 5).
