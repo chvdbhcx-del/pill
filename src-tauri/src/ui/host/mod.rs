@@ -75,6 +75,9 @@ pub enum MonitorSel {
     UnderCursor,
     /// The monitor with exactly this rectangle (what [`HostHandle::monitors`] returned).
     Rect(IRect),
+    /// The monitor the island stands on right now (`edge.monitor` = active: the music widget follows it; the primary until the island is placed or
+    /// when its monitor is gone). Re-evaluated at every placement.
+    Island,
 }
 
 /// Where a window goes when it is created / shown.

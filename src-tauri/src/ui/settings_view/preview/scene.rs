@@ -196,7 +196,7 @@ pub fn of_page(page: &str) -> Scene {
 
 /// Settings the preview island must not see: they would hide it, mute it or point at the user's machine.
 const BLOCKED: &[&str] = &[
-    "autoHide", "autoHideKeepDesktop", "passThrough", "passThroughOpacity", "hideInFullscreen", "fullscreenPeek", "fullscreenPeekEdge", "hideInApps", "showInApps", "showInCapture", "monitor",
+    "autoHide", "autoHideKeepDesktop", "passThrough", "passThroughOpacity", "hideInFullscreen", "fullscreenPeek", "fullscreenPeekEdge", "hideInApps", "showInApps", "showInCapture", "monitor", "edge.monitor",
     "offsetX", "underTaskbar", "firstRunDone", "quiet.", "settings.",
     // the music widget is its own window: the preview island keeps showing its sample player (and the widget would take the real island's rows away)
     "media.widget", "media.widget.",

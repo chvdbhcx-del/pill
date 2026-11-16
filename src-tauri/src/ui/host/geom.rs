@@ -459,6 +459,35 @@ pub fn monitor_at(mons: &[IRect], x: i32, y: i32) -> Option<usize> {
     mons.iter().position(|m| m.contains(x, y))
 }
 
+/// The monitor the island follows to (`edge.monitor` = active): the one holding most of the foreground window `fg` (a window that straddles two
+/// monitors belongs to the one with more of it; the first on a tie), else the one under the cursor (no usable foreground window: the desktop, a
+/// minimised one), else `fallback` (the primary). Pure.
+pub fn follow_monitor(mons: &[IRect], fg: Option<IRect>, cursor: Option<(i32, i32)>, fallback: usize) -> usize {
+    let area = |r: IRect| r.w().max(0) as i64 * r.h().max(0) as i64;
+    let by_window = fg.and_then(|f| {
+        let (mut best, mut best_a) = (None, 0);
+        for (i, m) in mons.iter().enumerate() {
+            let a = f.intersect(m).map_or(0, area);
+            if a > best_a {
+                (best, best_a) = (Some(i), a);
+            }
+        }
+        best
+    });
+    let i = by_window.or_else(|| cursor.and_then(|(x, y)| monitor_at(mons, x, y))).unwrap_or(fallback);
+    if i < mons.len() {
+        i
+    } else {
+        fallback.min(mons.len().saturating_sub(1))
+    }
+}
+
+/// A monitor's identity across `HostHandle::monitors` calls (its top-left corner: no two monitors share one), as one number. The order of the list
+/// changes when monitors come and go; this does not.
+pub fn monitor_key(r: &IRect) -> i64 {
+    ((r.l as i64) << 32) | (r.t as u32 as i64)
+}
+
 // ---------------------------------------------------------------------------------------------------------------------------------------
 // Borderless window hit test (Normal windows with a view-drawn title bar)
 // ---------------------------------------------------------------------------------------------------------------------------------------
@@ -1134,5 +1163,30 @@ mod tests {
         let l = |iw| widget_bar_slot(Align::Left, mon, &b, s, 288, 0.0, Some(IslandBar { align: Align::Center, offset_pct: 0.0, w: iw })).align;
         assert_eq!(l(150), Align::Left);
         assert_ne!(l(2400), Align::Left, "a 2400 px island fills a 2560 px bar: the left widget no longer fits beside it");
+    }
+
+    #[test]
+    fn the_island_follows_the_monitor_with_most_of_the_foreground_window() {
+        let mons = [IRect::new(0, 0, 1920, 1080), IRect::new(1920, 0, 3840, 1080), IRect::new(-1280, 0, 0, 1024)];
+        let pick = |fg: Option<IRect>, cur: Option<(i32, i32)>| follow_monitor(&mons, fg, cur, 0);
+        assert_eq!(pick(Some(IRect::new(2000, 100, 3000, 900)), None), 1, "a window on the second monitor");
+        assert_eq!(pick(Some(IRect::new(1500, 100, 2100, 900)), None), 0, "straddling: 420 px on the first, 180 on the second");
+        assert_eq!(pick(Some(IRect::new(1800, 100, 2900, 900)), None), 1, "straddling the other way");
+        assert_eq!(pick(Some(IRect::new(-1000, 10, -200, 500)), None), 2, "a monitor left of the primary (negative coordinates)");
+        assert_eq!(pick(Some(IRect::new(1920, 0, 1920, 0)), Some((2500, 5))), 1, "an empty window rect is no window: the cursor decides");
+        assert_eq!(pick(Some(IRect::new(9000, 9000, 9500, 9500)), Some((10, 10))), 0, "a window off every monitor: the cursor decides");
+        assert_eq!(pick(None, Some((-5, 5))), 2, "no foreground window: the cursor");
+        assert_eq!(pick(None, Some((50000, 5))), 0, "the cursor off every monitor: the fallback");
+        assert_eq!(follow_monitor(&mons, None, None, 1), 1, "nothing known: the fallback (the primary)");
+        assert_eq!(follow_monitor(&mons, None, None, 7), 2, "a fallback past the end is clamped");
+        assert_eq!(follow_monitor(&[], None, None, 0), 0, "no monitors: index 0, the caller finds none");
+    }
+
+    #[test]
+    fn a_monitor_key_survives_the_list_changing_order() {
+        let (a, b) = (IRect::new(0, 0, 1920, 1080), IRect::new(-1920, -200, 0, 880));
+        assert_ne!(monitor_key(&a), monitor_key(&b));
+        assert_eq!(monitor_key(&a), monitor_key(&IRect::new(0, 0, 2560, 1440)), "the key is the corner, not the size: a resolution change keeps the monitor");
+        assert_ne!(monitor_key(&IRect::new(-1, 0, 5, 5)), monitor_key(&IRect::new(0, -1, 5, 5)));
     }
 }

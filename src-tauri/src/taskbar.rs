@@ -3,6 +3,7 @@
 // is clicked, so the island (a topmost overlay positioned over the bar, never a child of `Shell_TrayWnd`) raises itself back:
 //  * at once, from an `EVENT_SYSTEM_FOREGROUND` hook that wakes only when the foreground window changes (zero idle cost, no timer);
 //  * and from the guard poll (500 ms, already running) as a safety net for a raise that gave no focus event.
+// The same hook also tells the island that follows the active monitor (`edge.monitor` = active) that the foreground window changed (`pill::monitor_poke`).
 // Neither activates the island or takes the focus: `SWP_NOACTIVATE`, no move, no resize.
 // The standalone music widget (`media.widget.edge` = taskbar) stands in the same bar and rides the same hook: it is the second window the hook raises.
 use crate::ui::host::geom::{self, Align, IRect, IslandBar, WidgetAsk};
@@ -27,7 +28,7 @@ pub fn covered_by_taskbar<'a>(above: impl IntoIterator<Item = &'a str>) -> bool 
     above.into_iter().any(is_taskbar_class)
 }
 
-fn class_of(h: HWND) -> String {
+pub(crate) fn class_of(h: HWND) -> String {
     let mut buf = [0u16; 64];
     let n = unsafe { GetClassNameW(h, &mut buf) }.max(0) as usize;
     String::from_utf16_lossy(&buf[..n])
@@ -104,8 +105,12 @@ static WIDGET: AtomicIsize = AtomicIsize::new(0);
 static FOLLOW: AtomicBool = AtomicBool::new(false);
 static FOLLOW_WIDGET: AtomicBool = AtomicBool::new(false);
 static HOOKED: AtomicBool = AtomicBool::new(false);
+static FOLLOW_MON: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "system" fn on_foreground(_hook: HWINEVENTHOOK, _event: u32, hwnd: HWND, _object: i32, _child: i32, _thread: u32, _ms: u32) {
+    if FOLLOW_MON.load(Ordering::Relaxed) {
+        crate::pill::monitor_poke();
+    }
     let (island, widget) = (FOLLOW.load(Ordering::Relaxed), FOLLOW_WIDGET.load(Ordering::Relaxed));
     if (island || widget) && is_taskbar_class(&class_of(hwnd)) {
         if island {
@@ -136,6 +141,18 @@ pub fn follow(island: HWND, on: bool) {
     }
     ISLAND.store(island.0 as isize, Ordering::Relaxed);
     hook();
+}
+
+/// The island follows the active monitor (`on`) or not any more. Call from the UI thread (the hook is installed from its message loop). Turning it on
+/// asks for a first look at once (`pill::monitor_poke`): nothing else would tell the island where the foreground window is until it changes.
+pub fn follow_monitor(on: bool) {
+    if FOLLOW_MON.swap(on, Ordering::Relaxed) == on {
+        return;
+    }
+    if on {
+        hook();
+    }
+    crate::pill::monitor_poke(); // on: look now; off: the island goes home
 }
 
 /// The same for the music widget's window (`on` while it stands in the bar). Call from the UI thread.

@@ -264,7 +264,7 @@ fn no_row_needs_a_restart() {
 // ------------------------------------------------------------------------------------------------ the re-layout lost nothing
 
 // The settings.json keys of the 16-page schema this one replaced (a snapshot: none may be renamed, dropped or added by a re-layout).
-const OLD_KEYS: [&str; 181] = [
+const OLD_KEYS: [&str; 182] = [
     "shape", "theme", "island.color", "size",
     "monitor", "character", "character.liquid", "pet",
     "pet.side", "pet.size", "pet.keepDuringMusic", "showTime",
@@ -310,7 +310,7 @@ const OLD_KEYS: [&str; 181] = [
     "ai.provider", "ai.baseUrl", "ai.model", "aiSetupDone",
     "updateAuto", "whatsNew",
     // added with the live preview panel and with the bottom edge (the only keys since the re-layout)
-    "settings.preview", "edge.position", "edge.align", "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset",
+    "settings.preview", "edge.position", "edge.align", "edge.monitor", "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset",
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.

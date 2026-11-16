@@ -8,8 +8,9 @@
 use crate::ui::bus;
 use serde_json::{json, Map, Value};
 use std::ffi::c_void;
-use crate::ui::host::geom::{self, Align, Dock};
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use crate::ui::host::geom::{self, Align, Dock, IRect};
+use crate::ui::host::MonitorInfo;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU8, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -124,8 +125,9 @@ pub fn dock() -> Dock {
 }
 
 /// The island view slid out and asks for the new edge (`bottom`, and `bar`: inside the taskbar) and side (`align`, the centre unless it is the
-/// bottom edge): re-place the window there.
-pub fn pill_edge(app: AppHandle, bottom: bool, align: Option<String>, bar: Option<bool>) {
+/// bottom edge): re-place the window there. `follow`: the view is also changing monitors (`pill:monitor`): the window goes to the monitor the
+/// foreground window is on (or back to the `monitor` setting's when `edge.monitor` is no longer active).
+pub fn pill_edge(app: AppHandle, bottom: bool, align: Option<String>, bar: Option<bool>, follow: Option<bool>) {
     let a = if bottom { Align::from_setting(align.as_deref().unwrap_or("center")) } else { Align::Center };
     let d = match (bottom, bar.unwrap_or(false)) {
         (false, _) => Dock::Top,
@@ -134,8 +136,15 @@ pub fn pill_edge(app: AppHandle, bottom: bool, align: Option<String>, bar: Optio
     };
     let moved = DOCK.swap(d.code(), Ordering::Relaxed) != d.code();
     let moved = ALIGN.swap(a.code(), Ordering::Relaxed) != a.code() || moved;
-    if moved {
-        on_main(&app, place);
+    let target = if follow_on() { MON_TARGET.load(Ordering::Relaxed) } else { NO_MON };
+    let followed = follow == Some(true) && MON_COMMITTED.swap(target, Ordering::Relaxed) != target;
+    if moved || followed {
+        on_main(&app, move |a| {
+            place(a);
+            if followed {
+                crate::ui::musicwidget::relayout(a); // the widget stands where the island does
+            }
+        });
     }
 }
 
@@ -167,16 +176,25 @@ fn frame_for(m: &crate::ui::host::MonitorInfo, expanded: bool) -> Lay {
     Lay { x, y, w, h, mon: [ml, mt, ml + mw, mt + mh], scale: sf, bar: bar.map_or(0, |b| b.h) }
 }
 
-/// Monitors come from the host (the same `monitor` setting, "1".. = list order, else the primary).
+/// The monitor the window stands on: the one the island followed the foreground window to (`followed`, a `geom::monitor_key`) while it is still
+/// there, else the `monitor` setting's ("1".. = list order), else the primary. Pure.
+fn pick_for_layout<'a>(mons: &'a [MonitorInfo], want: &str, followed: Option<i64>) -> Option<&'a MonitorInfo> {
+    followed
+        .and_then(|k| mons.iter().find(|m| geom::monitor_key(&m.rect) == k))
+        .or_else(|| want.parse::<usize>().ok().and_then(|i| mons.get(i.saturating_sub(1))))
+        .or_else(|| mons.iter().find(|m| m.primary))
+        .or_else(|| mons.first())
+}
+
+/// Monitors come from the host (the same `monitor` setting, "1".. = list order, else the primary; `edge.monitor` = active overrides it).
 fn layout_native(expanded: bool) -> Option<Lay> {
     let mons = crate::ui::host::handle()?.monitors();
     let want = crate::settings::get_str("monitor", "primary");
-    let m = want
-        .parse::<usize>()
-        .ok()
-        .and_then(|i| mons.get(i.saturating_sub(1)))
-        .or_else(|| mons.iter().find(|m| m.primary))
-        .or_else(|| mons.first())?;
+    let committed = MON_COMMITTED.load(Ordering::Relaxed);
+    let m = pick_for_layout(&mons, &want, (committed != NO_MON).then_some(committed))?;
+    if committed != NO_MON && geom::monitor_key(&m.rect) != committed {
+        MON_COMMITTED.store(NO_MON, Ordering::Relaxed); // that monitor was unplugged: the island is home, and does not jump back when it returns
+    }
     Some(frame_for(m, expanded))
 }
 
@@ -202,6 +220,8 @@ pub fn place(_app: &AppHandle) {
         let _ = bus::emit("pill:taskbar", json!({ "h": l.bar as f64 / l.scale.max(0.25) }));
     }
     crate::taskbar::follow(me(), l.bar > 0);
+    crate::taskbar::follow_monitor(follow_on());
+    publish_move();
 }
 
 /// True while auto-hide has slid the pill away (guard.rs brings it back over the desktop when `autoHideKeepDesktop` is on).
@@ -388,7 +408,7 @@ pub fn toggle(app: &AppHandle) {
 
 /// Settings that need Rust to react right away.
 pub fn on_settings(app: &AppHandle, patch: &Map<String, Value>) {
-    if ["size", "monitor", "offsetX", "underTaskbar", "passThrough"].iter().any(|k| patch.contains_key(*k)) {
+    if ["size", "monitor", "edge.monitor", "offsetX", "underTaskbar", "passThrough"].iter().any(|k| patch.contains_key(*k)) {
         place(app);
     }
     if patch.contains_key("showInCapture") {
@@ -418,6 +438,180 @@ pub fn body_bottom(mon_x: i32, mon_y: i32) -> Option<i32> {
     let s = st();
     let on_screen = s.hidden == 0 && s.shown && s.rect[3] > 0.0 && s.mon[0] == mon_x && s.mon[1] == mon_y;
     on_screen.then(|| s.layout[1] + ((s.rect[1] + s.rect[3]) * s.scale).round() as i32)
+}
+
+// ---- following the active monitor (`edge.monitor` = active) ----
+// The foreground hook (`taskbar::on_foreground`) and a display change only POKE: a debounced look (no timer of its own) finds the monitor that
+// holds the foreground window and, when it is not the one the island stands on, says so to the island view (`pill:monitor`). The view decides WHEN
+// (collapsed, no card, no drag, no recording; reduced motion: at once), slides out through its edge and asks for the window with `pill_edge`
+// (`follow`); only then does `MON_COMMITTED` change and `layout_native` re-place the window with the new monitor's own work area, taskbar
+// strip, DPI, side and size. The music widget follows through `MonitorSel::Island`.
+
+const NO_MON: i64 = i64::MIN;
+/// the monitor (`geom::monitor_key`) the last look found the foreground window on
+static MON_TARGET: AtomicI64 = AtomicI64::new(NO_MON);
+/// the monitor the view has sent the window to; `layout_native` stands it there while that monitor exists
+static MON_COMMITTED: AtomicI64 = AtomicI64::new(NO_MON);
+static MON_POKES: AtomicU32 = AtomicU32::new(0);
+/// what `pill:monitor` last said
+static MON_PENDING: AtomicBool = AtomicBool::new(false);
+/// the look waits this long after the last focus change (alt-tab through several windows is one look)
+const MON_DEBOUNCE_MS: u64 = 400;
+
+fn follow_on() -> bool {
+    crate::settings::get_str("edge.monitor", "primary").eq_ignore_ascii_case("active")
+}
+
+/// The monitor the island stands on now (physical px), `None` before it is first placed. The music widget's `MonitorSel::Island`.
+pub fn island_monitor() -> Option<IRect> {
+    let m = st().mon;
+    (m != [0; 4]).then(|| IRect::new(m[0], m[1], m[2], m[3]))
+}
+
+/// Does the window have to change monitors? `target` = where the foreground window is, `at` = where the island stands, `committed` = where the
+/// view last sent it (all `geom::monitor_key`s), `known` = the monitors there are. Following: yes when the foreground monitor exists and is not
+/// this one. Not following (any more): yes while the window is still on a followed monitor, so it goes home. Pure.
+fn move_pending(active: bool, target: i64, at: i64, committed: i64, known: &[i64]) -> bool {
+    if active {
+        target != NO_MON && target != at && known.contains(&target)
+    } else {
+        committed != NO_MON
+    }
+}
+
+/// Tells the island view when [`move_pending`] changed (and again at every placement while it holds, so a view that was busy looks again).
+fn publish_move() {
+    let Some(h) = crate::ui::host::handle() else { return };
+    let at = {
+        let s = st();
+        (s.mon != [0; 4]).then(|| geom::monitor_key(&IRect::new(s.mon[0], s.mon[1], s.mon[2], s.mon[3])))
+    };
+    if at.is_none() && !MON_PENDING.load(Ordering::Relaxed) {
+        return;
+    }
+    let known: Vec<i64> = h.monitors().iter().map(|m| geom::monitor_key(&m.rect)).collect();
+    let pending = at.is_some_and(|at| move_pending(follow_on(), MON_TARGET.load(Ordering::Relaxed), at, MON_COMMITTED.load(Ordering::Relaxed), &known));
+    if MON_PENDING.swap(pending, Ordering::Relaxed) != pending || pending {
+        let _ = bus::emit("pill:monitor", json!({ "move": pending }));
+    }
+}
+
+/// The foreground window changed (or the follow switch turned): look again in [`MON_DEBOUNCE_MS`], once, whatever came in between. Any thread.
+pub fn monitor_poke() {
+    let n = MON_POKES.fetch_add(1, Ordering::Relaxed) + 1;
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(MON_DEBOUNCE_MS));
+        if MON_POKES.load(Ordering::Relaxed) == n {
+            monitor_look();
+        }
+    });
+}
+
+/// A display was added, removed or re-arranged.
+pub fn monitor_event() {
+    if follow_on() || MON_COMMITTED.load(Ordering::Relaxed) != NO_MON {
+        monitor_poke();
+    }
+}
+
+enum Foreground {
+    /// one of our own windows (settings, the command bar, the island): the island stays where it is
+    Own,
+    Rect(IRect),
+    /// no window to go by (the desktop, a minimised or hidden one)
+    Nothing,
+}
+
+fn foreground() -> Foreground {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindowVisible};
+    unsafe {
+        let h = GetForegroundWindow();
+        if h.0.is_null() || !IsWindowVisible(h).as_bool() || IsIconic(h).as_bool() {
+            return Foreground::Nothing;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(h, Some(&mut pid));
+        if pid == std::process::id() {
+            return Foreground::Own;
+        }
+        if matches!(crate::taskbar::class_of(h).as_str(), "Progman" | "WorkerW") {
+            return Foreground::Nothing; // the desktop covers the whole workspace: it says nothing about where the user is
+        }
+        let mut r = windows::Win32::Foundation::RECT::default();
+        if GetWindowRect(h, &mut r).is_err() {
+            return Foreground::Nothing;
+        }
+        Foreground::Rect(IRect::new(r.left, r.top, r.right, r.bottom))
+    }
+}
+
+/// The debounced look, off the UI thread: where is the foreground window, and does the island have to go there?
+fn monitor_look() {
+    use windows::Win32::UI::HiDpi::{SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
+    let Some(h) = crate::ui::host::handle() else { return };
+    unsafe {
+        SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2); // physical px, like the monitors' rects
+    }
+    if follow_on() {
+        let mons = h.monitors();
+        let fg = match foreground() {
+            Foreground::Own => return,
+            Foreground::Rect(r) => Some(r),
+            Foreground::Nothing => None,
+        };
+        let cursor = {
+            let mut p = windows::Win32::Foundation::POINT::default();
+            unsafe { windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut p) }.is_ok().then_some((p.x, p.y))
+        };
+        let rects: Vec<IRect> = mons.iter().map(|m| m.rect).collect();
+        let primary = mons.iter().position(|m| m.primary).unwrap_or(0);
+        let i = geom::follow_monitor(&rects, fg, cursor, primary);
+        if let Some(m) = mons.get(i) {
+            MON_TARGET.store(geom::monitor_key(&m.rect), Ordering::Relaxed);
+        }
+    }
+    publish_move();
+}
+
+#[cfg(test)]
+mod follow_tests {
+    use super::*;
+
+    fn mon(l: i32, t: i32, r: i32, b: i32, primary: bool) -> MonitorInfo {
+        let rect = IRect::new(l, t, r, b);
+        MonitorInfo { rect, work: rect, primary, scale: 1.0, refresh_hz: 60 }
+    }
+    fn two() -> Vec<MonitorInfo> {
+        vec![mon(0, 0, 1920, 1080, true), mon(1920, 0, 3840, 1080, false)]
+    }
+    fn key(m: &MonitorInfo) -> i64 {
+        geom::monitor_key(&m.rect)
+    }
+
+    #[test]
+    fn the_window_stands_on_the_followed_monitor_while_it_exists_else_where_the_setting_says() {
+        let m = two();
+        assert_eq!(pick_for_layout(&m, "primary", None).map(key), Some(key(&m[0])));
+        assert_eq!(pick_for_layout(&m, "2", None).map(key), Some(key(&m[1])), "an explicit choice stays the default");
+        assert_eq!(pick_for_layout(&m, "primary", Some(key(&m[1]))).map(key), Some(key(&m[1])), "followed beats the setting");
+        assert_eq!(pick_for_layout(&m, "2", Some(key(&m[0]))).map(key), Some(key(&m[0])), "even an explicit other monitor");
+        assert_eq!(pick_for_layout(&m[..1], "primary", Some(key(&m[1]))).map(key), Some(key(&m[0])), "unplugged: back to the primary");
+        assert_eq!(pick_for_layout(&m[..1], "2", Some(key(&m[1]))).map(key), Some(key(&m[0])), "and an explicit one that is not there is the primary too");
+        assert!(pick_for_layout(&[], "primary", None).is_none());
+    }
+
+    #[test]
+    fn a_move_is_pending_only_for_a_monitor_that_exists_and_is_not_this_one() {
+        let m = two();
+        let (a, b) = (key(&m[0]), key(&m[1]));
+        let known = [a, b];
+        assert!(move_pending(true, b, a, NO_MON, &known), "the foreground window is on the other monitor");
+        assert!(!move_pending(true, a, a, NO_MON, &known), "already here");
+        assert!(!move_pending(true, NO_MON, a, NO_MON, &known), "no look yet");
+        assert!(!move_pending(true, 12345, a, NO_MON, &known), "a monitor that was unplugged is no target: no slide loop");
+        assert!(move_pending(false, b, a, b, &known), "following was switched off while the island stands on a followed monitor: home");
+        assert!(!move_pending(false, b, a, NO_MON, &known), "not following, never moved: nothing to do");
+    }
 }
 
 // ---- commands ----
