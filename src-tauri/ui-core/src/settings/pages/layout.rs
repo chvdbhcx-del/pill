@@ -169,6 +169,7 @@ pub(super) fn look(p: &mut Pool) -> Page {
                 vec![p.sec(tr("Цвет, прозрачность, положение", "Colour, transparency, position"), &["island.colorCustom", "opacityCol", "opacityExp", "offsetX", "underTaskbar"]).adv()],
             ),
             part(vec![p.sec(tr("Часы и дата", "Clock and date"), &["showTime", "showDate", "showSeconds", "clock24"])], vec![]),
+            part(vec![p.sec(tr("Поделиться оформлением", "Share your look"), &["look.share"])], vec![]),
             part(vec![p.sec(tr("Анимация", "Animation"), &["reduceMotion"])], vec![p.sec(tr("Частота кадров и видеокарта", "Frame rate and GPU"), &["fps", "edgeIdleFps", "ui.gpu"]).adv()]),
         ],
     )

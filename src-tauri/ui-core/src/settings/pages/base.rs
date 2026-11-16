@@ -243,6 +243,16 @@ pub fn appearance() -> Page {
                     .kw(&["gpu", "hardware", "software", "warp", "render", "видеокарта", "ускорение", "процессор", "перезапуск"]),
                 ],
             ),
+            group(
+                tr("Поделиться оформлением", "Share your look"),
+                vec![custom(
+                    "look.share",
+                    tr("Поделиться оформлением", "Share your look"),
+                    tr("Файл или текст только с видом острова: тема, цвета, размер, место, часы, питомец. Без переключателей модулей, ключей и личных данных", "A file or a text with the looks of the island only: theme, colours, size, place, clock, pet. No module switches, keys or personal data"),
+                    "look.share",
+                )
+                .kw(&["share", "look", "theme", "preset", "export", "import", "pilllook", "поделиться", "оформление", "вид", "пресет", "тема", "экспорт", "импорт"])],
+            ),
         ],
     )
 }
