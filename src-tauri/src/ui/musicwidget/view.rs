@@ -29,7 +29,7 @@ use crate::ui::host::geom::{Align, Dock};
 use crate::ui::island::gpu::Gpu;
 use crate::ui::liquid::{Feel, Flow};
 use crate::ui::tabs::a::draw::ImageCache;
-use crate::ui::tabs::a::home::{css, player::PlayerFx};
+use crate::ui::tabs::a::home::css;
 use crate::ui::tabs::a::core::{Tick, Ticker};
 use crate::ui::view::{Cx, Msg, ProximityEvent, Ticket, View};
 use glasskit::canvas::{scale_about, translation, Canvas};
@@ -162,8 +162,6 @@ pub struct MusicView {
     cov_from: Option<(Color, Color)>,
     cov_to: Option<(Color, Color)>,
     cov_t: Flow,
-    /// the geometry and the reflections of the island's player card
-    fx: PlayerFx,
     ticker: Option<Ticker>,
     /// the period the ticker runs at (fast while the player's level is measured, see `loud`) and the host time of the last once-a-second tick
     ticker_ms: u64,
@@ -243,7 +241,6 @@ impl MusicView {
             cov_from: None,
             cov_to: None,
             cov_t: Flow::new(1.0, Feel::FADE.within(420.0)),
-            fx: PlayerFx::new(),
             ticker: None,
             ticker_ms: loud::IDLE_MS,
             slow_at: 0.0,
@@ -1025,6 +1022,8 @@ impl View for MusicView {
             now: cx.now_ms,
             p,
             pt: lg::parts(st, p, dy),
+            body,
+            rad,
             cap,
             card,
             art: self.art_id,
@@ -1034,7 +1033,6 @@ impl View for MusicView {
             known: self.loud.known(),
             images: &self.images,
             blur: self.blur.as_deref(),
-            fx: &self.fx,
         };
         let gpu = &mut self.gpu;
         let hc = self.kbd.hc.is_some();

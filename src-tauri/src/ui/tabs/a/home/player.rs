@@ -28,8 +28,8 @@ pub const LY_W: f32 = 148.0;
 /// Height of one lyric slot (two lines of 13 px).
 pub const LH: f32 = 34.0;
 /// Side of a mirror reflection and how far it hides behind the cover.
-const REFL: f32 = 96.0;
-const REFL_HIDDEN: f32 = 14.0;
+pub(crate) const REFL: f32 = 96.0;
+pub(crate) const REFL_HIDDEN: f32 = 14.0;
 
 /// Where everything of the player card sits (tab-local px; the layout.rs card is the frame).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -256,15 +256,7 @@ impl PlayerFx {
     /// The blurred reflections behind the cover. `key` = the tiny pre-blurred copy of the cover (or the cover itself while that is not ready).
     pub fn paint_reflections(&self, cv: &Canvas, images: &ImageCache, key: Option<&str>, ox: f32, oy: f32) {
         let k = self.mir.at01();
-        let Some(key) = key.filter(|_| k > 0.01) else { return };
-        for (i, r) in self.geo.refl.iter().enumerate() {
-            let r = r.offset(ox, oy);
-            // the mask is brightest at the edge hidden behind the cover and dissolves in every direction
-            let inner: Pt = if i == 0 { (r.right() - REFL_HIDDEN, r.cy()) } else { (r.x + REFL_HIDDEN, r.cy()) };
-            with_radial_mask(cv, r, inner, r.w * 0.9, r.h * 0.6, &[(0.0, 1.0), (0.5, 0.5), (1.0, 0.0)], 0.8 * k, |cv| {
-                images.draw(cv, key, r, 0.0, 1.0, Fit::Cover);
-            });
-        }
+        paint_reflection_pair(cv, images, key, [self.geo.refl[0].offset(ox, oy), self.geo.refl[1].offset(ox, oy)], k);
     }
 
     /// The lyrics column (absolute positions; call it inside the card's clip).
@@ -288,6 +280,24 @@ impl PlayerFx {
             cv.with_opacity(alpha * a, |cv| cv.with_clip(r, |cv| cv.text(r, s, Style::new(13.0, 600).wrap(), c)));
         }
     }
+}
+
+/// The two blurred reflections of a cover in the rectangles `refl` (left one, right one; each is brightest at its edge hidden behind the cover and
+/// dissolves in every direction), drawn at strength `k` (0..1). `key` = the tiny pre-blurred copy of the cover.
+pub fn paint_reflection_pair(cv: &Canvas, images: &ImageCache, key: Option<&str>, refl: [Rect; 2], k: f32) {
+    paint_reflection(cv, images, key, refl[0], true, k);
+    paint_reflection(cv, images, key, refl[1], false, k);
+}
+
+/// One blurred reflection in `r`: the left one (`left`: brightest at its right edge, hidden behind the cover) or the right one, at strength `k`.
+pub fn paint_reflection(cv: &Canvas, images: &ImageCache, key: Option<&str>, r: Rect, left: bool, k: f32) {
+    let Some(key) = key.filter(|_| k > 0.01) else { return };
+    // the mask is brightest at the edge hidden behind the cover and dissolves in every direction
+    let hid = REFL_HIDDEN * r.w / REFL;
+    let inner: Pt = if left { (r.right() - hid, r.cy()) } else { (r.x + hid, r.cy()) };
+    with_radial_mask(cv, r, inner, r.w * 0.9, r.h * 0.6, &[(0.0, 1.0), (0.5, 0.5), (1.0, 0.0)], 0.8 * k, |cv| {
+        images.draw(cv, key, r, 0.0, 1.0, Fit::Cover);
+    });
 }
 
 /// `f` draws through a radial opacity mask: full at `centre`, fading to nothing at `rx` / `ry`, and as a whole at `opacity`.

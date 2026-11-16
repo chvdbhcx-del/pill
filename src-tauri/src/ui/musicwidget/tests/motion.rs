@@ -302,3 +302,115 @@ fn variant_sheets() {
         save(&d, "m14-variants.png", &t);
     });
 }
+
+/// What one folded capsule is made of: the settings, the track and the strip it stands in (`None` = the plain bottom edge).
+struct Folded<'a> {
+    extra: Value,
+    title: &'a str,
+    artist: &'a str,
+    /// the cover (`None` = the track brings none)
+    url: Option<&'a str>,
+    accent: &'a str,
+    bar: Option<f32>,
+}
+
+/// A widget showing `f` folded, settled and drawn a few times so that the cover is decoded; the stand that places it.
+fn folded_sim(f: &Folded) -> (Sim, lg::Stand) {
+    let (svc, fb) = Services::fake();
+    fb.api.reply("settings_get", Ok(cfg(f.extra.clone())));
+    let mut s = Sim::with_services(Box::new(Blank), svc);
+    let st = match f.bar {
+        Some(b) => {
+            let v = MusicView::new(&mut s.cx, Dock::Taskbar).with_slot(b, Align::Left);
+            s.view = Box::new(v);
+            bar_st(Align::Left, b, 1.0)
+        }
+        None => {
+            let v = MusicView::new(&mut s.cx, Dock::Bottom);
+            s.view = Box::new(v);
+            base(Dock::Bottom)
+        }
+    };
+    s.set_refresh_hz(60.0);
+    s.pump();
+    let mut m = json!({ "has_session": true, "playing": true, "title": f.title, "artist": f.artist, "album": "", "app": "Spotify.exe", "position_ms": 61_000, "duration_ms": 200_000, "thumb_id": if f.url.is_some() { 1 } else { 0 }, "accent": f.accent });
+    if let Some(u) = f.url {
+        m["thumbnail"] = json!(u);
+    }
+    media(&mut s, &fb, m);
+    s.show();
+    s.run(4000);
+    cover_worker(&mut s);
+    let win = if f.bar.is_some() { lg::WIN_BAR_REAL } else { lg::WIN_REAL };
+    let _ = film(&mut s, &Theme::pill_dark(), win, Rect::new(0.0, 0.0, 10.0, 10.0), 30.0, 14);
+    (s, st)
+}
+
+/// The folded capsule alone (its body and a margin), over the backdrop.
+fn folded_tile(f: &Folded) -> Image {
+    let (mut s, st) = folded_sim(f);
+    let win = if f.bar.is_some() { lg::WIN_BAR_REAL } else { lg::WIN_REAL };
+    let img = s.render(win, &Theme::pill_dark());
+    let b = st.rect_to_real(lg::body(st, 0.0, 0.0));
+    tile(&img, Rect::new((b.x - 10.0).max(0.0), (b.y - 10.0).max(0.0), lg::CAP_W + 20.0, b.h + 20.0))
+}
+
+/// The folded capsule in the island's player modes and themes, with and without a cover, with long and short names and in the heights of a
+/// taskbar, and the way it opens into the card.
+#[test]
+fn capsule_sheets() {
+    let Some(d) = dir() else { return };
+    gfx(move || {
+        let _m = motion_on();
+        let red = art([200, 50, 70, 255], [90, 20, 40, 255]);
+        let blue = art([40, 90, 210, 255], [20, 30, 90, 255]);
+        let gold = art([230, 190, 60, 255], [120, 70, 20, 255]);
+        let f = |extra: Value, title: &'static str, artist: &'static str, url: Option<&str>, accent: &'static str, bar: Option<f32>| Folded { extra, title, artist, url: url.map(|u| Box::leak(u.to_string().into_boxed_str()) as &str), accent, bar };
+        // 1. the three modes, dark and light
+        let mut t = Vec::new();
+        for theme in ["dark", "light"] {
+            for mode in ["mirror", "compact", "fill"] {
+                t.push(folded_tile(&f(json!({ "theme": theme, "home.player": mode }), "Invented Song", "Invented Band", Some(&red), "#cc3246", None)));
+            }
+        }
+        save(&d, "c1-modes.png", &t);
+        // 2. other covers, no cover, long and short names, a Cyrillic one, the capitals of the owner's screenshot
+        let t = [
+            folded_tile(&f(json!({}), "Invented Song", "Invented Band", Some(&blue), "#2850d2", None)),
+            folded_tile(&f(json!({}), "Invented Song", "Invented Band", Some(&gold), "#e6be3c", None)),
+            folded_tile(&f(json!({}), "Invented Song", "Invented Band", None, "#cc3246", None)),
+            folded_tile(&f(json!({ "theme": "light" }), "Invented Song", "Invented Band", None, "#cc3246", None)),
+            folded_tile(&f(json!({}), "PER 3 DOSE", "ZAPRAVKA", Some(&red), "#cc3246", None)),
+            folded_tile(&f(json!({}), "A Title That Is Much Too Long To Fit In The Folded Capsule At All", "An Artist With A Long Name Too", Some(&blue), "#2850d2", None)),
+            folded_tile(&f(json!({}), "Short", "", Some(&gold), "#e6be3c", None)),
+            folded_tile(&f(json!({}), "Очень длинное название трека которое не помещается", "Исполнитель", Some(&red), "#cc3246", None)),
+        ];
+        save(&d, "c2-covers-and-names.png", &t);
+        // 3. the heights of a taskbar: 56 (no bar), 52, 48, 40, 32
+        let t: Vec<Image> = [None, Some(56.0), Some(48.0), Some(44.0), Some(40.0), Some(32.0)]
+            .iter()
+            .map(|b| folded_tile(&f(json!({}), "Invented Song", "Invented Band", Some(&red), "#cc3246", *b)))
+            .collect();
+        save(&d, "c3-bar-heights.png", &t);
+        let t: Vec<Image> = [Some(48.0), Some(40.0), Some(32.0)]
+            .iter()
+            .map(|b| folded_tile(&f(json!({ "theme": "light" }), "A Title That Is Much Too Long To Fit", "An Artist", Some(&blue), "#2850d2", *b)))
+            .collect();
+        save(&d, "c4-bar-light-long.png", &t);
+        // 4. folded -> open -> folded, in each mode (a frame every 24 ms)
+        let th = Theme::pill_dark();
+        let r = region(base(Dock::Bottom));
+        for (name, mode) in [("mirror", "mirror"), ("compact", "compact"), ("fill", "fill")] {
+            let (mut s, _) = folded_sim(&f(json!({ "home.player": mode }), "Invented Song", "Invented Band", Some(&red), "#cc3246", None));
+            s.send_proximity(&ProximityEvent::Hover);
+            let mut t = film(&mut s, &th, lg::WIN_REAL, r, 24.0, 16);
+            s.send_proximity(&ProximityEvent::Leave);
+            t.extend(film(&mut s, &th, lg::WIN_REAL, r, 24.0, 16));
+            save(&d, &format!("c5-morph-{name}.png"), &t);
+        }
+        // 5. the same in the light theme and in a bar
+        let (mut s, _) = folded_sim(&f(json!({ "theme": "light" }), "Invented Song", "Invented Band", Some(&blue), "#2850d2", None));
+        s.send_proximity(&ProximityEvent::Hover);
+        save(&d, "c6-morph-light.png", &film(&mut s, &th, lg::WIN_REAL, r, 24.0, 16));
+    });
+}

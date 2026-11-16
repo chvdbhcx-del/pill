@@ -94,7 +94,7 @@ fn the_body_grows_away_from_the_dock_edge_and_stays_on_it() {
 fn the_capsule_and_the_card_lay_their_parts_out_inside_themselves() {
     for dock in [Dock::Bottom, Dock::Top] {
         let (cap, card) = frames(dock, 0.0, 0.0);
-        let l = capsule_layout(cap);
+        let l = capsule_layout_in(dock, cap);
         for r in [l.cover, l.text, l.btn[0], l.btn[1], l.btn[2], l.bar] {
             assert!(r.x >= cap.x && r.right() <= cap.right() && r.y >= cap.y && r.bottom() <= cap.bottom(), "{r:?} in {cap:?}");
         }
@@ -112,10 +112,10 @@ fn the_capsule_and_the_card_lay_their_parts_out_inside_themselves() {
 fn clicks_mean_what_the_open_state_says() {
     let d = Dock::Bottom;
     let (cap, card) = frames(d, 0.0, 0.0);
-    let play_c = capsule_layout(cap).btn[1].center();
+    let play_c = capsule_layout_in(d, cap).btn[1].center();
     assert_eq!(hit(d, 0.0, 0.0, play_c), Hit::Button(Btn::Play));
-    assert_eq!(hit(d, 0.0, 0.0, capsule_layout(cap).btn[0].center()), Hit::Button(Btn::Prev));
-    assert_eq!(hit(d, 0.0, 0.0, capsule_layout(cap).cover.center()), Hit::Body);
+    assert_eq!(hit(d, 0.0, 0.0, capsule_layout_in(d, cap).btn[0].center()), Hit::Button(Btn::Prev));
+    assert_eq!(hit(d, 0.0, 0.0, capsule_layout_in(d, cap).cover.center()), Hit::Body);
     assert_eq!(hit(d, 0.0, 0.0, (2.0, 2.0)), Hit::None, "outside the body the window is click-through");
     // the closed capsule does not answer where the card's buttons will be
     let c = card_layout(card, pill_ui_core::panel::a::home_player::PlayerStyle::Mirror);
@@ -238,7 +238,7 @@ fn the_capsule_parts_fit_every_bar() {
         for r in [l.cover, l.text, l.btn[0], l.btn[1], l.btn[2]] {
             assert!(r.x >= cap.x - 0.01 && r.right() <= cap.right() + 0.01 && r.y >= cap.y - 0.01 && r.bottom() <= cap.bottom() + 0.01, "{tag}: {r:?} in {cap:?}");
         }
-        assert!(l.cover.h >= 14.0 - 1.0 / scale && l.cover.h <= cap.h - 8.0, "{tag}: a small cover with room round it");
+        assert!(l.cover.h >= 14.0 - 1.0 / scale && l.cover.h <= cap.h - 6.0, "{tag}: a small cover with room round it");
         assert!(l.btn[0].right() <= l.btn[1].x + 0.01 && l.btn[1].right() <= l.btn[2].x + 0.01, "the buttons do not overlap");
         assert!(l.cover.right() < l.text.x && l.text.right() <= l.btn[0].x && l.text.w > 100.0, "{tag}: one line of text between the cover and the buttons: {:?}", l.text);
         // the progress is a hairline under the buttons, or it is gone
@@ -259,19 +259,21 @@ fn the_bar_capsule_is_symmetrical_centred_and_its_hairline_stays_on_the_straight
         let l = capsule_layout_in(st, cap);
         let tag = format!("{bar}@{scale}");
         let tol = 1.0 / scale + 0.01;
-        // the ink at both ends of the capsule is the same distance from its end on the centre line: the cover's edge, the last glyph's edge
+        // the ends: the cover's edge and the last button's edge stand a little in from the rounded ends, on both sides alike (within the rounding)
         let left = l.cover.x - cap.x;
-        let right = cap.right() - (l.btn[2].right() - l.btn[2].w * 0.24);
-        assert!((left - right).abs() <= tol, "{tag}: {left} on the left, {right} on the right");
-        assert!(left >= cap.h * 0.25, "{tag}: the cover is not jammed into the rounded end ({left} of {})", cap.h);
-        // the cover's corner arcs and the capsule's end share a centre (in x)
-        assert!(((l.cover.x + bar_cover_radius(cap.h)) - (cap.x + cap.h / 2.0)).abs() <= tol, "{tag}: concentric");
+        let right = cap.right() - l.btn[2].right();
+        assert!(left >= cap.h * 0.1 && right >= cap.h * 0.1 && (left - right).abs() <= cap.h * 0.08 + tol, "{tag}: {left} on the left, {right} on the right");
+        // the cover's corner arcs stay inside the capsule's left end: the arc's centre is `r` from the cover's corner, the end is a circle of radius h / 2
+        let r = l.cover.w * COVER_R_RATIO;
+        let (cx, cy) = (cap.x + cap.h / 2.0, cap.cy());
+        let d = ((l.cover.x + r - cx).powi(2) + (l.cover.y + r - cy).powi(2)).sqrt() + r;
+        assert!(d <= cap.h / 2.0 + tol, "{tag}: the cover's corner reaches {d} of {}", cap.h / 2.0);
         // everything on the centre line: the same room above and below, on whole device px
         for r in [l.cover, l.btn[0], l.btn[1], l.btn[2]] {
             assert!(((r.y - cap.y) - (cap.bottom() - r.bottom())).abs() < 0.01, "{tag}: {r:?} centred in {cap:?}");
             assert!(((r.y - cap.y) * scale - ((r.y - cap.y) * scale).round()).abs() < 0.02, "{tag}: on a device px");
         }
-        assert!(l.cover.h <= cap.h - 8.0 + 0.01 && l.btn[1].h <= cap.h - 8.0 + 0.01, "{tag}: room round both");
+        assert!(l.cover.h <= cap.h - 6.0 + 0.01 && l.btn[1].h <= cap.h - 6.0 + 0.01, "{tag}: room round both");
         // the hairline lies in the straight part of the capsule (the rounded ends are never reached) and clear of its edge
         if l.bar.h > 0.0 {
             assert!(l.bar.x >= cap.x + cap.h / 2.0 - 0.01 && l.bar.right() <= cap.right() - cap.h / 2.0 + 0.01, "{tag}: {:?}", l.bar);
@@ -319,7 +321,7 @@ fn in_the_bar_a_click_on_the_cover_or_the_title_toggles_the_card_and_the_buttons
     assert_eq!(hit(st, 1.0, 0.0, c.btn[0].center()), Hit::Button(Btn::Prev));
     // the screen-edge widgets have no header: hover opens them
     let (cap, _) = frames(Dock::Bottom, 0.0, 0.0);
-    assert_eq!(hit(Dock::Bottom, 0.0, 0.0, capsule_layout(cap).cover.center()), Hit::Body);
+    assert_eq!(hit(Dock::Bottom, 0.0, 0.0, capsule_layout_in(Dock::Bottom, cap).cover.center()), Hit::Body);
 }
 
 #[test]
@@ -354,7 +356,7 @@ fn a_taskbar_dock_without_a_bar_is_the_plain_bottom_widget_in_the_taller_window(
         assert_eq!(a.right(), WIN_BAR.0 - PAD, "p={p}: and on the side it is anchored to");
     }
     assert_eq!(frames(st, 0.3, 0.0), (body(st, 0.0, 0.0), body(st, 1.0, 0.0)));
-    assert_eq!(capsule_layout_in(st, body(st, 0.0, 0.0)).btn[1], capsule_layout(body(st, 0.0, 0.0)).btn[1], "the roomy layout");
+    assert_eq!(capsule_layout_in(st, body(st, 0.0, 0.0)).btn[1], capsule_layout_in(Dock::Bottom, body(st, 0.0, 0.0)).btn[1], "the roomy layout");
     assert_eq!(Stand::from(Dock::Top).fold_h(), CAPSULE_H);
     assert!(win_fits());
 }
@@ -546,3 +548,66 @@ fn the_corner_the_body_grows_from_does_not_move_while_the_size_changes() {
         }
     }
 }
+
+#[test]
+fn the_capsule_is_the_card_in_small_one_cover_shape_and_reflections_that_spread_with_it() {
+    use pill_ui_core::panel::a::home_player::PlayerStyle;
+    for style in [PlayerStyle::Mirror, PlayerStyle::Compact, PlayerStyle::Fill] {
+        for st in [Stand { style, ..Stand::from(Dock::Bottom) }, Stand { style, ..in_bar(Align::Left, 48.0) }, Stand { style, ..in_bar(Align::Right, 40.0) }] {
+            let (p0, p1) = (parts(st, 0.0, 0.0), parts(st, 1.0, 0.0));
+            // the same cover shape at every size: the corner radius is the same share of the side
+            for p in [0.0, 0.3, 0.7, 1.0] {
+                let q = parts(st, p, 0.0);
+                assert!((q.cover_r / q.cover.w - COVER_R_RATIO).abs() < 1e-4, "{style:?} p={p}");
+            }
+            assert!((p1.cover_r - CARD_COVER_R).abs() < 0.3 || style != PlayerStyle::Mirror, "{style:?}: the card's own radius at the end: {}", p1.cover_r);
+            // the cover is bigger inside the capsule than the old 40, and still smaller than the card's
+            assert!(p0.cover.w > 20.0 && p0.cover.w < p1.cover.w, "{style:?}: {} -> {}", p0.cover.w, p1.cover.w);
+            // the reflections: the capsule's pair at the start, the card's at the end, and nothing jumps in between
+            let (a, b) = (capsule_layout_in(st, frames(st, 0.0, 0.0).0), card_layout(frames(st, 1.0, 0.0).1, style));
+            assert!((0..3).all(|i| p0.refl[i] == a.refl[i] && p1.refl[i] == b.refl[i]));
+            let mut prev = p0;
+            for i in 1..=40 {
+                let q = parts(st, i as f32 / 40.0, 0.0);
+                assert!((0..3).all(|j| (q.refl[j].x - prev.refl[j].x).abs() < 12.0 && (q.refl[j].w - prev.refl[j].w).abs() < 4.0), "{style:?}: the reflections spread in small steps");
+                // the ones beside the cover are always about as tall as the cover, so their hidden edges stay behind it as it grows
+                for j in 0..2 {
+                    assert!(q.refl[j].h >= q.cover.h && q.refl[j].h <= q.cover.h * 1.3 + 0.5 || style != PlayerStyle::Mirror, "{style:?} p={}: {} over {}", i as f32 / 40.0, q.refl[j].h, q.cover.h);
+                    assert!((q.refl[j].cy() - q.cover.cy()).abs() < 0.6, "{style:?}: centred on the cover");
+                }
+                prev = q;
+            }
+            // the capsule's two reflections: one bleeds out of the cover, one comes in from the far end
+            assert!(a.refl[1].x < a.cover.right() && a.refl[1].right() > a.cover.right(), "the cover's reflection starts behind the cover and reaches past it");
+            assert!(a.refl[2].right() > frames(st, 0.0, 0.0).0.right(), "the far one is brightest at the far end, past the capsule's end");
+        }
+    }
+}
+
+#[test]
+fn the_text_is_one_line_when_both_fit_whole_two_lines_when_the_capsule_is_tall_enough_else_one_line_with_the_artist_giving_way() {
+    // plenty of room: one line
+    assert_eq!(capsule_lines(300.0, 56.0, 90.0, 70.0), Lines::One);
+    // no artist: always one line
+    assert_eq!(capsule_lines(100.0, 56.0, 300.0, 0.0), Lines::One);
+    // too long to share a line: the title over the artist in a tall capsule, one line (artist gives way) in a low strip
+    assert_eq!(capsule_lines(200.0, 56.0, 150.0, 90.0), Lines::Two);
+    assert_eq!(capsule_lines(200.0, TWO_MIN_H, 150.0, 90.0), Lines::Two);
+    assert_eq!(capsule_lines(200.0, TWO_MIN_H - 1.0, 150.0, 90.0), Lines::One);
+    // exactly fitting still shares the line
+    assert_eq!(capsule_lines(200.0, 56.0, 100.0, 200.0 - 100.0 - LINE_GAP), Lines::One);
+    // the sizes: the card's 16 and 13 at the full height, smaller (never unreadable) in a strip
+    let (t, a) = capsule_text_sizes(CAPSULE_H);
+    assert!((t - 16.0).abs() < 0.1 && (a - 13.0).abs() < 0.1, "{t} {a}");
+    let (t, a) = capsule_text_sizes(24.0);
+    assert!(t >= 12.0 && a >= 11.0 && t > a);
+    // two lines are a block centred above the hairline, inside the capsule, the title over the artist
+    for h in [TWO_MIN_H, 48.0, CAPSULE_H] {
+        let c = Rect::new(0.0, 0.0, 340.0, h);
+        let tx = capsule_layout(c, 1.0).text;
+        let (rt, ra) = two_lines(tx, capsule_text_sizes(h));
+        assert!(rt.y >= 0.0 && ra.bottom() <= h - 2.0 && rt.bottom() <= ra.y + 0.01, "{h}: {rt:?} {ra:?}");
+        assert!(rt.x == tx.x && rt.w == tx.w && ra.w == tx.w);
+    }
+}
+

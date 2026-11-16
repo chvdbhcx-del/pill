@@ -286,7 +286,7 @@ fn the_buttons_send_the_media_commands_of_the_islands_player() {
     let (mut s, f) = on_screen(Dock::Bottom);
     let st = base(Dock::Bottom);
     let (cap, _) = lg::frames(Dock::Bottom, 0.0, 0.0);
-    let l = lg::capsule_layout(cap);
+    let l = lg::capsule_layout_in(st, cap);
     for (b, action) in [(Btn::Prev, "prev"), (Btn::Play, "play_pause"), (Btn::Next, "next")] {
         let c = st.to_real(l.btn[b.index()].center());
         s.send(&mv(c.0, c.1));
@@ -449,7 +449,7 @@ fn the_capsule_and_the_card_draw_inside_their_body_and_the_rest_of_the_window_st
         // text and the cover placeholder make the capsule more than one flat colour
         let colours = |img: &glasskit::testkit::Image| {
             let mut set = std::collections::HashSet::new();
-            let l = lg::capsule_layout(body);
+            let l = lg::capsule_layout_in(base(Dock::Bottom), body);
             for r in [l.cover, l.text] {
                 for y in (r.y as u32..r.bottom() as u32).step_by(2) {
                     for x in (r.x as u32..r.right() as u32).step_by(2) {
@@ -526,7 +526,7 @@ fn the_widget_scales_with_the_island_size_and_a_change_glides_from_its_corner_an
     let mut st = base(Dock::Bottom);
     st.k = 2.0;
     let (cap, _) = lg::frames(st, 0.0, 0.0);
-    let play = st.to_real(lg::capsule_layout(cap).btn[1].center());
+    let play = st.to_real(lg::capsule_layout_in(st, cap).btn[1].center());
     click(&mut s, play);
     assert_eq!(calls(&f, "media_control").last().map(|c| c["action"].clone()), Some(json!("play_pause")));
     // the card at 200 % is twice the card, hovering opens it, and the hit region follows
