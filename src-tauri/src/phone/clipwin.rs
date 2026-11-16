@@ -35,13 +35,18 @@ impl WinClip {
 }
 
 impl ClipIo for WinClip {
-    fn set_text(&self, text: &str) -> bool {
+    fn set_text(&self, text: &str, private: bool) -> bool {
         unsafe {
             if !open_clipboard() {
                 return false;
             }
             let _ = EmptyClipboard();
             let ok = set_global(CF_UNICODETEXT, &utf16_bytes(text, false));
+            if private {
+                for name in [w!("CanIncludeInClipboardHistory"), w!("CanUploadToCloudClipboard")] {
+                    set_global(RegisterClipboardFormatW(name), &0u32.to_le_bytes()); // 0 = no history entry, no cloud sync
+                }
+            }
             let _ = CloseClipboard();
             IGNORE_SEQ.store(GetClipboardSequenceNumber(), Ordering::Relaxed);
             ok

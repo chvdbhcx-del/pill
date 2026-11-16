@@ -54,6 +54,16 @@ pub fn valid_code_shape(c: &str) -> bool {
     c.len() == 8 && c.bytes().all(|b| CODE_ALPHABET.contains(&b))
 }
 
+fn yes() -> bool {
+    true
+}
+fn is_true(b: &bool) -> bool {
+    *b
+}
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Device {
     pub id: String,
@@ -71,6 +81,27 @@ pub struct Device {
     /// protocol v2 keys (docs/phone-relay.md), DPAPI-protected in the file; `None` for a phone paired before v2 (LAN only)
     #[serde(default, skip_serializing_if = "Option::is_none", with = "super::v2::stored")]
     pub keys: Option<super::v2::Keys>,
+    /// "" = a phone (every record made before the PC link), "pc" = another Pill (docs/pc-link.md), "pairing" = the temporary room of a PC
+    /// pairing that is under way (never stored)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub kind: String,
+    /// PC link: this side entered the pairing token, so on the relay it is the `phone` end (the side that showed the token is `pc`)
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub joiner: bool,
+    /// PC link: the clipboard of this PC goes to the peer / the peer's clipboard is applied here
+    #[serde(default = "yes", rename = "clipTo", skip_serializing_if = "is_true")]
+    pub clip_to: bool,
+    #[serde(default = "yes", rename = "clipFrom", skip_serializing_if = "is_true")]
+    pub clip_from: bool,
+    /// PC link: unpaired here; the peer is told when it next connects, then the record goes (after 30 days it goes anyway)
+    #[serde(default, rename = "revokedAt", skip_serializing_if = "Option::is_none")]
+    pub revoked_at: Option<i64>,
+}
+
+impl Default for Device {
+    fn default() -> Device {
+        Device { id: String::new(), name: String::new(), model: String::new(), os: String::new(), app_version: String::new(), token_hash: String::new(), first_seen: 0, last_seen: 0, keys: None, kind: String::new(), joiner: false, clip_to: true, clip_from: true, revoked_at: None }
+    }
 }
 
 impl Device {
@@ -87,7 +118,15 @@ struct Data {
     /// package -> app name, every app that ever sent a notification (so the muted list can show names)
     #[serde(default)]
     apps: BTreeMap<String, String>,
+    /// this PC's id for the PC link, made on first use
+    #[serde(default)]
+    me: String,
+    /// the pairing room that is open right now (a `Device` of kind "pairing" so the relay hub treats it like any peer); memory only
+    #[serde(skip)]
+    pairing: Option<Device>,
 }
+
+const TOMBSTONE_MS: i64 = 30 * 24 * 3600 * 1000;
 
 pub struct Registry {
     file: PathBuf,
@@ -102,7 +141,9 @@ impl Registry {
     pub fn load(dir: PathBuf) -> Registry {
         let _ = std::fs::create_dir_all(&dir);
         let file = dir.join("devices.json");
-        let data = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        let mut data: Data = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+        data.devices.retain(|d| d.revoked_at.map_or(true, |t| now - t < TOMBSTONE_MS));
         Registry { file, data: Mutex::new(data) }
     }
 
@@ -117,12 +158,38 @@ impl Registry {
         }
     }
 
+    /// Every device, the open pairing room last.
     pub fn list(&self) -> Vec<Device> {
-        self.lock().devices.clone()
+        let g = self.lock();
+        g.devices.iter().chain(g.pairing.iter()).cloned().collect()
     }
 
     pub fn get(&self, id: &str) -> Option<Device> {
-        self.lock().devices.iter().find(|d| d.id == id).cloned()
+        let g = self.lock();
+        g.devices.iter().chain(g.pairing.iter()).find(|d| d.id == id).cloned()
+    }
+
+    /// The id of this PC for the PC link.
+    pub fn me(&self) -> String {
+        let mut g = self.lock();
+        if g.me.is_empty() {
+            g.me = new_id();
+            self.save(&g);
+        }
+        g.me.clone()
+    }
+
+    pub fn set_pairing(&self, d: Option<Device>) {
+        self.lock().pairing = d;
+    }
+
+    /// Changes a stored device (not the pairing room) and saves.
+    pub fn update(&self, id: &str, f: impl FnOnce(&mut Device)) -> bool {
+        let mut g = self.lock();
+        let Some(d) = g.devices.iter_mut().find(|d| d.id == id) else { return false };
+        f(d);
+        self.save(&g);
+        true
     }
 
     /// The device that owns this token.
@@ -139,7 +206,17 @@ impl Registry {
         let mut g = self.lock();
         let first = g.devices.iter().find(|d| d.id == device_id).map_or(now, |d| d.first_seen);
         g.devices.retain(|d| d.id != device_id);
-        let dev = Device { id: clip(device_id, 64), name: clip(name, 60), model: clip(model, 60), os: clip(os, 40), app_version: clip(app_version, 20), token_hash: hash_token(token), first_seen: first, last_seen: now, keys };
+        let dev = Device { id: clip(device_id, 64), name: clip(name, 60), model: clip(model, 60), os: clip(os, 40), app_version: clip(app_version, 20), token_hash: hash_token(token), first_seen: first, last_seen: now, keys, ..Default::default() };
+        g.devices.push(dev.clone());
+        self.save(&g);
+        dev
+    }
+
+    /// Stores a paired PC. It has no bearer token (`by_token` can never find it): it proves itself with its keys only.
+    pub fn pair_pc(&self, id: &str, name: &str, os: &str, keys: super::v2::Keys, joiner: bool, now: i64) -> Device {
+        let mut g = self.lock();
+        g.devices.retain(|d| d.id != id);
+        let dev = Device { id: clip(id, 64), name: clip(name, 60), os: clip(os, 40), first_seen: now, last_seen: now, keys: Some(keys), kind: "pc".into(), joiner, ..Default::default() };
         g.devices.push(dev.clone());
         self.save(&g);
         dev

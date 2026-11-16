@@ -1,5 +1,6 @@
-// The relay connector (docs/phone-relay.md): one outbound WebSocket per paired phone that has v2 keys, only while "Phone link" and `phone.relay`
-// are on and `phone.relayUrl` is set. Frames are end-to-end encrypted (v2.rs); what the phone sends is fed into the same handler the LAN socket
+// The relay connector (docs/phone-relay.md, docs/pc-link.md): one outbound WebSocket per paired phone or PC that has v2 keys (phones only while "Phone
+// link" and `phone.relay` are on, PCs while `pc.enabled` is on, always with `phone.relayUrl` set). A PC pair has no fixed "PC": the side that showed the
+// pairing token is the relay's `pc` end, the side that entered it the `phone` end (`Device::joiner`), each seals with the key of its own direction. Frames are end-to-end encrypted (v2.rs); what the phone sends is fed into the same handler the LAN socket
 // uses (`Shared::on_value`) and replies go out through the same `Conn::send_text`, so notifications, replies, status and files work unchanged.
 // Threads: one per phone, blocked on its socket (nothing polls); they exist only while the switches are on. Nothing here logs keys or message text.
 use super::server::{Conn, Shared};
@@ -52,6 +53,11 @@ pub fn b64_any(s: &str) -> Option<Vec<u8>> {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(t).ok()
 }
 
+/// (key, direction) for what this end sends and for what it receives; the `pc` end sends c2p, the `phone` end (a joiner) p2c.
+fn dirs(k: &Keys, joiner: bool) -> ((&[u8; 32], Dir), (&[u8; 32], Dir)) {
+    if joiner { ((&k.p2c, Dir::P2c), (&k.c2p, Dir::C2p)) } else { ((&k.c2p, Dir::C2p), (&k.p2c, Dir::P2c)) }
+}
+
 /// The PC's sending half of one relay connection: encrypts v1 messages into frames. Handed to `Conn` as its output.
 pub struct Link {
     chan: Arc<Chan>,
@@ -66,8 +72,9 @@ struct Tx {
 }
 
 impl Link {
-    fn new(chan: Arc<Chan>, keys: &Keys, room: &str) -> Link {
-        Link { chan, tx: Mutex::new(Tx { key: keys.c2p, aad: v2::aad(room, Dir::C2p), sid: v2::new_sid(), seq: 0 }) }
+    fn new(chan: Arc<Chan>, keys: &Keys, room: &str, joiner: bool) -> Link {
+        let (key, dir) = dirs(keys, joiner).0;
+        Link { chan, tx: Mutex::new(Tx { key: *key, aad: v2::aad(room, dir), sid: v2::new_sid(), seq: 0 }) }
     }
 
     /// One v1 JSON message (`text` is a JSON object) as one encrypted binary frame. The lock is held across the write so frames leave in `seq` order.
@@ -96,7 +103,7 @@ struct Worker {
     stop: Arc<AtomicBool>,
     ctl: Arc<Ctl>,
     /// what this connection was made for: if the settings or the keys change the worker is replaced
-    fp: (String, String),
+    fp: (String, String, bool),
     th: Option<JoinHandle<()>>,
 }
 
@@ -126,13 +133,15 @@ impl Hub {
     /// Brings the connections in line with the settings, the paired phones and their keys. Cheap when nothing changed.
     pub fn sync(&self, sh: &Arc<Shared>) {
         let cfg = sh.cfg();
-        let target = if cfg.relay_on { parse_url(&cfg.relay_url) } else { None };
-        let want: HashMap<String, (Keys, String)> = match &target {
-            Some(t) => sh.registry().list().into_iter().filter_map(|d| d.keys.map(|k| (d.id, (k, t.base_url())))).collect(),
+        let target = parse_url(&cfg.relay_url);
+        // phones need the phone link and `phone.relay`; PCs (and the open pairing room) need `pc.enabled`
+        let on = |kind: &str| if kind.is_empty() { cfg.phone_on && cfg.relay_on } else { cfg.pc_on };
+        let want: HashMap<String, (Keys, String, bool)> = match &target {
+            Some(t) => sh.registry().list().into_iter().filter(|d| on(&d.kind)).filter_map(|d| d.keys.map(|k| (d.id, (k, t.base_url(), d.joiner)))).collect(),
             None => HashMap::new(),
         };
         let mut ws = self.workers.lock().unwrap_or_else(|e| e.into_inner());
-        let gone: Vec<String> = ws.iter().filter(|(id, w)| want.get(*id).map_or(true, |(k, url)| w.fp != (url.clone(), v2::room(k)))).map(|(id, _)| id.clone()).collect();
+        let gone: Vec<String> = ws.iter().filter(|(id, w)| want.get(*id).map_or(true, |(k, url, j)| w.fp != (url.clone(), v2::room(k), *j))).map(|(id, _)| id.clone()).collect();
         let mut old = Vec::new();
         for id in gone {
             if let Some(w) = ws.remove(&id) {
@@ -140,15 +149,15 @@ impl Hub {
                 old.push(w);
             }
         }
-        for (id, (keys, url)) in want {
+        for (id, (keys, url, joiner)) in want {
             if ws.contains_key(&id) {
                 continue;
             }
             let Some(t) = target.as_ref().map(|t| Target { tls: t.tls, host: t.host.clone(), port: t.port, base: t.base.clone() }) else { continue };
-            let fp = (url, v2::room(&keys));
+            let fp = (url, v2::room(&keys), joiner);
             let (stop, ctl) = (Arc::new(AtomicBool::new(false)), Arc::new(Ctl { chan: Mutex::new(None), thread: Mutex::new(None), conn: Mutex::new(None) }));
             let (sh2, id2, stop2, ctl2) = (sh.clone(), id.clone(), stop.clone(), ctl.clone());
-            let th = std::thread::Builder::new().name("phone-relay".into()).spawn(move || run(sh2, id2, t, keys, stop2, ctl2)).ok();
+            let th = std::thread::Builder::new().name("phone-relay".into()).spawn(move || run(sh2, id2, t, keys, joiner, stop2, ctl2)).ok();
             ws.insert(id, Worker { stop, ctl, fp, th });
         }
         drop(ws);
@@ -184,14 +193,14 @@ impl Hub {
 
 // ------------------------------------------------------------------------------------------------ one phone's connection
 
-fn run(sh: Arc<Shared>, dev_id: String, target: Target, keys: Keys, stop: Arc<AtomicBool>, ctl: Arc<Ctl>) {
+fn run(sh: Arc<Shared>, dev_id: String, target: Target, keys: Keys, joiner: bool, stop: Arc<AtomicBool>, ctl: Arc<Ctl>) {
     *ctl.thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::thread::current());
     let room = v2::room(&keys);
     let join = v2::join(&keys);
     let mut replay = Replay::default(); // survives reconnects: the phone keeps its sid while its own relay socket lives
     let mut back = BACKOFF_MIN;
     while !stop.load(Ordering::SeqCst) {
-        let mut s = Session { sh: &sh, dev_id: &dev_id, keys: &keys, room: &room, stop: &stop, replay: &mut replay, ctl: &ctl };
+        let mut s = Session { sh: &sh, dev_id: &dev_id, keys: &keys, joiner, room: &room, stop: &stop, replay: &mut replay, ctl: &ctl };
         if s.run(&target, &join) {
             back = BACKOFF_MIN; // it got as far as being joined: start over politely
         }
@@ -208,6 +217,7 @@ struct Session<'a> {
     sh: &'a Arc<Shared>,
     dev_id: &'a str,
     keys: &'a Keys,
+    joiner: bool,
     room: &'a str,
     stop: &'a AtomicBool,
     replay: &'a mut Replay,
@@ -218,7 +228,7 @@ impl Session<'_> {
     /// One connection from connect to close. True when it got as far as `joined`.
     fn run(&mut self, target: &Target, join: &str) -> bool {
         let ctl = self.ctl;
-        let Ok(chan) = Chan::connect(target, &format!("/r/{}?role=pc", self.room)).map(Arc::new) else { return false };
+        let Ok(chan) = Chan::connect(target, &format!("/r/{}?role={}", self.room, if self.joiner { "phone" } else { "pc" })).map(Arc::new) else { return false };
         *ctl.chan.lock().unwrap_or_else(|e| e.into_inner()) = Some(chan.clone());
         if self.stop.load(Ordering::SeqCst) {
             chan.kill();
@@ -247,19 +257,20 @@ impl Session<'_> {
             }
         };
         chan.set_read_timeout(PING_EVERY);
-        let link = Arc::new(Link::new(chan.clone(), self.keys, self.room));
+        let link = Arc::new(Link::new(chan.clone(), self.keys, self.room, self.joiner));
         let mut conn: Option<Arc<Conn>> = None;
         if peer {
             self.present(&link, &mut conn);
         }
-        let aad_in = v2::aad(self.room, Dir::P2c);
+        let (key_in, dir_in) = dirs(self.keys, self.joiner).1;
+        let aad_in = v2::aad(self.room, dir_in);
         let (mut fails, mut last_rx, mut pong_seen) = (AuthFails::new(), Instant::now(), false);
         while !self.stop.load(Ordering::SeqCst) {
             let mut rd = Patient::new(&chan);
             match ws::read_msg_as(&mut rd, false) {
                 Ok(Msg::Bin(frame)) => {
                     last_rx = Instant::now();
-                    let Some(plain) = v2::open(&self.keys.p2c, &aad_in, &frame) else {
+                    let Some(plain) = v2::open(key_in, &aad_in, &frame) else {
                         if fails.record(Instant::now()) {
                             break; // 50 frames that do not authenticate within a minute: drop the connection
                         }
@@ -305,6 +316,7 @@ impl Session<'_> {
                         break;
                     }
                     self.sh.rf_sweep(self.dev_id);
+                    self.sh.pair_expire();
                 }
                 Err(_) => break,
             }
@@ -316,7 +328,11 @@ impl Session<'_> {
 
     /// The phone is on the other end: register a channel (once) and greet it like the LAN server does.
     fn present(&self, link: &Arc<Link>, conn: &mut Option<Arc<Conn>>) {
-        if conn.is_some() || self.stop.load(Ordering::SeqCst) || self.sh.registry().get(self.dev_id).is_none() {
+        let Some(dev) = self.sh.registry().get(self.dev_id).filter(|_| conn.is_none() && !self.stop.load(Ordering::SeqCst)) else { return };
+        if dev.revoked_at.is_some() {
+            // unpaired here while the peer was away: tell it now, then forget it
+            link.send_text(r#"{"t":"unpair"}"#);
+            self.sh.revoke(&dev.id);
             return;
         }
         let c = Arc::new(Conn::relay(self.sh.next_conn_id(), self.dev_id, link.clone()));
@@ -327,7 +343,9 @@ impl Session<'_> {
     }
 
     fn hello(&self, c: &Conn) {
-        self.sh.send_conn(c, &self.sh.hello_msg());
+        if let Some(m) = self.sh.hello_for(self.dev_id) {
+            self.sh.send_conn(c, &m);
+        }
     }
 
     fn absent(&self, conn: &mut Option<Arc<Conn>>) {

@@ -34,24 +34,24 @@ struct Room {
 }
 
 #[derive(Default)]
-struct RelayState {
+pub(super) struct RelayState {
     rooms: Mutex<HashMap<String, Room>>,
     socks: Mutex<Vec<TcpStream>>,
     /// every binary frame that was forwarded (what an eavesdropper at the relay sees)
-    tap: Mutex<Vec<Vec<u8>>>,
+    pub(super) tap: Mutex<Vec<Vec<u8>>>,
     /// sockets that joined successfully, per role
     joins_pc: AtomicUsize,
     next: AtomicUsize,
 }
 
-struct FakeRelay {
+pub(super) struct FakeRelay {
     addr: SocketAddr,
-    st: Arc<RelayState>,
+    pub(super) st: Arc<RelayState>,
     stop: Arc<AtomicBool>,
 }
 
 impl FakeRelay {
-    fn start() -> FakeRelay {
+    pub(super) fn start() -> FakeRelay {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = l.local_addr().unwrap();
         let (st, stop) = (Arc::new(RelayState::default()), Arc::new(AtomicBool::new(false)));
@@ -69,7 +69,7 @@ impl FakeRelay {
         });
         FakeRelay { addr, st, stop }
     }
-    fn url(&self) -> String {
+    pub(super) fn url(&self) -> String {
         format!("ws://{}", self.addr)
     }
     /// Cuts every socket (a network drop).
@@ -81,7 +81,7 @@ impl FakeRelay {
     fn pc_joins(&self) -> usize {
         self.st.joins_pc.load(Ordering::SeqCst)
     }
-    fn stop(self) {
+    pub(super) fn stop(self) {
         self.stop.store(true, Ordering::SeqCst);
         self.kill_all();
         let _ = TcpStream::connect_timeout(&self.addr, Duration::from_millis(300));
@@ -376,7 +376,7 @@ impl Env {
     }
 }
 
-fn wait_for(what: &str, f: impl Fn() -> bool) {
+pub(super) fn wait_for(what: &str, f: impl Fn() -> bool) {
     let t = Instant::now();
     while !f() {
         assert!(t.elapsed() < Duration::from_secs(8), "timed out: {what}");

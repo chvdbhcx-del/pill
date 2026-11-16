@@ -21,8 +21,9 @@ pub struct ClipCfg {
 
 /// The system clipboard as the server sees it. The real one is `clipwin::WinClip`; tests use a fake.
 pub trait ClipIo: Send + Sync {
-    /// Puts plain text on the clipboard. The change it causes must not come back through the watcher.
-    fn set_text(&self, text: &str) -> bool;
+    /// Puts plain text on the clipboard. The change it causes must not come back through the watcher. `private` (text from another PC) also
+    /// asks Windows to keep it out of the clipboard history and the cloud clipboard.
+    fn set_text(&self, text: &str, private: bool) -> bool;
     /// Registers (`true`) or drops (`false`) the change listener. Idempotent; while dropped nothing runs and nothing wakes up.
     fn watch(&self, on: bool);
 }
@@ -82,6 +83,8 @@ pub fn message(id: &str, text: &str, ts: i64) -> Value {
 #[derive(Default)]
 pub struct State {
     last: Mutex<(Option<[u8; 32]>, Option<[u8; 32]>)>, // (applied, sent)
+    /// PC link: (Lamport clock, (stamp, device) of the text this PC holds); decides which of two simultaneous copies wins
+    held: Mutex<(u64, (u64, String))>,
 }
 
 impl State {
@@ -98,6 +101,28 @@ impl State {
         }
         *g = (Some(h), None);
         true
+    }
+
+    /// A local copy that goes to paired PCs: its stamp. `max(clock + 1, now)`, so a restarted PC (clock back at 0) still stamps newer than before.
+    pub fn stamp(&self, me: &str, now: i64) -> u64 {
+        let mut g = self.held.lock().unwrap_or_else(|e| e.into_inner());
+        let s = (g.0 + 1).max(now.max(0) as u64);
+        *g = (s, (s, me.to_string()));
+        s
+    }
+
+    /// A text from a paired PC with stamp `seq` (0 = none): true = apply it. A stamp not above the one held (the larger device id wins a tie) is dropped,
+    /// so two PCs that copy at the same time end up with the same text; no PC ever forwards what it applied, so a full mesh cannot loop.
+    pub fn take_stamped(&self, text: &str, seq: u64, from: &str) -> bool {
+        {
+            let mut g = self.held.lock().unwrap_or_else(|e| e.into_inner());
+            g.0 = g.0.max(seq);
+            if (seq, from) <= (g.1 .0, g.1 .1.as_str()) {
+                return false;
+            }
+            g.1 = (seq, from.to_string());
+        }
+        self.take_incoming(text)
     }
 
     /// The clipboard write failed: forget that it was applied.
@@ -181,6 +206,22 @@ mod tests {
         assert_eq!(s.check_outgoing(""), Err(Skip::Empty));
         assert_eq!(s.check_outgoing(&"x".repeat(MAX_BYTES + 1)), Err(Skip::TooBig));
         assert_eq!(s.check_outgoing(&"x".repeat(MAX_BYTES)), Ok(()));
+    }
+
+    #[test]
+    fn simultaneous_copies_converge_and_a_restart_does_not_lose() {
+        let (a, b) = (State::default(), State::default());
+        // both copy at the same millisecond: the same stamp, the larger id wins on both sides
+        let (sa, sb) = (a.stamp("pc-a", 1000), b.stamp("pc-b", 1000));
+        assert_eq!((sa, sb), (1000, 1000));
+        assert!(a.take_stamped("from b", sb, "pc-b"), "the larger id wins the tie: a applies b's text");
+        assert!(!b.take_stamped("from a", sa, "pc-a"), "and b keeps its own");
+        // a newer copy always wins, an older one never resurrects
+        assert!(b.take_stamped("newer", a.stamp("pc-a", 2000), "pc-a"));
+        assert!(!b.take_stamped("older", 1500, "pc-a"));
+        assert!(!b.take_stamped("newer", 2000, "pc-a"), "a duplicate is dropped");
+        // a fresh State (restart) stamps from the wall clock, not from 1
+        assert_eq!(State::default().stamp("pc-a", 5_000_000), 5_000_000);
     }
 
     #[test]

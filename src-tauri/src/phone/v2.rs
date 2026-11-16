@@ -47,17 +47,43 @@ impl Dir {
     }
 }
 
-/// `okm = HKDF-SHA256(ikm = shared, salt = SHA256("pill-phone-v2" || code || deviceId), info = "keys", L = 96)`. The code is trimmed and upper-cased.
-pub fn derive(shared: &[u8; 32], code: &str, device_id: &str) -> Keys {
+/// `okm = HKDF-SHA256(ikm, salt = SHA256(domain || parts), info = "keys", L = 96)`.
+fn kdf(domain: &[u8], ikm: &[u8], parts: &[&[u8]]) -> Keys {
     let mut h = Sha256::new();
-    h.update(b"pill-phone-v2");
-    h.update(code.trim().to_ascii_uppercase().as_bytes());
-    h.update(device_id.as_bytes());
+    h.update(domain);
+    parts.iter().for_each(|p| h.update(p));
     let salt = h.finalize();
     let mut okm = [0u8; 96];
-    Hkdf::<Sha256>::new(Some(&salt), shared).expand(b"keys", &mut okm).expect("96 bytes is a valid HKDF-SHA256 length");
+    Hkdf::<Sha256>::new(Some(&salt), ikm).expand(b"keys", &mut okm).expect("96 bytes is a valid HKDF-SHA256 length");
     let part = |i: usize| -> [u8; 32] { okm[i * 32..i * 32 + 32].try_into().expect("32 bytes") };
     Keys { p2c: part(0), c2p: part(1), room_key: part(2) }
+}
+
+/// The phone link: `ikm = shared`, `salt = SHA256("pill-phone-v2" || code || deviceId)`. The code is trimmed and upper-cased.
+pub fn derive(shared: &[u8; 32], code: &str, device_id: &str) -> Keys {
+    kdf(b"pill-phone-v2", shared, &[code.trim().to_ascii_uppercase().as_bytes(), device_id.as_bytes()])
+}
+
+/// PC link (docs/pc-link.md): the keys of the pairing room, from the pairing token alone.
+pub fn pair_room_keys(token: &str) -> Keys {
+    kdf(b"pill-pc-pair-v1", token.as_bytes(), &[])
+}
+
+/// PC link: the permanent keys of two paired PCs; `a` is the one that showed the token, `b` the one that entered it.
+pub fn derive_pc(shared: &[u8; 32], token: &str, a: &str, b: &str) -> Keys {
+    kdf(b"pill-pc-v1", shared, &[token.as_bytes(), a.as_bytes(), b.as_bytes()])
+}
+
+/// PC link: `base64url(HMAC-SHA256(token key, label || a || b))`, the proof that the sender knows the token and saw both public keys.
+pub fn proof(token: &str, label: &str, a: &[u8], b: &[u8]) -> String {
+    B64.encode(hmac(&pair_room_keys(token).room_key, &[label.as_bytes(), a, b].concat()))
+}
+
+/// Compares in constant time.
+pub fn proof_ok(token: &str, label: &str, a: &[u8], b: &[u8], tag: &str) -> bool {
+    let mut m = <Hmac<Sha256> as Mac>::new_from_slice(&pair_room_keys(token).room_key).expect("HMAC takes any key length");
+    m.update(&[label.as_bytes(), a, b].concat());
+    B64.decode(tag).is_ok_and(|t| m.verify_slice(&t).is_ok())
 }
 
 fn hmac(key: &[u8; 32], msg: &[u8]) -> [u8; 32] {
@@ -79,13 +105,20 @@ pub fn join(k: &Keys) -> String {
 /// The PC's half of the pairing: from the phone's public key makes a fresh key pair, derives the keys and returns (PC public key, keys).
 /// `None` when the phone key is not 32 bytes or gives an all-zero secret (a low-order point).
 pub fn pair_pc(phone_pk: &[u8], code: &str, device_id: &str, secret: [u8; 32]) -> Option<([u8; 32], Keys)> {
-    let theirs = PublicKey::from(<[u8; 32]>::try_from(phone_pk).ok()?);
+    let (pk, shared) = agree(secret, phone_pk)?;
+    Some((pk, derive(&shared, code, device_id)))
+}
+
+/// The public key of a secret.
+pub fn public(secret: [u8; 32]) -> [u8; 32] {
+    PublicKey::from(&StaticSecret::from(secret)).to_bytes()
+}
+
+/// X25519: (my public key, the shared secret). `None` for a key that is not 32 bytes or gives an all-zero secret.
+pub fn agree(secret: [u8; 32], theirs: &[u8]) -> Option<([u8; 32], [u8; 32])> {
     let me = StaticSecret::from(secret);
-    let shared = me.diffie_hellman(&theirs);
-    if !shared.was_contributory() {
-        return None;
-    }
-    Some((PublicKey::from(&me).to_bytes(), derive(shared.as_bytes(), code, device_id)))
+    let shared = me.diffie_hellman(&PublicKey::from(<[u8; 32]>::try_from(theirs).ok()?));
+    shared.was_contributory().then(|| (PublicKey::from(&me).to_bytes(), shared.to_bytes()))
 }
 
 /// `"pill-v2" || room || dir` with the room as its 32 ASCII hex digits and the direction as ASCII.

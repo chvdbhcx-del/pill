@@ -42,6 +42,10 @@ pub struct Cfg {
     pub relay_max_bytes: u64,
     /// `phone.clipboard` / `phone.clipToPhone` / `phone.clipFromPhone` (docs/phone-protocol.md, "Clipboard (v1.2)")
     pub clip: clip::ClipCfg,
+    /// `phone.enabled`: phones may use the relay (the LAN listener itself only exists while this is on)
+    pub phone_on: bool,
+    /// `pc.enabled`: the PC link (docs/pc-link.md) runs: relay connections to paired PCs and the pairing room
+    pub pc_on: bool,
 }
 
 pub struct Opts {
@@ -130,7 +134,7 @@ impl Conn {
 }
 
 pub struct Shared {
-    opts: Opts,
+    pub(super) opts: Opts,
     pub addr: SocketAddr,
     reg: Registry,
     me: std::sync::Weak<Shared>,
@@ -146,7 +150,9 @@ pub struct Shared {
     stop: AtomicBool,
     live: AtomicUsize,
     seq: AtomicU64,
-    clipst: clip::State,
+    pub(super) clipst: clip::State,
+    /// the PC pairing that is under way (pc.rs)
+    pub(super) pairing: Mutex<Option<super::pc::Pairing>>,
 }
 
 pub struct Server {
@@ -202,6 +208,7 @@ impl Server {
             live: AtomicUsize::new(0),
             seq: AtomicU64::new(1),
             clipst: Default::default(),
+            pairing: Default::default(),
         });
         let sh = shared.clone();
         let thread = std::thread::Builder::new().name("phone-accept".into()).spawn(move || accept_loop(listener, sh))?;
@@ -567,7 +574,17 @@ impl Shared {
             }
         }
         self.reg.touch(&conn.device, now_ms(), false);
-        self.emit("phone:state", self.status());
+        self.announce(&conn.device);
+        self.clip_sync(); // a PC with the clipboard switched on needs the listener from now on
+    }
+
+    /// Tells the UI that a device came or went: the PC list for a PC, the phone list otherwise.
+    fn announce(&self, id: &str) {
+        if self.reg.get(id).is_some_and(|d| d.kind == "pc") {
+            self.emit("pc:state", self.pc_status());
+        } else {
+            self.emit("phone:state", self.status());
+        }
     }
 
     /// Removes a channel. Only when it was the phone's last one is the phone marked as gone (a replaced socket must not do that).
@@ -585,7 +602,7 @@ impl Shared {
         }
         if had {
             self.clip_sync(); // the last phone that wanted the clipboard may be gone
-            self.emit("phone:state", self.status()); // the route may have changed too
+            self.announce(&conn.device); // the route may have changed too
         }
     }
 
@@ -659,6 +676,9 @@ impl Shared {
 
     /// One v1 message from a phone, whichever route it came by.
     pub(super) fn on_value(&self, dev: &Device, conn: &Conn, m: &Value) {
+        if !dev.kind.is_empty() {
+            return self.pc_msg(dev, conn, m); // another Pill (or the pairing room): its own, much smaller set of messages
+        }
         match m["t"].as_str().unwrap_or("") {
             "ping" => {
                 self.send_conn(conn, &json!({ "t": "pong" }));
@@ -739,25 +759,30 @@ impl Shared {
 
     // ------------------------------------------------------------------------------------------------ clipboard (protocol v1.2)
 
-    /// Starts or stops watching the PC clipboard: only while the switches allow PC -> phone AND some connection announced `clip`. Idempotent.
+    /// Starts or stops watching the PC clipboard: only while the switches allow PC -> phone AND some connection announced `clip`, or a paired PC
+    /// is connected and takes our clipboard. Idempotent.
     pub fn clip_sync(&self) {
         let c = self.cfg().clip;
-        let want = c.on && c.to_phone && !self.stopping() && self.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|c| c.clip.load(Ordering::SeqCst) >= 1);
-        self.opts.clip.watch(want);
+        let phones = c.on && c.to_phone && self.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|c| c.clip.load(Ordering::SeqCst) >= 1);
+        self.opts.clip.watch(!self.stopping() && (phones || !self.clip_pcs().is_empty()));
     }
 
     /// The PC clipboard changed to `text` (formats already checked by the watcher). Sends it to every phone that announced `clip`
-    /// (LAN socket first, else the relay link); returns how many phones got it.
+    /// (LAN socket first, else the relay link) and to every connected paired PC that takes it; returns how many devices got it.
     pub fn clip_local(&self, text: &str) -> usize {
         let c = self.cfg().clip;
-        if !(c.on && c.to_phone) || self.clipst.check_outgoing(text).is_err() {
+        let (phones, pcs) = (c.on && c.to_phone, self.clip_pcs());
+        if !(phones || !pcs.is_empty()) || self.clipst.check_outgoing(text).is_err() {
             return 0;
         }
-        let msg = clip::message(&reg::new_id(), text, now_ms()).to_string();
-        let mut ids: Vec<String> = self.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|c| c.clip.load(Ordering::SeqCst) >= 1).map(|c| c.device.clone()).collect();
-        ids.sort();
-        ids.dedup();
-        let n = ids.iter().filter(|id| self.channels(id).iter().any(|c| c.clip.load(Ordering::SeqCst) >= 1 && c.send_text(&msg))).count();
+        let mut n = self.clip_to_pcs(&pcs, text);
+        if phones {
+            let msg = clip::message(&reg::new_id(), text, now_ms()).to_string();
+            let mut ids: Vec<String> = self.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|c| c.clip.load(Ordering::SeqCst) >= 1).map(|c| c.device.clone()).collect();
+            ids.sort();
+            ids.dedup();
+            n += ids.iter().filter(|id| self.channels(id).iter().any(|c| c.clip.load(Ordering::SeqCst) >= 1 && c.send_text(&msg))).count();
+        }
         if n > 0 {
             self.clipst.sent(text);
         }
@@ -774,7 +799,7 @@ impl Shared {
         if !self.clipst.take_incoming(&text) {
             return;
         }
-        if !self.opts.clip.set_text(&text) {
+        if !self.opts.clip.set_text(&text, false) {
             self.clipst.undo_incoming(&text);
             return;
         }
@@ -948,6 +973,8 @@ impl Shared {
             self.phones.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
             self.notifs.lock().unwrap_or_else(|e| e.into_inner()).retain(|x| x["device"] != id);
             self.emit("phone:state", self.status());
+            self.emit("pc:state", self.pc_status());
+            self.clip_sync();
         }
         gone
     }
@@ -968,6 +995,7 @@ impl Shared {
         self.reg
             .list()
             .iter()
+            .filter(|d| d.kind.is_empty()) // phones; PCs are listed by `pc_status`
             .map(|d| {
                 let mut v = d.public();
                 let p = ph.get(&d.id).cloned().unwrap_or_default();

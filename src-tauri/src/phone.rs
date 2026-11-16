@@ -19,6 +19,7 @@ mod files;
 mod http;
 mod info;
 mod page;
+mod pc;
 mod reg;
 mod relay;
 mod relay_files;
@@ -29,17 +30,21 @@ mod wsclient;
 #[cfg(test)]
 mod clip_tests;
 #[cfg(test)]
+mod pc_tests;
+#[cfg(test)]
 mod relay_tests;
 #[cfg(test)]
 mod tests;
 
 /// Bus event names (also the literals the contract test looks for).
-pub const EVENTS: [&str; 4] = ["phone:state", "phone:notif", "phone:files", "phone:clip"];
+pub const EVENTS: [&str; 6] = ["phone:state", "phone:notif", "phone:files", "phone:clip", "pc:state", "pc:clip"];
 pub const DEFAULT_APK_URL: &str = "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk";
 const DEFAULT_PORT: u16 = 41717;
 
 struct Running {
     server: server::Server,
+    /// listens on the LAN address (the phone link is on); the PC link alone listens on this PC only (it talks through the relay)
+    lan: bool,
 }
 static SERVER: Mutex<Option<Running>> = Mutex::new(None);
 static ERROR: Mutex<Option<&'static str>> = Mutex::new(None);
@@ -79,6 +84,8 @@ fn cfg() -> server::Cfg {
         relay_url: crate::settings::get_str("phone.relayUrl", "wss://pill-relay.chvdbhcx-pill.workers.dev"),
         relay_max_bytes: (crate::settings::get_f64("phone.relayMaxFileMB", 100.0).clamp(1.0, 4096.0) * 1024.0 * 1024.0) as u64,
         clip: clip_cfg(),
+        phone_on: crate::settings::get_bool("phone.enabled", false),
+        pc_on: crate::settings::get_bool("pc.enabled", false),
     }
 }
 
@@ -97,9 +104,9 @@ fn clip_io() -> Arc<dyn clip::ClipIo> {
     })))
 }
 
-fn start() {
+fn start(lan: bool) {
     let base = crate::settings::get_f64("phone.port", DEFAULT_PORT as f64).clamp(1024.0, 65000.0) as u16;
-    let Some(ip) = server::detect_ip() else {
+    let Some(ip) = lan.then(server::detect_ip).unwrap_or(Some(std::net::Ipv4Addr::LOCALHOST)) else {
         *lock(&ERROR) = Some("no_private_ip");
         return;
     };
@@ -120,37 +127,41 @@ fn start() {
                 crate::settings::set("phone.port", json!(port)); // remembered: the next start tries this one first
             }
             *lock(&ERROR) = None;
-            *lock(&SERVER) = Some(Running { server: s });
+            *lock(&SERVER) = Some(Running { server: s, lan });
             return;
         }
     }
     *lock(&ERROR) = Some("port_busy");
 }
 
-/// Starts / stops the server to match `phone.enabled`. Called at start-up and on every `settings:changed`.
+/// Starts / stops the server to match `phone.enabled` / `pc.enabled`; the phone link listens on the LAN address, the PC link alone on this PC only
+/// (a switch between the two restarts it). Called at start-up and on every `settings:changed`.
 fn sync() {
     let _one = lock(&SYNC);
-    let want = crate::settings::get_bool("phone.enabled", false);
-    let mut g = lock(&SERVER);
-    let have = g.is_some();
-    if want && !have {
-        drop(g);
-        start();
-        crate::phone_fw::ensure_async(); // a "Public" network blocks the phone unless Windows Firewall allows Pill on the LAN (one UAC prompt)
-        let _ = bus::emit("phone:state", phone_status());
-    } else if !want && have {
-        let r = g.take();
-        drop(g);
-        crate::phone_fw::reset();
+    let phone = crate::settings::get_bool("phone.enabled", false);
+    let want = phone || crate::settings::get_bool("pc.enabled", false);
+    let have = lock(&SERVER).as_ref().map(|r| r.lan);
+    if have.is_some() && (!want || have != Some(phone)) {
+        let r = lock(&SERVER).take();
+        if have == Some(true) && !phone {
+            crate::phone_fw::reset();
+        }
         *lock(&ERROR) = None;
         if let Some(r) = r {
             r.server.stop(); // closes every socket, frees the port
         }
         let _ = bus::emit("phone:state", phone_status());
-    } else if want && have {
+    }
+    if want && lock(&SERVER).is_none() {
+        start(phone);
+        if phone {
+            crate::phone_fw::ensure_async(); // a "Public" network blocks the phone unless Windows Firewall allows Pill on the LAN (one UAC prompt)
+        }
+        let _ = bus::emit("phone:state", phone_status());
+        let _ = bus::emit("pc:state", pc_status());
+    } else if want {
         // phone.relay / phone.relayUrl may have changed: connect or tear down the relay links
-        let sh = g.as_ref().map(|r| r.server.shared.clone());
-        drop(g);
+        let sh = lock(&SERVER).as_ref().map(|r| r.server.shared.clone());
         if let Some(sh) = sh {
             sh.relay_sync();
             sh.clip_sync(); // a changed clipboard switch starts or stops the listener
@@ -177,12 +188,37 @@ fn off() -> String {
     "Phone link is off".into()
 }
 
+// ---------------------------------------------------------------- PC link commands (docs/pc-link.md)
+
+pub fn pc_status() -> Value {
+    with(|s| {
+        s.pair_expire();
+        s.pc_status()
+    })
+    .unwrap_or_else(|| json!({ "enabled": crate::settings::get_bool("pc.enabled", false), "name": pc_name(), "peers": [], "pair": null }))
+}
+
+/// `start` | `join` (with `token`) | `allow` | `deny` | `cancel`. Starting or joining switches the PC link on first.
+pub fn pc_pair(op: String, token: Option<String>) -> Result<Value, String> {
+    if matches!(op.as_str(), "start" | "join") && !crate::settings::get_bool("pc.enabled", false) {
+        crate::settings::set("pc.enabled", json!(true));
+        sync();
+    }
+    with(|s| s.pc_pair(&op, token.as_deref())).ok_or_else(|| "PC link is off".to_string())?
+}
+
+/// `clipTo` | `clipFrom` (with `on`) | `unpair`.
+pub fn pc_peer(id: String, op: String, on: Option<bool>) -> Result<Value, String> {
+    with(|s| s.pc_peer(&id, &op, on.unwrap_or(true))).ok_or_else(|| "PC link is off".to_string())?
+}
+
 // ---------------------------------------------------------------- commands
 
 pub fn phone_status() -> Value {
     let enabled = crate::settings::get_bool("phone.enabled", false);
     let mut v = with(|s| s.status()).unwrap_or_else(|| json!({ "running": false, "ip": null, "port": null, "pcName": pc_name(), "devices": [], "connected": 0 }));
     v["enabled"] = json!(enabled);
+    v["running"] = json!(v["running"] == true && enabled); // the server may be up for the PC link alone
     v["clipboard"] = json!(clip_cfg().on);
     v["error"] = json!(*lock(&ERROR));
     v
