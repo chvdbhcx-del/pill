@@ -262,7 +262,7 @@ fun PillSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: M
     Switch(
         checked, onCheckedChange, modifier,
         colors = SwitchDefaults.colors(
-            checkedThumbColor = Color.White,
+            checkedThumbColor = c.onAccent,
             checkedTrackColor = c.accent,
             checkedBorderColor = Color.Transparent,
             uncheckedThumbColor = if (c.dark) c.textDim else Color.White,

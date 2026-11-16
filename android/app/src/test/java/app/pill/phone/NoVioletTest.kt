@@ -20,7 +20,9 @@ class NoVioletTest {
     @Test fun detectorSeesViolet() = assertTrue(violet("8F96FF") && violet("5B63E6") && !violet("4285F4") && !violet("FFFFFF") && !violet("58DDAB"))
 
     @Test fun noVioletColourLiteralsInMain() {
-        val bad = File("src/main").walkTopDown().filter { it.extension == "kt" || it.extension == "xml" }.flatMap { f ->
+        val files = File("src/main").walkTopDown().filter { it.extension == "kt" || it.extension == "xml" }.toList()
+        assertTrue("the sources were not found from ${File(".").absolutePath}", files.any { it.name == "Theme.kt" })
+        val bad = files.asSequence().flatMap { f ->
             f.readLines().flatMapIndexed { i, l ->
                 hex.findAll(l).map { m -> m.groupValues[1].ifEmpty { m.groupValues[2] } to "${f.name}:${i + 1}" }.toList()
             }

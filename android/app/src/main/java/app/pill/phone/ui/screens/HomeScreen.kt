@@ -290,9 +290,9 @@ private fun QuickActions(ui: HomeUi, a: HomeActions, modifier: Modifier) {
             ActionPill(stringResource(R.string.btn_send_files), Icons.Rounded.Upload, a.onSendFiles, Modifier.weight(1f))
             ActionPill(stringResource(R.string.apps_card_title), Icons.Rounded.NotificationsActive, a.onApps, Modifier.weight(1f), badge = ui.mirroredApps)
         }
-        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ActionPill(stringResource(R.string.hist_title), Icons.Rounded.History, a.onClipboard, Modifier.weight(1f))
-            if (ui.clipEnabled) ActionPill(stringResource(R.string.btn_send_clipboard), Icons.Rounded.ContentPaste, a.onSendClipboard, Modifier.weight(1f))
+        ActionPill(stringResource(R.string.hist_title), Icons.Rounded.History, a.onClipboard, Modifier.fillMaxWidth().padding(top = 12.dp))
+        AnimatedVisibility(ui.clipEnabled, enter = Motion.enterItem, exit = Motion.exitItem) {
+            ActionPill(stringResource(R.string.btn_send_clipboard), Icons.Rounded.ContentPaste, a.onSendClipboard, Modifier.fillMaxWidth().padding(top = 12.dp))
         }
     }
 }

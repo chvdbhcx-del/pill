@@ -20,6 +20,8 @@ class ClipSyncTest {
         val writes = ArrayList<String>()
         override fun read() = text
         override fun write(text: String) { writes += text; this.text = text }
+        var secret = false
+        override fun sensitive() = secret
     }
 
     private var clock = 1_000_000L
@@ -27,7 +29,8 @@ class ClipSyncTest {
     private var receiving = true
     private val board = FakeBoard()
     private var ids = 0
-    private val sync = ClipSync(board, { on }, { receiving }, { clock }, { "id-${ids++}" })
+    private val recorded = ArrayList<Pair<String, String?>>()
+    private val sync = ClipSync(board, { on }, { receiving }, { clock }, { "id-${ids++}" }, { t, from -> recorded += t to from })
 
     /** A sender that records what went where; [up] are the PCs that take it. */
     private class Outbox(private val up: Set<String>) {
@@ -190,5 +193,28 @@ class ClipSyncTest {
         assertEquals("copied", sync.readClipboard())
         board.text = null
         assertNull(sync.readClipboard())
+    }
+
+    // ---- what goes into the history ----
+
+    @Test fun `a text from a PC is recorded with that PC's name, only when it was applied`() {
+        assertTrue(sync.receive(Msg.Clip("1", "from pc", clock), "DESKTOP"))
+        receiving = false
+        assertFalse(sync.receive(Msg.Clip("2", "ignored", clock), "DESKTOP"))
+        assertEquals(listOf("from pc" to "DESKTOP"), recorded)
+    }
+
+    @Test fun `a text sent from the phone is recorded as this phone, a failed send is not`() {
+        sync.send("nobody", listOf("a"), Outbox(emptySet())::send)
+        sync.send("mine", listOf("a"), Outbox(setOf("a"))::send)
+        assertEquals(listOf<Pair<String, String?>>("mine" to null), recorded)
+    }
+
+    @Test fun `a sensitive clipboard is sent but never recorded, a shared text is recorded`() {
+        board.secret = true
+        assertEquals(ClipSendResult.Sent(listOf("a")), sync.send("password", listOf("a"), Outbox(setOf("a"))::send, fromBoard = true))
+        assertTrue(recorded.isEmpty())
+        sync.send("shared", listOf("a"), Outbox(setOf("a"))::send)
+        assertEquals(listOf<Pair<String, String?>>("shared" to null), recorded)
     }
 }

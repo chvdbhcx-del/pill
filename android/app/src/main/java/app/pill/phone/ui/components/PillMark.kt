@@ -28,9 +28,10 @@ fun PillMark(modifier: Modifier = Modifier, size: Dp = 48.dp, dim: Float = 1f, d
     Canvas(modifier.size(size)) {
         val k = this.size.minDimension / 108f * zoom
         val shift = (108f * (1f - zoom) / 2f) * (this.size.minDimension / 108f)
-        val light = if (mono) Color.White.copy(alpha = 0.97f * dim) else c.accentSoft.copy(alpha = dim)
-        val mid = if (mono) Color.White.copy(alpha = 0.82f * dim) else c.accent.copy(alpha = dim)
-        val deep = if (mono) Color.White.copy(alpha = 0.52f * dim) else (if (c.dark) Color(0xFF9A9A9A) else Color.Black).copy(alpha = dim)
+        val ink = if (c.dark) c.onAccent else Color.White // mono sits on the accent-coloured blob: dark on the white one, white on the black one
+        val light = if (mono) ink.copy(alpha = 0.97f * dim) else c.accentSoft.copy(alpha = dim)
+        val mid = if (mono) ink.copy(alpha = 0.82f * dim) else c.accent.copy(alpha = dim)
+        val deep = if (mono) ink.copy(alpha = 0.6f * dim) else (if (c.dark) Color(0xFF9A9A9A) else Color.Black).copy(alpha = dim)
         withTransform({
             translate(shift, shift)
             scale(k, k, pivot = Offset.Zero)

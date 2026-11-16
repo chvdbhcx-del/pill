@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Changed
+- Pill Phone 1.2.0: the app is neutral black and white now (white accent on black, near black on white; the periwinkle/violet is gone from the screens and the launcher icon), and it keeps a clipboard history: a new Clipboard screen on Home lists the texts received from your PC, sent from the phone or added from the current clipboard (tap to copy, send to a PC, delete, search, clear all), with a "Keep clipboard history" switch in Settings.
+
 ## [0.13.0] - 2026-11-16
 
 ### Highlights
