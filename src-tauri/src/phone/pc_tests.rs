@@ -1,6 +1,6 @@
 // Tests of the PC link (docs/pc-link.md): several real servers ("Pills", each in its own data folder with a fake clipboard) joined through the fake relay of
 // relay_tests.rs. Nothing leaves the machine; every test stops its Pills and the relay.
-use super::pc::{new_token, parse_token, show, SHOW_TTL_MS};
+use super::pc::{new_token, parse_token, show};
 use super::relay_tests::{wait_for, FakeRelay};
 use super::tests::Rig;
 use serde_json::{json, Value};
@@ -35,9 +35,9 @@ fn id_of(r: &Rig) -> String {
 
 /// `a` shows a token, `b` enters it, `a` allows; returns when both have stored the other and the two are connected.
 fn pair(a: &Rig, b: &Rig) {
-    a.sh().pair_start(SHOW_TTL_MS);
+    a.sh().pc_pair("start", None).unwrap();
     let token = status(a)["pair"]["token"].as_str().expect("the token is shown").to_string();
-    b.sh().pair_join(&token, 60_000).unwrap();
+    b.sh().pc_pair("join", Some(&token)).unwrap();
     wait_for("the request reaches the shown side", || state(a) == "request");
     assert_eq!(status(a)["pair"]["peer"]["name"], b.cfg.lock().unwrap().pc_name, "the card names the PC that asks");
     a.sh().pc_pair("allow", None).unwrap();
@@ -120,7 +120,7 @@ fn nothing_is_sent_before_a_pairing_exists() {
     assert!(!a.clip.watching.load(Ordering::SeqCst), "no clipboard listener without a paired PC");
     assert_eq!(a.sh().clip_local("geheim"), 0);
     // waiting with a token shown connects the pairing room, but no clipboard text can go anywhere
-    a.sh().pair_start(SHOW_TTL_MS);
+    a.sh().pc_pair("start", None).unwrap();
     assert_eq!(a.sh().clip_local("geheim"), 0);
     quiet();
     assert!(relay.st.tap.lock().unwrap().is_empty());
@@ -131,17 +131,17 @@ fn nothing_is_sent_before_a_pairing_exists() {
 fn a_wrong_token_never_pairs_and_neither_does_an_expired_one() {
     let relay = FakeRelay::start();
     let (a, b) = (pill(&relay, "PC-A"), pill(&relay, "PC-B"));
-    a.sh().pair_start(SHOW_TTL_MS);
-    b.sh().pair_join(&new_token(), 60_000).unwrap(); // a valid token, but not the one A shows
-    assert!(b.sh().pair_join("PILL-1234", 60_000).is_err(), "not a token at all");
+    a.sh().pc_pair("start", None).unwrap();
+    b.sh().pc_pair("join", Some(&new_token())).unwrap(); // a valid token, but not the one A shows
+    assert!(b.sh().pc_pair("join", Some("PILL-1234")).is_err(), "not a token at all");
     quiet();
     assert_eq!((state(&a).as_str(), peers(&a).len(), peers(&b).len()), ("waiting", 0, 0), "A never saw a request");
     b.sh().pc_pair("cancel", None).unwrap();
     // an expired token: the request arrives, finds the token dead and nobody is asked
-    a.sh().pair_start(1);
+    a.sh().pair_open(true, new_token(), 1);
     let token = status(&a)["pair"]["token"].as_str().unwrap().to_string();
     std::thread::sleep(Duration::from_millis(5));
-    b.sh().pair_join(&token, 60_000).unwrap();
+    b.sh().pc_pair("join", Some(&token)).unwrap();
     wait_for("the token dies", || state(&a) == "failed");
     assert!(status(&a)["pair"]["token"].is_null() && peers(&a).is_empty() && peers(&b).is_empty());
     stop(vec![a, b], relay);
@@ -151,9 +151,9 @@ fn a_wrong_token_never_pairs_and_neither_does_an_expired_one() {
 fn denying_stores_nothing_on_either_side() {
     let relay = FakeRelay::start();
     let (a, b) = (pill(&relay, "PC-A"), pill(&relay, "PC-B"));
-    a.sh().pair_start(SHOW_TTL_MS);
+    a.sh().pc_pair("start", None).unwrap();
     let token = status(&a)["pair"]["token"].as_str().unwrap().to_string();
-    b.sh().pair_join(&token, 60_000).unwrap();
+    b.sh().pc_pair("join", Some(&token)).unwrap();
     wait_for("the request", || state(&a) == "request");
     assert!(peers(&a).is_empty(), "nothing is stored before Allow");
     a.sh().pc_pair("deny", None).unwrap();
@@ -161,7 +161,7 @@ fn denying_stores_nothing_on_either_side() {
     assert!(peers(&a).is_empty() && peers(&b).is_empty());
     assert!(a.sh().pc_pair("allow", None).is_err(), "nothing left to allow");
     // the token was single-use: entering it again reaches nobody
-    b.sh().pair_join(&token, 60_000).unwrap();
+    b.sh().pc_pair("join", Some(&token)).unwrap();
     quiet();
     assert_eq!(state(&a), "denied");
     stop(vec![a, b], relay);
@@ -263,7 +263,7 @@ fn an_old_devices_file_loads_unchanged_and_its_phones_stay_phones() {
     std::fs::write(dir.join("devices.json"), old).unwrap();
     let r = super::reg::Registry::load(dir.clone());
     let d = r.get("dev-1").unwrap();
-    assert!((d.kind.as_str(), d.joiner, d.clip_to, d.clip_from, d.revoked_at) == ("", false, true, true, None) && d.keys.is_none());
+    assert!((d.kind.as_str(), d.joiner, d.clip_to, d.clip_from, d.revoked_at) == ("", false, false, false, None) && d.keys.is_none());
     assert_eq!(r.apps()["org.x"], "X");
     r.touch("dev-1", 9, true); // saved again: a phone record gains no new field an older Pill would trip over
     let text = std::fs::read_to_string(dir.join("devices.json")).unwrap();

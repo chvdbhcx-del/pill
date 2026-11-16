@@ -581,7 +581,7 @@ impl Shared {
     /// Tells the UI that a device came or went: the PC list for a PC, the phone list otherwise.
     fn announce(&self, id: &str) {
         if self.reg.get(id).is_some_and(|d| d.kind == "pc") {
-            self.emit("pc:state", self.pc_status());
+            self.pc_emit();
         } else {
             self.emit("phone:state", self.status());
         }
@@ -789,21 +789,19 @@ impl Shared {
         n
     }
 
-    /// A `clip` from a phone: put it on the PC clipboard and tell the island (a short card). Needs the master switch and `phone.clipFromPhone`.
-    fn clip_in(&self, dev: &Device, m: &Value) {
-        let c = self.cfg().clip;
-        if !(c.on && c.from_phone) {
+    /// A `clip` from a phone (needs the master switch and `phone.clipFromPhone`) or from a paired PC (stamped; its text is kept out of Windows'
+    /// history and cloud): onto the PC clipboard, and a short card on the island.
+    pub(super) fn clip_in(&self, dev: &Device, m: &Value) {
+        let (pc, c) = (dev.kind == "pc", self.cfg().clip);
+        let Some(text) = clip::parse(m).filter(|_| pc || (c.on && c.from_phone)) else { return };
+        if !(if pc { self.clipst.take_stamped(&text, m["seq"].as_u64().unwrap_or(0), &dev.id) } else { self.clipst.take_incoming(&text) }) {
             return;
         }
-        let Some(text) = clip::parse(m) else { return };
-        if !self.clipst.take_incoming(&text) {
-            return;
-        }
-        if !self.opts.clip.set_text(&text, false) {
+        if !self.opts.clip.set_text(&text, pc) {
             self.clipst.undo_incoming(&text);
             return;
         }
-        self.emit("phone:clip", json!({ "device": dev.id, "name": dev.name })); // never the text
+        self.emit(if pc { "pc:clip" } else { "phone:clip" }, json!({ "device": dev.id, "name": dev.name })); // never the text
     }
 
     fn notif_posted(&self, dev: &Device, m: &Value) {
@@ -973,7 +971,7 @@ impl Shared {
             self.phones.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
             self.notifs.lock().unwrap_or_else(|e| e.into_inner()).retain(|x| x["device"] != id);
             self.emit("phone:state", self.status());
-            self.emit("pc:state", self.pc_status());
+            self.pc_emit();
             self.clip_sync();
         }
         gone

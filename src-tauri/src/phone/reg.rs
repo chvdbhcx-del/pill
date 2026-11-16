@@ -54,17 +54,11 @@ pub fn valid_code_shape(c: &str) -> bool {
     c.len() == 8 && c.bytes().all(|b| CODE_ALPHABET.contains(&b))
 }
 
-fn yes() -> bool {
-    true
-}
-fn is_true(b: &bool) -> bool {
-    *b
-}
 fn is_false(b: &bool) -> bool {
     !*b
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Device {
     pub id: String,
     pub name: String,
@@ -81,27 +75,20 @@ pub struct Device {
     /// protocol v2 keys (docs/phone-relay.md), DPAPI-protected in the file; `None` for a phone paired before v2 (LAN only)
     #[serde(default, skip_serializing_if = "Option::is_none", with = "super::v2::stored")]
     pub keys: Option<super::v2::Keys>,
-    /// "" = a phone (every record made before the PC link), "pc" = another Pill (docs/pc-link.md), "pairing" = the temporary room of a PC
-    /// pairing that is under way (never stored)
+    // PC link (docs/pc-link.md); none of these is written for a phone. `kind`: "" = a phone, "pc", or "pairing" (the temporary room of a pairing, never stored)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub kind: String,
-    /// PC link: this side entered the pairing token, so on the relay it is the `phone` end (the side that showed the token is `pc`)
+    /// this side entered the pairing token: on the relay it is the `phone` end (the side that showed the token is `pc`)
     #[serde(default, skip_serializing_if = "is_false")]
     pub joiner: bool,
-    /// PC link: the clipboard of this PC goes to the peer / the peer's clipboard is applied here
-    #[serde(default = "yes", rename = "clipTo", skip_serializing_if = "is_true")]
+    /// this PC's clipboard goes to the peer / the peer's clipboard is applied here (both on after pairing)
+    #[serde(default, rename = "clipTo", skip_serializing_if = "is_false")]
     pub clip_to: bool,
-    #[serde(default = "yes", rename = "clipFrom", skip_serializing_if = "is_true")]
+    #[serde(default, rename = "clipFrom", skip_serializing_if = "is_false")]
     pub clip_from: bool,
-    /// PC link: unpaired here; the peer is told when it next connects, then the record goes (after 30 days it goes anyway)
+    /// unpaired here: the peer is told when it next connects, then the record goes (after 30 days it goes anyway)
     #[serde(default, rename = "revokedAt", skip_serializing_if = "Option::is_none")]
     pub revoked_at: Option<i64>,
-}
-
-impl Default for Device {
-    fn default() -> Device {
-        Device { id: String::new(), name: String::new(), model: String::new(), os: String::new(), app_version: String::new(), token_hash: String::new(), first_seen: 0, last_seen: 0, keys: None, kind: String::new(), joiner: false, clip_to: true, clip_from: true, revoked_at: None }
-    }
 }
 
 impl Device {
@@ -142,8 +129,7 @@ impl Registry {
         let _ = std::fs::create_dir_all(&dir);
         let file = dir.join("devices.json");
         let mut data: Data = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
-        data.devices.retain(|d| d.revoked_at.map_or(true, |t| now - t < TOMBSTONE_MS));
+        data.devices.retain(|d| d.revoked_at.map_or(true, |t| super::server::now_ms() - t < TOMBSTONE_MS));
         Registry { file, data: Mutex::new(data) }
     }
 
@@ -216,7 +202,7 @@ impl Registry {
     pub fn pair_pc(&self, id: &str, name: &str, os: &str, keys: super::v2::Keys, joiner: bool, now: i64) -> Device {
         let mut g = self.lock();
         g.devices.retain(|d| d.id != id);
-        let dev = Device { id: clip(id, 64), name: clip(name, 60), os: clip(os, 40), first_seen: now, last_seen: now, keys: Some(keys), kind: "pc".into(), joiner, ..Default::default() };
+        let dev = Device { id: clip(id, 64), name: clip(name, 60), os: clip(os, 40), first_seen: now, last_seen: now, keys: Some(keys), kind: "pc".into(), joiner, clip_to: true, clip_from: true, ..Default::default() };
         g.devices.push(dev.clone());
         self.save(&g);
         dev
