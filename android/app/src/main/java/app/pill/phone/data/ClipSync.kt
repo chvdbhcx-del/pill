@@ -8,6 +8,8 @@ interface ClipboardAccess {
     /** The text on the clipboard, or null when there is none (or the system refuses: no focus, Android 10+). */
     fun read(): String?
     fun write(text: String)
+    /** The clipboard is flagged sensitive by the app that copied it (a password manager): it stays out of the history. */
+    fun sensitive(): Boolean = false
 }
 
 /** What happened to one "send clipboard". */
@@ -26,7 +28,8 @@ sealed interface ClipSendResult {
 /**
  * Clipboard sync rules of protocol v1.2, with no Android in them: caps gating, the 256 KiB limit, empty text, and the loop guard
  * (a text just received is not sent back and the other way round; only a hash is kept, never the text itself).
- * [enabled] is the master switch, [receiving] the "Receive from PC" one.
+ * [enabled] is the master switch, [receiving] the "Receive from PC" one. [record] hears every text that was sent or applied
+ * (with the PC name it came from, null = this phone) for the clipboard history.
  */
 class ClipSync(
     private val board: ClipboardAccess,
@@ -34,6 +37,7 @@ class ClipSync(
     private val receiving: () -> Boolean,
     private val now: () -> Long = System::currentTimeMillis,
     private val newId: () -> String = { UUID.randomUUID().toString() },
+    private val record: (text: String, from: String?) -> Unit = { _, _ -> },
 ) {
     @Volatile private var lastHash = 0
     @Volatile private var lastAt = Long.MIN_VALUE
@@ -48,6 +52,8 @@ class ClipSync(
 
     fun readClipboard(): String? = board.read()
 
+    fun sensitive(): Boolean = board.sensitive()
+
     /** The size / emptiness verdict for [text], without sending anything. */
     fun check(text: String?): ClipSendResult? = when {
         !enabled() -> ClipSendResult.Off
@@ -56,24 +62,26 @@ class ClipSync(
         else -> null
     }
 
-    /** Sends [text] to each of [pcIds] through [sender]; it counts as sent (and is remembered) once any PC took it. */
-    fun send(text: String?, pcIds: Collection<String>, sender: (Collection<String>, Msg) -> FanOut): ClipSendResult {
+    /** Sends [text] to each of [pcIds] through [sender]; it counts as sent (and is remembered) once any PC took it. [fromBoard]: the text is the clipboard's. */
+    fun send(text: String?, pcIds: Collection<String>, sender: (Collection<String>, Msg) -> FanOut, fromBoard: Boolean = false): ClipSendResult {
         check(text)?.let { return it }
         text!!
         if (isEcho(text)) return ClipSendResult.AlreadyThere
         val out = sender(pcIds, Msg.Clip(newId(), text, now()))
         if (out.sent.isEmpty()) return ClipSendResult.Failed
         remember(text)
+        if (!(fromBoard && board.sensitive())) record(text, null)
         return ClipSendResult.Sent(out.sent)
     }
 
-    /** A clip from a PC: puts it on the clipboard unless the feature or receiving is off, it is empty or too big, or it is our own echo. True when applied. */
-    fun receive(m: Msg.Clip): Boolean {
+    /** A clip from the PC called [from]: puts it on the clipboard unless the feature or receiving is off, it is empty or too big, or it is our own echo. True when applied. */
+    fun receive(m: Msg.Clip, from: String? = null): Boolean {
         if (!enabled() || !receiving()) return false
         if (m.text.isEmpty() || utf8Size(m.text) > MAX_BYTES) return false
         if (isEcho(m.text)) return false
         remember(m.text)
         board.write(m.text)
+        record(m.text, from)
         return true
     }
 

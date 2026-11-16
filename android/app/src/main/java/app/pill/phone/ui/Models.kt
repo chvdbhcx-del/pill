@@ -1,6 +1,7 @@
 package app.pill.phone.ui
 
 import androidx.compose.runtime.Immutable
+import app.pill.phone.data.ClipItem
 import app.pill.phone.data.UpdateFail
 import app.pill.phone.data.UpdatePhase
 import app.pill.phone.net.RelayState
@@ -113,6 +114,10 @@ data class UpdateUi(
     val showCard: Boolean get() = latest != null && !dismissed
 }
 
+/** The Clipboard screen: the history, newest first; [canSend] = clipboard sync is on, so an item can go to a PC. */
+@Immutable
+data class ClipUi(val items: List<ClipItem> = emptyList(), val keep: Boolean = true, val canSend: Boolean = false)
+
 @Immutable
 data class AppRowUi(val pkg: String, val label: String, val enabled: Boolean, val system: Boolean)
 
@@ -138,6 +143,8 @@ data class SettingsUi(
     /** Clipboard sync (master) and "Receive from PC". */
     val clipEnabled: Boolean = false,
     val clipReceive: Boolean = true,
+    /** "Keep clipboard history". */
+    val clipKeep: Boolean = true,
     val update: UpdateUi = UpdateUi(),
 )
 

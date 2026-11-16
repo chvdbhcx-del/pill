@@ -342,4 +342,27 @@
     <string name="upd_fail_mismatch">Загруженный файл не совпал с опубликованным, поэтому он удалён. Попробуйте ещё раз.</string>
     <string name="upd_fail_storage">Не хватает свободного места для загрузки обновления.</string>
     <string name="upd_fail_install">Android не установил обновление. Попробуйте ещё раз.</string>
+
+    <!-- История буфера -->
+    <string name="hist_title">Буфер обмена</string>
+    <string name="hist_note">Android разрешает читать буфер только открытому приложению, поэтому текущий текст сохраняется при открытии этого экрана.</string>
+    <string name="hist_add_current">Добавить текущий буфер</string>
+    <string name="hist_empty_title">Пока пусто</string>
+    <string name="hist_empty_body">Здесь появятся тексты, скопированные на ПК, отправленные с телефона или добавленные вручную.</string>
+    <string name="hist_off_title">История выключена</string>
+    <string name="hist_off_body">Включите «Хранить историю буфера» в настройках.</string>
+    <string name="hist_no_match_title">Ничего не найдено</string>
+    <string name="hist_search">Поиск по буферу</string>
+    <string name="hist_this_phone">Этот телефон</string>
+    <string name="hist_copied">Скопировано</string>
+    <string name="hist_sent">Отправлено на ПК</string>
+    <string name="hist_send_failed">ПК недоступен</string>
+    <string name="hist_send">Отправить на ПК</string>
+    <string name="hist_delete">Удалить</string>
+    <string name="hist_clear_all">Очистить всё</string>
+    <string name="hist_clear_title">Очистить историю буфера?</string>
+    <string name="hist_clear_body">Все сохранённые тексты будут удалены с этого телефона. ПК это не затронет.</string>
+    <string name="hist_keep">Хранить историю буфера</string>
+    <string name="hist_keep_body">Помнить последние отправленные и полученные тексты. При выключении они удаляются.</string>
+    <string name="hist_clear_setting">Очистить историю</string>
 </resources>

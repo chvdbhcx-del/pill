@@ -339,4 +339,27 @@
     <string name="upd_fail_mismatch">The downloaded file didn’t match the published one, so it was thrown away. Try again.</string>
     <string name="upd_fail_storage">Not enough free space to download the update.</string>
     <string name="upd_fail_install">Android didn’t install the update. Try again.</string>
+
+    <!-- Clipboard history -->
+    <string name="hist_title">Clipboard</string>
+    <string name="hist_note">Android lets only the open app read the clipboard, so the current text is saved when you open this screen.</string>
+    <string name="hist_add_current">Add current clipboard</string>
+    <string name="hist_empty_title">Nothing here yet</string>
+    <string name="hist_empty_body">Texts you copy on your PC, send from this phone or add here will show up.</string>
+    <string name="hist_off_title">History is off</string>
+    <string name="hist_off_body">Turn on “Keep clipboard history” in Settings.</string>
+    <string name="hist_no_match_title">Nothing found</string>
+    <string name="hist_search">Search clipboard</string>
+    <string name="hist_this_phone">This phone</string>
+    <string name="hist_copied">Copied</string>
+    <string name="hist_sent">Sent to your PC</string>
+    <string name="hist_send_failed">Could not reach your PC</string>
+    <string name="hist_send">Send to PC</string>
+    <string name="hist_delete">Delete</string>
+    <string name="hist_clear_all">Clear all</string>
+    <string name="hist_clear_title">Clear the clipboard history?</string>
+    <string name="hist_clear_body">All saved texts are deleted from this phone. Your PC is not affected.</string>
+    <string name="hist_keep">Keep clipboard history</string>
+    <string name="hist_keep_body">Remember the last texts that were sent or received. Turning it off deletes them.</string>
+    <string name="hist_clear_setting">Clear history</string>
 </resources>

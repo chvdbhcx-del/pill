@@ -94,7 +94,7 @@ fun AppsScreen(
                 }
                 item(key = "search") {
                     Column(Modifier.padding(top = 6.dp).staggerIn(1)) {
-                        SearchField(query, actions.onQuery)
+                        SearchField(query, actions.onQuery, stringResource(R.string.apps_search))
                         Spacer(Modifier.height(12.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
@@ -157,16 +157,16 @@ private fun AppIcon(row: AppRowUi, loader: suspend (String) -> ImageBitmap?) {
 }
 
 @Composable
-private fun SearchField(query: String, onQuery: (String) -> Unit) {
+internal fun SearchField(query: String, onQuery: (String) -> Unit, hint: String, modifier: Modifier = Modifier) {
     val c = Pill.colors
     Row(
-        Modifier.fillMaxWidth().clip(CircleShape).background(c.surface).border(1.dp, c.border, CircleShape).padding(horizontal = 18.dp, vertical = 14.dp),
+        modifier.fillMaxWidth().clip(CircleShape).background(c.surface).border(1.dp, c.border, CircleShape).padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Rounded.Search, null, Modifier.size(20.dp), tint = c.textDim)
         Spacer(Modifier.width(10.dp))
         Box(Modifier.weight(1f)) {
-            if (query.isEmpty()) Text(stringResource(R.string.apps_search), style = MaterialTheme.typography.bodyLarge, color = c.textDim.copy(alpha = 0.7f))
+            if (query.isEmpty()) Text(hint, style = MaterialTheme.typography.bodyLarge, color = c.textDim.copy(alpha = 0.7f))
             BasicTextField(
                 query, onQuery, singleLine = true, textStyle = MaterialTheme.typography.bodyLarge.copy(color = c.text),
                 cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth(),

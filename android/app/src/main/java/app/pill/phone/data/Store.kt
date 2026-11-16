@@ -54,6 +54,10 @@ object Store {
     /** "Receive from PC": clips from a PC are put on this phone's clipboard (only matters while [clipEnabled]). */
     val clipReceive: StateFlow<Boolean> = _clipReceive.asStateFlow()
 
+    /** Clipboard history (the text is in clip_history.json in the app's private files, which no backup rule includes). */
+    lateinit var clipHistory: ClipHistory
+        private set
+
     private val _updateAuto = MutableStateFlow(true)
     /** "Check for updates automatically": at most every 12 hours, on app start. */
     val updateAuto: StateFlow<Boolean> = _updateAuto.asStateFlow()
@@ -81,6 +85,11 @@ object Store {
         _relayEnabled.value = plain.getBoolean("relayEnabled", true)
         _clipEnabled.value = plain.getBoolean("clipEnabled", false)
         _clipReceive.value = plain.getBoolean("clipReceive", true)
+        val histFile = java.io.File(app.filesDir, "clip_history.json")
+        clipHistory = ClipHistory(runCatching { histFile.readText() }.getOrNull(), plain.getBoolean("clipKeep", true)) {
+            // ponytail: written on the caller's thread (at most ~1 MiB); atomic so a kill cannot leave half a file
+            runCatching { histFile.resolveSibling("clip_history.tmp").apply { writeText(it) }.renameTo(histFile) }
+        }
         _updateAuto.value = plain.getBoolean("updateAuto", true)
         _updateLastCheck.value = plain.getLong("updateLastCheck", 0L)
         _updateDismissed.value = plain.getLong("updateDismissed", 0L)
@@ -191,6 +200,7 @@ object Store {
     fun setPhoneExpanded(on: Boolean) { plain.edit().putBoolean("phoneExpanded", on).apply(); _phoneExpanded.value = on }
     fun setRelayEnabled(on: Boolean) { plain.edit().putBoolean("relayEnabled", on).apply(); _relayEnabled.value = on }
     fun setClipEnabled(on: Boolean) { plain.edit().putBoolean("clipEnabled", on).apply(); _clipEnabled.value = on }
+    fun setClipKeep(on: Boolean) { plain.edit().putBoolean("clipKeep", on).apply(); clipHistory.setKeep(on) }
     fun setClipReceive(on: Boolean) { plain.edit().putBoolean("clipReceive", on).apply(); _clipReceive.value = on }
     fun setUpdateAuto(on: Boolean) { plain.edit().putBoolean("updateAuto", on).apply(); _updateAuto.value = on }
     fun setUpdateLastCheck(at: Long) { plain.edit().putLong("updateLastCheck", at).apply(); _updateLastCheck.value = at }

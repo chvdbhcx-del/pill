@@ -23,6 +23,8 @@ import app.pill.phone.MainViewModel
 import app.pill.phone.Route
 import app.pill.phone.ui.screens.AppsActions
 import app.pill.phone.ui.screens.AppsScreen
+import app.pill.phone.ui.screens.ClipboardActions
+import app.pill.phone.ui.screens.ClipboardScreen
 import app.pill.phone.ui.screens.HomeActions
 import app.pill.phone.ui.screens.HomeScreen
 import app.pill.phone.ui.screens.OnboardingScreen
@@ -57,6 +59,8 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
     val appsTitle by vm.appsTitle.collectAsStateWithLifecycle()
     val pendingSend by vm.pendingSend.collectAsStateWithLifecycle()
     val pcOptions by vm.pcOptions.collectAsStateWithLifecycle()
+    val clip by vm.clip.collectAsStateWithLifecycle()
+    val pendingClip by vm.pendingClip.collectAsStateWithLifecycle()
     val focusUpdates by vm.focusUpdates.collectAsStateWithLifecycle()
     val updateActions = UpdateActions(
         onCheck = vm::checkUpdates,
@@ -101,6 +105,7 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
                     onSendFiles = host.pickFiles,
                     onSendClipboard = host.sendClipboard,
                     onApps = { vm.openApps(null) },
+                    onClipboard = vm::openClipboard,
                     onReconnect = vm::reconnect,
                     onSelectPc = vm::selectPc,
                     onTogglePhone = vm::togglePhone,
@@ -135,6 +140,11 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
                 iconLoader = vm::icon,
                 pcName = appsTitle,
             )
+            Route.Clipboard -> ClipboardScreen(
+                clip,
+                ClipboardActions(onBack = { vm.pop() }, onAddCurrent = vm::addCurrentClip, onSend = vm::sendClip, onDelete = vm::removeClip, onClear = vm::clearClipHistory),
+                notices = vm.clipNotice,
+            )
             Route.Settings -> SettingsScreen(
                 settings,
                 SettingsActions(
@@ -146,6 +156,8 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
                     onRelay = vm::setRelayEnabled,
                     onClip = vm::setClipEnabled,
                     onClipReceive = vm::setClipReceive,
+                    onClipKeep = vm::setClipKeep,
+                    onClipClear = vm::clearClipHistory,
                     onUnpair = vm::unpair,
                     onRenamePc = vm::renamePc,
                     onPcMirror = vm::setPcMirror,
@@ -162,6 +174,10 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
             )
         }
     }
+    PcPickerSheet(
+        visible = pendingClip != null, options = pcOptions, fileCount = 0,
+        onPick = vm::chooseClipTargets, onClose = vm::dismissClip,
+    )
     // "send to which PC?": over whatever screen the user is on, only while files wait for the answer
     PcPickerSheet(
         visible = pendingSend != null, options = pcOptions, fileCount = pickCount,

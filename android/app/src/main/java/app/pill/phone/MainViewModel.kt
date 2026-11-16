@@ -4,6 +4,11 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.pill.phone.data.AppFilter
+import app.pill.phone.data.ClipItem
+import app.pill.phone.data.ClipSendResult
+import app.pill.phone.service.ClipBridge
+import app.pill.phone.ui.ClipUi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import app.pill.phone.data.AppsRepo
 import app.pill.phone.data.FileTarget
 import app.pill.phone.data.InstalledApp
@@ -51,7 +56,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class Route { Onboarding, Home, Pair, Scan, Apps, Settings }
+enum class Route { Onboarding, Home, Pair, Scan, Apps, Settings, Clipboard }
 
 /** Files the user picked, waiting for the answer to "send to which PC?". */
 class PendingSend(val sources: List<Source>)
@@ -159,11 +164,11 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private val settingsFull: StateFlow<SettingsUi> = combine(
         settingsBase, Store.relayEnabled, LinkManager.views, combine(Store.pcs, Store.overrides, selected) { p, o, s -> Triple(p, o, s) },
-        combine(Store.clipEnabled, Store.clipReceive) { e, r -> e to r },
-    ) { s, on, views, (pcs, global, sel), (clipOn, clipRecv) ->
+        combine(Store.clipEnabled, Store.clipReceive, Store.clipHistory.keep) { e, r, k -> Triple(e, r, k) },
+    ) { s, on, views, (pcs, global, sel), (clipOn, clipRecv, clipKeep) ->
         val v = view(views, sel)
         s.copy(
-            clipEnabled = clipOn, clipReceive = clipRecv,
+            clipEnabled = clipOn, clipReceive = clipRecv, clipKeep = clipKeep,
             relayEnabled = on, relay = RelayState.effective(sel, on, v.relayDyn), route = v.route, relayMaxMb = v.relayMaxMb,
             pcs = pcs.map { p ->
                 val pv = view(views, p)
@@ -210,6 +215,40 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     fun setAutoReceive(on: Boolean) = Store.setAutoReceive(on)
     fun setClipEnabled(on: Boolean) = Store.setClipEnabled(on)
     fun setClipReceive(on: Boolean) = Store.setClipReceive(on)
+    fun setClipKeep(on: Boolean) = Store.setClipKeep(on)
+    fun clearClipHistory() = Store.clipHistory.clear()
+
+    // ---- clipboard history ----
+    val clip: StateFlow<ClipUi> = combine(Store.clipHistory.items, Store.clipHistory.keep, Store.clipEnabled) { items, keep, on -> ClipUi(items, keep, on) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ClipUi())
+
+    /** What the Clipboard screen shows as a short confirmation (a string resource) after "Send to PC". */
+    val clipNotice = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+
+    /** The text waiting for the answer to "send to which PC?". */
+    private val _pendingClip = MutableStateFlow<String?>(null)
+    val pendingClip: StateFlow<String?> = _pendingClip
+
+    fun openClipboard() { push(Route.Clipboard); ClipBridge.addCurrent(app) }
+    fun addCurrentClip() = ClipBridge.addCurrent(app)
+    fun removeClip(item: ClipItem) = Store.clipHistory.remove(item)
+
+    /** One history item to a PC: asks which one when there is a choice. */
+    fun sendClip(text: String) {
+        when (val t = Routing.fileTarget(Store.pcs.value, LinkManager.connectedIds())) {
+            FileTarget.None -> clipNotice.tryEmit(R.string.hist_send_failed)
+            is FileTarget.Single -> sendClipTo(text, listOf(t.pcId))
+            is FileTarget.Ask -> _pendingClip.value = text
+        }
+    }
+
+    fun chooseClipTargets(pcIds: List<String>) { _pendingClip.getAndUpdate { null }?.let { sendClipTo(it, pcIds) } }
+    fun dismissClip() { _pendingClip.value = null }
+
+    private fun sendClipTo(text: String, ids: List<String>) {
+        val ok = ClipBridge.sync(app).send(text, ids, LinkManager::sendTo).let { it is ClipSendResult.Sent || it == ClipSendResult.AlreadyThere }
+        clipNotice.tryEmit(if (ok) R.string.hist_sent else R.string.hist_send_failed)
+    }
     fun setIncludeOngoing(on: Boolean) = Store.setIncludeOngoing(on)
     fun acceptTransfer(id: String) = Transfers.accept(app, id)
     fun openTransfer(id: String) = Transfers.open(app, id)

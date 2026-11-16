@@ -27,6 +27,12 @@ private class AndroidClipboard(private val app: Context) : ClipboardAccess {
         null
     }
 
+    override fun sensitive(): Boolean = try {
+        cm?.primaryClipDescription?.extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true // ClipDescription.EXTRA_IS_SENSITIVE, API 33
+    } catch (_: Exception) {
+        false
+    }
+
     override fun write(text: String) {
         // not marked sensitive: the user chose to share this text with their own PC
         main.post { try { cm?.setPrimaryClip(ClipData.newPlainText("", text)) } catch (_: Exception) { } }
@@ -41,7 +47,10 @@ object ClipBridge {
     @Volatile var foreground = false
 
     fun sync(ctx: Context): ClipSync = inst ?: synchronized(this) {
-        inst ?: ClipSync(AndroidClipboard(ctx.applicationContext), { Store.clipEnabled.value }, { Store.clipReceive.value }).also { inst = it }
+        inst ?: ClipSync(
+            AndroidClipboard(ctx.applicationContext), { Store.clipEnabled.value }, { Store.clipReceive.value },
+            record = { text, from -> Store.clipHistory.add(text, System.currentTimeMillis(), from) },
+        ).also { inst = it }
     }
 
     /** PCs whose hello said they understand `clip` (an older Pill ignores it silently, so a shared text must not go to one as a clip). */
@@ -62,9 +71,15 @@ object ClipBridge {
         for (id in LinkManager.connectedIds()) announce(ctx, id)
     }
 
-    fun handle(ctx: Context, m: Msg) {
+    /** The text on the clipboard now goes into the history (the app has focus; Android 10+ allows no other reader), unless the copying app marked it sensitive. */
+    fun addCurrent(ctx: Context) {
+        val s = sync(ctx)
+        s.readClipboard()?.let { if (!s.sensitive()) Store.clipHistory.add(it, System.currentTimeMillis()) }
+    }
+
+    fun handle(ctx: Context, pcId: String, m: Msg) {
         if (m !is Msg.Clip) return
-        if (sync(ctx).receive(m) && foreground) {
+        if (sync(ctx).receive(m, Store.pc(pcId)?.label) && foreground) {
             val app = ctx.applicationContext
             Handler(Looper.getMainLooper()).post { Toast.makeText(app, R.string.clip_received_toast, Toast.LENGTH_SHORT).show() }
         }

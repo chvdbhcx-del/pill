@@ -94,7 +94,7 @@ class ClipSendActivity : ComponentActivity() {
                 picked
             }
         }
-        ui = when (sync.send(text, targets, LinkManager::sendTo)) {
+        ui = when (sync.send(text, targets, LinkManager::sendTo, fromBoard = true)) {
             is ClipSendResult.Sent, ClipSendResult.AlreadyThere -> SendUi.ClipSent
             else -> SendUi.NotConnected
         }

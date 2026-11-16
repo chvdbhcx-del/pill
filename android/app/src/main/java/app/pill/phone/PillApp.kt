@@ -27,7 +27,7 @@ class PillApp : Application() {
             // One place routes every frame from the PC to whoever handles it.
             LinkManager.incoming.collect { (pcId, m) ->
                 if (m is Msg.Hello) { StatusReporter.onHello(pcId); ClipBridge.noteHello(pcId, m.clip); ClipBridge.announce(this@PillApp, pcId) }
-                ClipBridge.handle(this@PillApp, m)
+                ClipBridge.handle(this@PillApp, pcId, m)
                 NotifBridge.handle(this@PillApp, pcId, m)
                 Transfers.handle(this@PillApp, pcId, m)
             }

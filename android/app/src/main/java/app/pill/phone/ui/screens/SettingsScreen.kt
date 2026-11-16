@@ -41,7 +41,10 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.Lock
@@ -90,6 +93,8 @@ class SettingsActions(
     val onRelay: (Boolean) -> Unit = {},
     val onClip: (Boolean) -> Unit = {},
     val onClipReceive: (Boolean) -> Unit = {},
+    val onClipKeep: (Boolean) -> Unit = {},
+    val onClipClear: () -> Unit = {},
     val onUnpair: (String) -> Unit = {},
     val onRenamePc: (String, String) -> Unit = { _, _ -> },
     val onPcMirror: (String, Boolean) -> Unit = { _, _ -> },
@@ -180,7 +185,7 @@ fun SettingsScreen(
                     }
                 }
                 item(key = "clip-label") { SectionLabel(stringResource(R.string.clip_section)) }
-                item(key = "clip") { ClipCard(ui, actions.onClip, actions.onClipReceive, Modifier.staggerIn(2)) }
+                item(key = "clip") { ClipCard(ui, actions.onClip, actions.onClipReceive, actions.onClipKeep, actions.onClipClear, Modifier.staggerIn(2)) }
                 item(key = "files-label") { SectionLabel(stringResource(R.string.files_title)) }
                 item(key = "files") {
                     GlassCard(Modifier.staggerIn(2)) {
@@ -276,8 +281,10 @@ private fun RelayCard(ui: SettingsUi, onRelay: (Boolean) -> Unit, modifier: Modi
 
 /** Clipboard sync: the master switch, "Receive from PC" that slides in under it, and why sending is manual on Android. */
 @Composable
-private fun ClipCard(ui: SettingsUi, onClip: (Boolean) -> Unit, onReceive: (Boolean) -> Unit, modifier: Modifier) {
+private fun ClipCard(ui: SettingsUi, onClip: (Boolean) -> Unit, onReceive: (Boolean) -> Unit, onKeep: (Boolean) -> Unit, onClear: () -> Unit, modifier: Modifier) {
     val c = Pill.colors
+    var askClear by remember { mutableStateOf(false) }
+    if (askClear) ClearHistoryDialog({ askClear = false; onClear() }, { askClear = false })
     GlassCard(modifier.animateContentSize(Motion.soft())) {
         SettingRow(stringResource(R.string.clip_sync), subtitle = stringResource(R.string.clip_sync_body), icon = Icons.Rounded.ContentPaste) {
             PillSwitch(ui.clipEnabled, onClip)
@@ -288,6 +295,16 @@ private fun ClipCard(ui: SettingsUi, onClip: (Boolean) -> Unit, onReceive: (Bool
                 SettingRow(stringResource(R.string.clip_receive), subtitle = stringResource(R.string.clip_receive_body), icon = Icons.Rounded.Download) {
                     PillSwitch(ui.clipReceive, onReceive)
                 }
+            }
+        }
+        Divider(Modifier.padding(vertical = 8.dp))
+        SettingRow(stringResource(R.string.hist_keep), subtitle = stringResource(R.string.hist_keep_body), icon = Icons.Rounded.History) {
+            PillSwitch(ui.clipKeep, onKeep)
+        }
+        AnimatedVisibility(ui.clipKeep, enter = Motion.enterItem, exit = Motion.exitItem) {
+            Column {
+                Divider(Modifier.padding(vertical = 8.dp))
+                SettingRow(stringResource(R.string.hist_clear_setting), icon = Icons.Rounded.DeleteSweep, onClick = { askClear = true })
             }
         }
         Text(
@@ -305,7 +322,15 @@ private fun VersionRow(version: String) {
 }
 
 @Composable
-fun UnpairDialog(pcName: String?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+fun UnpairDialog(pcName: String?, onConfirm: () -> Unit, onDismiss: () -> Unit) =
+    ConfirmDialog(
+        Icons.Rounded.LinkOff, stringResource(R.string.unpair_title, pcName ?: stringResource(R.string.your_pc)), stringResource(R.string.unpair_body),
+        stringResource(R.string.btn_unpair), onConfirm, onDismiss,
+    )
+
+/** A danger confirmation: round icon, title, text, a red button and Cancel. */
+@Composable
+fun ConfirmDialog(icon: ImageVector, title: String, body: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     val c = Pill.colors
     val visible = remember { MutableTransitionState(false).apply { targetState = true } }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -316,14 +341,14 @@ fun UnpairDialog(pcName: String?, onConfirm: () -> Unit, onDismiss: () -> Unit) 
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(Modifier.clip(RoundedCornerShape(50)).background(c.bad.copy(alpha = 0.14f)).padding(16.dp)) {
-                    Icon(Icons.Rounded.LinkOff, null, tint = c.bad)
+                    Icon(icon, null, tint = c.bad)
                 }
                 Spacer(Modifier.height(16.dp))
-                Text(stringResource(R.string.unpair_title, pcName ?: stringResource(R.string.your_pc)), style = MaterialTheme.typography.titleLarge, color = c.text, textAlign = TextAlign.Center)
+                Text(title, style = MaterialTheme.typography.titleLarge, color = c.text, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.unpair_body), style = MaterialTheme.typography.bodyLarge, color = c.textDim, textAlign = TextAlign.Center)
+                Text(body, style = MaterialTheme.typography.bodyLarge, color = c.textDim, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(22.dp))
-                PillButton(stringResource(R.string.btn_unpair), onConfirm, Modifier.fillMaxWidth(), kind = ButtonKind.Danger)
+                PillButton(confirm, onConfirm, Modifier.fillMaxWidth(), kind = ButtonKind.Danger)
                 Spacer(Modifier.height(8.dp))
                 PillButton(stringResource(R.string.btn_cancel), onDismiss, Modifier.fillMaxWidth(), kind = ButtonKind.Quiet)
             }
