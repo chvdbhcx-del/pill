@@ -275,7 +275,7 @@ impl SettingsView {
             C::PhoneRevoke { .. } => {
                 self.call(cx, C::PhoneStatus, "");
             }
-            _ => return false,
+            _ => return self.pcs_reply(call, res),
         }
         true
     }

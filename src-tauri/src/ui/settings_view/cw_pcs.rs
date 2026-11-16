@@ -8,7 +8,7 @@ use super::page::RowRt;
 use super::pal::mix;
 use super::rows::*;
 use super::ui::{key, Act};
-use super::{Pend, SettingsView};
+use super::SettingsView;
 use crate::ui::liquid::{Feel, Flow};
 use crate::ui::view::Cx;
 use glasskit::color::Color;
@@ -78,7 +78,7 @@ impl SettingsView {
                     return;
                 }
                 self.data.pcs.bad_token = false;
-                self.call(cx, C::PcPair { op: op.into(), token }, if op == "join" { "pcs.join" } else { "" });
+                self.call(cx, C::PcPair { op: op.into(), token }, "");
             }
             Act::PcCopy => {
                 if let Some(t) = self.data.pcs.status["pair"]["token"].as_str() {
@@ -103,11 +103,11 @@ impl SettingsView {
     }
 
     /// Answers of the PC commands; true when `p` was one of them.
-    pub(super) fn pcs_reply(&mut self, p: &Pend, res: &Result<Value, String>) -> bool {
-        if !matches!(p.call, C::PcStatus | C::PcPair { .. } | C::PcPeer { .. }) {
+    pub(super) fn pcs_reply(&mut self, call: &C, res: &Result<Value, String>) -> bool {
+        if !matches!(call, C::PcStatus | C::PcPair { .. } | C::PcPeer { .. }) {
             return false;
         }
-        let (reduce, join) = (self.reduce(), p.tag == "pcs.join");
+        let (reduce, join) = (self.reduce(), matches!(call, C::PcPair { op, .. } if op == "join"));
         match res {
             Ok(v) => {
                 if let Some(f) = self.data.fields.get_mut("token").filter(|_| join) {

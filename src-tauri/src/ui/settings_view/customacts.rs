@@ -155,7 +155,7 @@ impl SettingsView {
         let v = res.clone().unwrap_or(Value::Null);
         let ok = v.get("ok").and_then(Value::as_bool).unwrap_or(false);
         let tag = p.tag.clone();
-        if self.phone_reply(&p.call, res, cx) || self.pcs_reply(p, res) {
+        if self.phone_reply(&p.call, res, cx) {
             return;
         }
         match &p.call {
