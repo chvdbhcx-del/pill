@@ -239,7 +239,7 @@ pub(super) fn general(p: &mut Pool) -> Page {
                 p.sec(tr("Запуск и язык", "Start and language"), &["language", "general.autostart"]),
                 p.sec(tr("Прятать остров", "Hiding the pill"), &["hideInFullscreen", "fullscreenPeek", "autoHide"]),
                 p.sec(tr("Тихие часы", "Quiet hours"), &["quiet.on", "quiet.from", "quiet.to", "quiet.days"]),
-                p.note(tr("Поиск в командной строке", "Command bar search"), browser, &["module.fileSearch", "search.engine", "search.customUrl", "command.shortcuts"]),
+                p.note(tr("Поиск в командной строке", "Command bar search"), browser, &["module.fileSearch", "search.engine", "search.customUrl"]),
                 p.sec(tr("Окно настроек", "Settings window"), &["settings.preview"]),
             ],
             vec![
@@ -265,6 +265,7 @@ pub(super) fn hotkeys(p: &mut Pool) -> Page {
                 p.sec(tr("Остров, поиск, чат, диктовка и буфер", "Island, command bar, chat, dictation and clipboard"), &["hotkey.toggle", "hotkey.keys", "hotkey.command", "hotkey.chat", "hotkey.voice", "hotkey.clipboard", "hotkey.pastePlain", "hotkey.mic"]),
                 p.sec(tr("Экран: запись, снимки, текст и цвет", "Screen: recording, shots, text and colour"), &["hotkey.record", "hotkey.shotArea", "hotkey.shotFull", "hotkey.ocr", "hotkey.pipette", "hotkey.qr"]),
                 p.sec(tr("Ярлыки лаунчера", "Launcher shortcuts"), &["hotkeys.launcher"]),
+                p.sec(tr("Приставки командной строки", "Command bar prefixes"), &["command.shortcuts"]),
             ],
             vec![p.sec(tr("Пока без сочетания", "Not assigned yet"), &["hotkey.uninstall", "hotkey.passThrough", "hotkey.theme", "hotkey.musicView", "hotkey.vpn"]).adv()],
         )],

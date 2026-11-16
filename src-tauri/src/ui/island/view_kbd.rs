@@ -269,6 +269,10 @@ impl IslandView {
                     wait = true;
                 }
             }
+            if !self.kbd.first && cs.is_empty() {
+                self.kbd_leave(cx, false); // the card closed under it and nothing is left to reach: give the keyboard back
+                return self.kbd.ring.step(dt_ms);
+            }
             // the focused control went away (a tab was taken off, the card closed): the ring goes with it
             if self.kbd.focus.is_some_and(|f| !cs.iter().any(|c| c.id == f)) && !self.kbd.first {
                 self.kbd.focus = cs.iter().find(|c| c.value == CV::Selected(true)).map(|c| c.id);

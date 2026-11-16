@@ -91,7 +91,7 @@ accent, and the focus ring doubles. Reduce motion is a separate setting and stay
 
 ## Command bar shortcuts (`command/shortcuts.rs`)
 
-`command.shortcuts` (Settings > General > Command bar search, "Your prefixes and bookmarks"): one entry per line, `prefix = address`, at most 20,
+`command.shortcuts` (Settings > Hotkeys > Command bar prefixes, "Your prefixes and bookmarks"): one entry per line, `prefix = address`, at most 20,
 http / https only. An address with `{query}` is a template (`g = https://www.google.com/search?q={query}`: `g rust lifetimes` opens that page, the words
 percent-encoded); without it a bookmark (`gh = https://github.com`: `gh` opens it). The row replaces the other results for that input (prefix match is
 case-insensitive and needs the whole first word; a template needs words, a bookmark takes none; the first of two equal prefixes wins). A prefix of yours beats the

@@ -710,11 +710,11 @@ fn rows_per_page() {
     eprintln!("rows per page: {counts:?}");
     // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch, the screen-edge choices (edge and side) and the four rows of the music widget
     let expect = [
-        ("look", 20), ("edge", 7), ("tabs", 3),
+        ("look", 21), ("edge", 7), ("tabs", 3),
         ("weather", 7), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
         ("notifications", 18), ("calendar", 12),
         ("phone", 16), ("ai", 14),
-        ("general", 25), ("hotkeys", 19), ("updates", 5),
+        ("general", 25), ("hotkeys", 21), ("updates", 5),
     ];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");

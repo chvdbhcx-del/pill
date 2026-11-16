@@ -1547,7 +1547,7 @@ impl Host {
                     taken = v.control_act(cid, act, cx);
                     Response::redraw()
                 });
-                self.a11y_sync(id, hwnd, true);
+                self.a11y_sync(id, hwnd, false); // no event from inside the provider's own call: the client is waiting on this message
                 Some(LRESULT(taken as isize))
             }
             WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP | WM_LBUTTONDBLCLK | WM_RBUTTONDOWN | WM_RBUTTONUP | WM_RBUTTONDBLCLK | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_MBUTTONDBLCLK
