@@ -264,7 +264,7 @@ fn no_row_needs_a_restart() {
 // ------------------------------------------------------------------------------------------------ the re-layout lost nothing
 
 // The settings.json keys of the 16-page schema this one replaced (a snapshot: none may be renamed, dropped or added by a re-layout).
-const OLD_KEYS: [&str; 181] = [
+const OLD_KEYS: [&str; 185] = [
     "shape", "theme", "island.color", "size",
     "monitor", "character", "character.liquid", "pet",
     "pet.side", "pet.size", "pet.keepDuringMusic", "showTime",
@@ -311,6 +311,8 @@ const OLD_KEYS: [&str; 181] = [
     "updateAuto", "whatsNew",
     // added with the live preview panel and with the bottom edge (the only keys since the re-layout)
     "settings.preview", "edge.position", "edge.align", "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset",
+    // Windows Focus Assist and the small system indicators (opt-in)
+    "notify.respectFocus", "live.capsLock", "live.numLock", "live.btBattery",
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
@@ -706,13 +708,13 @@ fn the_music_widget_rows_default_to_off_and_to_the_bottom_left_corner() {
 fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
-    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch, the screen-edge choices (edge and side) and the four rows of the music widget
+    // (+1 Focus Assist switch in General, +3 indicator switches in Notifications) the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch, the screen-edge choices (edge and side) and the four rows of the music widget
     let expect = [
         ("look", 20), ("edge", 7), ("tabs", 3),
         ("weather", 7), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
-        ("notifications", 18), ("calendar", 12),
+        ("notifications", 21), ("calendar", 12),
         ("phone", 16), ("ai", 14),
-        ("general", 25), ("hotkeys", 19), ("updates", 5),
+        ("general", 26), ("hotkeys", 19), ("updates", 5),
     ];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");

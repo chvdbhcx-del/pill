@@ -12,6 +12,8 @@ pub struct Chips {
     /// (index, total, name) of the current desktop
     desktop: Option<(usize, usize, Option<String>)>,
     sent: Pair,
+    /// cards held back by Windows Focus Assist (`focushold`): a counter closes the right column
+    pub held: usize,
 }
 
 /// Longest name shown on the chip (characters); longer ones end in an ellipsis.
@@ -62,6 +64,8 @@ impl Chips {
             (Some((i, _, None)), Some("name")) => vec![format!("{} {i}", if ru { "Рабочий стол" } else { "Desktop" })],
             _ => Vec::new(),
         };
+        let mut right = right;
+        right.extend(pill_ui_core::live::focus::chip_text(self.held, ru));
         (left, right)
     }
 
@@ -92,6 +96,19 @@ mod tests {
         assert_eq!(c.texts(&json!({}), false).0.len(), 0, "off by default");
         c.feed("kbd:now", &json!({"lang": "ENGL"}));
         assert_eq!(c.texts(&on, false).0, ["ENG"], "three units at most");
+    }
+
+    #[test]
+    fn held_cards_are_counted_at_the_end_of_the_right_column() {
+        let mut c = Chips::default();
+        let num = json!({"live.virtualDesktop": "number"});
+        c.feed("vdesk:now", &json!({"index": 2, "total": 3, "name": null}));
+        assert_eq!(c.update(&num, true), Some((vec![], vec!["2/3".into()])));
+        c.held = 3;
+        assert_eq!(c.update(&num, true), Some((vec![], vec!["2/3".into(), "Фокус · 3".into()])), "the counter pops in beside the desktop");
+        assert_eq!(c.update(&json!({}), false), Some((vec![], vec!["Focus · 3".into()])));
+        c.held = 0;
+        assert_eq!(c.update(&json!({}), false), Some((vec![], vec![])), "released: the chip goes");
     }
 
     #[test]

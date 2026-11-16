@@ -138,6 +138,8 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         "alert_ack" => ok(alert::alert_ack(a.opt("id")?.unwrap_or(0))),
         "kbd_state" => ok(watch::kbd_state()),
         "vdesk_state" => ok(crate::vdesk::vdesk_state()),
+        "focus_state" => ok(crate::focus::focus_state()),
+        "focus_watch" => ok(crate::focus::focus_watch(a.req("on")?)),
         "vdesk_switch" => ok(crate::vdesk::vdesk_switch(a.req("dir")?, a.opt("wrap")?)),
         "watch_pause" => ok(watch::watch_pause()),
         "watch_resume" => ok(watch::watch_resume()),

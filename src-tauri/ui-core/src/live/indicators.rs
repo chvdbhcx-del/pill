@@ -81,6 +81,10 @@ impl Provider for IndicatorsLive {
     fn events(&self) -> &'static [&'static str] {
         &["ind:lock", "ind:bt"]
     }
+    /// What Windows says about Focus Assist right now (the core keeps it; events sent before the island existed are gone).
+    fn boot(&self) -> Vec<Query> {
+        vec![Query::new("focus_state", "focus:changed")]
+    }
     fn on_event(&mut self, env: &dyn Env, name: &str, p: &Value, _now: i64) -> Vec<LiveCmd> {
         match name {
             "ind:lock" => {

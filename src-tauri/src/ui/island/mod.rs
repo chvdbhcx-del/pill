@@ -4,6 +4,7 @@ mod ambient;
 pub mod chrome;
 pub mod companions;
 pub mod core;
+pub mod focushold;
 pub mod fonts;
 pub mod fx;
 pub mod gpu;

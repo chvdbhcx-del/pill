@@ -382,8 +382,8 @@ pub fn behavior() -> Page {
                         "quiet.on",
                         tr("Тихие часы", "Quiet hours"),
                         tr(
-                            "Пока тихо, карточки событий, вспышки агентов и импульсы не показываются и не копятся. Ваши таймеры, напоминания и срочное звучат всегда. «Фокусировку» Windows Pill не читает.",
-                            "While it is quiet, event cards, agent flashes and pulses are not shown or queued. Your timers, reminders and anything urgent still ring. Pill does not read Windows Focus Assist.",
+                            "Пока тихо, карточки событий, вспышки агентов и импульсы не показываются и не копятся. Ваши таймеры, напоминания и срочное звучат всегда. «Фокусировку» Windows Pill читает только если включить переключатель ниже.",
+                            "While it is quiet, event cards, agent flashes and pulses are not shown or queued. Your timers, reminders and anything urgent still ring. Pill reads Windows Focus Assist only if you turn on the switch below.",
                         ),
                         false,
                     )
@@ -397,6 +397,17 @@ pub fn behavior() -> Page {
                         .enabled(Cond::On("quiet.on"))
                         .kw(&["weekdays", "days", "дни", "понедельник", "monday"])
                         .block(),
+                    // Windows' own do-not-disturb as a second, opt-in reason to hold cards back (src/focus.rs; docs/native-island.md "Focus Assist")
+                    toggle(
+                        "notify.respectFocus",
+                        tr("Учитывать «Фокусировку» Windows", "Respect Windows Focus Assist"),
+                        tr(
+                            "Когда Windows включила «Не беспокоить» (фокусировка, приложение на весь экран, презентация), карточки событий тихо копятся и появляются, когда она закончится; рядом с часами видно, сколько их ждёт. Таймеры, напоминания и срочное показываются сразу. Pill читает только это одно состояние Windows и только пока переключатель включён. Свои тихие часы выше главнее: в них карточки не копятся, а пропадают.",
+                            "When Windows turns on do not disturb (Focus Assist, a fullscreen app, a presentation), event cards are held quietly and appear when it ends; a chip beside the time counts how many wait. Timers, reminders and anything urgent show at once. Pill reads only that one Windows state, and only while this switch is on. The quiet hours above win: during them cards are dropped, not held.",
+                        ),
+                        false,
+                    )
+                    .kw(&["focus assist", "focus", "do not disturb", "dnd", "quiet time", "фокусировка", "не беспокоить", "тихий режим", "windows"]),
                 ],
             ),
         ],

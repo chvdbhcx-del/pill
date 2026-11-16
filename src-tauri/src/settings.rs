@@ -50,6 +50,9 @@ pub(crate) fn defaults() -> Cfg {
     // quiet hours (src/quiet.js, Settings > Behavior): days are strings "0" (Sunday) .. "6"
     let Value::Object(quiet) = json!({ "quiet.on": false, "quiet.from": "22:00", "quiet.to": "07:00", "quiet.days": ["0", "1", "2", "3", "4", "5", "6"] }) else { unreachable!() };
     m.extend(quiet);
+    // Windows Focus Assist (focus.rs) and the small system indicators (indicators.rs): all opt-in, off by default
+    let Value::Object(ind) = json!({ "notify.respectFocus": false, "live.capsLock": false, "live.numLock": false, "live.btBattery": false }) else { unreachable!() };
+    m.extend(ind);
     // island looks and small behaviour (island.color: a ready colour or hex, "" = the theme's own; island.colorCustom: typed hex that wins), chips beside the time, card lifetime, web search engine
     let Value::Object(look) = json!({
         "island.color": "", "island.colorCustom": "", "live.keyboardLayoutAlways": false, "live.virtualDesktop": "off", "live.virtualDesktopFlash": true, "cards.duration": "normal", "search.engine": "google", "search.customUrl": ""
@@ -270,6 +273,8 @@ pub fn apply_patch(app: &tauri::AppHandle, mut patch: Cfg) -> (Cfg, Result<(), S
     crate::ui::musicwidget::on_settings(app, &patch);
     crate::media::on_settings(&patch);
     crate::vdesk::on_settings(&patch);
+    crate::focus::on_settings(&patch);
+    crate::indicators::on_settings(&patch);
     crate::agent_bridge::on_settings(&patch);
     crate::lyrics::on_settings(&patch);
     let all = merged();

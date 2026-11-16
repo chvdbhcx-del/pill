@@ -238,7 +238,7 @@ pub(super) fn general(p: &mut Pool) -> Page {
             vec![
                 p.sec(tr("Запуск и язык", "Start and language"), &["language", "general.autostart"]),
                 p.sec(tr("Прятать остров", "Hiding the pill"), &["hideInFullscreen", "fullscreenPeek", "autoHide"]),
-                p.sec(tr("Тихие часы", "Quiet hours"), &["quiet.on", "quiet.from", "quiet.to", "quiet.days"]),
+                p.sec(tr("Тихие часы", "Quiet hours"), &["quiet.on", "quiet.from", "quiet.to", "quiet.days", "notify.respectFocus"]),
                 p.note(tr("Поиск в командной строке", "Command bar search"), browser, &["module.fileSearch", "search.engine", "search.customUrl"]),
                 p.sec(tr("Окно настроек", "Settings window"), &["settings.preview"]),
             ],
@@ -430,6 +430,10 @@ pub(super) fn notifications(p: &mut Pool) -> Page {
         "What is read. Battery: the charge level and whether the power is plugged in. While the switch is off, none of this is polled.",
     );
     let usb = tr("Что читается. Съёмные диски: список букв дисков. Пока переключатель выключен, это не опрашивается.", "What is read. Removable drives: the list of drive letters. While the switch is off, none of this is polled.");
+    let indicators = tr(
+        "Что читается. Caps Lock и Num Lock: только нажатия этих двух клавиш и их состояние, ничего из набираемого. Bluetooth: имена, подключение и заряд уже сопряжённых устройств, без поиска новых. Пока переключатель выключен, это не читается. Плашки не появляются в тихие часы и пока копятся карточки «Фокусировки» Windows.",
+        "What is read. Caps Lock and Num Lock: only presses of those two keys and their state, nothing you type. Bluetooth: names, connection and charge of devices you have already paired, no search for new ones. While a switch is off, none of this is read. The chips stay away in quiet hours and while Windows Focus Assist cards are held.",
+    );
     pg(
         "notifications",
         "bell",
@@ -448,6 +452,7 @@ pub(super) fn notifications(p: &mut Pool) -> Page {
             part(vec![p.sec(tr("Раскладка клавиатуры", "Keyboard layout"), &["live.keyboardLayout", "live.keyboardLayoutAlways"])], vec![]),
             part(vec![p.sec(tr("Виртуальные рабочие столы", "Virtual desktops"), &["live.virtualDesktopFlash", "live.virtualDesktop"])], vec![]),
             part(vec![p.note(tr("Флешки и съёмные диски", "USB and removable drives"), usb, &["live.usb"])], vec![]),
+            part(vec![p.note(tr("Индикаторы", "Indicators"), indicators, &["live.capsLock", "live.numLock", "live.btBattery"])], vec![]),
         ],
     )
 }
