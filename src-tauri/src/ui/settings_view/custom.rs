@@ -213,7 +213,7 @@ impl SettingsView {
                     if matches!(ev, glasskit::input::InputEvent::Key { code: glasskit::input::KeyCode::Enter, down: true, .. }) {
                         self.act(match n {
                             "weather.city" => Act::CitySearch,
-                            "pcs.link" => Act::PcJoin,
+                            "pcs.link" => Act::PcPair("join"),
                             _ => Act::ProfileSave,
                         }, cx);
                     }

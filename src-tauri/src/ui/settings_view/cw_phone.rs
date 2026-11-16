@@ -21,11 +21,14 @@ const ROW_H: f32 = 56.0;
 /// A pending Revoke waits this long for its second click.
 const ARM_MS: f64 = 4000.0;
 
-/// One paired phone on screen. A phone that is gone keeps its row (and the last data) until the leave flow has closed it.
+/// One paired phone or PC on screen. A device that is gone keeps its row (and the last data) until the leave flow has closed it.
+#[derive(Clone)]
 pub struct PRow {
     pub id: String,
     pub dev: Value,
     pub flow: Flow,
+    /// 0 = offline, 1 = online (the PCs' dot)
+    pub dot: Flow,
     pub present: bool,
 }
 
@@ -130,10 +133,13 @@ fn muted_list(v: &Value) -> Vec<String> {
 
 /// Brings the rows in line with the devices of a status answer: new ones flow in, missing ones flow out (also used by the PCs section).
 pub fn reconcile(rows: &mut Vec<PRow>, devs: &[Value], reduce: bool) {
+    let on = |d: &Value| (d["online"] == true) as u8 as f32;
     for r in rows.iter_mut() {
-        r.present = devs.iter().any(|d| d["id"].as_str() == Some(&r.id));
-        if let Some(d) = devs.iter().find(|d| d["id"].as_str() == Some(&r.id)) {
+        let d = devs.iter().find(|d| d["id"].as_str() == Some(&r.id));
+        r.present = d.is_some();
+        if let Some(d) = d {
             r.dev = d.clone();
+            go(&mut r.dot, on(d), reduce);
         }
     }
     for d in devs {
@@ -141,7 +147,7 @@ pub fn reconcile(rows: &mut Vec<PRow>, devs: &[Value], reduce: bool) {
         if !id.is_empty() && !rows.iter().any(|r| r.id == id) {
             let mut f = Flow::new(0.0, Feel::FLOW);
             from_to(&mut f, 0.0, 1.0, reduce);
-            rows.push(PRow { id, dev: d.clone(), flow: f, present: true });
+            rows.push(PRow { id, dev: d.clone(), flow: f, dot: Flow::new(on(d), Feel::FADE), present: true });
         }
     }
     for r in rows.iter_mut() {
@@ -151,9 +157,14 @@ pub fn reconcile(rows: &mut Vec<PRow>, devs: &[Value], reduce: bool) {
 
 /// Advances the row flows and drops the rows that have left; true while one moves.
 pub fn step_rows(rows: &mut Vec<PRow>, dt: f32) -> bool {
-    let busy = rows.iter_mut().fold(false, |b, r| tick(&mut r.flow, dt) | b);
+    let busy = rows.iter_mut().fold(false, |b, r| tick(&mut r.flow, dt) | tick(&mut r.dot, dt) | b);
     rows.retain(|r| r.present || r.flow.moving() || r.flow.at() > 0.01);
     busy
+}
+
+/// An unconfirmed two-click button (Revoke, Unpair) lapses; true on the frame it does (one more frame: the label reads as before).
+pub fn lapse(armed: &mut Option<(String, f64)>, now_ms: f64) -> bool {
+    armed.take_if(|(_, until)| now_ms >= *until).is_some()
 }
 
 impl PhoneData {
@@ -199,11 +210,7 @@ impl PhoneData {
         busy |= tick(&mut self.on_t, dt);
         busy |= tick(&mut self.qr_t, dt);
         busy |= step_rows(&mut self.rows, dt);
-        if self.armed.as_ref().is_some_and(|(_, until)| now_ms >= *until) {
-            self.armed = None;
-            busy = true; // one more frame: the button reads "Revoke" again
-        }
-        busy
+        busy | lapse(&mut self.armed, now_ms)
     }
 }
 
@@ -279,17 +286,8 @@ impl SettingsView {
                 self.call(cx, C::PhonePairCode { renew: true }, "phone.link");
             }
             Act::PhoneRevoke(id) => {
-                if self.data.phone.armed.as_ref().is_some_and(|(a, until)| *a == id && self.now_ms < *until) {
-                    self.data.phone.armed = None;
-                    self.call(cx, C::PhoneRevoke { id: id.clone() }, "phone.devices");
-                    // the row leaves at once (the next status would take it out anyway)
-                    let reduce = self.reduce();
-                    if let Some(r) = self.data.phone.rows.iter_mut().find(|r| r.id == id) {
-                        r.present = false;
-                        go(&mut r.flow, 0.0, reduce);
-                    }
-                } else {
-                    self.data.phone.armed = Some((id, self.now_ms + ARM_MS));
+                if self.two_click(false, &id) {
+                    self.call(cx, C::PhoneRevoke { id }, "phone.devices");
                 }
             }
             Act::PhoneMute(pkg) => {
@@ -309,19 +307,81 @@ impl SettingsView {
         }
         cx.request_frame();
     }
+
+    /// A Revoke / Unpair button (`pcs`: the PCs list, else the phones): the first click arms it, the second within `ARM_MS` returns true
+    /// and the row leaves at once (the next status would take it out anyway).
+    pub(super) fn two_click(&mut self, pcs: bool, id: &str) -> bool {
+        let (now, reduce) = (self.now_ms, self.reduce());
+        let (rows, armed) = if pcs { (&mut self.data.pcs.rows, &mut self.data.pcs.armed) } else { (&mut self.data.phone.rows, &mut self.data.phone.armed) };
+        if !armed.as_ref().is_some_and(|(a, until)| a == id && now < *until) {
+            *armed = Some((id.to_string(), now + ARM_MS));
+            return false;
+        }
+        *armed = None;
+        if let Some(r) = rows.iter_mut().find(|r| r.id == id) {
+            r.present = false;
+            go(&mut r.flow, 0.0, reduce);
+        }
+        true
+    }
 }
 
 // ------------------------------------------------------------------------------------------------ widgets
 
 impl SettingsView {
-    pub(super) fn w_phone_link(&mut self, d: &Dc, r: &RowRt, full: Rect, paint: bool) -> f32 {
-        let (cv, p) = (d.cv, d.p);
+    /// Paints the label of a custom row; returns (left edge, inner width, label height).
+    pub(super) fn head(&mut self, d: &Dc, r: &RowRt, full: Rect, paint: bool) -> (f32, f32, f32) {
         let (x0, w) = (full.x + PAD_X, full.w - 2.0 * PAD_X);
         let m = self.row_metrics_plain(d, r, w);
         if paint {
             self.paint_label(d, r, &m, x0, full.y);
         }
-        let y = full.y + m.nh - 11.0 + 4.0;
+        (x0, w, m.nh)
+    }
+
+    /// The device list of the phones or (`pcs`) the PCs: the label, `empty` or one row per device flowing in and out (`body` paints its text from
+    /// (x0, y) over the width w), and the Revoke / Unpair button of a present device on the right.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn dev_list(&mut self, d: &Dc, r: &RowRt, full: Rect, paint: bool, pcs: bool, empty: &str, body: impl Fn(&mut Self, &Dc, &PRow, f32, f32, f32)) -> f32 {
+        let (x0, w, nh) = self.head(d, r, full, paint);
+        let mut y = full.y + nh;
+        let (rows, armed) = if pcs { (&self.data.pcs.rows, &self.data.pcs.armed) } else { (&self.data.phone.rows, &self.data.phone.armed) };
+        let (rows, armed) = (rows.clone(), armed.as_ref().map(|a| a.0.clone()));
+        if rows.is_empty() {
+            return y + self.para_at(d, paint, x0, y, w, empty, st_hint(), d.p.dim) + 12.0 - full.y;
+        }
+        let rh = if pcs { 84.0 } else { 56.0 };
+        for r in &rows {
+            let f = r.flow.at().clamp(0.0, 1.0);
+            if paint && rh * f > 0.5 {
+                d.cv.with_clip(Rect::new(full.x, y, full.w, rh * f), |cv| {
+                    cv.with_opacity(f, |cv| {
+                        cv.with_offset(12.0 * (1.0 - f), 0.0, |cv| {
+                            cv.fill_rect(Rect::new(full.x, y, full.w, 1.0), d.p.row_line);
+                            body(self, d, r, x0, y, w);
+                        })
+                    })
+                });
+                if r.present {
+                    let (ru, en) = match (pcs, armed.as_deref() == Some(&r.id)) {
+                        (false, false) => ("Отозвать", "Revoke"),
+                        (false, true) => ("Точно отозвать?", "Really revoke?"),
+                        (true, false) => ("Отключить", "Unpair"),
+                        (true, true) => ("Точно отключить?", "Really unpair?"),
+                    };
+                    let (id, act) = if pcs { ("pcs:unpair", Act::PcPeer(r.id.clone(), "unpair", true)) } else { ("phone:rev", Act::PhoneRevoke(r.id.clone())) };
+                    self.btn_at(d, true, &format!("{id}:{}", r.id), pick(d.lang, ru, en), ButtonKind::Danger, 0.0, Some(full.right() - PAD_X), y + if pcs { 8.0 } else { 12.0 }, act, true);
+                }
+            }
+            y += rh * f;
+        }
+        y + 8.0 - full.y
+    }
+
+    pub(super) fn w_phone_link(&mut self, d: &Dc, r: &RowRt, full: Rect, paint: bool) -> f32 {
+        let (cv, p) = (d.cv, d.p);
+        let (x0, w, nh) = self.head(d, r, full, paint);
+        let y = full.y + nh - 11.0 + 4.0;
         let h = QR_SIDE;
         if !paint {
             return y + h + 16.0 - full.y;
@@ -388,64 +448,25 @@ impl SettingsView {
     }
 
     pub(super) fn w_phone_devices(&mut self, d: &Dc, r: &RowRt, full: Rect, paint: bool) -> f32 {
-        let (cv, p) = (d.cv, d.p);
-        let (x0, w) = (full.x + PAD_X, full.w - 2.0 * PAD_X);
-        let m = self.row_metrics_plain(d, r, w);
-        if paint {
-            self.paint_label(d, r, &m, x0, full.y);
-        }
-        let mut y = full.y + m.nh;
-        if self.data.phone.rows.is_empty() {
-            let msg = pick(d.lang, "Пока ни одного телефона. Отсканируйте QR-код выше.", "No phones yet. Scan the QR code above.");
-            y += self.para_at(d, paint, x0, y, w, msg, st_hint(), p.dim) + 12.0;
-            return y - full.y;
-        }
-        let now = wall_ms();
-        let armed = self.data.phone.armed.as_ref().map(|(i, _)| i.clone());
-        for i in 0..self.data.phone.rows.len() {
-            let (id, dev, f) = {
-                let r = &self.data.phone.rows[i];
-                (r.id.clone(), r.dev.clone(), r.flow.at())
-            };
-            let h = ROW_H * f.clamp(0.0, 1.0);
-            if paint && h > 0.5 {
-                let a = f.clamp(0.0, 1.0);
-                let rr = Rect::new(full.x, y, full.w, h);
-                cv.with_clip(rr, |cv| {
-                    cv.with_opacity(a, |cv| {
-                        cv.with_offset(12.0 * (1.0 - f), 0.0, |cv| {
-                            cv.fill_rect(Rect::new(full.x, y, full.w, 1.0), p.row_line);
-                            let name = dev["name"].as_str().unwrap_or("?");
-                            let sub = [dev["model"].as_str().unwrap_or(""), dev["os"].as_str().unwrap_or("")].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" · ");
-                            cv.text(Rect::new(x0, y + 8.0, w - 150.0, 18.0), name, st_title(), p.text);
-                            cv.text(Rect::new(x0, y + 26.0, w - 150.0, 14.0), &sub, st_hint().ellipsis(), p.dim);
-                            let conn = dev["connected"] == true;
-                            let mut st = if conn { pick(d.lang, "на связи", "connected now").to_string() } else { format!("{} {}", pick(d.lang, "был", "last seen"), ago(d.lang, now, dev["lastSeen"].as_i64().unwrap_or(0))) };
-                            if let Some(b) = dev["battery"].as_i64().filter(|_| conn) {
-                                st = format!("{st} · {b} %{}", if dev["charging"] == true { " ⚡" } else { "" });
-                            }
-                            cv.text(Rect::new(x0, y + 40.0, w - 150.0, 14.0), &st, st_hint().ellipsis(), if conn { p.green } else { p.faint });
-                        });
-                    });
-                });
-                if self.data.phone.rows[i].present {
-                    let label = if armed.as_deref() == Some(id.as_str()) { pick(d.lang, "Точно отозвать?", "Really revoke?") } else { pick(d.lang, "Отозвать", "Revoke") };
-                    self.btn_at(d, true, &format!("phone:rev:{id}"), label, ButtonKind::Danger, 0.0, Some(full.right() - PAD_X), y + (ROW_H - 32.0) / 2.0, Act::PhoneRevoke(id.clone()), true);
-                }
+        let empty = pick(d.lang, "Пока ни одного телефона. Отсканируйте QR-код выше.", "No phones yet. Scan the QR code above.");
+        self.dev_list(d, r, full, paint, false, empty, |_, d, r, x0, y, w| {
+            let (cv, p, dev) = (d.cv, d.p, &r.dev);
+            let sub = [dev["model"].as_str().unwrap_or(""), dev["os"].as_str().unwrap_or("")].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" · ");
+            cv.text(Rect::new(x0, y + 8.0, w - 150.0, 18.0), dev["name"].as_str().unwrap_or("?"), st_title(), p.text);
+            cv.text(Rect::new(x0, y + 26.0, w - 150.0, 14.0), &sub, st_hint().ellipsis(), p.dim);
+            let conn = dev["connected"] == true;
+            let mut st = if conn { pick(d.lang, "на связи", "connected now").to_string() } else { format!("{} {}", pick(d.lang, "был", "last seen"), ago(d.lang, wall_ms(), dev["lastSeen"].as_i64().unwrap_or(0))) };
+            if let Some(b) = dev["battery"].as_i64().filter(|_| conn) {
+                st = format!("{st} · {b} %{}", if dev["charging"] == true { " ⚡" } else { "" });
             }
-            y += h;
-        }
-        y + 8.0 - full.y
+            cv.text(Rect::new(x0, y + 40.0, w - 150.0, 14.0), &st, st_hint().ellipsis(), if conn { p.green } else { p.faint });
+        })
     }
 
     pub(super) fn w_phone_apps(&mut self, d: &Dc, r: &RowRt, full: Rect, paint: bool) -> f32 {
         let p = d.p;
-        let (x0, w) = (full.x + PAD_X, full.w - 2.0 * PAD_X);
-        let m = self.row_metrics_plain(d, r, w);
-        if paint {
-            self.paint_label(d, r, &m, x0, full.y);
-        }
-        let mut y = full.y + m.nh - 11.0 + 6.0;
+        let (x0, w, nh) = self.head(d, r, full, paint);
+        let mut y = full.y + nh - 11.0 + 6.0;
         if self.data.phone.apps.is_empty() {
             let msg = pick(d.lang, "Пока пусто: приложения появятся после первого уведомления с телефона.", "Nothing yet: apps appear after the first notification from the phone.");
             return y + self.para_at(d, paint, x0, y, w, msg, st_hint(), p.dim) + 12.0 - full.y;

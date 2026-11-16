@@ -23,7 +23,7 @@ impl SettingsView {
                 self.sync_page();
             }
             Act::PhoneRenew | Act::PhoneRevoke(_) | Act::PhoneMute(_) => self.phone_act(a, cx),
-            Act::PcPair(_) | Act::PcJoin | Act::PcCopy | Act::PcPeer(..) => self.pcs_act(a, cx),
+            Act::PcPair(_) | Act::PcCopy | Act::PcPeer(..) => self.pcs_act(a, cx),
             Act::HomeChip(i) => self.home_chip(i, cx),
             Act::TabChip(id) => self.tab_chip(id, cx),
             Act::OpenLink(url) => {

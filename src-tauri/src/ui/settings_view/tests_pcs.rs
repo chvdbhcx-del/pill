@@ -91,14 +91,14 @@ fn show_a_token_then_copy_it() {
 fn a_pasted_token_is_sent_and_a_refused_one_says_so() {
     let _g = motion_lock();
     let mut t = boot_pcs(status(Value::Null, json!([])));
-    to_section(&mut t, &Act::PcJoin);
+    to_section(&mut t, &Act::PcPair("join"));
     t.v.borrow_mut().data.fields.get_mut("token").expect("the field is drawn").set_text("  PILL-7K2M-9XQD ");
     t.fakes.api.reply("pc_pair", Err("that is not a Pill token".into()));
-    click_act(&mut t, &Act::PcJoin);
+    click_act(&mut t, &Act::PcPair("join"));
     assert_eq!(t.calls("pc_pair"), vec![json!({ "op": "join", "token": "  PILL-7K2M-9XQD " })]);
     assert!(t.v.borrow().data.pcs.bad_token);
     t.fakes.api.reply("pc_pair", Ok(status(json!({ "mode": "enter", "state": "waiting" }), json!([]))));
-    click_act(&mut t, &Act::PcJoin);
+    click_act(&mut t, &Act::PcPair("join"));
     assert!(!t.v.borrow().data.pcs.bad_token && t.v.borrow().data.fields["token"].text().is_empty(), "accepted: the field is emptied");
 }
 

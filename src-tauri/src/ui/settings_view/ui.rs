@@ -79,9 +79,8 @@ pub enum Act {
     PhoneRenew,
     PhoneRevoke(String),
     PhoneMute(String),
-    // the PCs section: pairing step (start | allow | deny | cancel), join with the pasted token, copy the shown token, one PC (clipTo | clipFrom | unpair)
+    // the PCs section: a pairing step (start | join with the pasted token | allow | deny | cancel), copy the shown token, one PC (clipTo | clipFrom | unpair)
     PcPair(&'static str),
-    PcJoin,
     PcCopy,
     PcPeer(String, &'static str, bool),
     // share your look (look.rs)
