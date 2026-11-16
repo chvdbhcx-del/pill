@@ -332,6 +332,7 @@ mod tests {
     #[test]
     fn the_id_ranges_do_not_overlap() {
         // 64 tabs, a handful of buttons, 100 card / row buttons each
-        assert!(TAB0 + 64 < BTN0 && BTN0 + 8 < CARD0 && CARD0 + 100 < ROW0 && ROW0 + 100 < CHIP && CHIP < VIEW0);
+        // ranges are [start, start + n): the next one may begin right at the end
+        assert!(TAB0 + 64 <= BTN0 && BTN0 + 8 <= CARD0 && CARD0 + 100 <= ROW0 && ROW0 + 100 <= CHIP && CHIP < VIEW0);
     }
 }
