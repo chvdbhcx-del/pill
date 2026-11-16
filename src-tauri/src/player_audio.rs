@@ -6,8 +6,8 @@ use std::sync::Mutex;
 use windows::core::{Interface, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
 use windows::Win32::Media::Audio::{
-    eRender, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator, ISimpleAudioVolume,
-    MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
+    eConsole, eRender, AudioSessionStateActive, IAudioMeterInformation, IAudioSessionControl, IAudioSessionControl2, IAudioSessionManager2,
+    IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
 };
 use windows::Win32::Storage::Packaging::Appx::GetPackageFamilyName;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
@@ -154,9 +154,9 @@ fn list_procs(want_pfn: bool) -> Vec<Proc> {
     out
 }
 
-/// Calls `f(pid, active, volume)` for every audio session of every active render device (a mixer such as Sonar or Voicemeeter keeps the player's
+/// Calls `f(pid, active, session)` for every audio session of every active render device (a mixer such as Sonar or Voicemeeter keeps the player's
 /// session on a virtual device, so the default device alone is not enough).
-fn each_session(mut f: impl FnMut(u32, bool, &ISimpleAudioVolume)) {
+fn each_session_ctl(mut f: impl FnMut(u32, bool, &IAudioSessionControl)) {
     crate::media::com();
     unsafe {
         let Ok(en) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return };
@@ -167,13 +167,22 @@ fn each_session(mut f: impl FnMut(u32, bool, &ISimpleAudioVolume)) {
             let Ok(se) = mgr.GetSessionEnumerator() else { continue };
             for j in 0..se.GetCount().unwrap_or(0) {
                 let Ok(c) = se.GetSession(j) else { continue };
-                let (Ok(c2), Ok(vol)) = (c.cast::<IAudioSessionControl2>(), c.cast::<ISimpleAudioVolume>()) else { continue };
+                let Ok(c2) = c.cast::<IAudioSessionControl2>() else { continue };
                 let pid = c2.GetProcessId().unwrap_or(0);
                 let active = c.GetState().map(|s| s == AudioSessionStateActive).unwrap_or(false);
-                f(pid, active, &vol);
+                f(pid, active, &c);
             }
         }
     }
+}
+
+/// [`each_session_ctl`] with the session's volume control: `f(pid, active, volume)`.
+fn each_session(mut f: impl FnMut(u32, bool, &ISimpleAudioVolume)) {
+    each_session_ctl(|pid, active, c| {
+        if let Ok(vol) = c.cast::<ISimpleAudioVolume>() {
+            f(pid, active, &vol);
+        }
+    });
 }
 
 /// The process to capture for the current player (None: no player, or no process found).
@@ -266,6 +275,83 @@ pub fn set_session_mute(m: bool) -> bool {
     on_player_sessions(|s| unsafe {
         let _ = s.SetMute(m, std::ptr::null());
     }) > 0
+}
+
+// ---------- the peak level of the player (the music widget's waveform) ----------
+
+/// Something that tells how loud the player is right now: the peak sample, 0..1 (`None` = it cannot tell). The widget's waveform reads it
+/// through this, so the aggregation is tested with synthetic peaks and no audio hardware.
+pub trait PeakSource {
+    fn peak(&mut self) -> Option<f32>;
+}
+
+/// How often the player's sessions are looked up again (the process walk and the session list are the slow part; a reading is a few calls).
+const RESOLVE_EVERY: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// The peak meter of the player's own audio sessions (every session of every process of the app, the loudest counts), else of the default
+/// output device. PRIVACY: `IAudioMeterInformation` gives one number, the peak level; there is no capture stream and no audio content is read.
+/// With only the device's meter, other sounds that play at the same time are in the reading too (nothing can tell them apart).
+/// Create it and use it on one thread (it keeps COM interfaces).
+#[derive(Default)]
+pub struct PeakMeter {
+    meters: Vec<IAudioMeterInformation>,
+    /// the meters are the default device's (no session of the player was found)
+    device: bool,
+    at: Option<std::time::Instant>,
+    hint: Hint,
+}
+
+impl PeakMeter {
+    fn resolve(&mut self) {
+        self.meters.clear();
+        self.device = false;
+        let h = hint();
+        let pids = if h.is_empty() { Vec::new() } else { cached_pids(&h) };
+        if !pids.is_empty() {
+            each_session_ctl(|pid, active, c| {
+                if active && pids.contains(&pid) {
+                    if let Ok(m) = c.cast::<IAudioMeterInformation>() {
+                        self.meters.push(m);
+                    }
+                }
+            });
+        }
+        if self.meters.is_empty() {
+            crate::media::com();
+            unsafe {
+                if let Ok(en) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) {
+                    if let Ok(m) = en.GetDefaultAudioEndpoint(eRender, eConsole).and_then(|d| d.Activate::<IAudioMeterInformation>(CLSCTX_ALL, None)) {
+                        self.meters.push(m);
+                        self.device = true;
+                    }
+                }
+            }
+        }
+        self.hint = h;
+        self.at = Some(std::time::Instant::now());
+    }
+}
+
+impl PeakSource for PeakMeter {
+    fn peak(&mut self) -> Option<f32> {
+        // a new player, a session that went away (a failed reading) or a stale list: look again
+        let stale = self.at.is_none_or(|t| t.elapsed() >= RESOLVE_EVERY) || self.hint != hint() || (self.device && self.at.is_some_and(|t| t.elapsed() >= std::time::Duration::from_secs(1)));
+        if stale {
+            self.resolve();
+        }
+        let mut best: Option<f32> = None;
+        let mut failed = false;
+        for m in &self.meters {
+            match unsafe { m.GetPeakValue() } {
+                Ok(v) => best = Some(best.map_or(v, |b| b.max(v))),
+                Err(_) => failed = true,
+            }
+        }
+        if failed {
+            self.at = None; // the next reading looks again
+        }
+        best
+    }
 }
 
 #[cfg(test)]

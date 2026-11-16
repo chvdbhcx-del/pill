@@ -33,6 +33,7 @@
 //! * The fullscreen guard hides it with the island (`pill.rs` emits `pill:guard`); nothing plays, nothing shows: no window, no timer, no frames.
 pub mod logic;
 mod view;
+mod wave;
 
 #[cfg(test)]
 mod tests;
