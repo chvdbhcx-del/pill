@@ -245,11 +245,17 @@ fn path() -> std::path::PathBuf {
 }
 
 pub fn load() -> Memory {
+    if cfg!(test) {
+        return Memory::default(); // a test run never touches the user's file
+    }
     std::fs::read(path()).map(|b| Memory::from_bytes(&b)).unwrap_or_default()
 }
 
 /// Writes the memory (temp file and rename, so a crash never leaves half a file). Best effort.
 pub fn save(m: &Memory) {
+    if cfg!(test) {
+        return;
+    }
     let p = path();
     let tmp = p.with_extension("tmp");
     if std::fs::write(&tmp, m.to_bytes()).is_ok() {

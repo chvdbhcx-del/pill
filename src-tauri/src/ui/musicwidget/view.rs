@@ -20,6 +20,7 @@
 //! Idle cost: nothing runs while the widget is hidden; while it shows, one 1 Hz tick (a `Ticker`) moves the clock and ends the grace of a pause,
 //! and frames run only while a spring moves.
 use super::logic::{self as lg, Btn, Hit, Presence, Stand, Track, BTNS};
+use loud::Loud;
 use crate::ui::host::geom::{Align, Dock};
 use crate::ui::island::gpu::Gpu;
 use crate::ui::liquid::{Feel, Flow};
@@ -39,6 +40,9 @@ use std::time::Duration;
 
 #[path = "view_kbd.rs"]
 mod kbd; // keyboard mode, UIA controls and high contrast of the widget
+
+#[path = "view_wave.rs"]
+mod loud; // the loudness of the track as it is learned (the waveform's bars)
 
 #[cfg(test)]
 #[path = "view_tests.rs"]
@@ -142,6 +146,11 @@ pub struct MusicView {
     /// a seek drag in progress: the fraction under the pointer
     seek: Option<f32>,
     ticker: Option<Ticker>,
+    /// the period the ticker runs at (fast while the player's level is measured, see `loud`) and the host time of the last once-a-second tick
+    ticker_ms: u64,
+    slow_at: f64,
+    /// what is learned of the track's loudness
+    loud: Loud,
     state_ticket: Option<Ticket>,
     last_hit: Option<Rect>,
     gpu: Gpu,
@@ -210,6 +219,9 @@ impl MusicView {
             down_head: false,
             seek: None,
             ticker: None,
+            ticker_ms: loud::IDLE_MS,
+            slow_at: 0.0,
+            loud: Loud::new(),
             state_ticket: None,
             last_hit: None,
             gpu: Gpu::new(),
@@ -442,6 +454,7 @@ impl MusicView {
             }
         }
         self.track = Track { thumbnail: None, ..t };
+        self.loud_track(now);
         self.follow_accent(!self.vis);
         self.sync(cx);
     }
@@ -476,8 +489,10 @@ impl MusicView {
             self.asked = true;
             cx.show_self();
         }
-        if want && self.ticker.is_none() {
-            self.ticker = Some(Ticker::start(cx.waker(), Duration::from_millis(1000)));
+        let ms = self.pace_ms();
+        if want && (self.ticker.is_none() || self.ticker_ms != ms) {
+            self.ticker = Some(Ticker::start(cx.waker(), Duration::from_millis(ms)));
+            self.ticker_ms = ms;
         } else if !want {
             self.ticker = None;
         }
@@ -503,13 +518,19 @@ impl MusicView {
         self.knob.to(k);
     }
 
+    /// The ticker's beat: a reading of the player's level while it is measured (8 Hz, see `loud`), and once a second the clock.
     fn tick(&mut self, cx: &mut Cx) -> Response {
-        self.sync(cx);
-        if self.vis && self.track.playing && self.seek.is_none() {
-            self.glide_prog(lg::fraction(self.pos_now(cx.now_ms), self.track.duration_ms));
-            return Response::redraw();
+        let mut r = if self.loud_sample(cx.now_ms) { Response::redraw() } else { Response::NONE };
+        if cx.now_ms - self.slow_at >= 900.0 {
+            self.slow_at = cx.now_ms;
+            self.sync(cx);
+            self.loud_housekeeping(cx.now_ms);
+            if self.vis && self.track.playing && self.seek.is_none() {
+                self.glide_prog(lg::fraction(self.pos_now(cx.now_ms), self.track.duration_ms));
+                r = Response::redraw();
+            }
         }
-        Response::NONE
+        r
     }
 
     fn command(&mut self, b: Btn, cx: &mut Cx) {
@@ -552,6 +573,7 @@ impl MusicView {
             || self.swap.moving()
             || self.pp.moving()
             || self.prog.moving()
+            || self.loud.moving()
             || self.knob.moving()
             || self.ghosts.iter().any(|g| g.a.moving())
             || self.hov.iter().chain(self.press.iter()).chain(self.kick.iter()).chain(self.acc.iter()).any(Flow::moving)
@@ -777,6 +799,7 @@ impl View for MusicView {
         self.swap.step(dt);
         self.pp.step(dt);
         self.prog.step(dt);
+        self.loud.step(dt);
         self.knob.step(dt);
         for f in self.hov.iter_mut().chain(self.press.iter_mut()).chain(self.kick.iter_mut()).chain(self.acc.iter_mut()) {
             f.step(dt);
@@ -838,7 +861,8 @@ impl View for MusicView {
         cx.request_frame();
     }
 
-    fn on_hide(&mut self, _cx: &mut Cx) {
+    fn on_hide(&mut self, cx: &mut Cx) {
+        self.loud_hide(cx.now_ms);
         self.vis = false;
         self.asked = false;
         self.near = false;
