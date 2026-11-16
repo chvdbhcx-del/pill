@@ -4,6 +4,8 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-16
+
 ### Changed
 - Music widget: it now looks like the island's own player. The open card is the Home player card (the cover-tinted background, the blurred reflections of the cover at its sides, the centred title and the "artist - album" line, the source label, the times, the previous / pause / next buttons) in the style set in Home player (mirror, compact or fill), and the folded capsule is the island's music strip (cover, name, three plain buttons), all with the island's theme, accent, corners and fonts; the folded-to-open motion, the track change, the keyboard control and the taskbar fit are unchanged. The card's progress line is now the real loudness of the track, drawn as thin rounded bars: Pill reads the peak level of the playing app about 8 times a second while the widget is on screen and a track with a known length plays, puts it in the bar of the part of the track it is in, and remembers the result per track (500 tracks, a small file next to the settings), so from the second listen the whole shape is there from the first second; parts not heard yet are short flat dim bars that fill in as they play, and clicking or dragging on the bars still seeks. Only peak levels are used, nothing is recorded or stored of the audio; if the player has no audio session of its own that can be matched, the level of the default output device is read instead, so other sounds playing at the same time are measured too.
 
