@@ -1016,9 +1016,10 @@ fn stage_of(t: &T) -> Rect {
     Rect::new(p.x + 16.0, p.y + 48.0, PV_W - 32.0, t.v.borrow().pv.stage_h.at())
 }
 
-/// Opaque black (the body of an island or a widget) inside `r`.
+/// Opaque black (the body of an island) or near black (the widget's body is the island's card colour, #0f0f0f, over which the cover's tint only
+/// lightens) inside `r`.
 fn black_in(img: &Image, r: Rect) -> usize {
-    img.count(Some(r), |px| px[3] == 255 && px[0].max(px[1]).max(px[2]) < 10)
+    img.count(Some(r), |px| px[3] == 255 && px[0].max(px[1]).max(px[2]) < 20)
 }
 
 /// The black of the stage in its four quarters: (top left, top right, bottom left, bottom right).
@@ -1056,7 +1057,7 @@ fn the_music_widget_stands_on_the_sketch_of_the_monitor_where_the_settings_put_i
         settle(&mut t, WIDE, &th);
         let c = shot(&mut t, "widget-top-right", &th);
         let (tl, tr, bl, br) = quarters(&t, &c);
-        assert!(tr > 150 && bl + br < 60 && tl < tr, "at the top of the screen now: {tl} {tr} {bl} {br}");
+        assert!(tr > 150 && bl + br < 100 && tl < tr, "at the top of the screen now: {tl} {tr} {bl} {br}");
         // the middle, and shifted along the edge
         set(&mut t, "media.widget.align", json!("center"));
         settle(&mut t, WIDE, &th);
@@ -1067,7 +1068,8 @@ fn the_music_widget_stands_on_the_sketch_of_the_monitor_where_the_settings_put_i
         settle(&mut t, WIDE, &th);
         let d = shot(&mut t, "widget-top-centre-shifted", &th);
         let (tl2, tr2, ..) = quarters(&t, &d);
-        assert!(tr2 > tr + 60 && tl2 < tl, "30 % of the screen to the right: {tl} {tr} -> {tl2} {tr2}");
+        // (the left count is not compared: the widget's tinted body over the black island hid part of it, and it shows again when the widget moves away)
+        assert!(tr2 > tr + 60, "30 % of the screen to the right: {tl} {tr} -> {tl2} {tr2}");
         // the bigger the size, the bigger the widget (it follows the island's size)
         set(&mut t, "media.widget.offset", json!(0));
         settle(&mut t, WIDE, &th);

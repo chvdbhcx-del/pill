@@ -2,7 +2,7 @@
 //! (`media:changed`, `media_state`), sends the same commands (`media_control`, `media_seek`) and draws with the island's own pieces (`island::gpu`
 //! icons and covers, the liquid `Flow` / `Feel` springs). Behaviour lives in `logic.rs`; this file is the glue and the pixels.
 //!
-//! Look: the island's own player, see `view_paint.rs` (the open card is the Home player card, the folded capsule the music strip); the card's progress
+//! Look: the island's own player, see `view_paint.rs` (the open card is the Home player card, the folded capsule the same card in small); the card's progress
 //! track is the loudness of the track as thin bars (`loud`).
 //!
 //! Motion (every value is a spring, every target is set in `step`/an event, never in `draw`):
@@ -51,7 +51,7 @@ mod kbd; // keyboard mode, UIA controls and high contrast of the widget
 mod loud; // the loudness of the track as it is learned (the waveform's bars)
 
 #[path = "view_paint.rs"]
-mod paint; // the pixels: the island player's card and the music strip capsule
+mod paint; // the pixels: the island player's card and the capsule, which is the card in small
 
 #[cfg(test)]
 #[path = "view_tests.rs"]
