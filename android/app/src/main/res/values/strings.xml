@@ -362,6 +362,7 @@
     <string name="hist_clear_setting">Clear history</string>
     <!-- Home (1.3.0): bottom bar, quick actions, recent, hero pills, stats -->
     <string name="tab_home">Home</string>
+    <string name="tab_clipboard">Clipboard</string>
     <string name="qa_send_file">Send file</string>
     <string name="qa_send_clip">Send clip</string>
     <string name="qa_history">History</string>

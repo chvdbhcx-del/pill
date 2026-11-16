@@ -97,12 +97,6 @@ class ScannerActions(
     val onEnterCode: () -> Unit = {},
 )
 
-// The corner colours of the Google scanner the user knows; they stay as they are.
-private val BracketBlue = Color(0xFF4285F4)
-private val BracketYellow = Color(0xFFFBBC05)
-private val BracketGreen = Color(0xFF34A853)
-private val BracketRed = Color(0xFFEA4335)
-
 /**
  * Own scanner screen: the app background everywhere, the camera only inside the square window.
  * [preview] draws the camera (a plain colour in screenshot tests); [rejectCount] shakes the brackets once per bump.
@@ -184,10 +178,8 @@ private fun Viewfinder(window: Dp, phase: ScanPhase, rejectCount: Int, preview: 
 
     val success = phase == ScanPhase.Success
     val pulse by animateFloatAsState(if (success) 1.05f else 1f, Motion.bouncy(), label = "pulse")
-    val blue by animateColorAsState(if (success) c.accent else BracketBlue, Motion.calm(), label = "tl")
-    val yellow by animateColorAsState(if (success) c.accent else BracketYellow, Motion.calm(), label = "tr")
-    val green by animateColorAsState(if (success) c.accent else BracketGreen, Motion.calm(), label = "bl")
-    val red by animateColorAsState(if (success) c.accentSoft else BracketRed, Motion.calm(), label = "br")
+    // one neutral frame over the camera: white, green once the code is read
+    val bracket by animateColorAsState(if (success) c.good else Color.White, Motion.calm(), label = "bracket")
     val veil by animateFloatAsState(if (success) 0.32f else 0f, Motion.calm(), label = "veil")
 
     Box(
@@ -209,10 +201,10 @@ private fun Viewfinder(window: Dp, phase: ScanPhase, rejectCount: Int, preview: 
             val out = (1f - s) * 34.dp.toPx()    // starts wider, springs onto the window edge (overshoots a little)
             val alpha = s.coerceIn(0f, 1f)
             translate(pad.toPx(), pad.toPx()) {
-                translate(-out, -out) { drawCorner(Corner.TL, w, r, arm, blue.copy(alpha = alpha), stroke) }
-                translate(out, -out) { drawCorner(Corner.TR, w, r, arm, yellow.copy(alpha = alpha), stroke) }
-                translate(-out, out) { drawCorner(Corner.BL, w, r, arm, green.copy(alpha = alpha), stroke) }
-                translate(out, out) { drawCorner(Corner.BR, w, r, arm, red.copy(alpha = alpha), stroke) }
+                translate(-out, -out) { drawCorner(Corner.TL, w, r, arm, bracket.copy(alpha = alpha), stroke) }
+                translate(out, -out) { drawCorner(Corner.TR, w, r, arm, bracket.copy(alpha = alpha), stroke) }
+                translate(-out, out) { drawCorner(Corner.BL, w, r, arm, bracket.copy(alpha = alpha), stroke) }
+                translate(out, out) { drawCorner(Corner.BR, w, r, arm, bracket.copy(alpha = alpha), stroke) }
             }
         }
         androidx.compose.animation.AnimatedVisibility(

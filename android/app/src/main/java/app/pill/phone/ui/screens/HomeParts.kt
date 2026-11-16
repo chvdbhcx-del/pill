@@ -101,7 +101,7 @@ private fun QuickAction(label: Int, icon: ImageVector, onClick: () -> Unit, modi
             CountBadge(count, Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-6).dp))
         }
         Spacer(Modifier.height(7.dp))
-        Text(stringResource(label), style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        Text(stringResource(label), style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
     }
 }
 

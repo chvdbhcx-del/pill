@@ -45,7 +45,7 @@ import app.pill.phone.ui.theme.Pill
 enum class PillTab(val icon: ImageVector, @StringRes val label: Int) {
     Home(Icons.Rounded.Home, R.string.tab_home),
     Files(Icons.Rounded.Folder, R.string.files_title),
-    Clipboard(Icons.Rounded.ContentPaste, R.string.hist_title),
+    Clipboard(Icons.Rounded.ContentPaste, R.string.tab_clipboard),
     Apps(Icons.Rounded.Notifications, R.string.apps_card_title),
 }
 
@@ -77,6 +77,6 @@ private fun TabItem(tab: PillTab, on: Boolean, onClick: () -> Unit, modifier: Mo
             Icon(tab.icon, null, Modifier.size(22.dp), tint = ink)
         }
         Spacer(Modifier.height(4.dp))
-        Text(stringResource(tab.label), style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp), color = label, maxLines = 1)
+        Text(stringResource(tab.label), style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp), color = label, maxLines = 1)
     }
 }

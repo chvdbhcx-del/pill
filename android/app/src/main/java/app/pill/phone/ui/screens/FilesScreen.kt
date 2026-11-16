@@ -116,6 +116,7 @@ private fun TransferCard(t: TransferUi, a: HomeActions, modifier: Modifier) {
                     color = if (t.phase == TransferPhase.Failed) c.bad else c.textDim, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
+            Spacer(Modifier.width(8.dp))
             TransferAction(t, a)
         }
         AnimatedVisibility(t.phase == TransferPhase.Active || t.phase == TransferPhase.Waiting, enter = Motion.enterItem, exit = Motion.exitItem) {
