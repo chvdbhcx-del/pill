@@ -96,7 +96,7 @@ inside the taskbar" section of `native-island.md`). The `media.widget.edge` sett
 | `update_install` | - | `Value` | updater.rs |
 | `whatsnew_check` | - | `Value` | whatsnew.rs |
 | `report_problem` | - | `Value` | report.rs |
-| `report_issue` | - | `Value` | report.rs |
+| `report_issue` | - | `Value` | report.rs (confirmation box with the exact text, then the browser opens the prefilled GitHub issue; `{ ok, opened }`) |
 | `media_state` | `known: Option<u64>` | `MediaState` | media.rs |
 | `lyrics_state` | - | `Value` | lyrics.rs |
 | `media_sessions` | - | `Vec<SessionInfo>` | media.rs |

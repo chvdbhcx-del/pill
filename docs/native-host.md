@@ -127,7 +127,7 @@ the same on the UI thread, but as a pure, tested machine (`proximity.rs`, ported
 
 `PillWin` (`pillwin.rs`): `hwnd, monitor_rect, scale, set_size, set_bounds, set_visible, set_ignore, release_ignore`, physical px. `NativePillWin`
 implements it over a `HostHandle` + `WindowId`. `pill.rs` is untouched; a later change swaps its `st().hwnd` global for a `Box<dyn PillWin>`.
-`pill::layout` becomes `Placement::TopCenter { offset_pct, below_taskbar: underTaskbar }` + `host.relayout(id)` (the guard's 500 ms poll).
+`pill::layout` becomes `Placement::TopCenter { offset_pct, below_taskbar: underTaskbar }` + `host.relayout(id)` (the guard's poll and its foreground / display wake-ups).
 
 ## 6. Focus, popups, input
 

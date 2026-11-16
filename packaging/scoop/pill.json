@@ -1,0 +1,32 @@
+{
+    "version": "<VERSION>",
+    "description": "A small dynamic island for the top of a Windows screen (music, clock, notifications, clipboard, notes, AI chat, command bar).",
+    "homepage": "https://github.com/chvdbhcx-del/pill",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/chvdbhcx-del/pill/releases/download/v<VERSION>/Pill_<VERSION>_x64-setup.exe",
+            "hash": "<SHA256>"
+        }
+    },
+    "installer": {
+        "file": "Pill_<VERSION>_x64-setup.exe",
+        "args": ["/S", "/D=$dir"]
+    },
+    "uninstaller": {
+        "file": "uninstall.exe",
+        "args": ["/S"]
+    },
+    "shortcuts": [["pill.exe", "Pill"]],
+    "checkver": {
+        "github": "https://github.com/chvdbhcx-del/pill"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/chvdbhcx-del/pill/releases/download/v$version/Pill_$version_x64-setup.exe"
+            }
+        }
+    },
+    "notes": "Pill updates itself (Settings > Updates). If you let Scoop manage it instead, turn off 'Check on start' there."
+}
