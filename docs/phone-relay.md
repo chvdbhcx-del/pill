@@ -1,6 +1,6 @@
 # Pill Phone over the internet: relay + end-to-end encryption (protocol v2)
 
-Extends `docs/phone-protocol.md`. The v1 messages (`notif.*`, `status`, `file.*`, `reply.result`, `ping`...) are unchanged; v2 only adds a second **transport** (a relay) and **encryption** of everything that crosses it. At home the phone still talks to the PC directly over the LAN as before (fast, no internet). Away from home both sides reach each other through the relay.
+Extends `docs/phone-protocol.md` (the same transport and frames also link two PCs, see `docs/pc-link.md`). The v1 messages (`notif.*`, `status`, `file.*`, `reply.result`, `ping`...) are unchanged; v2 only adds a second **transport** (a relay) and **encryption** of everything that crosses it. At home the phone still talks to the PC directly over the LAN as before (fast, no internet). Away from home both sides reach each other through the relay.
 
 ## Components
 

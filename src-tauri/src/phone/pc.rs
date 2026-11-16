@@ -168,7 +168,11 @@ impl Shared {
                 let Some((_, shared)) = v2::agree(secret, &pk).filter(|_| v2::proof_ok(&token, "ok", &pk, &mine, m["confirm"].as_str().unwrap_or(""))) else { return self.pair_end(Some("failed")) };
                 let keys = v2::derive_pc(&shared, &token, &id, &me);
                 self.send(Some(PAIRING), &json!({ "t": "pair.done", "confirm": v2::proof(&token, "done", &mine, &pk) }));
-                self.registry().pair_pc(&id, &text(&m["name"], 60), &text(&m["os"], 40), keys, true, now_ms());
+                let (name, os) = (text(&m["name"], 60), text(&m["os"], 40));
+                self.registry().pair_pc(&id, &name, &os, keys, true, now_ms());
+                if let Some(p) = self.pg().as_mut() {
+                    p.peer = Some((id, name, os, pk)); // for "Paired with <name>"
+                }
                 self.pair_end(Some("done"));
             }
             "pair.deny" if self.pg().as_ref().is_some_and(|p| !p.shown && p.active()) => self.pair_end(Some("denied")),
@@ -263,7 +267,7 @@ impl Shared {
     // ------------------------------------------------------------------------------------------------ what the commands use
 
     /// `{enabled, name, peers[], pair}` for the PCs page and the island (event `pc:state`). `pair` is null or
-    /// `{mode: show|enter, state: waiting|request|allowed|done|denied|failed, token (only while shown), expires, peer: {name, os} (a request)}`.
+    /// `{mode: show|enter, state: waiting|request|allowed|done|denied|failed, token (only while shown), expires, peer: {name, os} (request, allowed, done)}`.
     pub fn pc_status(&self) -> Value {
         let c = self.cfg();
         let peers: Vec<Value> = self
@@ -281,7 +285,7 @@ impl Shared {
             })
             .collect();
         let pair = self.pg().as_ref().map(|p| {
-            let who = p.peer.as_ref().filter(|_| p.state == "request").map(|x| json!({ "name": x.1, "os": x.2 }));
+            let who = p.peer.as_ref().filter(|_| matches!(p.state, "request" | "allowed" | "done")).map(|x| json!({ "name": x.1, "os": x.2 }));
             json!({ "mode": if p.shown { "show" } else { "enter" }, "state": p.state, "token": (p.shown && p.active()).then(|| show(&p.token)), "expires": p.exp, "peer": who })
         });
         json!({ "enabled": c.pc_on, "name": c.pc_name, "peers": peers, "pair": pair })
