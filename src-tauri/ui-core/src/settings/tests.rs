@@ -706,9 +706,9 @@ fn the_music_widget_rows_default_to_off_and_to_the_bottom_left_corner() {
 fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
-    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch, the screen-edge choices (edge and side) and the four rows of the music widget
+    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch, the screen-edge choices (edge, side and follow-the-active-window) and the four rows of the music widget
     let expect = [
-        ("look", 20), ("edge", 7), ("tabs", 3),
+        ("look", 21), ("edge", 7), ("tabs", 3),
         ("weather", 7), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
         ("notifications", 18), ("calendar", 12),
         ("phone", 16), ("ai", 14),

@@ -47,6 +47,7 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `pill:open-tab` | pill | `p` | command.rs |
 | `pill:show` | pill | `json!({ "reason": reason })` | pill.rs |
 | `pill:taskbar` | pill | `json!({ "h": bar height in logical px, 0 = the island stands in no taskbar })` | pill.rs |
+| `pill:monitor` | pill | `json!({ "move": bool })`: the active window is on another monitor (`edge.monitor` = active), or the island must go home | pill.rs |
 | `phone:files` | pill | `json!({ "kind": "offer"\|"start"\|"progress"\|"done"\|"sent"\|"failed"\|"offered"\|"accepted"\|"rejected", "transfer": { "id", "device", "dir": "in"\|"out", "name", "size", "mime", "status", "path", "bytes", "at" } })` | phone/server.rs via phone.rs |
 | `phone:clip` | pill | `json!({ "device", "name" })` (a text from a phone was put on the PC clipboard; never the text) | phone/server.rs via phone.rs |
 | `phone:notif` | pill | `json!({ "kind": "posted", "notif": { "key", "device", "pkg", "app", "title", "text", "sub", "when", "category", "ongoing", "progress", "icon", "avatar", "canReply", "actions", "group", "replay", "received", "fresh" } })`<br>`json!({ "kind": "removed"\|"read", "key" })`<br>`json!({ "kind": "reply", "key", "ok", "error" })` | phone/server.rs via phone.rs |
@@ -85,7 +86,7 @@ inside the taskbar" section of `native-island.md`). The `media.widget.edge` sett
 | `pill_set_state` | `state: String, tab: Option<String>, via: Option<String>` | `()` | pill.rs |
 | `pill_toggle` | - | `()` | pill.rs |
 | `pill_activate` | `on: bool` | `()` | pill.rs |
-| `pill_edge` | `bottom: bool, align: Option<String>, bar: Option<bool>` | `()` | pill.rs |
+| `pill_edge` | `bottom: bool, align: Option<String>, bar: Option<bool>, follow: Option<bool>` (`follow`: also change monitor, see `pill:monitor`) | `()` | pill.rs |
 | `pill_auto_hide` | `on: bool` | `()` | pill.rs |
 | `pill_monitors` | - | `Vec<String>` | pill.rs |
 | `pill_set_gaze` | `on: bool` | `()` | pill.rs |

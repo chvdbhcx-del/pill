@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Highlights
+- The island can follow you between monitors (Look > Screen edge > Follow the active window). It moves to the monitor that holds the active window when it is quiet (never while open, showing a card, recording or dragging): it slides off its edge, stands there with that monitor's own taskbar and scale, and slides in. The music widget goes along.
+
 ## [0.9.0] - 2026-11-16
 
 ### Highlights

@@ -113,6 +113,12 @@ fn off_by_default_and_the_placement_follows_the_settings() {
     let s = sig(json!({ "media.widget": true, "media.widget.align": "right", "media.widget.offset": 900, "media.widget.edge": "sideways" })).unwrap();
     assert_eq!((s.dock, s.align, s.offset), (Dock::Top, Align::Right, 50), "an unknown edge is the top like the island's; the offset is held in range");
     assert_eq!(monitor_sel("primary"), MonitorSel::Primary);
+    assert_eq!(monitor_sel("active"), MonitorSel::Island, "the island follows the active monitor: the widget stands where it does");
+    let s = sig(json!({ "media.widget": true, "monitor": "2", "edge.monitor": "active" })).unwrap();
+    assert_eq!(s.monitor, "active", "following beats the explicit monitor");
+    let s = sig(json!({ "media.widget": true, "monitor": "2", "edge.monitor": "primary" })).unwrap();
+    assert_eq!(s.monitor, "2", "not following: the explicit choice stands");
+    assert!(KEYS.contains(&"edge.monitor"));
     assert_eq!((monitor_sel("1"), monitor_sel("3"), monitor_sel("0"), monitor_sel("x")), (MonitorSel::Index(0), MonitorSel::Index(2), MonitorSel::Primary, MonitorSel::Primary));
     let p = placement(&sig(json!({ "media.widget": true })).unwrap());
     assert!(matches!(p, Placement::Docked { dock: Dock::Bottom, align: Align::Left, inside_work: true, margin, .. } if margin == 0.0));
