@@ -59,11 +59,13 @@ import app.pill.phone.ui.components.pressable
 import app.pill.phone.ui.components.staggerIn
 import app.pill.phone.ui.theme.Motion
 import app.pill.phone.ui.theme.Pill
+import app.pill.phone.ui.theme.PillShapes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class AppsActions(
-    val onBack: () -> Unit = {},
+    /** Null on the bottom-bar tab: no back arrow (reached from Settings it goes back there). */
+    val onBack: (() -> Unit)? = null,
     val onQuery: (String) -> Unit = {},
     val onToggle: (String, Boolean) -> Unit = { _, _ -> },
     val onShowSystem: (Boolean) -> Unit = {},
@@ -126,7 +128,7 @@ fun AppsScreen(
 @Composable
 private fun AppRow(row: AppRowUi, iconLoader: suspend (String) -> ImageBitmap?, onToggle: (String, Boolean) -> Unit, modifier: Modifier) {
     val c = Pill.colors
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(PillShapes.Row)
     val border by animateColorAsState(if (row.enabled) c.accent.copy(alpha = 0.35f) else c.border, Motion.calm(), label = "rowBorder")
     Row(
         modifier.fillMaxWidth().clip(shape).background(c.surface).border(1.dp, border, shape)

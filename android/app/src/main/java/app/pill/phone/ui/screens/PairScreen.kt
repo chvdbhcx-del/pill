@@ -70,6 +70,7 @@ import app.pill.phone.ui.components.TopBar
 import app.pill.phone.ui.components.staggerIn
 import app.pill.phone.ui.theme.Motion
 import app.pill.phone.ui.theme.Pill
+import app.pill.phone.ui.theme.PillShapes
 
 class PairActions(
     val onBack: () -> Unit = {},
@@ -236,7 +237,7 @@ fun PillTextField(
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
     val border by animateColorAsState(if (focused) c.accent else c.border, Motion.calm(), label = "fieldBorder")
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(PillShapes.Card)
     Column(modifier.fillMaxWidth()) {
         Text(label, Modifier.padding(start = 4.dp, bottom = 8.dp), style = MaterialTheme.typography.labelMedium, color = c.textDim)
         BasicTextField(

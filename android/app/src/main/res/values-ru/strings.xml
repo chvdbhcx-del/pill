@@ -193,8 +193,6 @@
     <string name="btn_open_settings">Открыть настройки</string>
 
     <!-- Этот телефон (что видит ПК) -->
-    <string name="dev_details_show">Показать подробности</string>
-    <string name="dev_details_hide">Скрыть подробности</string>
     <string name="dev_section">Этот телефон</string>
     <string name="dev_charging">Заряжается</string>
     <string name="dev_full">Заряжен</string>
@@ -365,4 +363,20 @@
     <string name="hist_keep">Хранить историю буфера</string>
     <string name="hist_keep_body">Помнить последние отправленные и полученные тексты. При выключении они удаляются.</string>
     <string name="hist_clear_setting">Очистить историю</string>
+    <!-- Home (1.3.0): bottom bar, quick actions, recent, hero pills, stats -->
+    <string name="tab_home">Главная</string>
+    <string name="qa_send_file">Файл</string>
+    <string name="qa_send_clip">Буфер</string>
+    <string name="qa_history">История</string>
+    <string name="recent_title">Недавнее</string>
+    <string name="recent_see_all">Все</string>
+    <string name="recent_empty">Пока пусто. Здесь появятся файлы и скопированный текст.</string>
+    <string name="recent_clip">Буфер · %1$s · %2$s</string>
+    <string name="hero_no_pc">ПК не привязан</string>
+    <string name="pill_notfound">ПК не найден</string>
+    <string name="pill_revoked">Отвязан</string>
+    <string name="stat_battery">Батарея</string>
+    <string name="stat_temp">Температура</string>
+    <string name="files_empty_title">Файлов пока нет</string>
+    <string name="files_empty_body">Здесь появятся файлы, которые вы отправили на ПК или получили с него.</string>
 </resources>

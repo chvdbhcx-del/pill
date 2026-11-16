@@ -35,10 +35,6 @@ object Store {
     /** The global "Auto-receive files"; a PC can override it for itself. */
     val autoReceive: StateFlow<Boolean> = _autoReceive.asStateFlow()
 
-    private val _phoneExpanded = MutableStateFlow(false)
-    /** The "This phone" row on Home is open (details shown). Remembered across launches. */
-    val phoneExpanded: StateFlow<Boolean> = _phoneExpanded.asStateFlow()
-
     private val _includeOngoing = MutableStateFlow(false)
     val includeOngoing: StateFlow<Boolean> = _includeOngoing.asStateFlow()
 
@@ -81,7 +77,6 @@ object Store {
         _onboarded.value = plain.getBoolean("onboarded", false)
         _autoReceive.value = plain.getBoolean("autoReceive", false)
         _includeOngoing.value = plain.getBoolean("includeOngoing", false)
-        _phoneExpanded.value = plain.getBoolean("phoneExpanded", false)
         _relayEnabled.value = plain.getBoolean("relayEnabled", true)
         _clipEnabled.value = plain.getBoolean("clipEnabled", false)
         _clipReceive.value = plain.getBoolean("clipReceive", true)
@@ -197,7 +192,6 @@ object Store {
 
     fun setOnboarded() { plain.edit().putBoolean("onboarded", true).apply(); _onboarded.value = true }
     fun setAutoReceive(on: Boolean) { plain.edit().putBoolean("autoReceive", on).apply(); _autoReceive.value = on }
-    fun setPhoneExpanded(on: Boolean) { plain.edit().putBoolean("phoneExpanded", on).apply(); _phoneExpanded.value = on }
     fun setRelayEnabled(on: Boolean) { plain.edit().putBoolean("relayEnabled", on).apply(); _relayEnabled.value = on }
     fun setClipEnabled(on: Boolean) { plain.edit().putBoolean("clipEnabled", on).apply(); _clipEnabled.value = on }
     fun setClipKeep(on: Boolean) { plain.edit().putBoolean("clipKeep", on).apply(); clipHistory.setKeep(on) }

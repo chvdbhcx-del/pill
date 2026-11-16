@@ -95,7 +95,7 @@ class ClipboardScreenshotTest {
 
     @Test fun homeWithClipboardSync() = shoot("clipboard-home-sync") {
         HomeScreen(
-            HomeUi(LinkUi.Connected, "DESKTOP-VADIM", "192.168.1.20:41717", 87, false, "wifi", "Home", PermissionsUi(true, true, true, true), emptyList(), 12, route = Route.Lan, clipEnabled = true),
+            HomeUi(LinkUi.Connected, "DESKTOP-VADIM", "192.168.1.20:41717", 87, false, "wifi", "Home", PermissionsUi(true, true, true, true), emptyList(), 12, route = Route.Lan),
             HomeActions(),
         )
     }

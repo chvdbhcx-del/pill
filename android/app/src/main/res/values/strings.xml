@@ -192,8 +192,6 @@
     <string name="btn_open_settings">Open settings</string>
 
     <!-- This phone (what the PC sees) -->
-    <string name="dev_details_show">Show details</string>
-    <string name="dev_details_hide">Hide details</string>
     <string name="dev_section">This phone</string>
     <string name="dev_charging">Charging</string>
     <string name="dev_full">Fully charged</string>
@@ -362,4 +360,20 @@
     <string name="hist_keep">Keep clipboard history</string>
     <string name="hist_keep_body">Remember the last texts that were sent or received. Turning it off deletes them.</string>
     <string name="hist_clear_setting">Clear history</string>
+    <!-- Home (1.3.0): bottom bar, quick actions, recent, hero pills, stats -->
+    <string name="tab_home">Home</string>
+    <string name="qa_send_file">Send file</string>
+    <string name="qa_send_clip">Send clip</string>
+    <string name="qa_history">History</string>
+    <string name="recent_title">Recent</string>
+    <string name="recent_see_all">See all</string>
+    <string name="recent_empty">Nothing here yet. Files and copied text will show up here.</string>
+    <string name="recent_clip">Clipboard · %1$s · %2$s</string>
+    <string name="hero_no_pc">No PC paired</string>
+    <string name="pill_notfound">PC not found</string>
+    <string name="pill_revoked">Unpaired</string>
+    <string name="stat_battery">Battery</string>
+    <string name="stat_temp">Temperature</string>
+    <string name="files_empty_title">No files yet</string>
+    <string name="files_empty_body">Files you send to your PC or receive from it show up here.</string>
 </resources>

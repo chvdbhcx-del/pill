@@ -56,7 +56,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class Route { Onboarding, Home, Pair, Scan, Apps, Settings, Clipboard }
+enum class Route { Onboarding, Home, Files, Pair, Scan, Apps, Settings, Clipboard }
 
 /** Files the user picked, waiting for the answer to "send to which PC?". */
 class PendingSend(val sources: List<Source>)
@@ -85,6 +85,13 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     }
     fun finishOnboarding() { Store.setOnboarded(); _stack.value = listOf(Route.Home) }
 
+    /** A bottom-bar tab sits right above Home, so Back from any tab lands on Home and a tab switch never piles up screens. */
+    fun openTab(r: Route) {
+        if (r == Route.Apps) appsPcId.value = null   // the tab edits the global filter
+        if (r == Route.Clipboard) ClipBridge.addCurrent(app)
+        _stack.value = if (r == Route.Home) listOf(Route.Home) else listOf(Route.Home, r)
+    }
+
     // ---- permissions ----
     private val _perms = MutableStateFlow(Perms.state(app))
     fun refreshPerms() { _perms.value = Perms.state(app) }
@@ -112,9 +119,9 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private val homeBase: StateFlow<HomeUi> = combine(
         combine(Store.pcs, LinkManager.views, selected, LinkManager.revoked) { pcs, v, sel, rev -> NetBits(pcs, v, sel, rev.isNotEmpty()) },
-        combine(Store.relayEnabled, Store.clipEnabled, StatusReporter.current) { on, clip, s -> Triple(on, clip, s) },
-        combine(Transfers.items, _perms, mirrored, Store.phoneExpanded) { t, pe, m, x -> HomeBits(t, pe, m, x) },
-    ) { net, (relayOn, clipOn, status), (transfers, perms, mirroredApps, phoneExpanded) ->
+        combine(Store.relayEnabled, StatusReporter.current) { on, s -> on to s },
+        combine(Transfers.items, _perms, mirrored, Store.clipHistory.items) { t, pe, m, clips -> HomeBits(t, pe, m, clips.firstOrNull()) },
+    ) { net, (relayOn, status), (transfers, perms, mirroredApps, lastClip) ->
         val sel = net.sel
         val v = view(net.views, sel)
         val state = v.state
@@ -136,14 +143,13 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             status = status,
             route = v.route,
             relay = RelayState.effective(sel, relayOn, v.relayDyn),
-            phoneExpanded = phoneExpanded,
-            clipEnabled = clipOn,
+            lastClip = lastClip,
             pcs = if (two) net.pcs.map { PcUi(it.pcId, it.label, view(net.views, it).state.toUi(), view(net.views, it).route) } else emptyList(),
             selectedPcId = sel?.pcId,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeUi())
 
-    private data class HomeBits(val transfers: List<Transfer>, val perms: PermissionsUi, val mirrored: Int?, val phoneExpanded: Boolean)
+    private data class HomeBits(val transfers: List<Transfer>, val perms: PermissionsUi, val mirrored: Int?, val lastClip: ClipItem?)
 
     private fun Transfer.toUi(pcs: List<Paired>?) = TransferUi(
         id = id,
@@ -229,7 +235,6 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     private val _pendingClip = MutableStateFlow<String?>(null)
     val pendingClip: StateFlow<String?> = _pendingClip
 
-    fun openClipboard() { push(Route.Clipboard); ClipBridge.addCurrent(app) }
     fun addCurrentClip() = ClipBridge.addCurrent(app)
     fun removeClip(item: ClipItem) = Store.clipHistory.remove(item)
 
@@ -253,7 +258,6 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     fun acceptTransfer(id: String) = Transfers.accept(app, id)
     fun openTransfer(id: String) = Transfers.open(app, id)
     fun reconnect() = (Store.selectedPc.value?.let { LinkManager.nudge(it) } ?: LinkManager.nudge())
-    fun togglePhone() = Store.setPhoneExpanded(!Store.phoneExpanded.value)
     fun selectPc(pcId: String) = Store.setSelectedPc(pcId)
 
     // ---- per-PC settings ----

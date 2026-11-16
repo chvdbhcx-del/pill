@@ -52,6 +52,7 @@ import app.pill.phone.ui.components.pressable
 import app.pill.phone.ui.components.staggerIn
 import app.pill.phone.ui.theme.Motion
 import app.pill.phone.ui.theme.Pill
+import app.pill.phone.ui.theme.PillShapes
 
 /** "Home network" / "Internet" / "Offline" for one PC. */
 @Composable
@@ -127,7 +128,7 @@ fun PcPickerContent(options: List<PcOption>, fileCount: Int, onPick: (List<Strin
 private fun PcPickRow(o: PcOption, onClick: () -> Unit, modifier: Modifier) {
     val c = Pill.colors
     val dot by animateColorAsState(if (o.online) c.good else c.textDim, Motion.calm(), label = "pickDot")
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(PillShapes.Row)
     Row(
         modifier.fillMaxWidth().alpha(if (o.online) 1f else 0.45f).clip(shape).background(c.surfaceHigh).border(1.dp, c.border, shape)
             .pressable(enabled = o.online, pressedScale = 0.97f, onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),

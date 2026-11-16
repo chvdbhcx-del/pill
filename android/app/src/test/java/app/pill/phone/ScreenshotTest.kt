@@ -99,13 +99,13 @@ class ScreenshotTest {
     @Test fun homeConnected() = shoot("home-connected") { HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Lan), HomeActions()) }
 
     @Config(qualifiers = "w360dp-h800dp-xhdpi")
-    @Test fun homeConnectedExpanded() = shoot("home-connected-expanded") {
-        HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Lan, status = busyPhone, phoneExpanded = true), HomeActions())
+    @Test fun homeCharging() = shoot("home-charging") {
+        HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Lan, status = busyPhone), HomeActions())
     }
 
     @Config(qualifiers = "ru-w360dp-h800dp-xhdpi")
     @Test fun homeConnectedRu() = shoot("home-connected-ru") {
-        HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Relay, status = busyPhone, phoneExpanded = true, mirroredApps = 128), HomeActions())
+        HomeScreen(connectedQuiet.copy(route = app.pill.phone.net.Route.Relay, status = busyPhone, mirroredApps = 128), HomeActions())
     }
 
     @Config(qualifiers = "ru-w360dp-h800dp-xhdpi")

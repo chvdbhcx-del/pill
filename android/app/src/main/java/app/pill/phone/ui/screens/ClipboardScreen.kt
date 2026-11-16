@@ -65,12 +65,14 @@ import app.pill.phone.ui.components.pressable
 import app.pill.phone.ui.components.staggerIn
 import app.pill.phone.ui.theme.Motion
 import app.pill.phone.ui.theme.Pill
+import app.pill.phone.ui.theme.PillShapes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
 class ClipboardActions(
-    val onBack: () -> Unit = {},
+    /** Null on the bottom-bar tab: no back arrow. */
+    val onBack: (() -> Unit)? = null,
     val onAddCurrent: () -> Unit = {},
     val onSend: (String) -> Unit = {},
     val onDelete: (ClipItem) -> Unit = {},
@@ -151,7 +153,7 @@ fun ClipboardScreen(ui: ClipUi, actions: ClipboardActions, notices: Flow<Int> = 
 @Composable
 private fun ClipRow(item: ClipItem, now: Long, canSend: Boolean, onCopy: () -> Unit, onSend: () -> Unit, onDelete: () -> Unit, modifier: Modifier) {
     val c = Pill.colors
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(PillShapes.Row)
     val meta = "${DateUtils.getRelativeTimeSpanString(item.at, now, DateUtils.MINUTE_IN_MILLIS)} · ${item.from ?: stringResource(R.string.hist_this_phone)}"
     Row(
         modifier.fillMaxWidth().clip(shape).background(c.surface).border(1.dp, c.border, shape)

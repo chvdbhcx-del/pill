@@ -79,15 +79,13 @@ data class HomeUi(
     val perms: PermissionsUi = PermissionsUi(),
     val transfers: List<TransferUi> = emptyList(),
     val mirroredApps: Int? = null,
-    /** The newest status snapshot (battery details, storage, memory, network, modes), for the "This phone" card. */
+    /** The newest status snapshot (battery, temperature, storage, memory), for the stats strip. */
     val status: Msg.Status? = null,
     /** Home network or internet, while connected. */
     val route: Route? = null,
     val relay: RelayState = RelayState.Standby,
-    /** The "This phone" row shows its details. */
-    val phoneExpanded: Boolean = false,
-    /** Clipboard sync is on: Home offers "Send clipboard". */
-    val clipEnabled: Boolean = false,
+    /** The newest clipboard history entry, for the "Recent" list. */
+    val lastClip: ClipItem? = null,
     /** Every paired PC; the switcher on the hero appears with two or more. [link], [pcName], [route]... describe [selectedPcId]. */
     val pcs: List<PcUi> = emptyList(),
     val selectedPcId: String? = null,

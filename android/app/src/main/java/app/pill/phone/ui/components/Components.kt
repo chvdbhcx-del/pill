@@ -44,10 +44,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -77,36 +73,13 @@ fun Modifier.pressable(
         .clickable(interactionSource = source, indication = null, enabled = enabled, role = role, onClick = onClick)
 }
 
-/** Page background with two soft accent glows, like the desktop island's ambient light. */
+/** The flat page background every screen sits on. */
 @Composable
 fun PillBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    val c = Pill.colors
-    Box(
-        modifier
-            .fillMaxSize()
-            .background(c.background)
-            .drawAmbient(c.glow, c.dark),
-        content = content,
-    )
+    Box(modifier.fillMaxSize().background(Pill.colors.background), content = content)
 }
 
-private fun Modifier.drawAmbient(glow: Color, dark: Boolean): Modifier = drawBehind {
-    val w = size.width
-    val h = size.height
-    drawRect(
-        Brush.radialGradient(
-            listOf(glow.copy(alpha = if (dark) 0.12f else 0.10f), Color.Transparent),
-            center = Offset(w * 0.15f, -h * 0.02f), radius = w * 1.15f,
-        ),
-    )
-    drawRect(
-        Brush.radialGradient(
-            listOf(glow.copy(alpha = 0.06f), Color.Transparent),
-            center = Offset(w * 1.0f, h * 1.0f), radius = w * 1.2f,
-        ),
-    )
-}
-
+/** The one card: a flat neutral surface with a hairline border and 22 dp corners (the name is from the glass days). */
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
@@ -117,11 +90,7 @@ fun GlassCard(
 ) {
     val c = Pill.colors
     val shape = RoundedCornerShape(PillShapes.Card)
-    var m = modifier
-    if (!c.dark) m = m.shadow(10.dp, shape, ambientColor = Color.Black.copy(alpha = 0.06f), spotColor = Color.Black.copy(alpha = 0.10f))
-    m = m.clip(shape)
-        .background(Brush.verticalGradient(if (c.dark) listOf(c.surfaceHigh.copy(alpha = 0.85f), c.surface) else listOf(c.surface, c.surface)))
-        .border(BorderStroke(1.dp, if (accentBorder) c.accent.copy(alpha = 0.45f) else c.border), shape)
+    var m = modifier.clip(shape).background(c.surface).border(BorderStroke(1.dp, if (accentBorder) c.accent.copy(alpha = 0.45f) else c.border), shape)
     if (onClick != null) m = m.pressable(pressedScale = 0.975f, onClick = onClick)
     Column(m.padding(contentPadding), content = content)
 }
@@ -148,10 +117,7 @@ fun PillButton(
     val shape = CircleShape
     val base = modifier.height(56.dp).alpha(if (enabled) 1f else 0.45f)
     val styled = when (kind) {
-        ButtonKind.Primary -> base
-            .shadow(if (enabled) 14.dp else 0.dp, shape, ambientColor = c.accent.copy(alpha = 0.3f), spotColor = c.accent.copy(alpha = 0.55f))
-            .clip(shape)
-            .background(Brush.horizontalGradient(if (c.dark) listOf(c.accentSoft, c.accent) else listOf(c.accent, c.accentSoft)))
+        ButtonKind.Primary -> base.clip(shape).background(c.accent)
         ButtonKind.Glass -> base.clip(shape).background(c.surfaceHigh).border(1.dp, c.border, shape)
         ButtonKind.Danger -> base.clip(shape).background(c.bad.copy(alpha = 0.12f)).border(1.dp, c.bad.copy(alpha = 0.35f), shape)
         ButtonKind.Quiet -> base.clip(shape)
@@ -176,16 +142,13 @@ fun PillButton(
 @Composable
 fun GlassIconButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier, active: Boolean = false) {
     val c = Pill.colors
-    Box(
-        modifier
-            .size(46.dp)
-            .clip(CircleShape)
-            .background(if (active) c.accent.copy(alpha = 0.28f) else c.surfaceHigh)
-            .border(1.dp, if (active) c.accent else c.border, CircleShape)
-            .semantics { contentDescription = description }
-            .pressable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, Modifier.size(22.dp), tint = if (active) c.accentSoft else c.text) }
+    // a 48 dp touch target around the 42 dp disc
+    Box(modifier.size(48.dp).semantics { contentDescription = description }.pressable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(42.dp).clip(CircleShape).background(if (active) c.accent.copy(alpha = 0.28f) else c.surface).border(1.dp, if (active) c.accent else c.border, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Icon(icon, null, Modifier.size(22.dp), tint = if (active) c.accentSoft else c.text) }
+    }
 }
 
 @Composable
@@ -215,13 +178,15 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     )
 }
 
+/** A rounded-square icon tile (neutral surface; a status colour tints it). */
 @Composable
 fun IconBadge(icon: ImageVector, modifier: Modifier = Modifier, tint: Color = Pill.colors.accentSoft, size: Dp = 44.dp) {
     val c = Pill.colors
+    val neutral = tint == c.accentSoft
     Box(
-        modifier.size(size).clip(CircleShape).background(tint.copy(alpha = if (c.dark) 0.14f else 0.12f)),
+        modifier.size(size).clip(RoundedCornerShape(size * 0.32f)).background(if (neutral) c.surfaceHigh else tint.copy(alpha = 0.14f)),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, Modifier.size(size * 0.5f), tint = if (c.dark) tint else c.accent) }
+    ) { Icon(icon, null, Modifier.size(size * 0.5f), tint = if (neutral) c.text else tint) }
 }
 
 /** A settings-style row inside a card: badge, title, optional subtitle, trailing control. */
@@ -295,12 +260,12 @@ fun Chip(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null,
 fun SpringProgress(progress: Float, modifier: Modifier = Modifier, height: Dp = 8.dp) {
     val c = Pill.colors
     val p by animateFloatAsState(progress.coerceIn(0f, 1f), Motion.soft(), label = "progress")
-    Box(modifier.fillMaxWidth().height(height).clip(CircleShape).background(c.border.copy(alpha = if (c.dark) 0.10f else 0.10f))) {
+    Box(modifier.fillMaxWidth().height(height).clip(CircleShape).background(c.border)) {
         Box(
             Modifier.fillMaxSize().graphicsLayer {
                 scaleX = p
                 transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
-            }.clip(CircleShape).background(Brush.horizontalGradient(listOf(c.accentSoft, c.accent))),
+            }.clip(CircleShape).background(c.accent),
         )
     }
 }
@@ -338,7 +303,7 @@ fun PageDots(count: Int, current: Int, modifier: Modifier = Modifier) {
 @Composable
 fun Banner(text: String, icon: ImageVector, modifier: Modifier = Modifier, tint: Color = Pill.colors.warn, title: String? = null) {
     val c = Pill.colors
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(PillShapes.Card)
     Row(
         modifier.fillMaxWidth().clip(shape).background(tint.copy(alpha = 0.12f)).border(1.dp, tint.copy(alpha = 0.30f), shape).padding(14.dp),
         verticalAlignment = Alignment.Top,

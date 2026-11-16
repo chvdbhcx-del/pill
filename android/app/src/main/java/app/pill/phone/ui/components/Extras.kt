@@ -1,6 +1,12 @@
 package app.pill.phone.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -19,6 +25,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +58,13 @@ fun Modifier.staggerIn(index: Int, stepMs: Long = 55): Modifier = composed {
         scaleX = 0.94f + 0.06f * v
         scaleY = 0.94f + 0.06f * v
     }
+}
+
+/** A 0..1 loop for a "working" pulse; it stays 0 while [active] is false or the user asked for no looping motion. Read it in a draw/graphicsLayer block. */
+@Composable
+fun rememberPulse(active: Boolean, ms: Int = 1500): State<Float> {
+    if (!active || LocalReduceMotion.current) return remember { mutableFloatStateOf(0f) }
+    return rememberInfiniteTransition(label = "pulse").animateFloat(0f, 1f, infiniteRepeatable(tween(ms, easing = FastOutSlowInEasing), RepeatMode.Restart), label = "pulse")
 }
 
 /** Compact pill button for rows (Allow, Open, Receive). */

@@ -80,9 +80,10 @@ val LightPillColors = PillColors(
 )
 
 object PillShapes {
-    val Card = 24.dp
+    /** Every card, grouped list and quick-action tile. */
+    val Card = 22.dp
     val Sheet = 28.dp
-    val Row = 20.dp
+    val Row = 22.dp
 }
 
 object PillSpacing {
