@@ -82,7 +82,8 @@ fn mark_read_in(c: &Connection, ids: Option<&[i64]>) -> rusqlite::Result<usize> 
 
 /// Store one entry (None when history.keep is off or the title is empty). `read`: the centre was open when it arrived.
 pub fn notif_history_add(entry: NewEntry, read: Option<bool>) -> Option<Entry> {
-    if !crate::settings::get_bool("history.keep", true) { return None; }
+    // `module.notifs` is the one switch of the notification centre (`history.keep` folded into it, `settings::overlap`); the old key is still honoured
+    if !crate::settings::get_bool("history.keep", true) || !crate::settings::get_bool("module.notifs", true) { return None; }
     let keep_mail = crate::settings::get_bool("history.mail", false);
     store::with(|c| add_at(c, store::now_ms(), &entry, read.unwrap_or(false), keep_mail)).flatten()
 }

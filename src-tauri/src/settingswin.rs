@@ -8,12 +8,12 @@ use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
 use windows::Win32::System::Registry::{RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ};
 use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT};
 
-// The 16 sidebar pages (look, edge, tabs, weather, media, voice, clipboard, capture, tools, notifications, calendar, phone, ai, general, hotkeys, updates: each a family of
+// The 17 sidebar pages (look, edge, tabs, weather, media, voice, clipboard, capture, tools, notifications, calendar, phone, ai, general, performance, hotkeys, updates: each a family of
 // functions, every function a titled section) plus the old ids (the single-function pages of 0.8.8: pet, clock, animation, volume, voice, screenshots, recording, notes, launcher, shelf,
 // text, controls, vpn, downloads, battery, keyboard, desktops, usb, obs, mail, agents, localai; and character, appearance, behavior, sound, live, modules, aisetup, start, hiding, quiet,
 // search), which the window maps to the page and section that hold their rows now (`pill_ui_core::settings::nav::LEGACY`), and "welcome" (the wizard). Same list as `nav::OPENABLE` (a test holds them equal).
 const PAGES: &[&str] = &[
-    "look", "edge", "tabs", "weather", "media", "clipboard", "capture", "tools", "notifications", "calendar", "phone", "ai", "general", "hotkeys", "updates", "pet", "clock", "animation", "volume", "voice", "screenshots", "recording", "notes", "launcher", "shelf", "text",
+    "look", "edge", "tabs", "weather", "media", "clipboard", "capture", "tools", "notifications", "calendar", "phone", "ai", "general", "performance", "hotkeys", "updates", "pet", "clock", "animation", "volume", "voice", "screenshots", "recording", "notes", "launcher", "shelf", "text",
     "controls", "vpn", "downloads", "battery", "keyboard", "desktops", "usb", "obs", "mail", "agents", "localai", "character", "appearance", "behavior", "sound", "live", "modules", "aisetup", "start", "hiding", "quiet", "search", "welcome",
 ];
 
@@ -267,6 +267,14 @@ pub fn hotkey_set(app: AppHandle, action: String, combo: String) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_openable_pages_are_the_ui_core_list() {
+        let (mut have, mut want) = (PAGES.to_vec(), pill_ui_core::settings::nav::OPENABLE.to_vec());
+        have.sort();
+        want.sort();
+        assert_eq!(have, want, "settingswin::PAGES and nav::OPENABLE name the same pages (voice, performance, ...)");
+    }
 
     #[test]
     fn combos_normalise() {

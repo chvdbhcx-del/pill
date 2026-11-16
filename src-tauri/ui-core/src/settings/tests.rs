@@ -48,7 +48,7 @@ fn ids_and_keys_are_unique() {
     for p in &schema().pages {
         assert!(pages.insert(p.id), "duplicate page {}", p.id);
     }
-    assert_eq!(schema().pages.len(), 16);
+    assert_eq!(schema().pages.len(), 17);
 }
 
 #[test]
@@ -335,6 +335,10 @@ const OLD_UNSTORED: [&str; 40] = [
     "updates.check", "updates.whatsnew", "updates.report", "energy.cost", "updates.issue", "look.share",
 ];
 
+/// Switches that said the same thing twice and are ONE switch now (`overlap::fold` migrates the old keys; see its table): no row any more, but
+/// the key stays in `OLD_KEYS` (what 0.9.0 wrote) and in `settings.rs` defaults, so an old file still loads and the backend still reads it.
+const MERGED: [&str; 3] = ["module.weather", "module.phone", "history.keep"];
+
 /// Ids of rows that are gone on purpose (and why): "Set up a cloud AI" only jumped to the assistant section that now stands right above it,
 /// and "Choose service and key" (voice) only jumped to the recognition-service chips that now stand in the same Voice to text section.
 /// Both were buttons without a key, so no setting is lost.
@@ -342,14 +346,14 @@ const DROPPED: [&str; 2] = ["aisetup.cloud-chat", "aisetup.cloud-voice"];
 
 /// Rows whose label and/or hint were reworded because their neighbours (the overlapping switches of one feature) made the old words
 /// ambiguous, or because the page they pointed to changed. Their key, control, default and gating are still held to the old ones.
-const RELABELED: [&str; 8] = ["net.weather", "module.weather", "live.shelf", "phone.enabled", "module.phone", "live.phone", "aisetup.intro", "aiSetupDone"];
+const RELABELED: [&str; 6] = ["live.shelf", "phone.enabled", "live.phone", "module.notifs", "aisetup.intro", "aiSetupDone"];
 
 #[test]
 fn no_key_changed_and_every_old_row_is_on_exactly_one_new_page() {
     // the keys: the snapshot above is the whole set, nothing renamed, nothing dropped, nothing invented
     let now: BTreeSet<&str> = schema().all_rows().filter(|(_, r)| r.is_stored()).map(|(_, r)| r.key).collect();
-    let old: BTreeSet<&str> = OLD_KEYS.iter().copied().collect();
-    assert_eq!(old.len(), OLD_KEYS.len(), "the snapshot has no duplicates");
+    let old: BTreeSet<&str> = OLD_KEYS.iter().copied().filter(|k| !MERGED.contains(k)).collect();
+    assert_eq!(old.len() + MERGED.len(), OLD_KEYS.len(), "the snapshot has no duplicates and holds every merged key");
     assert_eq!(now.difference(&old).collect::<Vec<_>>(), Vec::<&&str>::new(), "keys that were not there before");
     assert_eq!(old.difference(&now).collect::<Vec<_>>(), Vec::<&&str>::new(), "keys that are gone");
     // the rows without a key: the same set, minus the dropped ones
@@ -370,7 +374,7 @@ fn no_key_changed_and_every_old_row_is_on_exactly_one_new_page() {
     let mut checked = 0;
     for op in &old_pages {
         for o in op.rows() {
-            if DROPPED.contains(&o.id) {
+            if DROPPED.contains(&o.id) || MERGED.contains(&o.id) {
                 assert!(schema().row(o.id).is_none(), "{} was dropped", o.id);
                 continue;
             }
@@ -421,7 +425,7 @@ fn first_choice_rows_stand_outside_the_section_and_technical_ones_inside() {
     for id in ["quiet.on", "language", "hotkey.toggle", "module.chat", "live.volume", "clipboard.maxItems", "sound.volumeDevice", "phone.enabled", "net.ai", "updates.check", "shape"] {
         assert!(!in_advanced(id), "{id} is a first-choice row");
     }
-    for id in ["capture.encoder", "ui.gpu", "phone.relayUrl", "voice.endpoint", "vpn.own.connect", "live.obs.port", "fullscreenPeekEdge", "hotkey.uninstall", "timer.soundFile"] {
+    for id in ["capture.encoder", "phone.relayUrl", "voice.endpoint", "vpn.own.connect", "live.obs.port", "fullscreenPeekEdge", "hotkey.uninstall", "timer.soundFile"] {
         assert!(in_advanced(id), "{id} is technical");
     }
     // every page is short: the part that is in view has eighteen rows at most (the biggest page of the old schema had 38)
@@ -438,7 +442,7 @@ fn first_choice_rows_stand_outside_the_section_and_technical_ones_inside() {
 
 /// (feature, page, the ids that stand together in ONE section, switch first). Advanced parts of a feature are in `ADVANCED_PARTS`.
 const FEATURES: [(&str, &str, &[&str]); 21] = [
-    ("Weather", "weather", &["net.weather", "module.weather", "weather.city", "weather.units", "weather.refresh", "showWxIcon", "showTemp"]),
+    ("Weather", "weather", &["net.weather", "weather.city", "weather.units", "weather.refresh", "showWxIcon", "showTemp"]),
     ("Notes and timer", "tools", &["module.note", "live.reminders", "sound.reminders", "sound.reminderTone", "sound.play"]),
     ("File shelf", "tools", &["module.shelf", "live.shelf"]),
     ("System controls", "tools", &["module.controls", "live.sysmon"]),
@@ -447,7 +451,7 @@ const FEATURES: [(&str, &str, &[&str]); 21] = [
     ("Voice to text", "voice", &["voice.enabled", "voice.mode", "voice.language", "voice.paste", "voice.provider", "voice.key", "aisetup.whisper", "voice.test-mic", "voice.test-service"]),
     ("Clipboard history", "clipboard", &["module.clipboard", "live.copy", "clipboard.maxItems", "clipboard.retentionDays", "clipboard.private", "clipboard.skipSecrets", "clipboard.wipe"]),
     ("Screen recording", "capture", &["live.recording", "capture.format", "capture.fps", "capture.recordSystemAudio", "capture.recordMic", "capture.videoFolder"]),
-    ("Phone link", "phone", &["phone.enabled", "module.phone", "live.phone", "phone.link", "phone.devices"]),
+    ("Phone link", "phone", &["phone.enabled", "live.phone", "phone.link", "phone.devices"]),
     ("AI assistant and chat", "ai", &["net.ai", "module.chat", "ai.provider", "ai.key", "ai.baseUrl", "ai.model", "ai.list", "ai.test"]),
     ("AI agents", "ai", &["live.agents", "live.agents.snippets", "agents.answerFromIsland"]),
     ("Notifications", "notifications", &["module.notifs", "live.notifications", "live.notifications.allow"]),
@@ -470,7 +474,7 @@ const ADVANCED_PARTS: [(&str, &str, &[&str]); 11] = [
     ("Clipboard history", "clipboard", &["clipClickPaste", "clipboard.denyList", "clipboard.maxImageMb"]),
     ("Screen recording", "capture", &["capture.encoder"]),
     ("Screenshots", "capture", &["capture.revealAfterSave", "showInCapture"]),
-    ("Notifications", "notifications", &["cards.duration", "history.keep", "history.mail"]),
+    ("Notifications", "notifications", &["cards.duration", "history.mail"]),
     ("Downloads", "notifications", &["live.downloadRing", "live.dlIgnoreExt"]),
     ("OBS", "calendar", &["live.obs.port", "live.obs.password"]),
     ("Phone files", "phone", &["phone.maxFileMB", "phone.apkUrl"]),
@@ -497,8 +501,9 @@ fn every_feature_is_one_section_with_its_switch_first() {
             assert!(g.rows.iter().any(|r| r.id == *id), "{name}: {id} is in the same advanced section");
         }
     }
-    // the three overlapping groups of switches are told apart by words, and none of them was merged
-    for (a, b) in [("net.weather", "module.weather"), ("phone.enabled", "module.phone"), ("phone.enabled", "live.phone"), ("module.shelf", "live.shelf")] {
+    // the two groups of switches that still overlap (different things: the link and its cards, the shelf and its badge) are told apart by words;
+    // the ones that said the same thing twice are one switch (`MERGED`, `overlap::fold`)
+    for (a, b) in [("phone.enabled", "live.phone"), ("module.shelf", "live.shelf")] {
         let (ra, rb) = (schema().row(a).unwrap(), schema().row(b).unwrap());
         assert!(ra.label != rb.label && ra.key != rb.key, "{a} and {b} are two switches with two names");
     }
@@ -508,7 +513,7 @@ fn every_feature_is_one_section_with_its_switch_first() {
 fn the_feature_name_finds_every_row_of_the_feature() {
     for lang in Lang::ALL {
         let idx = search::build_index(lang);
-        for (q, ids) in [("weather", &["weather.units", "showTemp", "module.weather"][..]), ("погода", &["weather.city", "net.weather"]), ("media player", &["musicPill", "live.music"]), ("battery", &["showBattery"])] {
+        for (q, ids) in [("weather", &["weather.units", "showTemp", "net.weather"][..]), ("погода", &["weather.city", "net.weather"]), ("media player", &["musicPill", "live.music"]), ("battery", &["showBattery"])] {
             let hits = search::search(&idx, q, 300);
             for id in ids {
                 assert!(hits.iter().any(|e| e.row_id == *id), "{q:?} ({lang:?}) finds {id}");
@@ -712,18 +717,30 @@ fn the_music_widget_rows_default_to_off_and_to_the_bottom_left_corner() {
 fn rows_per_page() {
     let counts: BTreeMap<&str, usize> = schema().pages.iter().map(|p| (p.id, p.rows().count())).collect();
     eprintln!("rows per page: {counts:?}");
-    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them), plus the live-preview switch, the screen-edge choices (edge, side and follow-the-active-window) and the four rows of the music widget
+    // the 211 rows of the old 16 pages, minus the two dropped as duplicates (the two "cloud" buttons that only jumped to a section next to them) and the three switches merged into another (`MERGED`), plus the live-preview switch, the screen-edge choices (edge, side and follow-the-active-window) and the four rows of the music widget
     let expect = [
-        ("look", 29), ("edge", 7), ("tabs", 3),
-        ("weather", 7), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
-        ("notifications", 21), ("calendar", 14),
-        ("phone", 16), ("ai", 14),
-        ("general", 26), ("hotkeys", 21), ("updates", 6),
+        ("look", 20), ("edge", 7), ("tabs", 3),
+        ("weather", 6), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
+        ("notifications", 20), ("calendar", 14),
+        ("phone", 15), ("ai", 14),
+        ("general", 26), ("performance", 9), ("hotkeys", 21), ("updates", 6),
     ];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");
     }
     assert_eq!(schema().all_rows().count(), expect.iter().map(|e| e.1).sum::<usize>());
+}
+
+#[test]
+fn no_page_is_longer_than_the_cap_and_look_is_short_again() {
+    for p in &schema().pages {
+        assert!(p.rows().count() <= super::nav::MOST_ROWS, "{}: {} rows", p.id, p.rows().count());
+    }
+    // Look had 29 rows (frame rate and power folded behind its Advanced section); Performance holds those now, in view
+    assert!(schema().page("look").unwrap().rows().count() <= 22);
+    assert!(schema().page("performance").unwrap().groups.iter().all(|g| !g.advanced));
+    assert_eq!(schema().page_of("energy.saver").unwrap().id, "performance");
+    assert_eq!(schema().page_of("fps").unwrap().id, "performance");
 }
 
 // ------------------------------------------------------------------------------------------------ set() -> BackendCall
@@ -917,6 +934,9 @@ const NOT_EXPOSED: &[(&str, &str)] = &[
     ("phone.port", "chosen by phone.rs (the first free port from 41717 up is remembered)"),
     ("phone.mutedApps", "the app chips of the Phone page (phone.apps), a list of package names"),
     ("tabs.hidden", "the chips of the Modules page's tab widget (modules.tabs), a list of tab ids"),
+    ("module.weather", "merged into net.weather (the one Weather switch); the Tabs page hides the tab; overlap::fold migrates it"),
+    ("module.phone", "merged into the Tabs page (tabs.hidden); overlap::fold migrates it"),
+    ("history.keep", "merged into module.notifs (the one notification centre switch); overlap::fold migrates it"),
 ];
 
 #[test]
@@ -1051,7 +1071,7 @@ fn every_control_family_has_feedback_or_is_documented_static() {
 fn the_phone_page_has_the_link_widgets_and_gated_rows() {
     let p = schema().page("phone").expect("phone page");
     let ids: Vec<&str> = p.rows().map(|r| r.id).collect();
-    assert_eq!(ids, ["phone.enabled", "module.phone", "live.phone", "phone.link", "phone.devices", "phone.apps", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone", "phone.downloadDir", "phone.autoAccept", "phone.relay", "phone.maxFileMB", "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB"]);
+    assert_eq!(ids, ["phone.enabled", "live.phone", "phone.link", "phone.devices", "phone.apps", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone", "phone.downloadDir", "phone.autoAccept", "phone.relay", "phone.maxFileMB", "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB"]);
     let sw = schema().row("phone.enabled").unwrap();
     assert_eq!(sw.default, json!(false), "the server never starts by itself");
     let note = p.groups[0].footer;

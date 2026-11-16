@@ -205,10 +205,9 @@ impl SettingsView {
             // General: the autostart state, the data folder (settings backup) and the file search (Everything) status
             "general" => calls.extend([BackendCall::AutostartGet, BackendCall::SettingsInfo, BackendCall::EverythingStatus]),
             "hotkeys" => calls.push(BackendCall::LauncherList),
-            "look" => {
-                calls.push(BackendCall::PillMonitors);
-                self.sample_cost(cx);
-            }
+            "look" => calls.push(BackendCall::PillMonitors),
+            // Performance: the frame-cost line of the Power section
+            "performance" => self.sample_cost(cx),
             // Media and sound: the output and input devices (Volume and microphone)
             "media" => {
                 calls.push(BackendCall::MediaDevices);
@@ -245,7 +244,7 @@ impl SettingsView {
         self.run(cx, calls);
     }
 
-    /// The Look page shows the frame cost (Power): the meter runs and the page repaints every second, only while the page is on screen.
+    /// The Performance page shows the frame cost (Power): the meter runs and the page repaints every second, only while the page is on screen.
     pub(super) fn sample_cost(&mut self, cx: &mut Cx) {
         crate::ui::host::perf::set_sampling(true);
         self.ensure_ticker(cx, 1000);

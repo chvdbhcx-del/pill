@@ -68,6 +68,7 @@ pub fn build() -> Vec<Page> {
         l::calendar(p),
         // App
         l::general(p),
+        l::performance(p),
         l::hotkeys(p),
         l::updates(p),
     ];
