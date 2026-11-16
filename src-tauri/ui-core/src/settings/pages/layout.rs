@@ -170,6 +170,7 @@ pub(super) fn look(p: &mut Pool) -> Page {
             ),
             part(vec![p.sec(tr("Часы и дата", "Clock and date"), &["showTime", "showDate", "showSeconds", "clock24"])], vec![]),
             part(vec![p.sec(tr("Анимация", "Animation"), &["reduceMotion"])], vec![p.sec(tr("Частота кадров и видеокарта", "Frame rate and GPU"), &["fps", "edgeIdleFps", "ui.gpu"]).adv()]),
+            part(vec![], vec![p.sec(tr("Энергия", "Power"), &["energy.saver", "energy.battery", "energy.pauseLocked", "energy.pauseDisplayOff", "energy.pauseRdp", "energy.cost"]).adv()]),
         ],
     )
 }

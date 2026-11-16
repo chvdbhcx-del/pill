@@ -16,6 +16,7 @@
 //! keep the app alive nor block its exit. The host thread is a daemon: on `app.exit` call [`shutdown`] first (destroys the windows and
 //! stops the loop, joins within 2 s) or just let the process end. [`HostHandle::open_windows`] says how many native windows are alive, for
 //! a future "exit when the last window is gone" rule.
+pub mod energy;
 pub mod focus;
 pub mod geom;
 pub mod pillwin;

@@ -243,6 +243,47 @@ pub fn appearance() -> Page {
                     .kw(&["gpu", "hardware", "software", "warp", "render", "видеокарта", "ускорение", "процессор", "перезапуск"]),
                 ],
             ),
+            group(
+                tr("Энергия", "Power"),
+                vec![
+                    toggle(
+                        "energy.saver",
+                        tr("30 кадров/с при экономии заряда", "30 fps in Energy Saver"),
+                        tr("Пока в Windows включена экономия заряда (режим энергосбережения), остров рисуется не чаще 30 раз в секунду", "While Windows Energy Saver (battery saver) is on, the pill draws at most 30 frames a second"),
+                        true,
+                    )
+                    .kw(&["energy", "battery saver", "power", "экономия", "энергосбережение", "батарея", "fps"]),
+                    toggle(
+                        "energy.battery",
+                        tr("30 кадров/с от батареи", "30 fps on battery"),
+                        tr("То же, пока ноутбук работает от батареи, даже без экономии заряда", "The same while the laptop runs on battery, even without Energy Saver"),
+                        false,
+                    )
+                    .kw(&["battery", "laptop", "батарея", "ноутбук", "fps"]),
+                    toggle(
+                        "energy.pauseLocked",
+                        tr("Не рисовать при блокировке", "Pause while locked"),
+                        tr("Пока сеанс заблокирован или отключён, остров не рисуется и не анимируется; при возвращении плавно проявляется", "While the session is locked or disconnected the pill draws and animates nothing; it fades back in when you return"),
+                        true,
+                    )
+                    .kw(&["lock", "locked", "блокировка", "заблокирован", "pause", "пауза"]),
+                    toggle(
+                        "energy.pauseDisplayOff",
+                        tr("Не рисовать при выключенном экране", "Pause while the display is off"),
+                        tr("Пока экран погашен, остров не рисуется; при включении плавно проявляется", "While the display is off the pill draws nothing; it fades back in when the display wakes"),
+                        true,
+                    )
+                    .kw(&["display", "screen off", "monitor", "экран", "выключен", "pause", "пауза"]),
+                    toggle(
+                        "energy.pauseRdp",
+                        tr("Не рисовать при свёрнутом удалённом столе", "Pause while Remote Desktop is minimised"),
+                        tr("Если Pill работает в сеансе удалённого рабочего стола, а его окно свёрнуто, остров не рисуется", "When Pill runs inside a Remote Desktop session whose window is minimised, the pill draws nothing"),
+                        true,
+                    )
+                    .kw(&["rdp", "remote desktop", "удалённый стол", "удалённый рабочий стол", "pause", "пауза"]),
+                    custom("energy.cost", tr("Стоимость кадра", "Frame cost"), Tr::NONE, "energy.cost").kw(&["cost", "cpu", "ms", "fps", "нагрузка", "процессор", "кадр", "performance"]),
+                ],
+            ),
         ],
     )
 }

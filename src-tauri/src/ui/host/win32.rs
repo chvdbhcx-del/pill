@@ -9,6 +9,7 @@
 //! `WM_GETMINMAXINFO`, `WM_MOUSEACTIVATE`), or (b) queued in `DEFERRED` and replayed as soon as the borrow ends. Nothing is ever lost and
 //! nothing blocks.
 use super::dropt;
+use super::energy;
 use super::focus::{BlurGuard, FocusWatch};
 use super::geom::{self, Edge, HitRegion, IRect};
 use super::perf;
@@ -16,6 +17,7 @@ use super::present::{PresentStatus, Presenter};
 use super::proximity::{Probe, Proximity};
 use super::sched::FrameState;
 use super::{Cmd, Factory, Geometry, HideReason, HostHandle, MonitorInfo, MonitorSel, Placement, Shared, WinEvent, WinInfo, WindowKind, WindowSpec};
+use crate::ui::liquid::{Feel, Flow};
 use crate::ui::view::{CursorShape, Cx, Effects, Msg, MsgQueue, OpenRequest, Waker, WindowCmd, WindowId};
 use glasskit::canvas::Canvas;
 use glasskit::fonts::FontSet;
@@ -523,6 +525,8 @@ struct Win {
     drop_registered: bool,
     layered: bool,
     shown_once: bool,
+    /// fades the window in when the energy rules lift a pause (1 = fully shown; see `apply_energy`)
+    fade: Flow,
 }
 
 pub(crate) struct Host {
@@ -534,6 +538,8 @@ pub(crate) struct Host {
     msg_hwnd: HWND,
     timer: HANDLE,
     quit: bool,
+    /// the energy rules pause drawing now (locked, display off, remote client minimised): no cursor polls either
+    paused: bool,
     /// frame-latency handles whose signal the loop's sleep already consumed (valid for the next `render_due` only)
     ready: std::collections::HashSet<isize>,
 }
@@ -661,6 +667,8 @@ impl Host {
         let hz = placed.mon.refresh_hz;
         let mut frame = FrameState::new(hz as f32);
         frame.set_cap(spec.fps_cap);
+        let ev = energy::verdict();
+        frame.set_energy(ev.fps_cap, ev.paused);
         let theme = spec.theme;
         let prox = (spec.kind == WindowKind::Overlay).then(|| {
             let mut p = Proximity::new(scale, hz);
@@ -703,6 +711,7 @@ impl Host {
             drop_registered,
             layered,
             shown_once: false,
+            fade: Flow::new(1.0, Feel::FADE),
             view,
             cx,
             spec: spec.clone(),
@@ -1243,7 +1252,7 @@ impl Host {
         }
         let now = self.now_ms();
         match self.wins.get(&id) {
-            Some(w) if w.visible && (force || w.frame.wants_frame()) && w.pres.is_some() => {}
+            Some(w) if w.visible && !w.frame.paused() && (force || w.frame.wants_frame()) && w.pres.is_some() => {}
             _ => return,
         }
         self.prepare_cx(id);
@@ -1252,11 +1261,14 @@ impl Host {
         let keep = {
             let Some(win) = self.wins.get_mut(&id) else { return };
             let dt = win.frame.begin(now);
+            if win.fade.moving() {
+                win.fade.step(dt);
+            }
             let keep = catch_unwind(AssertUnwindSafe(|| win.view.step(dt, &mut win.cx))).unwrap_or_else(|_| {
                 eprintln!("ui host: a panic in step of `{}` was caught", win.spec.label);
                 false
             });
-            keep
+            keep || win.fade.moving()
         };
         let t_step = lap.lap();
         self.apply_fx(id);
@@ -1278,11 +1290,18 @@ impl Host {
             let Some(pres) = win.pres.as_mut() else { return };
             let (scale, theme, clear) = (win.scale, win.theme, clear_color(win.spec.clear));
             let rect = Rect::new(0.0, 0.0, win.size_px.0 as f32 / scale, win.size_px.1 as f32 / scale);
-            let (view, cx) = (&mut win.view, &win.cx);
+            let (view, cx, fade) = (&mut win.view, &win.cx, win.fade.at01());
             let r = pres.draw(&gpu.gfx, scale, clear, || {
                 let cv = Canvas::new(&gpu.gfx, &gpu.res, scale);
-                if catch_unwind(AssertUnwindSafe(|| view.draw(&cv, &theme, rect, cx))).is_err() {
-                    eprintln!("ui host: a panic in draw was caught");
+                let mut paint = |cv: &Canvas| {
+                    if catch_unwind(AssertUnwindSafe(|| view.draw(cv, &theme, rect, cx))).is_err() {
+                        eprintln!("ui host: a panic in draw was caught");
+                    }
+                };
+                if fade < 0.999 {
+                    cv.with_opacity(fade, paint); // coming back from an energy pause
+                } else {
+                    paint(&cv);
                 }
             });
             t_draw = lap.lap();
@@ -1350,7 +1369,9 @@ impl Host {
         let now = self.now_ms();
         let ids: Vec<WindowId> = self.wins.keys().copied().collect();
         for id in ids {
-            self.poll_proximity(id, now);
+            if !self.paused {
+                self.poll_proximity(id, now);
+            }
             self.watchdog(id, now);
             self.geometry(id, now);
         }
@@ -1456,7 +1477,7 @@ impl Host {
         let mut best: Option<f64> = None;
         let mut put = |t: f64| best = Some(best.map_or(t, |b: f64| b.min(t)));
         for w in self.wins.values() {
-            if w.prox.is_some() && w.visible {
+            if w.prox.is_some() && w.visible && !self.paused {
                 put(w.poll_at);
             }
             if let Some(t) = w.geo_at {
@@ -1479,6 +1500,22 @@ impl Host {
             }
         }
         best
+    }
+
+    /// The energy rules changed (`energy::WM_ENERGY`): every window gets the new cap / pause. Lifting a pause redraws at once and fades the window
+    /// in from 0 (Reduce motion: it appears at once).
+    fn apply_energy(&mut self) {
+        let v = energy::verdict();
+        self.paused = v.paused;
+        for w in self.wins.values_mut() {
+            let was = w.frame.paused();
+            w.frame.set_energy(v.fps_cap, v.paused);
+            if was && !v.paused {
+                w.fade.jump(0.0);
+                w.fade.to(1.0);
+                w.poll_at = 0.0;
+            }
+        }
     }
 
     /// `PILL_HOST_TRACE=1`: which window's timers make the loop wake (ms from now; negative = overdue).
@@ -1519,9 +1556,17 @@ impl Host {
 
     fn on_message(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
         if hwnd == self.msg_hwnd {
+            if msg == energy::WM_ENERGY {
+                self.apply_energy();
+                return Some(LRESULT(0));
+            }
             return None;
         }
         let id = *self.by_hwnd.get(&hv(hwnd))?;
+        // a window that gets real input while the rules say "paused" missed an unlock: show it again
+        if self.paused && matches!(msg, WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_KEYDOWN) && energy::lift_pause() {
+            self.apply_energy();
+        }
         match msg {
             super::uia::WM_GETOBJECT => {
                 // a screen reader / UI Automation client asks for the window: hand out the provider (named by the view)
@@ -1867,8 +1912,9 @@ fn ui_thread(shared: Arc<Shared>) {
         let msg_hwnd = CreateWindowExW(WINDOW_EX_STYLE(0), MSG_CLASS, w!("pill-ui-host"), WINDOW_STYLE(0), 0, 0, 0, 0, HWND_MESSAGE, None, hinst, None).unwrap_or_default();
         shared.msg_hwnd.store(hv(msg_hwnd), Ordering::Release);
         crate::watchdog::set_ping_target(hv(msg_hwnd));
+        energy::attach(msg_hwnd);
         let timer = CreateWaitableTimerExW(None, PCWSTR::null(), 0x2 /* CREATE_WAITABLE_TIMER_HIGH_RESOLUTION */, 0x1F0003 /* TIMER_ALL_ACCESS */).unwrap_or_default();
-        let host = Host { shared, t0: Instant::now(), gpu: None, wins: HashMap::new(), by_hwnd: HashMap::new(), msg_hwnd, timer, quit: false, ready: Default::default() };
+        let host = Host { shared, t0: Instant::now(), gpu: None, wins: HashMap::new(), by_hwnd: HashMap::new(), msg_hwnd, timer, quit: false, paused: energy::verdict().paused, ready: Default::default() };
         HOST.with(|h| *h.borrow_mut() = Some(host));
         run_loop();
         let host = HOST.with(|h| h.borrow_mut().take());
@@ -1876,6 +1922,7 @@ fn ui_thread(shared: Arc<Shared>) {
         if !timer.is_invalid() {
             let _ = CloseHandle(timer);
         }
+        energy::detach();
         let _ = DestroyWindow(msg_hwnd);
         OleUninitialize();
     }

@@ -3,16 +3,58 @@
 //! Off by default; when off, the stopwatches below do nothing.
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::FILETIME;
 use windows::Win32::System::Threading::{GetCurrentProcess, GetCurrentThread, GetProcessTimes, GetThreadTimes};
 
 const REPORT_EVERY: Duration = Duration::from_secs(5);
+/// While the settings window shows the frame cost the meter reports faster (and only to `last()`, not to stderr).
+const SAMPLE_EVERY: Duration = Duration::from_secs(2);
 
-pub fn on() -> bool {
+fn env_on() -> bool {
     static T: OnceLock<bool> = OnceLock::new();
     *T.get_or_init(|| std::env::var_os("PILL_PERF").is_some_and(|v| v != "0"))
+}
+
+/// The settings window is open and shows the frame cost (`set_sampling`): the meter runs although `PILL_PERF` is not set.
+static SAMPLING: AtomicBool = AtomicBool::new(false);
+
+pub fn on() -> bool {
+    env_on() || SAMPLING.load(Ordering::Relaxed)
+}
+
+/// Switches the meter on for the settings window's cost line (`true` when it opens, `false` when it closes: then it costs nothing again).
+pub fn set_sampling(on: bool) {
+    SAMPLING.store(on, Ordering::Relaxed);
+    if on {
+        S.with(|s| *s.borrow_mut() = None); // the UI thread's meter starts a fresh interval (a stale one would average over the gap)
+    } else {
+        *LAST.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+}
+
+/// What the last report measured, for the settings window's cost line.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sample {
+    pub at: Instant,
+    pub secs: f32,
+    /// frames per second and milliseconds per frame (step + draw + present) of the island window (`PILL_LABEL`)
+    pub island_fps: f32,
+    pub island_ms: f32,
+    pub ui_cpu: f32,
+    pub proc_cpu: f32,
+}
+
+/// The label of the island's window: the one whose frame cost the settings line shows (the settings window's own frames do not count).
+pub const ISLAND: &str = "pill";
+
+static LAST: Mutex<Option<Sample>> = Mutex::new(None);
+
+/// The newest sample, if the meter has produced one since `set_sampling(true)`.
+pub fn last() -> Option<Sample> {
+    LAST.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// A stopwatch that costs nothing when `PILL_PERF` is off.
@@ -80,7 +122,7 @@ fn with_state(f: impl FnOnce(&mut State)) {
             State { since: Instant::now(), wakes: 0, why: BTreeMap::new(), wins: BTreeMap::new(), ui_cpu, proc_cpu }
         });
         f(st);
-        if st.since.elapsed() >= REPORT_EVERY {
+        if st.since.elapsed() >= if env_on() { REPORT_EVERY } else { SAMPLE_EVERY } {
             report(st);
         }
     });
@@ -90,6 +132,20 @@ fn report(st: &mut State) {
     let secs = st.since.elapsed().as_secs_f64();
     let (ui, pr) = cpu_times();
     let pct = |d: Duration| d.as_secs_f64() / secs * 100.0;
+    let isl = st.wins.get(ISLAND);
+    let per_ms = |a: &Acc| (a.step + a.draw + a.present).as_secs_f64() * 1000.0 / a.frames.max(1) as f64;
+    *LAST.lock().unwrap_or_else(|e| e.into_inner()) = Some(Sample {
+        at: Instant::now(),
+        secs: secs as f32,
+        island_fps: isl.map_or(0.0, |a| (a.frames as f64 / secs) as f32),
+        island_ms: isl.map_or(0.0, |a| per_ms(a) as f32),
+        ui_cpu: pct(ui.saturating_sub(st.ui_cpu)) as f32,
+        proc_cpu: pct(pr.saturating_sub(st.proc_cpu)) as f32,
+    });
+    if !env_on() {
+        *st = State { since: Instant::now(), wakes: 0, why: BTreeMap::new(), wins: BTreeMap::new(), ui_cpu: ui, proc_cpu: pr };
+        return;
+    }
     let mut line = format!("perf {secs:.1}s: wakes {} | ui thread {:.1}% cpu, process {:.1}% cpu", st.wakes, pct(ui.saturating_sub(st.ui_cpu)), pct(pr.saturating_sub(st.proc_cpu)));
     for (label, a) in &st.wins {
         if a.frames == 0 {

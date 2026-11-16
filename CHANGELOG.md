@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Highlights
+- New Settings > Look > Advanced > Power: the island is capped at 30 frames a second while Windows Energy Saver is on (and, if you choose, on battery), and draws nothing while the session is locked, the display is off or a minimised Remote Desktop client hides it. Each rule is its own switch; coming back fades the island in. A line under the switches shows what a frame costs now and why the rate is capped, for example "30 fps: Energy Saver".
+
 ## [0.9.0] - 2026-11-16
 
 ### Highlights

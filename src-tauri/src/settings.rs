@@ -95,6 +95,9 @@ pub(crate) fn defaults() -> Cfg {
         "phone.clipboard": false, "phone.clipToPhone": true, "phone.clipFromPhone": true
     }) else { unreachable!() };
     m.extend(phone);
+    // energy rules (ui/host/energy.rs): 30 fps on Windows Energy Saver (and, opt-in, on battery); draw nothing while locked, display off or a remote client is minimised
+    let Value::Object(energy) = json!({ "energy.saver": true, "energy.battery": false, "energy.pauseLocked": true, "energy.pauseDisplayOff": true, "energy.pauseRdp": true }) else { unreachable!() };
+    m.extend(energy);
     m
 }
 
@@ -268,6 +271,7 @@ pub fn apply_patch(app: &tauri::AppHandle, mut patch: Cfg) -> (Cfg, Result<(), S
     }
     crate::pill::on_settings(app, &patch);
     crate::ui::musicwidget::on_settings(app, &patch);
+    crate::ui::host::energy::on_settings(&patch);
     crate::media::on_settings(&patch);
     crate::vdesk::on_settings(&patch);
     crate::agent_bridge::on_settings(&patch);

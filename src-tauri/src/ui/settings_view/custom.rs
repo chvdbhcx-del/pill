@@ -54,6 +54,7 @@ pub struct Data {
     pub home: crate::ui::tabs::a::home::slots::Slots,
     /// the Phone page (QR, paired phones, apps)
     pub phone: super::cw_phone::PhoneData,
+    pub energy: super::cw_energy::EnergyData,
 }
 
 impl Default for Data {
@@ -83,6 +84,7 @@ impl Default for Data {
             tick: 0,
             home: crate::ui::tabs::a::home::slots::Slots::new(),
             phone: Default::default(),
+            energy: Default::default(),
         }
     }
 }
@@ -141,6 +143,7 @@ impl SettingsView {
             "phone.link" => self.w_phone_link(d, r, full, paint),
             "phone.devices" => self.w_phone_devices(d, r, full, paint),
             "phone.apps" => self.w_phone_apps(d, r, full, paint),
+            "energy.cost" => self.w_energy_cost(d, r, full, paint),
             "aisetup.whisper" => self.w_whisper(d, r, full, paint),
             "aisetup.chat" => self.w_chat(d, r, full, paint),
             "weather.city" => {
@@ -171,6 +174,7 @@ impl SettingsView {
     pub(super) fn step_custom(&mut self, dt: f32) -> bool {
         let mut busy = self.data.wtoggle.step(dt);
         busy |= tick(&mut self.data.whatsnew, dt);
+        busy |= self.data.energy.step(dt);
         for f in self.data.fields.values_mut() {
             busy |= f.step(dt);
         }
