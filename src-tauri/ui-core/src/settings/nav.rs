@@ -273,7 +273,7 @@ mod tests {
             assert!(pg.title.is_complete(), "{}", pg.id);
             assert!(pg.title.en.chars().count() <= 24 && pg.title.ru.chars().count() <= 24, "{}: a sidebar name must fit the sidebar", pg.id);
             // the list of every hotkey is one long page; General is the one page of everything that belongs to no single function
-            let most = if pg.id == "general" { 25 } else { 29 };
+            let most = if pg.id == "general" { 26 } else { 29 };
             assert!(pg.rows().count() <= most, "{}: a page stays short", pg.id);
             // no page that is a single switch or a lone row: Updates (and the Tabs widgets) are the small ones
             let least = if matches!(pg.id, "updates" | "tabs") { 3 } else { 5 };

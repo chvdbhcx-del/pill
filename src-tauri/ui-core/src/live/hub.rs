@@ -20,6 +20,7 @@ use super::board::{filter_quiet, Board, QUIET_SRC};
 use super::capture::{CaptureCards, RecLive};
 use super::env::Env;
 use super::events::{CopyLive, KbdLive, VdeskLive};
+use super::indicators::IndicatorsLive;
 use super::ext::{NotificationLive, ObsLive, SteamLive, UninstallLive};
 use super::media::MediaLive;
 use super::model::{LiveCmd, Query};
@@ -75,6 +76,7 @@ impl Hub {
             Box::new(KbdLive),
             Box::new(CopyLive),
             Box::new(VdeskLive::default()),
+            Box::new(IndicatorsLive),
             Box::new(ObsLive::default()),
             Box::new(SteamLive),
             Box::new(NotificationLive),

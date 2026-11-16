@@ -7,7 +7,9 @@
 //!   the renderer draws, cards go to the shell's queue (`Pill.toast`) with the typed `CardSpec` in a side map, reactions to the resolver,
 //!   badges to the tab list; everything that needs a window or the backend leaves as an [`Out`];
 //! * commands the shell issues (`pill_rect`, `pill_set_state`, ...) are collected from its queue backend.
+use super::focushold::{respect, FocusHold};
 use super::sys::{CmdQueue, QueueBackend, SysClock};
+use pill_ui_core::live::focus::{verdict, Verdict};
 use pill_ui_core::live::model::{self as lm, Accent, Action, Anim, CardBody, LiveCmd, Query, RowSpec, Tone};
 use pill_ui_core::live::{Env, Hub, Tr};
 use pill_ui_core::shell::cards::{CardAction as ShellAction, CardSpec as ShellCard};
@@ -101,7 +103,7 @@ pub const ISLAND_EVENTS: &[&str] = &[
     "live:volume", "live:privacy", "live:download", "update:available", "live:obs", "live:steam", "live:notification", "uninstall:ready", "live:file-done",
     "live:usb", "live:battery", "live:calendar", "live:mail", "agents:changed", "agents:done", "agents:ask", "agents:ask-gone", "rec:state", "capture:done", "voice:state", "voice:level",
     "sysmon:tick", "media:changed", "lyrics:changed", "timer:tick", "remind:due", "shelf:changed", "timer:done", "remind:changed", "kbd:now", "vdesk:now", "power:timer", "vpn:changed",
-    "phone:notif", "phone:files", "phone:state", "phone:clip", "pill:taskbar", "pill:monitor",
+    "phone:notif", "phone:files", "phone:state", "phone:clip", "pill:taskbar", "pill:monitor", "focus:changed", "ind:lock", "ind:bt",
 ];
 
 pub struct Core {
@@ -124,6 +126,9 @@ pub struct Core {
     pub chips: super::chips::Chips,
     /// cards shown since the last [`Core::take_toast_recs`] (the notifications tab records them, as `Pill.toast` fed `notif_history_add`)
     toast_recs: Vec<pill_ui_core::panel::a::notifs::ToastRec>,
+    /// Windows Focus Assist: the cards held back while it is on and respected (`notify.respectFocus`)
+    pub focus: FocusHold,
+    watching: bool,
     clock: SysClock,
     cmds: CmdQueue,
     outs: Vec<Out>,
@@ -148,6 +153,8 @@ impl Core {
             now_mono: 0.0,
             chips: Default::default(),
             toast_recs: Vec::new(),
+            focus: FocusHold::default(),
+            watching: false,
             clock,
             cmds,
             outs: Vec::new(),
@@ -237,7 +244,11 @@ impl Core {
                 let p = serde_json::json!({ "vpnCountry": payload.get("country").cloned().unwrap_or(Value::Null), "vpnOn": payload.get("on").cloned().unwrap_or(Value::Null) });
                 sh(self, Event::SettingsChanged(p));
             }
+            "focus:changed" => self.focus.set_state(payload),
             _ => {}
+        }
+        if matches!(name, "focus:changed" | "settings:changed" | "pill:show" | "pill:hide") {
+            self.sync_focus();
         }
         if self.chips.feed(name, payload) || name == "settings:changed" {
             self.sync_chips(now_mono);
@@ -262,6 +273,11 @@ impl Core {
     /// The answer of a hub [`Query`] (or a button's backend call) re-enters as an event.
     pub fn dispatch_answer(&mut self, as_event: &str, payload: &Value, now_mono: f64) {
         self.now_mono = now_mono;
+        if as_event == "focus:changed" {
+            self.focus.set_state(payload); // the boot answer of `focus_state`
+            self.sync_focus();
+            self.sync_chips(now_mono);
+        }
         let (ru, quiet, expanded) = self.env_for();
         let settings = self.settings.clone();
         let env = IslandEnv { ru, quiet, expanded, settings: &settings };
@@ -342,11 +358,46 @@ impl Core {
     }
 
     /// Queues a card in the shell (`Pill.toast`) and keeps the typed card for the renderer; the notifications tab gets a record of it.
+    ///
+    /// Windows Focus Assist (opt-in): a card that is not critical is held while Windows is quiet and shown when it is not ([`Core::sync_focus`]).
     pub fn show_card(&mut self, card: lm::CardSpec) {
         self.toast_recs.push(toast_rec(&card));
+        match verdict(card.quiet_exempt(), self.shell.quiet(), respect(&self.settings), self.focus.sys_quiet) {
+            Verdict::Hold => {
+                self.focus.hold(card);
+                self.sync_focus();
+                self.sync_chips(self.now_mono);
+            }
+            // Drop: the shell drops it itself (quiet hours), as before
+            Verdict::Show | Verdict::Drop => self.present_card(card),
+        }
+    }
+
+    fn present_card(&mut self, card: lm::CardSpec) {
         let spec = shell_card(&card);
         self.cards.insert(card.id.clone(), card);
         self.shell.toast(spec);
+    }
+
+    /// Brings the Focus Assist state in line with Windows and the setting: tells the providers whether cards are held (`_focusHold`), releases
+    /// the held cards when the hold ends (waits for the island to be visible, or the shell would drop them), keeps the count chip and asks the
+    /// backend to re-check Windows while something is held (there is no event for the end of a Focus Assist period).
+    pub fn sync_focus(&mut self) {
+        let active = self.focus.active(&self.settings);
+        let mut settings = std::mem::take(&mut self.settings);
+        self.focus.publish(&mut settings, active);
+        self.settings = settings;
+        if !active && !self.focus.is_empty() && !self.shell.is_hidden() {
+            for c in self.focus.take_all() {
+                self.present_card(c);
+            }
+        }
+        let held = !self.focus.is_empty();
+        if held != self.watching {
+            self.watching = held;
+            self.outs.push(Out::Run(Action::invoke("focus_watch", json!({ "on": held }))));
+        }
+        self.chips.held = self.focus.len();
     }
 
     /// The cards shown since the last call, oldest first.
@@ -598,5 +649,89 @@ mod tests {
             let tab_only = ["chat:delta", "chat:done", "chat:focus", "clip:open", "launcher:changed", "remind:changed", "pill:cursor", "pill:gaze", "pill:display", "pill:hover", "pill:leave", "sys:changed", "kbd:state", "phone:state", "phone:notif", "phone:files", "phone:clip"];
             assert!(handled || tab_only.contains(&name), "{name} is neither subscribed by the island nor listed as tab/native-only");
         }
+    }
+
+    // ---- Windows Focus Assist (opt-in `notify.respectFocus`)
+
+    fn cap_done() -> Value {
+        json!({"kind": "screenshot", "path": "C:/a/shot.png", "copied": true, "w": 1920, "h": 1080})
+    }
+    fn shown(c: &Core) -> Option<String> {
+        c.shell.cards().current_id().map(String::from)
+    }
+    fn watch_flags(outs: &[Out]) -> Vec<bool> {
+        outs.iter()
+            .filter_map(|o| match o {
+                Out::Run(Action::Invoke { cmd, args }) if cmd == "focus_watch" => args.get("on").and_then(Value::as_bool),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn focus_assist_is_ignored_unless_the_user_asked() {
+        let mut c = core();
+        c.bus_event("focus:changed", &json!({"state": "quiet-time", "quiet": true}), 1.0);
+        c.bus_event("capture:done", &cap_done(), 2.0);
+        assert_eq!(shown(&c).as_deref(), Some("cap"), "switch off (default): Windows' state changes nothing");
+        assert!(c.focus.is_empty() && c.take_outs().is_empty());
+    }
+
+    #[test]
+    fn cards_are_held_while_windows_is_quiet_counted_and_released_when_it_ends() {
+        let mut c = core();
+        c.bus_event("settings:changed", &json!({"notify.respectFocus": true}), 0.5);
+        c.bus_event("focus:changed", &json!({"state": "quiet-time", "quiet": true}), 1.0);
+        c.take_outs();
+        c.bus_event("capture:done", &cap_done(), 2.0);
+        assert_eq!(shown(&c), None, "held, not shown");
+        assert_eq!(c.focus.len(), 1);
+        assert_eq!(c.chips.held, 1, "the count chip beside the time");
+        assert_eq!(watch_flags(&c.take_outs()), [true], "the backend is asked to re-check while something is held");
+        assert_eq!(c.toast_recs.len(), 1, "the notifications history has it from the start");
+        // an urgent card (the battery) and the timers get through
+        let mut urgent = lm::CardSpec::text("battery", 8000, "Battery 5%", None);
+        urgent.urgent = true;
+        c.show_card(urgent);
+        assert_eq!(shown(&c).as_deref(), Some("battery"));
+        assert_eq!(c.focus.len(), 1);
+        // Windows is open again: the held card comes back, the chip goes, the re-check stops
+        c.bus_event("focus:changed", &json!({"state": "open", "quiet": false}), 5.0);
+        assert!(c.focus.is_empty() && c.chips.held == 0);
+        assert_eq!(watch_flags(&c.take_outs()), [false]);
+        assert!(c.cards.contains_key("cap"), "released into the shell's queue");
+        assert_eq!(c.toast_recs.len(), 2, "not recorded a second time on release");
+    }
+
+    #[test]
+    fn switching_the_option_off_releases_what_is_held() {
+        let mut c = core();
+        c.bus_event("settings:changed", &json!({"notify.respectFocus": true}), 0.5);
+        c.bus_event("focus:changed", &json!({"quiet": true}), 1.0);
+        c.bus_event("capture:done", &cap_done(), 2.0);
+        assert_eq!(c.focus.len(), 1);
+        c.bus_event("settings:changed", &json!({"notify.respectFocus": false}), 3.0);
+        assert!(c.focus.is_empty() && c.cards.contains_key("cap"));
+    }
+
+    #[test]
+    fn the_boot_answer_of_focus_state_is_taken_too() {
+        let mut c = core();
+        c.bus_event("settings:changed", &json!({"notify.respectFocus": true}), 0.5);
+        c.dispatch_answer("focus:changed", &json!({"state": "quiet-time", "quiet": true}), 1.0);
+        c.bus_event("capture:done", &cap_done(), 2.0);
+        assert_eq!(shown(&c), None);
+    }
+
+    #[test]
+    fn providers_see_the_hold_so_their_chips_stay_away() {
+        let mut c = core();
+        c.bus_event("settings:changed", &json!({"notify.respectFocus": true, "live.capsLock": true}), 0.5);
+        c.bus_event("ind:lock", &json!({"key": "caps", "on": true}), 1.0);
+        assert!(c.rows.contains_key("ind-caps"), "no Focus Assist: the chip shows");
+        c.apply_cmds(vec![LiveCmd::clear("ind-caps")]);
+        c.bus_event("focus:changed", &json!({"quiet": true}), 2.0);
+        c.bus_event("ind:lock", &json!({"key": "caps", "on": false}), 3.0);
+        assert!(!c.rows.contains_key("ind-caps"), "Windows is quiet and respected: a transient chip is not queued");
     }
 }

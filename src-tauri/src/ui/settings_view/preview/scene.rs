@@ -48,6 +48,11 @@ pub enum Flash {
     Calendar,
     Mail,
     Obs,
+    /// Caps Lock / Num Lock chips, the Bluetooth chip and the Focus Assist hold (`indicators.rs`, `focus.rs`)
+    Caps,
+    Num,
+    Bluetooth,
+    Focus,
 }
 
 impl Flash {
@@ -100,6 +105,10 @@ impl Flash {
             Flash::Mail => "live.mail",
             Flash::Obs => "live.obs",
             Flash::Toast => return None,
+            Flash::Caps => "live.capsLock",
+            Flash::Num => "live.numLock",
+            Flash::Bluetooth => "live.btBattery",
+            Flash::Focus => "notify.respectFocus",
         })
     }
 
@@ -126,6 +135,10 @@ impl Flash {
             Flash::Calendar => tr("Событие: календарь", "Event: calendar"),
             Flash::Mail => tr("Событие: почта", "Event: mail"),
             Flash::Obs => tr("Событие: запись в OBS", "Event: OBS recording"),
+            Flash::Caps => tr("Индикатор: Caps Lock", "Indicator: Caps Lock"),
+            Flash::Num => tr("Индикатор: Num Lock", "Indicator: Num Lock"),
+            Flash::Bluetooth => tr("Индикатор: Bluetooth-устройство", "Indicator: Bluetooth device"),
+            Flash::Focus => tr("«Фокусировка» Windows: карточка ждёт", "Windows Focus Assist: a card waits"),
         }
     }
 }
@@ -245,6 +258,10 @@ pub fn of_key(key: &str) -> Option<Scene> {
         "live.recording" | "capture.format" | "capture.fps" | "capture.recordSystemAudio" | "capture.recordMic" => Flash(self::Flash::Recording),
         "live.music" | "musicPill" | "audio.reactive" => Flash(self::Flash::Music),
         "live.micCam" => Flash(self::Flash::Privacy),
+        "live.capsLock" => Flash(self::Flash::Caps),
+        "live.numLock" => Flash(self::Flash::Num),
+        "live.btBattery" => Flash(self::Flash::Bluetooth),
+        "notify.respectFocus" => Flash(self::Flash::Focus),
         "cards.duration" | "capture.shotAction" | "capture.revealAfterSave" => Flash(self::Flash::Toast),
         k if k.starts_with("module.") || hmod::is_home_key(k) => Panel(Tab::Home),
         _ => return None,

@@ -41,6 +41,8 @@ mod everything;
 mod hotkeys;
 mod islandkeys;
 mod vdesk;
+mod focus;
+mod indicators;
 mod obs;
 mod steam;
 mod wake;
@@ -101,6 +103,8 @@ fn main() {
             timers::init(app);
             watch::init(app);
             vdesk::init(app);
+            focus::init(app);
+            indicators::init(app);
             livesys::init(app);
             agents::init(app);
             agent_bridge::init();

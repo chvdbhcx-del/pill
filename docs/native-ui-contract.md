@@ -29,6 +29,9 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `kbd:layout` | pill | `info(new)` | watch.rs |
 | `kbd:now` | pill | `info(lid)` | watch.rs |
 | `vdesk:now` | pill | `v` | vdesk.rs |
+| `focus:changed` | pill | `json!({ "state": qun_name(q), "quiet": qun_is_quiet(q) })` (only while `notify.respectFocus` is on; off: `{"state": "open", "quiet": false}` once) | focus.rs |
+| `ind:lock` | pill | `json!({ "key": "caps"\|"num", "on": bool })` (only for a lock whose `live.capsLock` / `live.numLock` is on) | indicators.rs |
+| `ind:bt` | pill | `json!({ "kind": "connect"\|"low", "name": name, "percent": u8\|null })` (only while `live.btBattery` is on; paired devices only) | indicators.rs |
 | `launcher:changed` | pill | `serde_json::json!({ "count": v.len(), "items": &v })` | launcher.rs |
 | `live:battery` | pill | `json!({ "kind": kind, "percent": percent })` | liveplus.rs |
 | `live:calendar` | pill | `json!({ "title": title, "minutes": minutes })` | liveplus.rs |
@@ -191,6 +194,8 @@ inside the taskbar" section of `native-island.md`). The `media.widget.edge` sett
 | `kbd_state` | - | `Option<Value>` | watch.rs |
 | `vdesk_state` | - | `Value` | vdesk.rs |
 | `vdesk_switch` | `dir: i64, wrap: Option<bool>` | `bool` | vdesk.rs |
+| `focus_state` | - | `Value` | focus.rs |
+| `focus_watch` | `on: bool` | `()` | focus.rs |
 | `watch_pause` | - | `()` | watch.rs |
 | `watch_resume` | - | `()` | watch.rs |
 | `livesys_visible` | `on: bool` | `()` | livesys.rs |

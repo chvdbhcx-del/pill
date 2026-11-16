@@ -224,6 +224,58 @@ Not wired natively: the `pill:display` event (no consumer), `tauri://drag-*` (re
 * `monitor` index 1.. follows the host's order (primary first, then left to right), the web used Tauri's list.
 * Tab views are the other agents' (`ui/tabs/*`); until they exist the panel shows the Placeholder.
 
+## Windows Focus Assist and the small system indicators
+
+Two opt-in features, both off by default, with no timer while idle.
+
+### Focus Assist (`notify.respectFocus`, Settings > General > Quiet hours)
+
+Windows' "do not disturb" is a second, separate reason to hold event cards back. `src/focus.rs` asks `SHQueryUserNotificationState` and emits
+`focus:changed {state, quiet}` when the answer changes; quiet = busy / Direct3D fullscreen / presentation mode / quiet time (Focus Assist) / a
+fullscreen Store app (`pill_ui_core::live::focus::qun_is_quiet`). There is no event for "Focus Assist went on or off", so the state is re-read only
+after something that can change it: the foreground window changed (an `EVENT_SYSTEM_FOREGROUND` hook that wakes only then, plus one more read 1.5 s
+later because the state lags the window; opening or closing the quick-settings flyout is such a change), the session unlocked or reconnected, the PC
+resumed, the display setup changed, the switch was flipped, the island started (`focus_state`). While the island HOLDS cards, and only then, it
+sets `focus_watch {on}` and the backend also re-reads every 15 s, because the end of a Focus Assist period usually makes no event. Nothing held
+means nothing ticks. With the switch off Windows is not asked at all.
+
+What it does (`ui/island/core.rs::show_card`, the one place every card passes; `ui/island/focushold.rs` is the state):
+
+| card | quiet hours (own schedule) | Windows quiet + `notify.respectFocus` |
+|---|---|---|
+| critical: urgent, `timer*`, `remind*` (timers and reminders the user set, an agent asking, a low laptop battery) | shown | shown |
+| everything else | DROPPED, never shown later | HELD silently, shown when Windows is open again |
+
+`pill_ui_core::live::focus::verdict(critical, own_quiet, respect_focus, sys_quiet)` is that table as a pure function (unit-tested, including the
+combinations). Own quiet hours win: a card that would be dropped is not held. Held cards are kept up to 20 (same id replaces, the oldest goes
+first), are recorded in the notifications history when they arrive (not twice on release), and come back oldest first; if the island is hidden at
+that moment (the fullscreen guard hides it a second after the game closes) they wait for `pill:show` instead of being lost in the hidden shell.
+A small chip "Focus · 3" ("Фокус · 3") pops in at the end of the right column beside the time while something is held (`chips.rs`); switching the
+option off releases everything at once. Edge reactions and the status chips of the quiet sources (agents, copy, downloads...) are not queued: they
+keep their own quiet-hours rule only.
+
+### Indicators (Settings > Notifications and cards > Indicators)
+
+| switch (all off) | event | what shows | producer |
+|---|---|---|---|
+| `live.capsLock`, `live.numLock` | `ind:lock {key, on}` | chip "Caps Lock on / off", 1.6 s, pops in | low-level keyboard hook on its own thread, installed only while a lock switch is on; it compares the key code with Caps Lock and Num Lock and nothing else, then reads the toggle state 30 ms later |
+| `live.btBattery` | `ind:bt {kind: connect, name, percent?}` | chip "name [bar] 80 %", 2.6 s | `DeviceWatcher` over the PAIRED Bluetooth devices (classic and LE; the pairing-state selectors read the PnP store, no radio scan) for the connection flag, plus a `PnpObjectWatcher` on their device nodes (`BTHENUM`, `BTHLE`) for the battery key `{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2`; both are joined by the device address. The chip waits 3.5 s for the level |
+| (same) | `ind:bt {kind: low, name, percent}` | card "name: battery 12 %", amber, red at 10 % and less | when the level falls to 15 % or less while connected, once until it has recovered above 20 % |
+
+The chips are transient and are never queued: they do not appear in quiet hours, while Focus Assist is respected and active (`_focusHold`, set by the
+core in its own copy of the settings for the providers) or while the island is open. The low-battery card is not critical, so it follows the card
+table above. The fullscreen guard hides the window itself, so a chip over a fullscreen app is simply not seen. Reduce motion: the chips come in
+without the pop. Each switch has a preview scene (Settings window live preview).
+
+Not done: **brightness**. Windows has no brightness-changed event for desktop monitors; laptop panels raise `WmiMonitorBrightnessEvent` through a WMI
+sink, which is a COM event-sink implementation that cannot be tested without such a panel, and a key hook does not see the Fn keys that firmware
+handles. Polling is against the rules, so the indicator is left out.
+
+Live checks only the lead can do: Caps Lock / Num Lock chip with the hook on; connecting and disconnecting a paired Bluetooth device that reports
+its battery (the probe on the development PC found one paired device that reports none, so the battery key itself is confirmed by name only);
+Focus Assist from the Action Center quick settings (on: a card is held and counted; off: it comes back within 15 s at the latest, at once after
+the flyout closes); a game going fullscreen with the switch on.
+
 ## What only the lead can verify on screen
 
 Build with the flag on: put `"ui.native.pill": true` into `%APPDATA%\...\settings.json` (the file `settings.rs` uses), start `pill.exe`; `--web-ui` returns

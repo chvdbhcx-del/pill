@@ -264,7 +264,7 @@ fn no_row_needs_a_restart() {
 // ------------------------------------------------------------------------------------------------ the re-layout lost nothing
 
 // The settings.json keys of the 16-page schema this one replaced (a snapshot: none may be renamed, dropped or added by a re-layout).
-const OLD_KEYS: [&str; 190] = [
+const OLD_KEYS: [&str; 194] = [
     "shape", "theme", "island.color", "size",
     "monitor", "character", "character.liquid", "pet",
     "pet.side", "pet.size", "pet.keepDuringMusic", "showTime",
@@ -315,6 +315,8 @@ const OLD_KEYS: [&str; 190] = [
     "energy.saver", "energy.battery", "energy.pauseLocked", "energy.pauseDisplayOff", "energy.pauseRdp",
     // keyboard-first use and accessibility: the keyboard-mode hotkey, high contrast, the command bar shortcuts
     "hotkey.keys", "a11y.contrast", "command.shortcuts",
+    // Windows Focus Assist and the small system indicators (opt-in)
+    "notify.respectFocus", "live.capsLock", "live.numLock", "live.btBattery",
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
@@ -714,9 +716,9 @@ fn rows_per_page() {
     let expect = [
         ("look", 29), ("edge", 7), ("tabs", 3),
         ("weather", 7), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
-        ("notifications", 18), ("calendar", 12),
+        ("notifications", 21), ("calendar", 12),
         ("phone", 16), ("ai", 14),
-        ("general", 25), ("hotkeys", 21), ("updates", 6),
+        ("general", 26), ("hotkeys", 21), ("updates", 6),
     ];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");

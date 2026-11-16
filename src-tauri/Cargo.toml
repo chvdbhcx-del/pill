@@ -64,6 +64,7 @@ windows = { version = "0.58", features = [
   "Devices_Radios",
   "Devices_Bluetooth",
   "Devices_Enumeration",
+  "Devices_Enumeration_Pnp", # indicators.rs: the battery level of a paired Bluetooth device lives on its PnP node
   "Networking_Connectivity",
   "Win32_System_Registry",
   "Win32_System_Console", # applog.rs: SetStdHandle (stderr -> log file)
