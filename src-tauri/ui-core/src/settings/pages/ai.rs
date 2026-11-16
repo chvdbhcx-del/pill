@@ -187,6 +187,15 @@ pub fn updates() -> Page {
                     ButtonStyle::Normal,
                 )
                 .kw(&["bug", "report", "problem", "feedback", "проблема", "ошибка", "отчёт", "log", "лог"]),
+                button(
+                    "updates.issue",
+                    tr("Сообщить об ошибке", "Report a bug"),
+                    tr("Откроет в браузере новое обращение на GitHub с готовым шаблоном: версии Pill и Windows, число мониторов и масштаб, настройки положения. Перед открытием покажет весь текст. Имён, путей и заголовков окон нет; zip с диагностикой приложите сами.", "Opens a new GitHub issue in your browser with a ready template: Pill and Windows versions, monitor count and scale, placement settings. It shows the whole text before opening. No names, paths or window titles; attach the diagnostics zip yourself."),
+                    tr("Сообщить об ошибке", "Report a bug"),
+                    Action::ReportIssue,
+                    ButtonStyle::Normal,
+                )
+                .kw(&["bug", "issue", "github", "ошибка", "баг", "обращение"]),
                 custom("updates.whatsnew", tr("Что нового", "What is new"), Tr::NONE, "updates.whatsnew").kw(&["changelog", "release notes", "изменения"]),
             ],
         )],

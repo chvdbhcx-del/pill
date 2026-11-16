@@ -10,7 +10,7 @@ The files here are templates with the placeholders `<VERSION>`, `<SHA256>` and `
    `https://github.com/chvdbhcx-del/pill/releases/download/v<version>/Pill_<version>_x64-setup.exe`.
 2. Fill the templates:
    ```powershell
-   pwsh tools/winget-manifest.ps1 -Version 0.1.0
+   pwsh tools/update-manifests.ps1 -Version 0.1.0 -Only winget   # tools/winget-manifest.ps1 is a wrapper for the same
    ```
    This downloads that one release asset (only from `github.com/chvdbhcx-del/pill/releases`), hashes it and writes the finished manifests to `packaging/winget/out/<version>/` (git-ignored).
 3. Validate and test locally:

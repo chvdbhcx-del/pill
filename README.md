@@ -180,7 +180,7 @@ The workflow files in `ci-templates/` are meant to be copied to `.github/workflo
 
 ### Packaging
 
-`packaging/winget` holds winget manifest templates; `pwsh tools/winget-manifest.ps1 -Version <v>` fills them in from a published release. Submitting them to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) is a manual step, see [packaging/winget/README.md](packaging/winget/README.md).
+`packaging/winget` and `packaging/scoop` hold winget and Scoop manifest templates; `pwsh tools/update-manifests.ps1 -Version <v>` fills them in from a published release (see [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md): what is signed, how to sign, how to submit). Submitting them to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) is a manual step, see [packaging/winget/README.md](packaging/winget/README.md).
 
 ### Development tools
 

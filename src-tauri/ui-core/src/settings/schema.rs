@@ -101,6 +101,7 @@ pub enum Action {
     EverythingRunInstaller,
     UpdateCheck,
     ReportProblem,
+    ReportIssue,
     ClipWipe,
     WeatherSearch,
     WeatherRefresh,

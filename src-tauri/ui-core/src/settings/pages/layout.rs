@@ -282,7 +282,7 @@ pub(super) fn updates(p: &mut Pool) -> Page {
             vec![
                 p.sec(tr("Версия и обновления", "Version and updates"), &["updates.check", "updateAuto"]),
                 p.sec(tr("Что нового", "What is new"), &["whatsNew", "updates.whatsnew"]),
-                p.sec(tr("Помощь", "Help"), &["updates.report"]),
+                p.sec(tr("Помощь", "Help"), &["updates.report", "updates.issue"]),
             ],
             vec![],
         )],

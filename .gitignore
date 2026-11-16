@@ -35,3 +35,5 @@ relay/.wrangler/
 # tool state written by agent hooks
 .claude-flow/
 .swarm/
+# filled package manifests (tools/update-manifests.ps1)
+packaging/*/out/

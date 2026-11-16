@@ -131,6 +131,97 @@ pub fn report_problem() -> Value {
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// "Report a bug": a prefilled GitHub issue
+// ---------------------------------------------------------------------------------------------------------------------------------------
+
+const ISSUE_URL: &str = "https://github.com/chvdbhcx-del/pill/issues/new";
+/// The placement settings an issue about the island's position needs. All of them are enums or numbers: no paths, names or titles.
+const PLACEMENT_KEYS: [&str; 8] = ["monitor", "edge.position", "edge.align", "offsetX", "underTaskbar", "size", "media.widget", "media.widget.edge"];
+
+/// "100%, 150%" for the monitors' DPI scales.
+fn scales_text(scales: &[f32]) -> String {
+    scales.iter().map(|s| format!("{}%", (s * 100.0).round() as i32)).collect::<Vec<_>>().join(", ")
+}
+
+/// `key=value` for every placement setting, in a fixed order. Numbers, booleans and short words only (anything else is shown as `?`).
+fn placement_text(cfg: &serde_json::Map<String, Value>) -> String {
+    PLACEMENT_KEYS
+        .iter()
+        .map(|k| {
+            let v = match cfg.get(*k) {
+                Some(Value::Bool(b)) => b.to_string(),
+                Some(Value::Number(n)) => n.to_string(),
+                Some(Value::String(s)) if s.len() <= 16 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') => s.clone(),
+                Some(_) => "?".into(),
+                None => "default".into(),
+            };
+            format!("{k}={v}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The issue's title and body. Pure: everything in it is passed in, and `ru` only picks the language of the hint (the template stays English
+/// so the maintainer can read it).
+fn issue_text(version: &str, windows: &str, locale: &str, scales: &[f32], placement: &str, ru: bool) -> (String, String) {
+    let hint = if ru {
+        "Приложите папку отчёта (Настройки > Обновления > Сообщить о проблеме), заархивировав её в zip: перетащите zip в это поле."
+    } else {
+        "Attach the report folder from Settings > Updates > Report a problem, zipped: drag the zip into this box."
+    };
+    let body = format!(
+        "**What happened**\n\n\n**What did you expect**\n\n\n**Steps to reproduce**\n1. \n\n---\nPill {version} | {windows} | locale {locale}\nMonitors: {} ({})\nPlacement: {placement}\n\n<!-- {hint} Nothing was sent automatically. -->\n",
+        scales.len(),
+        scales_text(scales)
+    );
+    ("Bug: ".to_string(), body)
+}
+
+fn issue_url(title: &str, body: &str) -> String {
+    format!("{ISSUE_URL}?title={}&body={}", crate::net::urlenc(title), crate::net::urlenc(body))
+}
+
+/// The confirmation text: exactly the title and body that will be opened in the browser.
+fn confirm_text(title: &str, body: &str, ru: bool) -> String {
+    let head = if ru {
+        "Pill откроет в браузере страницу нового обращения на GitHub с этим текстом. Ничего не отправляется, пока вы сами не нажмёте Submit.\nВ нём только версии, число мониторов и масштаб, настройки положения. Нет имён, путей, заголовков окон и содержимого буфера. Zip с диагностикой приложите вручную.\n\n"
+    } else {
+        "Pill will open the GitHub new-issue page in your browser with this text. Nothing is sent until you press Submit yourself.\nIt holds only versions, the monitor count and scale, and the placement settings. No names, paths, window titles or clipboard content. Attach the diagnostics zip by hand.\n\n"
+    };
+    format!("{head}Title: {title}\n\n{body}")
+}
+
+fn confirm(text: &str, ru: bool) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, IDOK, MB_ICONINFORMATION, MB_OKCANCEL, MB_SETFOREGROUND, MB_TOPMOST};
+    let caption = if ru { "Pill: сообщить об ошибке" } else { "Pill: report a bug" };
+    let (t, c): (Vec<u16>, Vec<u16>) = (text.encode_utf16().chain(Some(0)).collect(), caption.encode_utf16().chain(Some(0)).collect());
+    unsafe { MessageBoxW(windows::Win32::Foundation::HWND::default(), PCWSTR(t.as_ptr()), PCWSTR(c.as_ptr()), MB_OKCANCEL | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND) == IDOK }
+}
+
+fn open_in_browser(url: &str) -> bool {
+    use windows::core::HSTRING;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    unsafe { ShellExecuteW(windows::Win32::Foundation::HWND::default(), &HSTRING::from("open"), &HSTRING::from(url), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL).0 as isize > 32 }
+}
+
+/// -> { ok, opened } or { ok: false, error }. Shows the exact text in a confirmation box (OK / Cancel; blocks: worker threads only), then opens the
+/// prefilled new-issue page in the default browser. `opened: false` = the user cancelled.
+pub fn report_issue() -> Value {
+    let ru = crate::ui::capture_view::windows::is_russian();
+    let scales: Vec<f32> = crate::ui::host::handle().map(|h| h.monitors().iter().map(|m| m.scale).collect()).unwrap_or_default();
+    let (title, body) = issue_text(env!("CARGO_PKG_VERSION"), &windows_build(), &locale(), &scales, &placement_text(&crate::settings::merged()), ru);
+    if !confirm(&confirm_text(&title, &body, ru), ru) {
+        return json!({ "ok": true, "opened": false });
+    }
+    if open_in_browser(&issue_url(&title, &body)) {
+        json!({ "ok": true, "opened": true })
+    } else {
+        json!({ "ok": false, "error": "could not open the browser" })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +264,27 @@ mod tests {
         assert!(!personal("module.media") && !personal("theme"));
         let Value::Object(m) = json!({ "module.b": true, "module.a": true, "module.c": false, "live.usb": true, "size": 100 }) else { unreachable!() };
         assert_eq!(enabled_ids(&m, "module."), ["a", "b"]);
+    }
+
+    #[test]
+    fn the_issue_template_has_versions_and_placement_but_no_personal_data() {
+        let Value::Object(cfg) = json!({ "monitor": "2", "edge.position": "taskbar", "edge.align": "left", "offsetX": 12, "underTaskbar": true, "size": 110,
+            "media.widget": false, "media.widget.edge": "C:\\Users\\alice\\x", "hideInApps": ["secret.exe"], "mail.user": "a@b.c" }) else { unreachable!() };
+        let p = placement_text(&cfg);
+        assert_eq!(p, "monitor=2, edge.position=taskbar, edge.align=left, offsetX=12, underTaskbar=true, size=110, media.widget=false, media.widget.edge=?");
+        assert!(!p.contains("alice") && !p.contains("secret") && !p.contains("a@b.c"));
+        let (t, b) = issue_text("0.9.0", "build 26300.1 25H2", "ru-RU", &[1.0, 1.5], &p, false);
+        assert!(t.starts_with("Bug") && b.contains("Pill 0.9.0 | build 26300.1 25H2") && b.contains("Monitors: 2 (100%, 150%)") && b.contains("Placement: monitor=2"));
+        assert_eq!(scales_text(&[1.25]), "125%");
+    }
+
+    #[test]
+    fn the_issue_url_is_the_repo_with_an_encoded_title_and_body_and_the_confirmation_shows_the_same_text() {
+        let u = issue_url("Bug: a b", "x\ny&z");
+        assert_eq!(u, "https://github.com/chvdbhcx-del/pill/issues/new?title=Bug%3A%20a%20b&body=x%0Ay%26z");
+        let (t, b) = issue_text("0.9.0", "w", "en-US", &[], "monitor=primary", true);
+        let c = confirm_text(&t, &b, true);
+        assert!(c.contains(&b) && c.contains(&t));
+        assert!(issue_url(&t, &b).len() < 2000, "browsers and ShellExecute cap the URL");
     }
 }

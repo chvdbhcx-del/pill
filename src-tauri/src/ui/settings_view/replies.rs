@@ -174,6 +174,7 @@ impl SettingsView {
             C::VoiceTestService => self.row_message(&tag, flows::voice_service_result(lang, &v)),
             C::MailTest => self.row_message(&tag, flows::mail_test_result(lang, &v)),
             C::ReportProblem => self.row_message(&tag, flows::report_result(lang, &v)),
+            C::ReportIssue => self.row_message(&tag, flows::issue_result(lang, &v)),
             C::AgentsHookSnippets => self.row_message(&tag, FMsg::plain(flows::snippets_text(lang, &v))),
             C::UpdateCheck => {
                 let m = self.model.update.on_check(lang, &v);

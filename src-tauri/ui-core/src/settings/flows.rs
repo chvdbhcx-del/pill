@@ -120,6 +120,18 @@ pub fn report_result(lang: Lang, res: &Value) -> Msg {
     }
 }
 
+/// The "Report a bug" button: the browser opened (the text was confirmed), the user cancelled, or it failed.
+pub fn issue_result(lang: Lang, res: &Value) -> Msg {
+    if !b(res, "ok") {
+        return Msg::bad(format!("{}{}", pick(lang, "Не удалось открыть страницу: ", "Could not open the page: "), s(res, "error")));
+    }
+    if b(res, "opened") {
+        Msg::ok(pick(lang, "Страница нового обращения открыта в браузере. Ничего не отправлено: приложите zip с диагностикой и нажмите Submit.", "The new-issue page is open in your browser. Nothing was sent: attach the diagnostics zip and press Submit."))
+    } else {
+        Msg::warn(pick(lang, "Отменено, ничего не открыто.", "Cancelled, nothing was opened."))
+    }
+}
+
 pub fn data_dir_note(lang: Lang, dir: &str) -> String {
     format!("{}{}", pick(lang, "Данные и настройки лежат здесь: ", "Data and settings live here: "), dir)
 }

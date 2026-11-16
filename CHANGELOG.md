@@ -6,6 +6,10 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ### Highlights
 - New Settings > Look > Advanced > Power: the island is capped at 30 frames a second while Windows Energy Saver is on (and, if you choose, on battery), and draws nothing while the session is locked, the display is off or a minimised Remote Desktop client hides it. Each rule is its own switch; coming back fades the island in. A line under the switches shows what a frame costs now and why the rate is capped, for example "30 fps: Energy Saver".
+- The fullscreen guard reacts at once: it hides the island the moment a window covers the screen (and when a window goes fullscreen with F11, or the display changes), instead of up to half a second later, and shows it again 0.4 s after the fullscreen app is gone. It wakes only on those events; the timer is a 1 s safety net.
+- Taskbar mode checks the bar before using it: if the strip at the bottom is not a real Windows taskbar (a floating or inset bar, a shell replacement, a bar that is sliding), the island and the music widget take the plain bottom edge and one line says why in the log. New guide: docs/taskbar-compat.md.
+- Settings > Updates > Report a bug: shows exactly what will be included (versions, monitor count and scale, placement settings; no names, paths or window titles), then opens a prefilled GitHub issue in your browser. Nothing is sent by Pill.
+- Packaging: Scoop manifest and one script (tools/update-manifests.ps1) for winget and Scoop; docs/DISTRIBUTION.md says what is signed and how to sign.
 
 ## [0.9.0] - 2026-11-16
 
