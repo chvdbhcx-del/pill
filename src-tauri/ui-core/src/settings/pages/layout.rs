@@ -474,6 +474,7 @@ pub(super) fn calendar(p: &mut Pool) -> Page {
             part(vec![p.note(tr("Календарь", "Calendar"), calendar, &["live.calendar", "live.calendar.path"])], vec![]),
             part(vec![p.sec(tr("Почта (IMAP)", "Mail (IMAP)"), &["live.mail", "mail.host", "mail.port", "mail.user", "mail.mailbox", "mail.password", "live.mail.test"])], vec![]),
             part(vec![p.sec(tr("OBS: запись и трансляция", "OBS: recording and streaming"), &["live.obs"])], vec![p.sec(tr("OBS: подключение", "OBS: connection"), &["live.obs.port", "live.obs.password"]).adv()]),
+            part(vec![p.sec(tr("Живые активности", "Live activities"), &["live.local", "live.local.test"])], vec![]),
         ],
     )
 }

@@ -140,6 +140,12 @@ pub fn flash_events(kind: super::scene::Flash, flip: bool) -> Vec<(f64, &'static
             (3500.0, "focus:changed", json!({ "state": "open", "quiet": false })),
         ],
         Privacy => vec![(0.0, "live:privacy", json!({ "mic": true, "cam": false, "apps": ["Sample app"] }))],
+        Activity => {
+            // the registry's own sample, so the preview and the Test button show the same thing
+            let mut r = pill_ui_core::live::activity::Registry::new();
+            let _ = r.apply(pill_ui_core::live::activity::sample_start(crate::ui::capture_view::windows::is_russian()), now);
+            vec![(0.0, pill_ui_core::live::activity::STATE_EVENT, r.snapshot())]
+        }
         Toast => vec![(0.0, "capture:done", json!({ "kind": "screenshot", "path": "C:\\Sample\\Pictures\\sample-shot.png", "copied": true, "w": 1920, "h": 1080 }))],
         // a download that keeps coming in: the chip lives 3.5 s per report, so one report every 0.9 s holds it up for the whole preview
         Progress => (0..4)

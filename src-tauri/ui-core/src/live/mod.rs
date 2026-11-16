@@ -81,6 +81,7 @@
 //! * Row/obs/rec/voice clocks are edited only when the displayed text changes (the JS wrote the DOM node every tick).
 //! * String lengths and slices are UTF-16 based (`util`), so cut points match the web UI, including emoji.
 
+pub mod activity;
 pub mod agents;
 pub mod agents_ask;
 pub mod board;

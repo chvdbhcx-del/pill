@@ -38,8 +38,8 @@ pub(crate) fn defaults() -> Cfg {
         "aiSetupDone": false, "aisetup.whisper.enabled": false, "aisetup.whisper.model": "base", "aisetup.whisper.port": 8179
     }) else { unreachable!() };
     m.extend(more);
-    // third literal (recursion limit again): mail notifications (mail.rs), opt-in; the password lives DPAPI-encrypted in mail.passwordEnc, never plain
-    let Value::Object(mail) = json!({ "live.mail": false, "mail.host": "", "mail.port": 993, "mail.user": "", "mail.mailbox": "INBOX" }) else { unreachable!() };
+    // third literal (recursion limit again): mail notifications (mail.rs) and local live activities (liveact.rs: `live.local`, the pipe), both opt-in; the password lives DPAPI-encrypted in mail.passwordEnc, never plain
+    let Value::Object(mail) = json!({ "live.mail": false, "mail.host": "", "mail.port": 993, "mail.user": "", "mail.mailbox": "INBOX", "live.local": false }) else { unreachable!() };
     m.extend(mail);
     // capture.rs: markup on the selection, and the sound of a screen recording (PC sound on, microphone off; both stay on this PC)
     let Value::Object(cap) = json!({ "capture.annotate": true, "capture.recordSystemAudio": true, "capture.recordMic": false }) else { unreachable!() };

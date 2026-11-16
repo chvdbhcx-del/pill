@@ -53,6 +53,8 @@ pub enum Flash {
     Num,
     Bluetooth,
     Focus,
+    /// a local live activity (the sample)
+    Activity,
 }
 
 impl Flash {
@@ -104,6 +106,7 @@ impl Flash {
             Flash::Calendar => "live.calendar",
             Flash::Mail => "live.mail",
             Flash::Obs => "live.obs",
+            Flash::Activity => "live.local",
             Flash::Toast => return None,
             Flash::Caps => "live.capsLock",
             Flash::Num => "live.numLock",
@@ -126,6 +129,7 @@ impl Flash {
             Flash::Recording => tr("Событие: запись экрана", "Event: screen recording"),
             Flash::Music => tr("Событие: музыка", "Event: music"),
             Flash::Privacy => tr("Событие: микрофон и камера", "Event: microphone and camera"),
+            Flash::Activity => tr("Живая активность", "Live activity"),
             Flash::Toast => tr("Карточка на острове", "A card on the island"),
             Flash::Progress => tr("Событие: загрузка идёт", "Event: download in progress"),
             Flash::Steam => tr("Событие: загрузка Steam", "Event: Steam download"),
@@ -262,6 +266,7 @@ pub fn of_key(key: &str) -> Option<Scene> {
         "live.numLock" => Flash(self::Flash::Num),
         "live.btBattery" => Flash(self::Flash::Bluetooth),
         "notify.respectFocus" => Flash(self::Flash::Focus),
+        "live.local" | "live.local.test" => Flash(self::Flash::Activity),
         "cards.duration" | "capture.shotAction" | "capture.revealAfterSave" => Flash(self::Flash::Toast),
         k if k.starts_with("module.") || hmod::is_home_key(k) => Panel(Tab::Home),
         _ => return None,

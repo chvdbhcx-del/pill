@@ -52,6 +52,7 @@ mod sysmon;
 mod updater;
 mod aiactions;
 mod liveplus;
+mod liveact;
 mod mail;
 mod notifhist;
 mod whatsnew;
@@ -67,6 +68,10 @@ mod phone;
 mod phone_fw;
 
 fn main() {
+    // `pill.exe live start|update|end ...`: a client of the live-activity pipe, nothing of the app starts (liveact.rs)
+    if let Some(code) = liveact::cli_main() {
+        std::process::exit(code);
+    }
     watchdog::wait_for_predecessor(); // restarted by the watchdog: the hung instance must be gone before the single-instance check
     applog::init(); // stderr -> %LOCALAPPDATA%\Pill\logs\pill.log (the release build has no console)
     // `pill.exe --uninstall-admin <port>:<token>`: the elevated helper of the uninstaller (uninstall/admin.rs); nothing else starts in that process
@@ -118,6 +123,7 @@ fn main() {
             notif::init(app);
             sysmon::init(app);
             liveplus::init(app);
+            liveact::init(app);
             mail::init(app);
             notifhist::init(app);
             phone::init(app);

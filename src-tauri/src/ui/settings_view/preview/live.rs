@@ -166,6 +166,7 @@ impl Live {
         for (name, payload) in sample::clear_events() {
             self.bus.emit(name, payload);
         }
+        self.bus.emit("liveact:state", json!({ "acts": [], "queued": 0, "expand": [] })); // the sample live activity
     }
 
     pub fn is_awake(&self) -> bool {

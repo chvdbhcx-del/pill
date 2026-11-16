@@ -80,6 +80,7 @@ pub enum BackendCall {
     MailStatus,
     MailSetPassword { password: String },
     MailTest,
+    LiveActTest,
     // Pill Phone link (docs/phone-protocol.md): status + paired phones, the one-time pairing code (QR), revoke, apps seen in notifications
     PhoneStatus,
     PhonePairCode { renew: bool },
@@ -173,6 +174,7 @@ impl BackendCall {
             MailStatus => "mail_status",
             MailSetPassword { .. } => "mail_set_password",
             MailTest => "mail_test",
+            LiveActTest => "liveact_test",
             PhoneStatus => "phone_status",
             PhonePairCode { .. } => "phone_pair_code",
             PhoneRevoke { .. } => "phone_revoke",
@@ -250,6 +252,7 @@ pub fn action_call(action: Action) -> Option<BackendCall> {
         Action::VoiceTestMic => C::VoiceTestMic,
         Action::VoiceTestService => C::VoiceTestService,
         Action::MailTest => C::MailTest,
+        Action::LiveActTest => C::LiveActTest,
         Action::NotifAllow => C::NotifRequest,
         Action::HideAddActive => C::PillAddActiveApp { key: "hideInApps".into() },
         Action::ShowAddActive => C::PillAddActiveApp { key: "showInApps".into() },

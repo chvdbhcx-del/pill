@@ -264,7 +264,7 @@ fn no_row_needs_a_restart() {
 // ------------------------------------------------------------------------------------------------ the re-layout lost nothing
 
 // The settings.json keys of the 16-page schema this one replaced (a snapshot: none may be renamed, dropped or added by a re-layout).
-const OLD_KEYS: [&str; 194] = [
+const OLD_KEYS: [&str; 195] = [
     "shape", "theme", "island.color", "size",
     "monitor", "character", "character.liquid", "pet",
     "pet.side", "pet.size", "pet.keepDuringMusic", "showTime",
@@ -310,7 +310,7 @@ const OLD_KEYS: [&str; 194] = [
     "ai.provider", "ai.baseUrl", "ai.model", "aiSetupDone",
     "updateAuto", "whatsNew",
     // added with the live preview panel and with the bottom edge (the only keys since the re-layout)
-    "settings.preview", "edge.position", "edge.align", "edge.monitor", "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset",
+    "live.local", "settings.preview", "edge.position", "edge.align", "edge.monitor", "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset",
     // Power (ui/host/energy.rs)
     "energy.saver", "energy.battery", "energy.pauseLocked", "energy.pauseDisplayOff", "energy.pauseRdp",
     // keyboard-first use and accessibility: the keyboard-mode hotkey, high contrast, the command bar shortcuts
@@ -320,12 +320,12 @@ const OLD_KEYS: [&str; 194] = [
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
-const OLD_UNSTORED: [&str; 39] = [
+const OLD_UNSTORED: [&str; 40] = [
     "character.reactions", "general.autostart", "behavior.hideAddActive",
     "behavior.showAddActive", "search.everything", "general.backup",
     "general.wizard", "hotkeys.launcher", "modules.profiles",
     "weather.refresh", "modules.tabs", "modules.home",
-    "live.notifications.allow", "mail.password", "live.mail.test",
+    "live.notifications.allow", "mail.password", "live.mail.test", "live.local.test",
     "live.agents.snippets", "live.obs.password", "clipboard.private",
     "clipboard.wipe", "sound.play", "voice.key",
     "voice.test-mic", "voice.test-service", "phone.link",
@@ -716,7 +716,7 @@ fn rows_per_page() {
     let expect = [
         ("look", 29), ("edge", 7), ("tabs", 3),
         ("weather", 7), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
-        ("notifications", 21), ("calendar", 12),
+        ("notifications", 21), ("calendar", 14),
         ("phone", 16), ("ai", 14),
         ("general", 26), ("hotkeys", 21), ("updates", 6),
     ];
