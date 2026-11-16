@@ -115,12 +115,15 @@ impl IslandView {
     /// button and a card button all run the code their mouse path runs).
     fn kbd_click(&mut self, id: u32, cx: &mut Cx) -> bool {
         let Some(c) = self.kbd_controls().into_iter().find(|c| c.id == id) else { return false };
-        let p = c.rect.center();
+        self.click_at(c.rect.center(), cx);
+        true
+    }
+
+    fn click_at(&mut self, p: (f32, f32), cx: &mut Cx) {
         let was = std::mem::replace(&mut self.kbd.synth, true);
         self.event(&InputEvent::MouseDown { pos: p, button: MouseButton::Left, mods: Modifiers::NONE, clicks: 1 }, cx);
         self.event(&InputEvent::MouseUp { pos: p, button: MouseButton::Left, mods: Modifiers::NONE }, cx);
         self.kbd.synth = was;
-        true
     }
 
     /// A screen reader (or the keyboard) acts on a control.
@@ -130,7 +133,23 @@ impl IslandView {
                 self.kbd.focus = self.kbd.on.then_some(id).or(self.kbd.focus);
                 self.kbd_click(id, cx)
             }
-            Act::Set(_) | Act::Step(_) => false, // the chrome has no sliders; a tab's own sliders answer to the pointer
+            Act::Set(_) | Act::Step(_) => {
+                // a slider of the open tab: the pointer sets it by a click at the fraction of its track, so the keyboard and a screen reader do the same
+                let Some(c) = self.kbd_controls().into_iter().find(|c| c.id == id) else { return false };
+                let CV::Range { min, max, cur, step } = c.value else { return false };
+                if max <= min {
+                    return false;
+                }
+                let to = match act {
+                    Act::Set(v) => v,
+                    Act::Step(n) => cur + n as f64 * step,
+                    _ => cur,
+                }
+                .clamp(min, max);
+                let f = ((to - min) / (max - min)) as f32;
+                self.click_at((c.rect.x + (f * c.rect.w).clamp(0.5, c.rect.w - 0.5), c.rect.cy()), cx);
+                true
+            }
         }
     }
 

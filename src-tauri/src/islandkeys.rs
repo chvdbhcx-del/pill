@@ -1,5 +1,6 @@
 // Global hotkeys about the island itself (run from hotkeys.rs): the dark / light theme toggle and the silent cycle of the pill's music
 // view (both only write a setting; the island follows `settings:changed` by itself, and no card is shown), and keyboard mode (`keys`).
+// Events of the keyboard / contrast work: "a11y:keys" (emitted below) and "a11y:contrast" (emitted by ui/host/win32.rs on WM_SETTINGCHANGE).
 use crate::ui::a11y::target::{self, Target};
 use pill_ui_core::shell::tint;
 use serde_json::{json, Map};
@@ -15,7 +16,7 @@ pub fn keyboard_mode(app: &AppHandle) {
         crate::pill::expand(app, None, "hotkey");
     }
     let say = move |t: Option<Target>| {
-        let _ = crate::ui::bus::emit(target::EVENT, json!({ "target": Target::name(t) }));
+        let _ = crate::ui::bus::emit("a11y:keys", json!({ "target": Target::name(t) }));
     };
     if now.is_some() && next.is_some() {
         // the keyboard changes hands: the old owner gives it back first (so the user's window is the one the new owner remembers), then the new one takes it
@@ -64,6 +65,12 @@ pub fn cycle_music_view(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_keyboard_event_is_the_one_the_views_listen_to() {
+        assert_eq!(target::EVENT, "a11y:keys");
+        assert_eq!(crate::ui::a11y::contrast::EVENT, "a11y:contrast");
+    }
 
     #[test]
     fn the_music_view_goes_round() {
