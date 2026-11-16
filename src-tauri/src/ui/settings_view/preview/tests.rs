@@ -404,11 +404,17 @@ fn the_preview_island_stands_in_an_imaginary_taskbar_when_the_edge_is_the_taskba
 
 #[test]
 fn only_plain_choices_reach_the_preview_never_text_the_user_typed() {
-    for k in ["showSeconds", "size", "shape", "theme", "pet", "character", "net.weather", "weather.units", "live.copy", "island.colorCustom", "clipClickPaste", "edge.position", "edge.align"] {
+    for k in ["showSeconds", "size", "shape", "theme", "pet", "character", "net.weather", "weather.units", "live.copy", "island.colorCustom", "clipClickPaste", "edge.position", "edge.align",
+        "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset", "tabs.hidden", "home.volume", "home.tile.qr", "live.agents", "live.calendar"]
+    {
         assert!(shareable(k), "{k} may go to the preview");
     }
+    // where the island and the widget stand along their edge is the camera's business: the preview reads them, the sandbox never hears them
+    for k in ["offsetX", "underTaskbar", "media.widget.offset"] {
+        assert!(super::scene::handled(k), "{k} is shown by the camera");
+    }
     for k in ["weather.city", "mail.user", "mail.host", "capture.folder", "capture.videoFolder", "hotkey.toggle", "search.customUrl", "clipboard.denyList", "hideInApps", "autoHide", "quiet.on",
-        "monitor", "sound.volumeDevice", "settings.preview", "phone.downloadDir", "ai.baseUrl", "settingsWin.x", "nonsense", "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset"]
+        "monitor", "sound.volumeDevice", "settings.preview", "phone.downloadDir", "ai.baseUrl", "settingsWin.x", "nonsense", "offsetX", "underTaskbar"]
     {
         assert!(!shareable(k), "{k} stays in the window");
     }
@@ -567,7 +573,7 @@ fn every_function_page_opens_the_matching_scene() {
             ("animation", Scene::Pill(Look::Motion)),
             ("volume", Scene::Flash(Flash::Volume)),
             ("recording", Scene::Flash(Flash::Recording)),
-            ("downloads", Scene::Flash(Flash::Download)),
+            ("downloads", Scene::Flash(Flash::Progress)),
             ("battery", Scene::Flash(Flash::Battery)),
             ("notes", Scene::Panel(Tab::Home)),
         ] {
@@ -824,5 +830,411 @@ fn general_snap_page_end_closed_en_dark_900() {
         t.v.borrow_mut().page.scroll.scroll_to(99999.0, false);
         settle(&mut t, (900.0, 760.0), &th);
         snap(&mut t.sim, "general-end-closed-en-dark-900", &th, (900.0, 760.0));
+    });
+}
+
+
+/// Settings that show nothing in the preview, and why. The test below holds every other keyed row of the schema to a scene, so a new visual
+/// setting cannot be added without either wiring it (`scene::of_key` + `scene::shareable` / `CAMERA`) or being listed here with its reason.
+const NO_PREVIEW: &[(&str, &str)] = &[
+    // text the user typed or a device: never handed to the sandbox, and a sample stands in where it would show (the tab has an invented city)
+    ("weather.city", "typed text; the weather tab shows an invented city"),
+    ("clipboard.denyList", "typed list of programs"),
+    ("capture.folder", "a folder"),
+    ("capture.videoFolder", "a folder"),
+    ("timer.soundFile", "a file"),
+    ("phone.downloadDir", "a folder"),
+    ("phone.apkUrl", "an address"),
+    ("phone.relayUrl", "an address"),
+    ("search.customUrl", "an address"),
+    ("ai.baseUrl", "an address"),
+    ("ai.provider", "which AI service"),
+    ("ai.model", "a model name"),
+    ("voice.provider", "which recognition service"),
+    ("voice.endpoint", "an address"),
+    ("voice.model", "a model name"),
+    ("sound.volumeDevice", "a sound device"),
+    ("sound.micDevice", "a sound device"),
+    ("mail.host", "an address"),
+    ("mail.port", "a port"),
+    ("mail.user", "a user name"),
+    ("mail.mailbox", "a folder of the mail account"),
+    ("live.calendar.path", "a file"),
+    ("live.obs.port", "a port"),
+    ("live.dlIgnoreExt", "typed list of extensions"),
+    ("vpn.own.name", "typed text"),
+    ("vpn.own.connect", "typed command"),
+    ("vpn.own.disconnect", "typed command"),
+    ("hideInApps", "list of programs"),
+    ("showInApps", "list of programs"),
+    ("aiSetupDone", "a flag of the local AI set-up"),
+    // which monitor: the preview has no real screens
+    ("monitor", "which monitor the island is on"),
+    // behaviour that would hide, mute or fade the preview itself (BLOCKED)
+    ("autoHide", "would hide the preview island"),
+    ("autoHideKeepDesktop", "would hide the preview island"),
+    ("hideInFullscreen", "depends on the user's programs"),
+    ("fullscreenPeek", "depends on the user's programs"),
+    ("fullscreenPeekEdge", "depends on the user's programs"),
+    ("passThrough", "click-through: the preview takes no clicks anyway"),
+    ("passThroughOpacity", "click-through: the preview takes no clicks anyway"),
+    ("showInCapture", "whether screenshots of the screen show the island"),
+    ("quiet.on", "quiet hours would mute the sample reactions"),
+    ("quiet.from", "quiet hours"),
+    ("quiet.to", "quiet hours"),
+    ("quiet.days", "quiet hours"),
+    ("settings.preview", "the switch of the preview itself"),
+    // behaviour without a look
+    ("ui.gpu", "which renderer draws the windows"),
+    ("live.sysmon", "the load chip needs ten seconds of sustained load and then rests five minutes, and the meters are in the Controls tab"),
+    ("audio.perApp", "which sources the player list reads"),
+    ("media.legacyPlayers", "which players are read"),
+    ("capture.annotate", "opens the editor after a screenshot"),
+    ("capture.encoder", "which video encoder"),
+    ("timer.sound", "the sound of a timer"),
+    ("vpn.admin", "how the VPN client is started"),
+    ("history.keep", "the notification history is not a preview tab"),
+    ("history.mail", "the notification history is not a preview tab"),
+    ("search.engine", "the command bar is a window of its own"),
+    ("everything.autostart", "starts a program"),
+    ("updateAuto", "updates"),
+    ("whatsNew", "a window that opens after an update"),
+    ("net.ai", "a privacy gate of the chat"),
+    ("voice.enabled", "dictation: the header button of the open island is not in the preview"),
+    ("voice.mode", "dictation"),
+    ("voice.language", "dictation"),
+    ("voice.paste", "dictation"),
+    ("voice.autostop", "dictation"),
+    ("phone.enabled", "the link itself: the phone's cards are `live.phone`"),
+    ("phone.clipboard", "phone clipboard sync"),
+    ("phone.clipToPhone", "phone clipboard sync"),
+    ("phone.clipFromPhone", "phone clipboard sync"),
+    ("phone.autoAccept", "phone files"),
+    ("phone.relay", "phone relay"),
+    ("phone.maxFileMB", "phone files"),
+    ("phone.relayMaxFileMB", "phone relay"),
+];
+
+#[test]
+fn every_visual_setting_is_shown_by_the_preview_or_listed_as_having_nothing_to_show() {
+    let sc = pill_ui_core::settings::schema::schema();
+    let (mut unlisted, mut both) = (Vec::new(), Vec::new());
+    let mut keys = std::collections::BTreeSet::new();
+    for p in &sc.pages {
+        for r in p.rows().filter(|r| !r.key.is_empty()) {
+            keys.insert(r.key);
+            let shown = super::scene::handled(r.key) && of_key(r.key).is_some();
+            let listed = NO_PREVIEW.iter().any(|(k, _)| *k == r.key) || r.key.starts_with("hotkey.");
+            match (shown, listed) {
+                (false, false) => unlisted.push(format!("{} ({})", r.key, p.id)),
+                (true, true) => both.push(r.key),
+                _ => {}
+            }
+        }
+    }
+    assert!(unlisted.is_empty(), "settings the preview does not show and nobody explained (wire them in preview/scene.rs or list them in NO_PREVIEW): {unlisted:?}");
+    assert!(both.is_empty(), "shown by the preview but still listed as having nothing to show: {both:?}");
+    // the list holds no key that is gone
+    let gone: Vec<_> = NO_PREVIEW.iter().map(|(k, _)| *k).filter(|k| !keys.contains(k)).collect();
+    assert!(gone.is_empty(), "NO_PREVIEW lists keys the schema does not have: {gone:?}");
+    // the Home chips and the tab strip write keys that no schema row has: the preview takes them too
+    for part in pill_ui_core::panel::a::home_mods::PARTS.iter() {
+        assert!(super::scene::handled(part.key) && of_key(part.key) == Some(Scene::Panel(Tab::Home)), "{}", part.key);
+    }
+    assert!(super::scene::handled("tabs.hidden") && of_key("tabs.hidden") == Some(Scene::Panel(Tab::Home)));
+}
+
+#[test]
+fn every_section_of_every_page_brings_something_into_view_or_has_nothing_to_show() {
+    let sc = pill_ui_core::settings::schema::schema();
+    for p in &sc.pages {
+        for g in &p.groups {
+            let keyed: Vec<_> = g.rows.iter().filter(|r| !r.key.is_empty()).collect();
+            if keyed.is_empty() {
+                continue; // buttons and the page's own widgets
+            }
+            let shows = keyed.iter().any(|r| super::scene::handled(r.key) && of_key(r.key).is_some());
+            let silent = keyed.iter().all(|r| NO_PREVIEW.iter().any(|(k, _)| *k == r.key) || r.key.starts_with("hotkey."));
+            assert!(shows || silent, "section {:?} of {} has rows nobody explained", g.title.en, p.id);
+        }
+    }
+}
+
+#[test]
+fn every_reaction_is_wired_to_a_key_a_switch_and_events() {
+    let sc = pill_ui_core::settings::schema::schema();
+    for f in Flash::ALL {
+        assert!(!sample::flash_events(f, false).is_empty(), "{f:?} has events to play");
+        let title = Scene::Flash(f).title(pill_ui_core::settings::tr::Lang::En);
+        assert!(!title.is_empty(), "{f:?}");
+        // some row of the schema brings this reaction up
+        assert!(sc.pages.iter().flat_map(|p| p.rows()).any(|r| of_key(r.key) == Some(Scene::Flash(f))), "{f:?} is reached from no setting");
+        if let Some(sw) = f.switch() {
+            assert!(sc.row_for_key(sw).is_some_and(|r| of_key(r.key) == Some(Scene::Flash(f))), "{sw} brings up {f:?}");
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ the music widget and the island's place
+
+/// The stage of the panel on the window's pixels.
+fn stage_of(t: &T) -> Rect {
+    let p = pv_rect(WIDE);
+    Rect::new(p.x + 16.0, p.y + 48.0, PV_W - 32.0, t.v.borrow().pv.stage_h.at())
+}
+
+/// Opaque black (the body of an island or a widget) inside `r`.
+fn black_in(img: &Image, r: Rect) -> usize {
+    img.count(Some(r), |px| px[3] == 255 && px[0].max(px[1]).max(px[2]) < 10)
+}
+
+/// The black of the stage in its four quarters: (top left, top right, bottom left, bottom right).
+fn quarters(t: &T, img: &Image) -> (usize, usize, usize, usize) {
+    let s = stage_of(t);
+    let (w, h) = (s.w / 2.0, s.h / 2.0);
+    (black_in(img, Rect::new(s.x, s.y, w, h)), black_in(img, Rect::new(s.x + w, s.y, w, h)), black_in(img, Rect::new(s.x, s.y + h, w, h)), black_in(img, Rect::new(s.x + w, s.y + h, w, h)))
+}
+
+#[test]
+fn the_music_widget_stands_on_the_sketch_of_the_monitor_where_the_settings_put_it() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        // the island at the top in the middle, the widget at the bottom left (the defaults of the widget)
+        let mut t = wide("media", json!({"language": "en", "media.widget": true}));
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Widget, "the music reaction is the widget while the widget is on");
+        {
+            let v = t.v.borrow();
+            let g = v.pv.live.as_ref().unwrap().player().expect("the widget is in the sandbox");
+            assert_eq!((g.dock, g.align), (Dock::Bottom, Side::Left));
+            assert!(v.pv.mode.at01() > 0.99, "the camera looks at the sketch of the monitor");
+        }
+        let a = shot(&mut t, "widget-bottom-left", &th);
+        let (tl, tr, bl, br) = quarters(&t, &a);
+        assert!(bl > 150 && br * 6 < bl, "the capsule stands in the bottom left corner: {bl} / {br}");
+        assert!(tl + tr > 20, "the island hangs from the top: {tl} {tr}");
+        // the other side, the other edge
+        set(&mut t, "media.widget.align", json!("right"));
+        settle(&mut t, WIDE, &th);
+        let b = shot(&mut t, "widget-bottom-right", &th);
+        let (_, _, bl, br) = quarters(&t, &b);
+        assert!(br > 150 && bl * 6 < br, "and in the bottom right one: {bl} / {br}");
+        set(&mut t, "media.widget.edge", json!("top"));
+        settle(&mut t, WIDE, &th);
+        let c = shot(&mut t, "widget-top-right", &th);
+        let (tl, tr, bl, br) = quarters(&t, &c);
+        assert!(tr > 150 && bl + br < 60 && tl < tr, "at the top of the screen now: {tl} {tr} {bl} {br}");
+        // the middle, and shifted along the edge
+        set(&mut t, "media.widget.align", json!("center"));
+        settle(&mut t, WIDE, &th);
+        let img = shot(&mut t, "widget-top-centre", &th);
+        let (tl, tr, ..) = quarters(&t, &img);
+        assert!(tl > 100 && tr > 100, "the capsule sits across the middle: {tl} {tr}");
+        set(&mut t, "media.widget.offset", json!(30));
+        settle(&mut t, WIDE, &th);
+        let d = shot(&mut t, "widget-top-centre-shifted", &th);
+        let (tl2, tr2, ..) = quarters(&t, &d);
+        assert!(tr2 > tr + 60 && tl2 < tl, "30 % of the screen to the right: {tl} {tr} -> {tl2} {tr2}");
+        // the bigger the size, the bigger the widget (it follows the island's size)
+        set(&mut t, "media.widget.offset", json!(0));
+        settle(&mut t, WIDE, &th);
+        let img = shot(&mut t, "widget-top-centre-100", &th);
+        let (a1, a2, ..) = quarters(&t, &img);
+        set(&mut t, "size", json!(200));
+        settle(&mut t, WIDE, &th);
+        let img = shot(&mut t, "widget-top-centre-200", &th);
+        let (b1, b2, ..) = quarters(&t, &img);
+        assert!(b1 + b2 > (a1 + a2) * 2, "twice the size: {} -> {}", a1 + a2, b1 + b2);
+        assert!(t.calls("pill_edge").is_empty() && t.calls("settings_set").len() == 0, "nothing of it reaches the real windows");
+    });
+}
+
+#[test]
+fn the_music_widget_in_the_taskbar_goes_when_it_is_off_and_steps_aside_for_an_island_in_the_bar() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("media", json!({"language": "en", "media.widget": true, "media.widget.edge": "taskbar", "media.widget.align": "left"}));
+        {
+            let v = t.v.borrow();
+            let live = v.pv.live.as_ref().unwrap();
+            assert!(live.player_in_bar() && live.player().unwrap().dock == Dock::Taskbar);
+            assert!(v.pv.strip.at01() > 0.99, "the taskbar is on the stage");
+        }
+        let a = shot(&mut t, "widget-taskbar-left", &th);
+        let (_, _, bl, br) = quarters(&t, &a);
+        assert!(bl > 100 && br < bl / 3, "the capsule is inside the strip at the left: {bl} / {br}");
+        // the island stands in the bar at the left too: the widget is put at the right
+        let mut t2 = wide("media", json!({"language": "en", "media.widget": true, "media.widget.edge": "taskbar", "media.widget.align": "left", "edge.position": "taskbar", "edge.align": "left"}));
+        assert_eq!(t2.v.borrow().pv.live.as_ref().unwrap().player().unwrap().align, Side::Right);
+        let b = shot(&mut t2, "widget-taskbar-clear-of-the-island", &th);
+        let (_, _, bl, br) = quarters(&t2, &b);
+        assert!(bl > 20 && br > 100, "the island at the left, the widget at the right: {bl} / {br}");
+        // the switch off: the widget slides out (the caption says it is off); on again, it comes back
+        set(&mut t, "media.widget", json!(false));
+        settle(&mut t, WIDE, &th);
+        let c = shot(&mut t, "widget-switched-off", &th);
+        let (_, _, bl, _) = quarters(&t, &c);
+        assert!(bl < 40, "the widget has slid out: {bl}");
+        set(&mut t, "media.widget", json!(true));
+        settle(&mut t, WIDE, &th);
+        let d = shot(&mut t, "widget-switched-on-again", &th);
+        let (_, _, bl, _) = quarters(&t, &d);
+        assert!(bl > 100, "and slides in again: {bl}");
+    });
+}
+
+#[test]
+fn the_island_stands_where_offset_and_the_taskbar_rule_put_it_on_the_sketch() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("look", json!({"language": "en", "edge.position": "bottom"}));
+        set(&mut t, "offsetX", json!(10));
+        settle(&mut t, WIDE, &th);
+        set(&mut t, "offsetX", json!(0));
+        settle(&mut t, WIDE, &th);
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Pill(Look::Place), "a position row shows where the island stands on the screen");
+        let (lo, hi) = {
+            let s = stage_of(&t);
+            let a = shot(&mut t, "place-above-the-taskbar", &th);
+            // the rows of the island's body from the floor up: it stands above the strip
+            let strip = live::BAR_H * t.v.borrow().pv.zoom.at();
+            (black_in(&a, Rect::new(s.x, s.bottom() - strip, s.w, strip)), black_in(&a, Rect::new(s.x, s.bottom() - strip - 14.0, s.w, 14.0)))
+        };
+        assert!(hi > 100 && lo < hi / 2, "above the taskbar, not on it: {hi} over / {lo} on");
+        set(&mut t, "underTaskbar", json!(false));
+        settle(&mut t, WIDE, &th);
+        let s = stage_of(&t);
+        let b = shot(&mut t, "place-over-the-taskbar", &th);
+        let strip = live::BAR_H * t.v.borrow().pv.zoom.at();
+        let on = black_in(&b, Rect::new(s.x, s.bottom() - strip, s.w, strip));
+        assert!(on > lo + 80, "at the very edge, over the bar: {on}");
+        // the shift along the edge moves a centred island, and not a corner one
+        let (l0, r0) = (black_in(&b, Rect::new(s.x, s.y, s.w / 2.0, s.h)), black_in(&b, Rect::new(s.x + s.w / 2.0, s.y, s.w / 2.0, s.h)));
+        set(&mut t, "offsetX", json!(-40));
+        settle(&mut t, WIDE, &th);
+        let c = shot(&mut t, "place-shifted-left", &th);
+        let (l1, r1) = (black_in(&c, Rect::new(s.x, s.y, s.w / 2.0, s.h)), black_in(&c, Rect::new(s.x + s.w / 2.0, s.y, s.w / 2.0, s.h)));
+        assert!(l1 > l0 + 30 && r1 < r0, "40 % to the left: {l0} {r0} -> {l1} {r1}");
+    });
+}
+
+/// How many pixels of the stage differ between two shots (the caption under it changes with every scene, so the whole window cannot tell).
+fn stage_diff(t: &T, a: &Image, b: &Image) -> usize {
+    let s = stage_of(t);
+    let mut n = 0;
+    for y in s.y as i32..(s.y + s.h) as i32 {
+        for x in s.x as i32..(s.x + s.w) as i32 {
+            let (p, q) = (a.at(x as f32, y as f32), b.at(x as f32, y as f32));
+            if (0..3).any(|i| p[i].abs_diff(q[i]) > 3) {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+/// The reactions that had no scene before the preview showed them: each one is switched off and on in the window and plays with invented data
+/// (a download, a game, a file on the shelf, an agent, a phone message, a meeting, a mail, an OBS recording).
+#[test]
+fn the_other_live_events_play_on_the_folded_island_with_sample_data() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("look", json!({"language": "en"}));
+        let mut weak = Vec::new();
+        for (k, f) in [
+            ("live.downloads", Flash::Progress),
+            ("live.steam", Flash::Steam),
+            ("live.shelf", Flash::Shelf),
+            ("live.agents", Flash::Agents),
+            ("live.phone", Flash::Phone),
+            ("live.calendar", Flash::Calendar),
+            ("live.mail", Flash::Mail),
+            ("live.obs", Flash::Obs),
+        ] {
+            set(&mut t, k, json!(false));
+            settle(&mut t, WIDE, &th);
+            let base = shot(&mut t, &format!("preview-live-{k}-off"), &th);
+            set(&mut t, k, json!(true));
+            t.sim.pump();
+            t.sim.run(60);
+            let _ = t.sim.render(WIDE, &th);
+            t.sim.run(500);
+            let img = shot(&mut t, &format!("preview-live-{k}"), &th);
+            assert_eq!(t.v.borrow().pv.scene(), Scene::Flash(f), "{k}");
+            let d = stage_diff(&t, &img, &base);
+            eprintln!("LIVE {k}: {d}");
+            if d < 120 {
+                weak.push((k, d));
+            }
+        }
+        assert!(weak.is_empty(), "these reactions put nothing on the island: {weak:?}");
+    });
+}
+
+#[test]
+fn the_music_widget_costs_nothing_once_it_has_settled_and_respects_reduce_motion() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("media", json!({"language": "en", "media.widget": true}));
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Widget);
+        settle(&mut t, WIDE, &th);
+        assert!(!t.sim.frame.wants_frame(), "the window is idle");
+        let before = t.sim.frames_run;
+        for _ in 0..20 {
+            t.sim.now_ms += 500.0;
+            t.sim.pump();
+            t.sim.run(50);
+        }
+        assert_eq!(t.sim.frames_run, before, "no frames, and the widget's one-second tick has stopped with the park");
+        {
+            let v = t.v.borrow();
+            assert!(!v.pv.active() && v.pv.live.as_ref().is_some_and(|l| !l.is_awake() && l.player().is_some()), "parked, the widget still on the stage");
+        }
+        // a change wakes it again and it parks again
+        set(&mut t, "media.widget.align", json!("right"));
+        settle(&mut t, WIDE, &th);
+        assert!(!t.v.borrow().pv.active());
+        // reduced motion: the camera and the shift stand at their targets without a spring
+        glasskit::ease::force_reduced(Some(true));
+        set(&mut t, "reduceMotion", json!(true));
+        t.sim.cx.reduced_motion = true;
+        set(&mut t, "media.widget.offset", json!(20));
+        set(&mut t, "media.widget.align", json!("center"));
+        for _ in 0..3 {
+            t.sim.pump();
+            t.sim.run(3);
+            let _ = t.sim.render(WIDE, &th);
+        }
+        {
+            let v = t.v.borrow();
+            assert!(!v.pv.mode.moving() && !v.pv.dx_w.moving() && !v.pv.lift_w.moving() && !v.pv.strip.moving(), "reduced motion: nothing glides");
+        }
+        glasskit::ease::force_reduced(None);
+    });
+}
+
+/// What is on Home follows the chips of "What is on Home" and the tab strip at once (they write keys no schema row has).
+#[test]
+fn the_home_chips_and_the_tab_strip_change_the_open_island_in_the_preview() {
+    gfx(|| {
+        let _g = motion_on();
+        let th = Theme::settings_dark();
+        let mut t = wide("tabs", json!({"language": "en"}));
+        assert_eq!(t.v.borrow().pv.scene(), Scene::Panel(Tab::Home));
+        let a = shot(&mut t, "preview-home", &th);
+        for (k, v) in [("home.volume", json!(false)), ("home.tile.qr", json!(false)), ("tabs.hidden", json!(["weather", "chat"]))] {
+            let before = shot(&mut t, "preview-home-before", &th);
+            set(&mut t, k, v);
+            settle(&mut t, WIDE, &th);
+            let after = shot(&mut t, &format!("preview-home-{k}"), &th);
+            assert_eq!(t.v.borrow().pv.scene(), Scene::Panel(Tab::Home), "{k}");
+            assert!(stage_diff(&t, &after, &before) > 60, "{k} changes the open island: {}", stage_diff(&t, &after, &before));
+        }
+        let end = shot(&mut t, "preview-home-end", &th);
+        assert!(stage_diff(&t, &end, &a) > 200);
     });
 }

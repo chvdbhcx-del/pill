@@ -132,5 +132,55 @@ pub fn flash_events(kind: super::scene::Flash, flip: bool) -> Vec<(f64, &'static
         )],
         Privacy => vec![(0.0, "live:privacy", json!({ "mic": true, "cam": false, "apps": ["Sample app"] }))],
         Toast => vec![(0.0, "capture:done", json!({ "kind": "screenshot", "path": "C:\\Sample\\Pictures\\sample-shot.png", "copied": true, "w": 1920, "h": 1080 }))],
+        // a download that keeps coming in: the chip lives 3.5 s per report, so one report every 0.9 s holds it up for the whole preview
+        Progress => (0..4)
+            .map(|i| (i as f64 * 900.0, "live:download", json!({ "state": "progress", "id": "sample-dl", "name": "sample-archive.zip", "bytes": (8 + 8 * i) * 1_048_576, "total": 40 * 1_048_576 })))
+            .collect(),
+        Steam => (0..3)
+            .map(|i| (i as f64 * 1200.0, "live:steam", json!({ "state": "downloading", "game": "Sample Game", "appid": "0", "percent": 28.0 + 9.0 * i as f64, "speed": 11 * 1_048_576, "etaSec": 300 - 60 * i })))
+            .collect(),
+        // the first count is the baseline (no chip on a first listing): the shelf goes empty and then gets files, so the chip always shows
+        Shelf => vec![(0.0, "shelf:changed", json!({ "count": 0, "items": [] })), (120.0, "shelf:changed", json!({ "count": 3, "items": [{ "id": 1 }, { "id": 2 }, { "id": 3 }] }))],
+        Agents => vec![
+            (0.0, "agents:changed", agents_snapshot("working")),
+            (1500.0, "agents:changed", agents_snapshot("waiting")),
+            (1500.0, "agents:ask", json!({ "id": "sample-ask", "kind": "permission", "toolName": "Bash", "project": "sample-project", "summary": "sample-command --dry-run" })),
+        ],
+        Phone => vec![(
+            0.0,
+            "phone:notif",
+            json!({ "kind": "posted", "notif": { "key": "sample|1", "pkg": "example.chat", "app": "Sample chat", "title": "Sample sender", "text": "A sample message from the phone. Your own messages are never shown here.",
+                "ongoing": false, "replay": false, "fresh": true, "canReply": true } }),
+        )],
+        Calendar => vec![(0.0, "live:calendar", json!({ "title": "Sample meeting", "minutes": 10 }))],
+        Mail => vec![(0.0, "live:mail", json!({ "from": "Sample Sender", "subject": "Sample subject", "more": 2 }))],
+        Obs => vec![(0.0, "live:obs", json!({ "recording": true, "streaming": false, "recMs": 12_000, "streamMs": 0 }))],
     }
+}
+
+/// One invented agent session in the state `state` ("working" / "waiting").
+fn agents_snapshot(state: &str) -> Value {
+    let (w, q) = if state == "working" { (1, 0) } else { (0, 1) };
+    json!({ "working": w, "waiting": q, "sessions": [{ "tool": "claude-code", "session": "sample", "state": state, "title": "Sample task", "cwd": "C:\\Sample\\project", "project": "sample-project", "ts": wall_ms() }] })
+}
+
+/// What the island's reactions leave on screen (rows that stay until their source says it is over): the events that end them.
+pub fn clear_events() -> Vec<(&'static str, Value)> {
+    vec![
+        ("media:changed", json!({ "has_session": false, "playing": false })),
+        ("rec:state", json!({ "recording": false })),
+        ("live:privacy", json!({ "mic": false, "cam": false, "apps": [] })),
+        ("live:download", json!({ "state": "gone", "id": "sample-dl" })),
+        ("live:steam", json!({ "state": "idle" })),
+        ("live:obs", json!({ "recording": false, "streaming": false, "recMs": 0, "streamMs": 0 })),
+        ("agents:changed", json!({ "working": 0, "waiting": 0, "sessions": [] })),
+        ("agents:ask-gone", json!({ "id": "sample-ask" })),
+        ("shelf:changed", json!({ "count": 0, "items": [] })),
+    ]
+}
+
+/// The track the music widget plays in the preview: invented, never read from the user's player.
+pub fn widget_track() -> Value {
+    json!({ "has_session": true, "playing": true, "title": "Sample Track", "artist": "Sample Artist", "album": "Sample Album", "session_id": "sample", "app": "Player.exe",
+        "position_ms": 61000, "duration_ms": 243000, "thumb_id": 0, "accent": "#2a7bc8" })
 }

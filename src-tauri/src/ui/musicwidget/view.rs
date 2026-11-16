@@ -202,6 +202,12 @@ impl MusicView {
         !self.stand.in_bar()
     }
 
+    /// The settings window's preview runs a widget of its own in its sandbox and parks it once it has settled: the 1 Hz tick stops, the widget
+    /// stays drawn as it is; a `Tick` message (the preview posts one when it wakes) starts it again.
+    pub fn preview_sleep(&mut self) {
+        self.ticker = None;
+    }
+
     /// The window stands somewhere else now. Hidden: just take it (a show re-places it). On screen: slide out first, the new place is taken and the
     /// window re-placed when the body has left (`step`), and it slides in again, so the body never jumps across the screen.
     fn reslot(&mut self, to: Stand, cx: &mut Cx) {

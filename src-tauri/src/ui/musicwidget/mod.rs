@@ -34,7 +34,7 @@ mod view;
 #[cfg(test)]
 mod tests;
 
-pub use view::{GUARD_EVENT, SLOT_EVENT};
+pub use view::{MusicView, GUARD_EVENT, SLOT_EVENT};
 
 use crate::ui::host::geom::{self, Align, Dock};
 use crate::ui::host::{self, MonitorSel, NativeWindow, Placement, WinEvent};
