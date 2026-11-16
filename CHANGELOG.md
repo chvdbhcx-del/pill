@@ -4,6 +4,8 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-16
+
 ### Highlights
 - PC link: your own PCs can pair once and then share copied text. On one PC open Settings > Phone > My other PCs and press "Show a token", paste the token on the other PC and press "Pair"; the first PC shows a card (on the island and in Settings) asking you to allow it. After that text you copy on one PC appears on the other in both directions, each direction can be switched off per PC, a PC can be unpaired from either side (an absent one is told when it comes back), copies from password managers are never sent and the text that arrives is kept out of the Windows clipboard history. Everything goes through the same encrypted relay as the phone link (the relay sees only that two PCs talk), nothing is sent until a PC is paired, and the phone's own clipboard switch stays off by default. See `docs/pc-link.md`.
 
