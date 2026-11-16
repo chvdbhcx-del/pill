@@ -5,6 +5,7 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 ## [Unreleased]
 
 ### Changed
+- The folded music widget now has the same look as the open card: the cover-tinted body with the blurred cover reflections, the same cover shape, the title over the artist (or on one line when both fit, with a faded end instead of a cut), the smoked play disc, and a thin progress line in the cover's accent; it grows into the card as one piece.
 - Pill Phone (Android) checks for updates and installs them from inside the app: it reads a small version file from the `phone-latest` release on GitHub (on start at most every 12 hours, or "Check now" in Settings > Updates; switchable), shows an "Update available" card on Home and downloads, verifies (size, SHA-256, same signing certificate) and installs the new APK through Android's installer. The manual first install of this version (1.1.0) is still needed on phones that have 1.0.0, which cannot update itself. See `docs/phone-updates.md`.
 
 ## [0.12.0] - 2026-11-16

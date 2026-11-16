@@ -414,3 +414,65 @@ fn capsule_sheets() {
         save(&d, "c6-morph-light.png", &film(&mut s, &th, lg::WIN_REAL, r, 24.0, 16));
     });
 }
+
+#[test]
+fn the_folded_capsule_is_tinted_by_the_cover_and_flat_in_high_contrast() {
+    gfx(|| {
+        let _m = motion_on();
+        let red = art([200, 50, 70, 255], [90, 20, 40, 255]);
+        let f = |extra: Value| Folded { extra, title: "Invented Song", artist: "Invented Band", url: Some(Box::leak(red.clone().into_boxed_str())), accent: "#cc3246", bar: None };
+        let reddish = |p: [u8; 4]| p[3] > 200 && p[0] as i32 > p[1] as i32 + 12 && p[0] as i32 > p[2] as i32 + 6;
+        let count = |extra: Value| {
+            let (mut s, st) = folded_sim(&f(extra));
+            let img = s.render(lg::WIN_REAL, &Theme::pill_dark());
+            let bb = lg::body(st, 0.0, 0.0);
+            let l = lg::capsule_layout_in(st, bb);
+            // the body to the right of the cover, over the text and the buttons (nothing of the cover, the hairline or its accent)
+            let r = st.rect_to_real(Rect::new(l.text.x, bb.y + 3.0, l.btn[2].right() - l.text.x, 30.0));
+            img.count(Some(r), reddish)
+        };
+        let tinted = count(json!({}));
+        let flat = count(json!({ "a11y.contrast": "on" }));
+        assert!(tinted > 300, "the cover's colour is in the body: {tinted}");
+        assert_eq!(flat, 0, "high contrast: the system colours, flat and opaque, no tint and no reflections");
+        // the same for the light theme: still the card's body, not a plain one
+        assert!(count(json!({ "theme": "light" })) > 100);
+    });
+}
+
+#[test]
+fn the_tinted_body_grows_with_the_shape_and_nothing_pops_while_the_capsule_opens_and_closes() {
+    gfx(|| {
+        let _m = motion_on();
+        let red = art([200, 50, 70, 255], [90, 20, 40, 255]);
+        let (mut s, st) = folded_sim(&Folded { extra: json!({}), title: "Invented Song", artist: "Invented Band", url: Some(&red), accent: "#cc3246", bar: None });
+        let th = Theme::pill_dark();
+        let bb = lg::body(st, 0.0, 0.0);
+        // a spot in the lower part of the body, below the hairline and clear of the cover, that stays inside it all the way up
+        let at = st.to_real((bb.x + 150.0, bb.bottom() - 2.0));
+        let mut prev: Option<[u8; 4]> = None;
+        let mut worst = 0i32;
+        let mut step = |s: &mut Sim| {
+            let img = s.render(lg::WIN_REAL, &th);
+            let p = img.px(at.0 as u32, at.1 as u32);
+            if let Some(q) = prev {
+                worst = worst.max((0..4).map(|i| (p[i] as i32 - q[i] as i32).abs()).max().unwrap());
+            }
+            prev = Some(p);
+            let until = s.now_ms + 16.0;
+            while s.now_ms + 1000.0 / s.hz as f64 <= until && s.step_frame() {}
+            s.now_ms = until;
+            s.cx.now_ms = until;
+        };
+        s.send_proximity(&ProximityEvent::Hover);
+        for _ in 0..40 {
+            step(&mut s);
+        }
+        s.send_proximity(&ProximityEvent::Leave);
+        for _ in 0..40 {
+            step(&mut s);
+        }
+        assert!(worst < 48, "the body's colour at a fixed spot changes by {worst} in one 16 ms frame: a pop");
+        assert!(prev.is_some_and(|p| p[3] == 255), "the spot is inside the body");
+    });
+}
