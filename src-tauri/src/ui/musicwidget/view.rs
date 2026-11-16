@@ -73,6 +73,8 @@ pub struct MusicView {
     shown: Flow,
     fade: Flow,
     expand: Flow,
+    /// the sideways shift (logical px, `Stand::dx`) of a window that was moved under the body because the island beside it changed its width
+    glide: Flow,
     swap: Flow,
     pp: Flow,
     prog: Flow,
@@ -127,6 +129,7 @@ impl MusicView {
             shown: Flow::new(0.0, Feel::FLOW),
             fade: Flow::new(0.0, Feel::FADE),
             expand: Flow::new(0.0, Feel::FLOW),
+            glide: Flow::new(0.0, Feel::FLOW),
             swap: Flow::new(1.0, Feel::FADE.within(260.0)),
             pp: Flow::new(0.0, Feel::POP),
             prog: Flow::new(0.0, Feel::DRAG),
@@ -178,7 +181,7 @@ impl MusicView {
 
     /// A stand for a bar `bar` px tall (real) and the side `align`, at the current size.
     fn stand_in_bar(&self, align: Align, bar: f32) -> Stand {
-        Stand { dock: self.stand.dock, align, bar: bar / self.stand.k, scale: self.stand.scale, k: self.stand.k }
+        Stand { dock: self.stand.dock, align, bar: bar / self.stand.k, scale: self.stand.scale, k: self.stand.k, dx: self.stand.dx }
     }
 
     /// The monitor's DPI scale (the window is a whole number of device px; the layout snaps to them, see `Stand`).
@@ -380,6 +383,7 @@ impl MusicView {
         self.shown.moving()
             || self.fade.moving()
             || self.expand.moving()
+            || self.glide.moving()
             || self.kf.moving()
             || self.swap.moving()
             || self.pp.moving()
@@ -519,7 +523,17 @@ impl View for MusicView {
                     let bar = payload.get("bar").and_then(Value::as_f64).unwrap_or(0.0).max(0.0) as f32;
                     let align = Align::from_setting(payload.get("align").and_then(Value::as_str).unwrap_or("left"));
                     let to = self.stand_in_bar(align, bar);
-                    self.reslot(to, cx);
+                    match payload.get("dx").and_then(Value::as_f64) {
+                        // only the place along the bar moved (the island's width changed): the window is already there, the body glides across
+                        Some(dx) if self.vis && to.align == self.stand.align && self.reseat.is_none() => {
+                            self.glide.jump(dx as f32);
+                            self.glide.to(0.0);
+                            self.stand.dx = self.glide.at();
+                            self.last_hit = None;
+                            cx.request_frame();
+                        }
+                        _ => self.reslot(to, cx),
+                    }
                 }
                 _ => return Response::NONE,
             },
@@ -549,6 +563,8 @@ impl View for MusicView {
         self.shown.step(dt);
         self.fade.step(dt);
         self.expand.step(dt);
+        self.glide.step(dt);
+        self.stand.dx = self.glide.at();
         self.swap.step(dt);
         self.pp.step(dt);
         self.prog.step(dt);

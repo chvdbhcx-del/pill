@@ -982,3 +982,21 @@ fn changing_to_the_taskbar_slides_out_and_asks_for_the_bar_placement() {
     assert!(g.v.borrow().dbg_body_win().bottom() > 119.0, "flat on the floor again");
 }
 
+#[test]
+fn the_island_publishes_its_real_folded_width_while_it_stands_in_the_bar() {
+    let mut g = bar_island(json!({}));
+    let w0 = g.v.borrow().dbg_body_win().w.round() as i32;
+    assert!(w0 > 100 && g.v.borrow().dbg_fold_w() == w0, "the clock capsule's width: {w0} vs {}", g.v.borrow().dbg_fold_w());
+    // the live row grows the capsule: the new width goes out, not the old ceiling
+    g.emit("media:changed", media_payload());
+    let _ = rest_in(&mut g, FOLDED_WIN);
+    let w1 = g.v.borrow().dbg_body_win().w.round() as i32;
+    assert!(w1 != w0 && g.v.borrow().dbg_fold_w() == w1, "{w0} -> {w1}, published {}", g.v.borrow().dbg_fold_w());
+    // an open island floats: the folded width is kept (the widget keeps its place while the panel is up)
+    open_in_bar(&mut g, "home");
+    assert_eq!(g.v.borrow().dbg_fold_w(), w1);
+    // and when the bar goes away there is nothing to keep clear of
+    g.emit("pill:taskbar", json!({ "h": 0 }));
+    let _ = rest_in(&mut g, OPEN_WIN);
+    assert_eq!(g.v.borrow().dbg_fold_w(), 0);
+}

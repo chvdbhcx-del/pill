@@ -80,7 +80,7 @@ fn base(dock: Dock) -> lg::Stand {
     lg::Stand::from(dock)
 }
 fn bar_st(align: Align, bar: f32, scale: f32) -> lg::Stand {
-    lg::Stand { dock: Dock::Taskbar, align, bar, scale, k: 1.0 }
+    lg::Stand { dock: Dock::Taskbar, align, bar, scale, k: 1.0, dx: 0.0 }
 }
 
 fn calls(f: &Fakes, name: &str) -> Vec<Value> {

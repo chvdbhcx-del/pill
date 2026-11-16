@@ -208,6 +208,8 @@ pub struct IslandView {
     raise_a: f32,
     /// the height of the folded capsule the bar centres (its target, so the pill does not bob while it grows)
     fold_h: f32,
+    /// the width of the folded capsule (target, window px) as last published to the taskbar (what the music widget keeps clear of); 0 = not in the bar
+    fold_w: i32,
     /// how far the body is lifted off the window's floor to stand in the bar (window px, see `bar_lift`); fixed by `step`, draw only reads it
     lift_px: f32,
     /// the folded capsule's height limit last handed to the shell
@@ -309,6 +311,7 @@ impl IslandView {
             raise_sp: Flow::new(0.0, RAISE),
             raise_a: 0.0,
             fold_h: 0.0,
+            fold_w: 0,
             lift_px: 0.0,
             last_cap: None,
             align: Align::Center,
@@ -758,6 +761,13 @@ impl IslandView {
         let floats = matches!(v.phase, Phase::Expanding | Phase::Expanded | Phase::Cards) || (self.bar_h > 0.0 && tgt_h > geom::bar_fold_cap(self.bar_h) + 0.5);
         if !floats && tgt_h > 0.0 {
             self.fold_h = tgt_h;
+        }
+        // the folded capsule's real width (its target: the live row growing / shrinking is a width change) goes to the music widget, only on a change
+        let tgt_w = self.core.shell.spring_state()[0].2.round() as i32;
+        let pub_w = if !self.in_bar() { 0 } else if !floats && tgt_w > 0 { tgt_w } else { self.fold_w };
+        if pub_w != self.fold_w {
+            self.fold_w = pub_w;
+            crate::taskbar::publish_island_w(pub_w);
         }
         let want_raise = if floats { 1.0 } else { 0.0 };
         if v.reduced {
@@ -1614,6 +1624,9 @@ impl IslandView {
     /// The island stands in a taskbar, and how far the body is lifted off the window's floor (window px).
     pub fn dbg_bar(&self) -> (bool, f32, f32, f32) {
         (self.in_bar(), self.lift_px, self.bar_w, self.raise_a)
+    }
+    pub fn dbg_fold_w(&self) -> i32 {
+        self.fold_w
     }
     pub fn dbg_bar_moving(&self) -> bool {
         self.bar_sp.moving() || self.raise_sp.moving()

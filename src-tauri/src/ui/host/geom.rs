@@ -1082,4 +1082,57 @@ mod tests {
         let (_, slot) = widget_place(mon, IRect::new(0, 0, 2560, 1392), 1.0, Some(tray), None, &ask(Align::Right), size);
         assert_eq!(slot.map(|(b, s)| (b.h, s.x + s.w)), Some((48, 2200 - 8 - 8)));
     }
+
+    /// The island's rectangle along the bar as the island itself places it (`taskbar_position`): the left edge and the right edge of `w`.
+    fn island_span(align: Align, b: &Bar, side: i32, w: i32) -> (i32, i32) {
+        let (lo, hi) = (b.span.0 + side, b.span.1 - side);
+        let l = match align {
+            Align::Left => lo,
+            Align::Right => hi - w,
+            Align::Center => (lo + hi) / 2 - w / 2,
+        };
+        (l, l + w)
+    }
+
+    #[test]
+    fn the_widget_keeps_a_side_pad_from_the_islands_real_width_on_every_side() {
+        // a 2560 wide monitor, a 48 px bar, the tray (300 px) ends the span; the folded capsule is anywhere from 118 to 500 wide
+        let (mon, work, s) = bar_screen(96, 48.0);
+        let tray = Some(IRect::new(mon.r - 300, work.b, mon.r, mon.b));
+        let b = widget_bar(mon, work, s, tray).unwrap();
+        let side = phys(BAR_SIDE_PAD, s);
+        for iw in [118, 150, 220, 300, 500] {
+            for ia in [Align::Left, Align::Center, Align::Right] {
+                let (il, ir) = island_span(ia, &b, side, iw);
+                for wa in [Align::Left, Align::Center, Align::Right] {
+                    let slot = widget_bar_slot(wa, mon, &b, s, 288, 0.0, Some(IslandBar { align: ia, offset_pct: 0.0, w: iw }));
+                    let ctx = format!("island {ia:?} {iw} wide [{il}, {ir}), widget asked {wa:?}: {slot:?}");
+                    assert!(slot.x >= b.span.0 + side && slot.x + slot.w <= b.span.1 - side, "inside the bar and clear of the tray: {ctx}");
+                    assert!(slot.x + slot.w + side <= il || slot.x >= ir + side, "a side pad from the island: {ctx}");
+                    if ia != wa && wa != Align::Center && ia != Align::Center {
+                        assert_eq!(slot.align, wa, "opposite corners never need to swap: {ctx}");
+                    }
+                    if ia == wa && wa != Align::Center {
+                        assert_eq!(slot.align, if wa == Align::Left { Align::Right } else { Align::Left }, "the same corner: it goes to the other side: {ctx}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_widget_centred_beside_the_island_follows_the_islands_width() {
+        let (mon, work, s) = bar_screen(96, 48.0);
+        let b = widget_bar(mon, work, s, None).unwrap();
+        let side = phys(BAR_SIDE_PAD, s);
+        let x = |iw| widget_bar_slot(Align::Center, mon, &b, s, 288, 0.0, Some(IslandBar { align: Align::Center, offset_pct: 0.0, w: iw })).x;
+        // a centred island and a centred widget: the widget stands in the larger free stretch (the right one), centred in it, so a wider island pushes it right
+        let (x150, x300, x500) = (x(150), x(300), x(500));
+        assert!(x150 < x300 && x300 < x500, "{x150} {x300} {x500}");
+        assert!(x150 >= island_span(Align::Center, &b, side, 150).1 + side, "clear of the narrow island");
+        // a widget that was clear of a narrow island is pushed aside by a wide one: left asked, centred island 150 wide leaves it be, 2400 wide does not
+        let l = |iw| widget_bar_slot(Align::Left, mon, &b, s, 288, 0.0, Some(IslandBar { align: Align::Center, offset_pct: 0.0, w: iw })).align;
+        assert_eq!(l(150), Align::Left);
+        assert_ne!(l(2400), Align::Left, "a 2400 px island fills a 2560 px bar: the left widget no longer fits beside it");
+    }
 }

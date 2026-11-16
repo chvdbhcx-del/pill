@@ -207,11 +207,14 @@ pub struct Stand {
     pub scale: f32,
     /// the size factor (`size` / 100, see [`size_k`]): one base px is `k` logical px. 1.0 = the layout at 100 %.
     pub k: f32,
+    /// logical px the whole layout is shifted along the window: 0 at rest; the widget's window moved by this much under the body (the island next
+    /// to it changed its width), so the body starts here and glides back to 0 (`view.rs`)
+    pub dx: f32,
 }
 
 impl From<Dock> for Stand {
     fn from(dock: Dock) -> Stand {
-        Stand { dock, align: Align::Left, bar: 0.0, scale: 1.0, k: 1.0 }
+        Stand { dock, align: Align::Left, bar: 0.0, scale: 1.0, k: 1.0, dx: 0.0 }
     }
 }
 
@@ -255,7 +258,7 @@ impl Stand {
             Align::Right => rw - bw,
         };
         let oy = if self.dock == Dock::Top { 0 } else { rh - bh };
-        (ox as f32 / m, oy as f32 / m)
+        ((ox as f32 + (self.dx * m).round()) / m, oy as f32 / m)
     }
 
     /// A base point -> the real window, and back.
@@ -748,7 +751,7 @@ mod tests {
     // ----- in the taskbar
 
     fn in_bar(align: Align, bar: f32) -> Stand {
-        Stand { dock: Dock::Taskbar, align, bar, scale: 1.0, k: 1.0 }
+        Stand { dock: Dock::Taskbar, align, bar, scale: 1.0, k: 1.0, dx: 0.0 }
     }
 
     /// The bar heights of the common taskbars at the common scalings (and the odd ones, 110 / 175 %), as the view is told them: the bar in
@@ -1002,6 +1005,18 @@ mod tests {
     }
 
     #[test]
+    fn the_glide_shift_moves_the_whole_layout_along_the_window_and_nothing_else() {
+        for (align, scale) in [(Align::Center, 1.0), (Align::Left, 1.5), (Align::Right, 2.0)] {
+            let at = |dx| Stand { dock: Dock::Taskbar, align, bar: 48.0, scale, k: 1.0, dx };
+            let (o, s) = (at(0.0).origin(), at(30.0).origin());
+            assert!((s.0 - o.0 - 30.0).abs() <= 0.5 / scale && s.1 == o.1, "{align:?} @{scale}: {o:?} -> {s:?}");
+            let r = at(0.0).rect_to_real(Rect::new(10.0, 10.0, 50.0, 20.0));
+            let t = at(-30.0).rect_to_real(Rect::new(10.0, 10.0, 50.0, 20.0));
+            assert!((r.x - t.x - 30.0).abs() <= 0.5 / scale && r.y == t.y && (r.w, r.h) == (t.w, t.h));
+        }
+    }
+
+    #[test]
     fn size_follows_the_island_in_range_and_the_default_is_the_old_layout() {
         assert_eq!((size_k(100.0), size_k(80.0), size_k(200.0), size_k(50.0), size_k(900.0)), (1.0, 0.8, 2.0, KMIN, KMAX));
         assert_eq!(size_k(125.0), 1.25);
@@ -1023,7 +1038,7 @@ mod tests {
                 for align in [Align::Left, Align::Center, Align::Right] {
                     for (dock, bar_real) in [(Dock::Bottom, 0.0f32), (Dock::Top, 0.0), (Dock::Taskbar, 0.0), (Dock::Taskbar, 40.0), (Dock::Taskbar, 48.0), (Dock::Taskbar, 52.0), (Dock::Taskbar, 72.0)] {
                         let bar_real = geom::phys(bar_real, scale) as f32 / scale;
-                        let st = Stand { dock, align, bar: bar_real / k, scale, k };
+                        let st = Stand { dock, align, bar: bar_real / k, scale, k, dx: 0.0 };
                         let win = st.real_win();
                         let tag = format!("{pct}% {dock:?} {align:?} bar {bar_real} @{scale}");
                         let tol = 1.5 / scale;
@@ -1093,7 +1108,7 @@ mod tests {
             let mut prev: Option<Rect> = None;
             for i in 0..=24 {
                 let k = 0.8 + 1.2 * i as f32 / 24.0;
-                let st = Stand { dock, align, bar: 0.0, scale: 1.0, k };
+                let st = Stand { dock, align, bar: 0.0, scale: 1.0, k, dx: 0.0 };
                 let r = st.rect_to_real(body(st, 0.0, 0.0));
                 let corner = (match align { Align::Left => r.x, Align::Right => r.right(), Align::Center => r.cx() }, if dock == Dock::Top { r.y } else { r.bottom() });
                 if let Some(p) = prev {

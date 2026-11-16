@@ -140,9 +140,11 @@ fn spec(s: &Sig) -> NativeWindow {
 
 static ID: AtomicU64 = AtomicU64::new(0);
 /// the settings the live window was made from, and the geometry of its monitor it was placed for
-static LIVE: Mutex<Option<(Sig, u64)>> = Mutex::new(None);
+static LIVE: Mutex<Option<(Sig, Probe)>> = Mutex::new(None);
+/// the app handle, for the island's width news (`island_width_changed`, which comes from the island's thread)
+static APP: Mutex<Option<tauri::AppHandle>> = Mutex::new(None);
 
-fn live() -> std::sync::MutexGuard<'static, Option<(Sig, u64)>> {
+fn live() -> std::sync::MutexGuard<'static, Option<(Sig, Probe)>> {
     LIVE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -155,6 +157,7 @@ fn current() -> Option<Sig> {
 /// Creates, re-creates or closes the window so that it matches the settings. Idempotent; safe from any thread.
 pub fn sync(app: &tauri::AppHandle) {
     read_size();
+    *APP.lock().unwrap_or_else(|e| e.into_inner()) = Some(app.clone());
     let want = current();
     let mut cur = live();
     if cur.as_ref().map(|c| &c.0) == want.as_ref() {
@@ -174,7 +177,7 @@ pub fn sync(app: &tauri::AppHandle) {
     ID.store(id.0, Ordering::SeqCst);
     FOLLOWING.store(false, Ordering::Relaxed); // a new window: the next poll points the foreground hook at it
     crate::taskbar::follow_widget(windows::Win32::Foundation::HWND::default(), false);
-    *cur = Some((sig, look.key));
+    *cur = Some((sig, look));
 }
 
 /// The island starts first, the widget right after it (`main.rs`).
@@ -207,33 +210,58 @@ fn monitor_of(host: &host::HostHandle, s: &Sig) -> Option<host::MonitorInfo> {
 /// What one look at the monitor says about the window: a number that changes when the monitor the widget stands on moves, resizes, changes DPI or
 /// loses / gains a taskbar (in the taskbar also when the tray or the island changes the place the widget gets), and where the window stands in the
 /// bar: the bar's height (logical px, 0 = it is not in a bar: any other dock, or no bar it can live in) and the side it is anchored to.
+#[derive(Clone, Copy, Debug)]
 struct Probe {
     key: u64,
+    /// `key` without the window's x: equal while only the place along the bar changed (the island beside the widget got wider or narrower)
+    rest: u64,
+    /// the window's x (physical px) and the monitor's DPI scale
+    x: i32,
+    scale: f32,
     bar: f32,
     align: Align,
 }
 
 /// One look (one monitor enumeration, one tray lookup).
 fn probe(host: &host::HostHandle, s: &Sig) -> Probe {
-    let mut out = Probe { key: 0, bar: 0.0, align: s.align };
+    let mut out = Probe { key: 0, rest: 0, x: 0, scale: 1.0, bar: 0.0, align: s.align };
     let Some(m) = monitor_of(host, s) else { return out };
     let mut vals = vec![m.rect.l, m.rect.t, m.rect.r, m.rect.b, m.work.l, m.work.t, m.work.r, m.work.b, (m.scale * 100.0) as i32, host.monitors().len() as i32];
     if s.dock == Dock::Taskbar {
         let size = geom::size_to_phys(logic::WIN_BAR_REAL, m.scale);
         let ((x, y), slot) = crate::taskbar::widget_place(&m, &ask(s), size);
-        vals.extend([x, y]);
+        vals.push(y);
+        out.x = x;
         if let Some((bar, slot)) = slot {
             // not the slot's own x / width: they follow the size, which the view animates in place (the window's position is what counts)
             vals.extend([bar.h, slot.align.code() as i32]);
             (out.bar, out.align) = (bar.h as f32 / m.scale.max(0.25), slot.align);
         }
     }
-    let mut h = 0xcbf2_9ce4_8422_2325u64;
-    for v in vals {
-        h = (h ^ v as u32 as u64).wrapping_mul(0x100_0000_01b3);
-    }
-    out.key = h;
+    let fnv = |vals: &[i32]| vals.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, v| (h ^ *v as u32 as u64).wrapping_mul(0x100_0000_01b3));
+    out.rest = fnv(&vals);
+    vals.push(out.x);
+    out.key = fnv(&vals);
+    out.scale = m.scale;
     out
+}
+
+/// The island's folded width changed (`taskbar::publish_island_w`, called from the island's thread when its capsule grows or shrinks in the
+/// bar): the widget re-checks its place now instead of at the next guard poll. Off the island's thread, and only while a widget in the bar exists.
+pub fn island_width_changed() {
+    if ID.load(Ordering::SeqCst) == 0 {
+        return;
+    }
+    let Some(app) = APP.lock().unwrap_or_else(|e| e.into_inner()).clone() else { return };
+    std::thread::spawn(move || relayout(&app));
+}
+
+/// How far (logical px, signed) the window moves under a body that glides to its new place, when ONLY the place along the bar changed and the widget
+/// stays centred in its stretch (the island beside it got wider / narrower). `None` = anything else changed (monitor, DPI, bar, the side): the
+/// body slides out, the window is re-placed and it slides in again. Pure.
+fn glide_dx(prev: &Probe, now: &Probe) -> Option<f32> {
+    let same = prev.rest == now.rest && prev.align == Align::Center && now.align == Align::Center && prev.bar == now.bar && prev.x != now.x;
+    same.then(|| (prev.x - now.x) as f32 / now.scale.max(0.25))
 }
 
 /// `SLOT_EVENT` text for an `Align`.
@@ -260,10 +288,17 @@ pub fn relayout(app: &tauri::AppHandle) {
     let mut cur = live();
     let Some((sig, geo)) = cur.as_mut() else { return };
     let look = probe(&host, sig);
-    if look.key != *geo {
-        *geo = look.key;
+    if look.key != geo.key {
+        let prev = std::mem::replace(geo, look);
         if sig.dock == Dock::Taskbar {
-            let _ = crate::ui::bus::emit(SLOT_EVENT, json!({ "bar": look.bar, "align": align_name(look.align) }));
+            if let Some(dx) = glide_dx(&prev, &look) {
+                // only the centred widget's place along the bar moved: the window goes there at once and the body glides across (`dx` = how far
+                // the window moved under it), no slide out and in
+                let _ = crate::ui::bus::emit(SLOT_EVENT, json!({ "bar": look.bar, "align": align_name(look.align), "dx": dx }));
+                host.relayout(WindowId(id));
+            } else {
+                let _ = crate::ui::bus::emit(SLOT_EVENT, json!({ "bar": look.bar, "align": align_name(look.align) }));
+            }
         } else {
             host.relayout(WindowId(id));
         }
@@ -281,5 +316,26 @@ pub fn relayout(app: &tauri::AppHandle) {
             // the hook is installed from the main thread's message loop, like the island's
             let _ = app.run_on_main_thread(move || crate::taskbar::follow_widget(windows::Win32::Foundation::HWND(hwnd as *mut std::ffi::c_void), in_bar));
         }
+    }
+}
+
+#[cfg(test)]
+mod glide_tests {
+    use super::*;
+
+    fn probe(rest: u64, x: i32, align: Align) -> Probe {
+        Probe { key: rest ^ x as u64, rest, x, scale: 2.0, bar: 48.0, align }
+    }
+
+    #[test]
+    fn only_a_centred_widget_that_moved_along_the_bar_glides_and_by_how_far_the_window_moved() {
+        let (a, b) = (probe(7, 1000, Align::Center), probe(7, 1100, Align::Center));
+        assert_eq!(glide_dx(&a, &b), Some(-50.0), "the window moved 100 device px (50 logical) right: the body starts 50 px left of its place");
+        assert_eq!(glide_dx(&b, &a), Some(50.0));
+        assert_eq!(glide_dx(&a, &a), None, "nothing moved");
+        assert_eq!(glide_dx(&a, &probe(8, 1100, Align::Center)), None, "the monitor, DPI or bar changed: slide out and in");
+        assert_eq!(glide_dx(&a, &probe(7, 1100, Align::Right)), None, "it changed side: slide out and in");
+        assert_eq!(glide_dx(&probe(7, 1000, Align::Left), &probe(7, 1100, Align::Left)), None, "a corner widget never moves with the island's width");
+        assert_eq!(glide_dx(&a, &Probe { bar: 40.0, ..probe(7, 1100, Align::Center) }), None);
     }
 }

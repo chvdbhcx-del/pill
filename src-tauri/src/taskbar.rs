@@ -8,7 +8,7 @@
 use crate::ui::host::geom::{self, Align, IRect, IslandBar, WidgetAsk};
 use crate::ui::host::MonitorInfo;
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicIsize, Ordering};
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
@@ -155,18 +155,38 @@ pub fn keep_widget_on_top(widget: HWND) {
     }
 }
 
-/// Where the island stands in the bar, as the widget must keep clear of it (`None` = the island is not in the taskbar). Read from the settings,
-/// so the two windows need not talk: `monitor` is the same setting for both, so they are in the same bar.
+/// The folded island's real width in the bar (window px; 0 = it has not said, or it is not in a bar), published by the island's view when its capsule
+/// grows or shrinks (the live row, a notification's text, the clock): the width the music widget keeps clear of.
+static ISLAND_W: AtomicI32 = AtomicI32::new(0);
+
+/// The island says how wide its folded capsule is now (0 = it left the bar). Only a change wakes the widget (`musicwidget::island_width_changed`):
+/// no timer, nothing while the width stays.
+pub fn publish_island_w(w: i32) {
+    if ISLAND_W.swap(w.max(0), Ordering::Relaxed) != w.max(0) {
+        crate::ui::musicwidget::island_width_changed();
+    }
+}
+
+/// The width the widget keeps clear of: the island's published one, or (before it has said, or off a bar) the old ceiling `ISLAND_BAR_W` x `size`. Pure.
+pub fn island_slot_w(published: i32, size_pct: f64, scale: f32) -> i32 {
+    if published > 0 {
+        published
+    } else {
+        geom::phys((geom::ISLAND_BAR_W as f64 * size_pct.clamp(80.0, 200.0) / 100.0) as f32, scale)
+    }
+}
+
+/// Where the island stands in the bar, as the widget must keep clear of it (`None` = the island is not in the taskbar). The side and the offset
+/// are read from the settings; the width is the island's real one ([`publish_island_w`]). `monitor` is the same setting for both, so they are in the same bar.
 pub fn island_bar(scale: f32) -> Option<IslandBar> {
     use crate::settings::{get_f64, get_str};
     if !get_str("edge.position", "top").eq_ignore_ascii_case("taskbar") {
         return None;
     }
-    let size = get_f64("size", 100.0).clamp(80.0, 200.0) / 100.0;
     Some(IslandBar {
         align: Align::from_setting(&get_str("edge.align", "center")),
         offset_pct: get_f64("offsetX", 0.0).clamp(-50.0, 50.0) as f32,
-        w: geom::phys((geom::ISLAND_BAR_W as f64 * size) as f32, scale),
+        w: island_slot_w(ISLAND_W.load(Ordering::Relaxed), get_f64("size", 100.0), scale),
     })
 }
 
@@ -196,6 +216,15 @@ mod tests {
         assert!(!covered_by_taskbar(["Chrome_WidgetWin_1", "Notepad"]), "other topmost windows are none of our business");
         assert!(covered_by_taskbar(["Shell_TrayWnd"]));
         assert!(covered_by_taskbar(["Notepad", "Shell_SecondaryTrayWnd", "Chrome_WidgetWin_1"]));
+    }
+
+    #[test]
+    fn the_island_slot_is_its_published_width_or_the_old_ceiling_until_it_says() {
+        assert_eq!(island_slot_w(173, 100.0, 1.0), 173);
+        assert_eq!(island_slot_w(173, 200.0, 1.5), 173, "the published width is physical already: neither the size nor the DPI touch it");
+        assert_eq!(island_slot_w(0, 100.0, 1.0), 300);
+        assert_eq!(island_slot_w(0, 150.0, 2.0), 900, "the ceiling is 300 logical px x size x DPI");
+        assert_eq!(island_slot_w(-5, 100.0, 1.0), 300, "garbage counts as not said");
     }
 
     #[test]
