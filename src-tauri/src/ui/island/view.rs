@@ -767,8 +767,9 @@ impl IslandView {
         self.bar_w = self.bar_sp.chase(want_bar, dt_ms);
         self.raise_a = self.raise_sp.chase(want_raise, dt_ms);
         self.lift_px = if self.bar_w > 0.0 {
-            let fold_ty = if self.core.shell.settings().is_capsule() { pill_ui_core::shell::capsule::CAP_TOP as f32 * s } else { 0.0 };
-            let ty = fold_ty + (pill_ui_core::shell::capsule::EXP_TOP as f32 * s - fold_ty) * self.raise_a.clamp(0.0, 1.0);
+            // the shell's own translateY right now (0 for a plain notch, CAP_TOP for a capsule, EXP_TOP open, and what a card rests at): the lift
+            // is what takes the body from there to the bar's gap, whatever the state (a card floats the same 8 px above the bar as the open panel)
+            let ty = v.body.top as f32;
             self.bar_w * (geom::bar_gap(self.bar_h, self.fold_h, self.raise_a) - ty)
         } else {
             0.0

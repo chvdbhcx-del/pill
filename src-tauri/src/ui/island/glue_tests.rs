@@ -929,6 +929,7 @@ fn an_event_card_floats_above_the_bar_and_the_island_sinks_back_into_it() {
     let (_, _, _, raised) = g.v.borrow().dbg_bar();
     let b = g.v.borrow().dbg_body_win();
     assert!(raised > 0.99 && b.bottom() <= win as f32 - BAR + 0.5, "above the bar: {b:?} raised {raised}");
+    assert!((b.bottom() - (win as f32 - BAR - 8.0)).abs() < 1.5, "the same 8 px above the bar as the open panel (a card rests at another translateY): {b:?}");
     assert!(b.h > 30.0 && b.y >= 0.0, "{b:?}");
     advance(&mut g, 12_000.0);
     for _ in 0..4 {
@@ -980,3 +981,4 @@ fn changing_to_the_taskbar_slides_out_and_asks_for_the_bar_placement() {
     let _ = rest_in(&mut g, 120);
     assert!(g.v.borrow().dbg_body_win().bottom() > 119.0, "flat on the floor again");
 }
+

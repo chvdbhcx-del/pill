@@ -28,6 +28,8 @@ pub use start::start;
 mod snapshots;
 #[cfg(test)]
 mod glue_tests;
+#[cfg(test)]
+mod placement_audit;
 
 /// Helpers for the unit tests of this module tree.
 #[cfg(test)]
