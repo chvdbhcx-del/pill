@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
@@ -95,12 +97,25 @@ class SettingsActions(
     val onPcOwnFilter: (String, Boolean) -> Unit = { _, _ -> },
     val onPcApps: (String) -> Unit = {},
     val onPair: () -> Unit = {},
+    val update: UpdateActions = UpdateActions(),
     val perms: PermissionActions = PermissionActions(),
 )
 
 @Composable
-fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: String? = null, onAskUnpair: (String?) -> Unit = {}) {
+fun SettingsScreen(
+    ui: SettingsUi, actions: SettingsActions, askUnpair: String? = null, onAskUnpair: (String?) -> Unit = {},
+    /** Scroll to the Updates section (the Home card was tapped); [onFocused] when done. */
+    focusUpdates: Boolean = false, onFocused: () -> Unit = {},
+) {
     val c = Pill.colors
+    val listState = rememberLazyListState()
+    LaunchedEffect(focusUpdates) {
+        if (focusUpdates) {
+            // the Updates label is the 5th item from the end (label, card, about label, about, spacer)
+            listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 5).coerceAtLeast(0))
+            onFocused()
+        }
+    }
     var renaming by remember { mutableStateOf<String?>(null) }
     val several = ui.pcs.size >= 2
     val pcActions = PcsActions(
@@ -111,7 +126,7 @@ fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: String? 
         Column(Modifier.fillMaxSize()) {
             TopBar(stringResource(R.string.settings_title), actions.onBack)
             LazyColumn(
-                Modifier.weight(1f),
+                Modifier.weight(1f), listState,
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -181,6 +196,8 @@ fun SettingsScreen(ui: SettingsUi, actions: SettingsActions, askUnpair: String? 
                 }
                 item(key = "perms-label") { SectionLabel(stringResource(R.string.settings_permissions)) }
                 item(key = "perms") { PermissionsCard(ui.perms, actions.perms, Modifier.staggerIn(3)) }
+                item(key = "updates-label") { SectionLabel(stringResource(R.string.upd_section)) }
+                item(key = "updates") { UpdatesCard(ui.update, ui.versionName, actions.update, Modifier.staggerIn(4)) }
                 item(key = "about-label") { SectionLabel(stringResource(R.string.settings_about)) }
                 item(key = "about") {
                     GlassCard(Modifier.staggerIn(4)) {

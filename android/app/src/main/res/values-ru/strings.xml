@@ -308,4 +308,37 @@
     <string name="clip_off_title">Синхронизация буфера выключена</string>
     <string name="clip_off_body">Включите её в настройках Pill Phone.</string>
     <string name="clip_received_toast">Буфер обновлён с ПК</string>
+
+    <!-- Обновления (из релиза phone-latest на GitHub) -->
+    <string name="upd_section">Обновления</string>
+    <string name="upd_card_title">Доступно обновление: %1$s</string>
+    <string name="upd_size_line">Загрузка %1$s</string>
+    <string name="upd_downloading_pct">Загрузка… %1$d%%</string>
+    <string name="upd_status_never">Ещё не проверялось</string>
+    <string name="upd_status_checking">Проверяем обновления…</string>
+    <string name="upd_status_current">У вас последняя версия</string>
+    <string name="upd_status_available">Доступна версия %1$s</string>
+    <string name="upd_status_downloading">Загружаем %1$s…</string>
+    <string name="upd_status_verifying">Проверяем загрузку…</string>
+    <string name="upd_status_installing">Устанавливаем…</string>
+    <string name="upd_status_permission">Разрешите установку обновлений</string>
+    <string name="upd_status_failed">Обновить не получилось</string>
+    <string name="upd_perm_body">Android просит разрешить Pill Phone устанавливать приложения. Включите это в открывшихся настройках и вернитесь.</string>
+    <string name="upd_last_checked">проверено %1$s</string>
+    <string name="upd_never_checked">не проверялось</string>
+    <string name="upd_notes_title">Что нового</string>
+    <string name="upd_btn_update">Обновить</string>
+    <string name="upd_btn_update_to">Обновить до %1$s</string>
+    <string name="upd_btn_allow">Разрешить</string>
+    <string name="upd_btn_allow_installs">Разрешить установку</string>
+    <string name="upd_btn_check">Проверить сейчас</string>
+    <string name="upd_dismiss">Скрыть</string>
+    <string name="upd_auto">Проверять обновления автоматически</string>
+    <string name="upd_auto_body">С GitHub загружается только небольшой файл с номером версии: при открытии приложения и не чаще раза в 12 часов. Ничего о вас не отправляется, а при закрытом приложении ничего не работает.</string>
+    <string name="upd_fail_check">Не удалось связаться с GitHub. Проверьте подключение и попробуйте ещё раз.</string>
+    <string name="upd_fail_server">Не удалось прочитать данные об обновлении на GitHub. Попробуйте позже.</string>
+    <string name="upd_fail_download">Загрузка прервалась. Попробуйте ещё раз.</string>
+    <string name="upd_fail_mismatch">Загруженный файл не совпал с опубликованным, поэтому он удалён. Попробуйте ещё раз.</string>
+    <string name="upd_fail_storage">Не хватает свободного места для загрузки обновления.</string>
+    <string name="upd_fail_install">Android не установил обновление. Попробуйте ещё раз.</string>
 </resources>

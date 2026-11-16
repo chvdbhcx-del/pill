@@ -95,6 +95,7 @@ class HomeActions(
     val onTogglePhone: () -> Unit = {},
     val onOpenTransfer: (String) -> Unit = {},
     val onAcceptTransfer: (String) -> Unit = {},
+    val update: UpdateActions = UpdateActions(),
     val perms: PermissionActions = PermissionActions(),
 )
 
@@ -119,6 +120,12 @@ fun HomeScreen(ui: HomeUi, actions: HomeActions) {
                 }
             }
             item(key = "hero") { Hero(ui, actions, Modifier.staggerIn(1)) }
+            // a newer build is out (and this one was not dismissed): a small card that comes and goes on a spring
+            if (ui.update.showCard) {
+                item(key = "update") {
+                    UpdateCard(ui.update, actions.update, Modifier.animateItem(fadeInSpec = Motion.calm(), placementSpec = Motion.soft(), fadeOutSpec = Motion.calm()).staggerIn(2))
+                }
+            }
             if (ui.link == LinkUi.Connected && ui.status != null) {
                 item(key = "device") { DeviceCard(ui.status, ui.phoneExpanded, actions.onTogglePhone, Modifier.staggerIn(2)) }
             }

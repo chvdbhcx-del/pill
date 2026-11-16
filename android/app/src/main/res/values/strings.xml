@@ -305,4 +305,37 @@
     <string name="clip_off_title">Clipboard sync is off</string>
     <string name="clip_off_body">Turn it on in the Pill Phone settings.</string>
     <string name="clip_received_toast">Clipboard updated from PC</string>
+
+    <!-- Updates (from the phone-latest release on GitHub) -->
+    <string name="upd_section">Updates</string>
+    <string name="upd_card_title">Update available: %1$s</string>
+    <string name="upd_size_line">%1$s download</string>
+    <string name="upd_downloading_pct">Downloading… %1$d%%</string>
+    <string name="upd_status_never">Not checked yet</string>
+    <string name="upd_status_checking">Checking for updates…</string>
+    <string name="upd_status_current">You’re up to date</string>
+    <string name="upd_status_available">Version %1$s is available</string>
+    <string name="upd_status_downloading">Downloading %1$s…</string>
+    <string name="upd_status_verifying">Verifying the download…</string>
+    <string name="upd_status_installing">Installing…</string>
+    <string name="upd_status_permission">Allow installing updates</string>
+    <string name="upd_status_failed">Update didn’t work</string>
+    <string name="upd_perm_body">Android asks you to allow Pill Phone to install apps. Switch it on in the settings that open, then come back.</string>
+    <string name="upd_last_checked">checked %1$s</string>
+    <string name="upd_never_checked">never checked</string>
+    <string name="upd_notes_title">What’s new</string>
+    <string name="upd_btn_update">Update</string>
+    <string name="upd_btn_update_to">Update to %1$s</string>
+    <string name="upd_btn_allow">Allow</string>
+    <string name="upd_btn_allow_installs">Allow installs</string>
+    <string name="upd_btn_check">Check now</string>
+    <string name="upd_dismiss">Dismiss</string>
+    <string name="upd_auto">Check for updates automatically</string>
+    <string name="upd_auto_body">Only a small version file is fetched from GitHub, when the app opens and at most every 12 hours. Nothing about you is sent, and nothing runs while the app is closed.</string>
+    <string name="upd_fail_check">Couldn’t reach GitHub. Check your connection and try again.</string>
+    <string name="upd_fail_server">The update information on GitHub couldn’t be read. Try again later.</string>
+    <string name="upd_fail_download">The download was interrupted. Try again.</string>
+    <string name="upd_fail_mismatch">The downloaded file didn’t match the published one, so it was thrown away. Try again.</string>
+    <string name="upd_fail_storage">Not enough free space to download the update.</string>
+    <string name="upd_fail_install">Android didn’t install the update. Try again.</string>
 </resources>

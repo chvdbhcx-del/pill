@@ -1,6 +1,8 @@
 package app.pill.phone.ui
 
 import androidx.compose.runtime.Immutable
+import app.pill.phone.data.UpdateFail
+import app.pill.phone.data.UpdatePhase
 import app.pill.phone.net.RelayState
 import app.pill.phone.net.Route
 import app.pill.phone.protocol.Msg
@@ -88,7 +90,28 @@ data class HomeUi(
     /** Every paired PC; the switcher on the hero appears with two or more. [link], [pcName], [route]... describe [selectedPcId]. */
     val pcs: List<PcUi> = emptyList(),
     val selectedPcId: String? = null,
+    val update: UpdateUi = UpdateUi(),
 )
+
+/** The updater as the screens show it: the Settings "Updates" section and the Home card. */
+@Immutable
+data class UpdateUi(
+    val phase: UpdatePhase = UpdatePhase.Idle,
+    /** The newer version on offer ("1.1.0"), if any. */
+    val latest: String? = null,
+    val notes: String = "",
+    val sizeText: String = "",
+    /** 0..1 while downloading. */
+    val progress: Float = 0f,
+    val fail: UpdateFail? = null,
+    /** When the check last ran, ms; 0 = never. */
+    val lastCheck: Long = 0,
+    val auto: Boolean = true,
+    /** The user closed the Home card of this very build. */
+    val dismissed: Boolean = false,
+) {
+    val showCard: Boolean get() = latest != null && !dismissed
+}
 
 @Immutable
 data class AppRowUi(val pkg: String, val label: String, val enabled: Boolean, val system: Boolean)
@@ -115,6 +138,7 @@ data class SettingsUi(
     /** Clipboard sync (master) and "Receive from PC". */
     val clipEnabled: Boolean = false,
     val clipReceive: Boolean = true,
+    val update: UpdateUi = UpdateUi(),
 )
 
 /** The pairing flow, one state at a time. */

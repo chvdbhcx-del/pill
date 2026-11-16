@@ -29,8 +29,9 @@ android {
         applicationId = "app.pill.phone"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        // versionCode must grow with every APK published to the phone-latest release (see docs/phone-updates.md).
+        versionCode = 2
+        versionName = "1.1.0"
         // English + Russian only: keeps the APK free of the translations of every library.
         resourceConfigurations += listOf("en", "ru")
         // The bundled ML Kit barcode model ships native code per ABI; phones are arm, so skip x86 to keep the APK small.

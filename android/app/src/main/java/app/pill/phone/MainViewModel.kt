@@ -18,6 +18,9 @@ import app.pill.phone.net.PairResult
 import app.pill.phone.net.PcApi
 import app.pill.phone.net.PcView
 import app.pill.phone.net.RelayState
+import app.pill.phone.net.Updater
+import app.pill.phone.data.UpdatePhase
+import app.pill.phone.ui.UpdateUi
 import app.pill.phone.protocol.FileNames
 import app.pill.phone.protocol.Msg
 import app.pill.phone.protocol.PairLink
@@ -102,7 +105,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private fun view(views: Map<String, PcView>, pc: Paired?) = views[pc?.pcId] ?: PcView()
 
-    val home: StateFlow<HomeUi> = combine(
+    private val homeBase: StateFlow<HomeUi> = combine(
         combine(Store.pcs, LinkManager.views, selected, LinkManager.revoked) { pcs, v, sel, rev -> NetBits(pcs, v, sel, rev.isNotEmpty()) },
         combine(Store.relayEnabled, Store.clipEnabled, StatusReporter.current) { on, clip, s -> Triple(on, clip, s) },
         combine(Transfers.items, _perms, mirrored, Store.phoneExpanded) { t, pe, m, x -> HomeBits(t, pe, m, x) },
@@ -154,7 +157,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         SettingsUi(first?.label?.ifBlank { null }, first?.address, auto, ongoing, perms, BuildConfig.VERSION_NAME, android.os.Build.MODEL.orEmpty(), android.os.Build.VERSION.RELEASE.orEmpty())
     }
 
-    val settings: StateFlow<SettingsUi> = combine(
+    private val settingsFull: StateFlow<SettingsUi> = combine(
         settingsBase, Store.relayEnabled, LinkManager.views, combine(Store.pcs, Store.overrides, selected) { p, o, s -> Triple(p, o, s) },
         combine(Store.clipEnabled, Store.clipReceive) { e, r -> e to r },
     ) { s, on, views, (pcs, global, sel), (clipOn, clipRecv) ->
@@ -172,6 +175,36 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             },
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUi())
+
+    // ---- updates ----
+    private val updateUi: StateFlow<UpdateUi> = combine(Updater.state, Store.updateLastCheck, Store.updateAuto, Store.updateDismissed) { s, last, auto, dismissed ->
+        val o = s.offer
+        UpdateUi(
+            // "idle" after a successful check is "up to date"
+            phase = if (s.phase == UpdatePhase.Idle && o == null && last > 0) UpdatePhase.UpToDate else s.phase,
+            latest = o?.versionName, notes = o?.notes.orEmpty(), sizeText = o?.let { FileNames.humanSize(it.size) }.orEmpty(),
+            progress = s.progress, fail = s.fail, lastCheck = last, auto = auto, dismissed = o != null && dismissed == o.versionCode,
+        )
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, UpdateUi())
+
+    val home: StateFlow<HomeUi> = combine(homeBase, updateUi) { h, u -> h.copy(update = u) }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeUi())
+    val settings: StateFlow<SettingsUi> = combine(settingsFull, updateUi) { s, u -> s.copy(update = u) }.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUi())
+
+    /** The Home card was tapped: Settings opens scrolled to its Updates section. */
+    private val _focusUpdates = MutableStateFlow(false)
+    val focusUpdates: StateFlow<Boolean> = _focusUpdates
+    fun openUpdates() { _focusUpdates.value = true; push(Route.Settings) }
+    fun updatesFocused() { _focusUpdates.value = false }
+
+    fun checkUpdates() = Updater.check(app)
+    fun setUpdateAuto(on: Boolean) = Store.setUpdateAuto(on)
+    fun dismissUpdate() { Updater.state.value.offer?.let { Store.setUpdateDismissed(it.versionCode) } }
+
+    /** Update, or Allow: without the install permission this opens Android's page for it and carries on when the user is back. */
+    fun updateNow(openInstallSettings: () -> Unit) {
+        Updater.update(app)
+        if (Updater.state.value.phase == UpdatePhase.NeedsPermission) openInstallSettings()
+    }
 
     fun setRelayEnabled(on: Boolean) = Store.setRelayEnabled(on)
     fun setAutoReceive(on: Boolean) = Store.setAutoReceive(on)

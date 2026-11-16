@@ -22,6 +22,9 @@
     <!-- Android 8-9 only: saving to the public Downloads folder. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
+    <!-- In-app updates: lets this app hand its own new APK to the system installer (the user still confirms where Android asks). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -129,5 +132,8 @@
         </receiver>
 
         <receiver android:name=".service.TransferActionReceiver" android:exported="false" />
+
+        <!-- The installer's answer to an in-app update (net/ApkInstaller.kt); only the system calls it, through our own PendingIntent -->
+        <receiver android:name=".net.UpdateResultReceiver" android:exported="false" />
     </application>
 </manifest>

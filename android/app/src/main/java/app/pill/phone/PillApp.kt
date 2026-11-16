@@ -3,6 +3,7 @@ package app.pill.phone
 import android.app.Application
 import app.pill.phone.data.Store
 import app.pill.phone.net.LinkManager
+import app.pill.phone.net.Updater
 import app.pill.phone.protocol.Msg
 import app.pill.phone.service.ClipBridge
 import app.pill.phone.service.NotifBridge
@@ -20,6 +21,7 @@ class PillApp : Application() {
         super.onCreate()
         Store.init(this)
         LinkManager.init(this)
+        Updater.init(this)
         Notifs.createChannels(this)
         scope.launch {
             // One place routes every frame from the PC to whoever handles it.

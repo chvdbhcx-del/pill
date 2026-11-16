@@ -32,6 +32,7 @@ import app.pill.phone.ui.screens.PcPickerSheet
 import app.pill.phone.ui.screens.PermissionActions
 import app.pill.phone.ui.screens.SettingsActions
 import app.pill.phone.ui.screens.SettingsScreen
+import app.pill.phone.ui.screens.UpdateActions
 import app.pill.phone.ui.theme.Motion
 
 /** What only the Activity can do (system dialogs, scanner, picker). */
@@ -39,6 +40,8 @@ class HostActions(
     val scanQr: () -> Unit,
     val pickFiles: () -> Unit,
     val sendClipboard: () -> Unit,
+    /** Android's "install unknown apps" page for this app. */
+    val openInstallSettings: () -> Unit,
     val perms: PermissionActions,
 )
 
@@ -54,6 +57,14 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
     val appsTitle by vm.appsTitle.collectAsStateWithLifecycle()
     val pendingSend by vm.pendingSend.collectAsStateWithLifecycle()
     val pcOptions by vm.pcOptions.collectAsStateWithLifecycle()
+    val focusUpdates by vm.focusUpdates.collectAsStateWithLifecycle()
+    val updateActions = UpdateActions(
+        onCheck = vm::checkUpdates,
+        onUpdate = { vm.updateNow(host.openInstallSettings) },
+        onAuto = vm::setUpdateAuto,
+        onDismiss = vm::dismissUpdate,
+        onOpen = vm::openUpdates,
+    )
     var askUnpair by remember { mutableStateOf<String?>(null) }
     var pickCount by remember { mutableIntStateOf(0) }
     pendingSend?.let { pickCount = it.sources.size }
@@ -95,6 +106,7 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
                     onTogglePhone = vm::togglePhone,
                     onOpenTransfer = vm::openTransfer,
                     onAcceptTransfer = vm::acceptTransfer,
+                    update = updateActions,
                     perms = host.perms,
                 ),
             )
@@ -140,10 +152,13 @@ fun PillRoot(vm: MainViewModel, host: HostActions) {
                     onPcAutoReceive = vm::setPcAutoReceive,
                     onPcOwnFilter = vm::setPcOwnFilter,
                     onPair = { host.scanQr() },
+                    update = updateActions,
                     perms = host.perms,
                 ),
                 askUnpair = askUnpair,
                 onAskUnpair = { askUnpair = it },
+                focusUpdates = focusUpdates,
+                onFocused = vm::updatesFocused,
             )
         }
     }

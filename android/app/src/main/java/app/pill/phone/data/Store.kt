@@ -54,6 +54,18 @@ object Store {
     /** "Receive from PC": clips from a PC are put on this phone's clipboard (only matters while [clipEnabled]). */
     val clipReceive: StateFlow<Boolean> = _clipReceive.asStateFlow()
 
+    private val _updateAuto = MutableStateFlow(true)
+    /** "Check for updates automatically": at most every 12 hours, on app start. */
+    val updateAuto: StateFlow<Boolean> = _updateAuto.asStateFlow()
+
+    private val _updateLastCheck = MutableStateFlow(0L)
+    /** When the update check last ran, ms; 0 = never. */
+    val updateLastCheck: StateFlow<Long> = _updateLastCheck.asStateFlow()
+
+    private val _updateDismissed = MutableStateFlow(0L)
+    /** The versionCode whose Home card the user dismissed; the next build shows its card again. */
+    val updateDismissed: StateFlow<Long> = _updateDismissed.asStateFlow()
+
     private val _overrides = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     /** The global app filter; a PC can have its own instead. */
     val overrides: StateFlow<Map<String, Boolean>> = _overrides.asStateFlow()
@@ -69,6 +81,9 @@ object Store {
         _relayEnabled.value = plain.getBoolean("relayEnabled", true)
         _clipEnabled.value = plain.getBoolean("clipEnabled", false)
         _clipReceive.value = plain.getBoolean("clipReceive", true)
+        _updateAuto.value = plain.getBoolean("updateAuto", true)
+        _updateLastCheck.value = plain.getLong("updateLastCheck", 0L)
+        _updateDismissed.value = plain.getLong("updateDismissed", 0L)
         _overrides.value = plain.getStringSet("filterOn", emptySet()).orEmpty().associateWith { true } +
             plain.getStringSet("filterOff", emptySet()).orEmpty().associateWith { false }
         _selectedPc.value = plain.getString("selectedPc", null)
@@ -177,6 +192,15 @@ object Store {
     fun setRelayEnabled(on: Boolean) { plain.edit().putBoolean("relayEnabled", on).apply(); _relayEnabled.value = on }
     fun setClipEnabled(on: Boolean) { plain.edit().putBoolean("clipEnabled", on).apply(); _clipEnabled.value = on }
     fun setClipReceive(on: Boolean) { plain.edit().putBoolean("clipReceive", on).apply(); _clipReceive.value = on }
+    fun setUpdateAuto(on: Boolean) { plain.edit().putBoolean("updateAuto", on).apply(); _updateAuto.value = on }
+    fun setUpdateLastCheck(at: Long) { plain.edit().putLong("updateLastCheck", at).apply(); _updateLastCheck.value = at }
+    fun setUpdateDismissed(code: Long) { plain.edit().putLong("updateDismissed", code).apply(); _updateDismissed.value = code }
+
+    /** The last manifest text that offered a newer build, so the card is still there after a restart (null = none). */
+    var updateOffer: String?
+        get() = plain.getString("updateOffer", null)
+        set(v) { plain.edit().apply { if (v == null) remove("updateOffer") else putString("updateOffer", v) }.apply() }
+
     fun setIncludeOngoing(on: Boolean) { plain.edit().putBoolean("includeOngoing", on).apply(); _includeOngoing.value = on }
 
     fun setAppEnabled(pkg: String, on: Boolean) {

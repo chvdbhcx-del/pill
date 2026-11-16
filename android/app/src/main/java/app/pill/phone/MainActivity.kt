@@ -11,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
 import app.pill.phone.data.Perms
+import app.pill.phone.net.ApkInstaller
+import app.pill.phone.net.Updater
 import app.pill.phone.service.ClipBridge
 import app.pill.phone.service.LinkService
 import app.pill.phone.transfer.Transfers
@@ -45,6 +47,7 @@ class MainActivity : ComponentActivity() {
                         scanQr = vm::openScanner,
                         pickFiles = { picker.launch(arrayOf("*/*")) },
                         sendClipboard = { startActivity(Intent(this, ClipSendActivity::class.java)) },
+                        openInstallSettings = { open(ApkInstaller.permissionIntent(this)) },
                         perms = PermissionActions(
                             onNotificationAccess = { open(Perms.notificationAccessIntent(this)) },
                             onPostNotifications = {
@@ -69,6 +72,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         ClipBridge.foreground = true
+        Updater.onForeground(this)   // the automatic check (at most every 12 h), the way back from the permission screen
     }
 
     override fun onStop() {
