@@ -4,6 +4,8 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-16
+
 ### Highlights
 - Settings: fewer duplicate switches and a shorter Look page. Weather is one switch (the forecast from the internet, still off by default; the separate "Weather tab" switch only hid the tab and blocked the same traffic), the Phone tab is hidden on the Tabs page instead of by its own switch, and the notification centre is one switch ("Keep history" is gone: off now means no tab and no history). A settings file from 0.9.0 or earlier loads with the same behaviour: if either old switch was off, the one switch is off, and nothing that was off turns on. Frame rate, GPU and Power moved from Look > Advanced to a new Performance page (Look had 29 rows, now 20; the sidebar has 17 pages).
 - New Settings > Performance > Power: the island is capped at 30 frames a second while Windows Energy Saver is on (and, if you choose, on battery), and draws nothing while the session is locked, the display is off or a minimised Remote Desktop client hides it. Each rule is its own switch; coming back fades the island in. A line under the switches shows what a frame costs now and why the rate is capped, for example "30 fps: Energy Saver".
