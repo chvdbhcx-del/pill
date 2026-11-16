@@ -21,7 +21,9 @@
 //! * De-duplication: while `media.widget` is on, the island does not show the player (`ui-core` `live::media` gives no row and no edge
 //!   reaction, `panel::a::home` has no player part and `command::tab_on` ignores it). Turning it off gives all of it back at once.
 //! * The window exists only while the setting is on. Its placement is part of its spec, so a change of the placement settings re-creates it
-//!   (`sync`); a change of the monitors, DPI or the taskbar re-places it (`relayout`, from the guard poll like the island's).
+//!   (`sync`): the old window is told to retire (`RETIRE_EVENT`), slides out and closes itself while the new one comes in; a change of the
+//!   monitors, DPI or the taskbar re-places it (`relayout`, from the guard poll like the island's): the body slides out, the window is moved
+//!   and it slides back in (`SLOT_EVENT`, for every dock).
 //! * In the taskbar (`edge` = `taskbar`): the window is taller ([`logic::WIN_BAR`]), its floor is the monitor's bottom (over the bar), the folded
 //!   capsule is a compact one that fits the strip (its own prev / play / next: hovering does not open it, a click on its cover or title opens the card, which floats above the bar) (`Placement::InBar` -> `geom::widget_place`). Where the
 //!   monitor has no bar it can live in (top / left / right / auto-hidden / too tall) it is the plain bottom placement, like the island. When the

@@ -109,6 +109,7 @@ fn motion_sheets() {
         media(&mut s, &f, playing("Invented Song", 1, &red, "#cc3246", true, 61_000));
         s.show();
         s.run(4000);
+        let _ = s.render(win, &th); // the cover is on screen (decoded) before it moves
         s.send_proximity(&ProximityEvent::Hover);
         save(&d, "m3-open.png", &film(&mut s, &th, win, r, 24.0, 16));
         s.send_proximity(&ProximityEvent::Leave);
@@ -124,6 +125,7 @@ fn motion_sheets() {
         media(&mut s, &f, playing("Invented Song", 1, &red, "#cc3246", true, 61_000));
         s.show();
         s.run(4000);
+        let _ = s.render(win, &th);
         media(&mut s, &f, playing("Another Made Up Tune", 2, &blue, "#2850d2", true, 0));
         let mut t = film(&mut s, &th, win, r, 30.0, 6);
         media(&mut s, &f, playing("Third One", 3, &green, "#3cbe6e", true, 0));
@@ -155,6 +157,28 @@ fn motion_sheets() {
         s.send(&mv(bar.x + bar.w * 0.7, bar.cy()));
         t.extend(film(&mut s, &th, win, r, 24.0, 9));
         save(&d, "m9-scrub.png", &t);
+        s.send(&up(bar.x + bar.w * 0.7, bar.cy()));
+        s.run(4000);
+
+        // 5b. prev nudges its icon; the size glides
+        s.send_proximity(&ProximityEvent::Hover);
+        s.run(4000);
+        let prev = st.to_real(lg::parts(st, 1.0, 0.0).btn[0].center());
+        s.send(&mv(prev.0, prev.1));
+        s.send(&down(prev.0, prev.1));
+        let mut t = film(&mut s, &th, win, r, 24.0, 3);
+        s.send(&up(prev.0, prev.1));
+        t.extend(film(&mut s, &th, win, r, 24.0, 9));
+        save(&d, "m12-prev-kick.png", &t);
+        s.send_proximity(&ProximityEvent::Leave);
+        s.run(4000);
+        fakes_settings(&mut s, &f, cfg(json!({ "size": 160 })));
+        let r2 = region({
+            let mut k = base(Dock::Bottom);
+            k.k = 1.6;
+            k
+        });
+        save(&d, "m13-size.png", &film(&mut s, &th, win, r2, 30.0, 12));
 
         // 6. in the taskbar: appears, opens by a click, closes
         let (svc, fb) = Services::fake();

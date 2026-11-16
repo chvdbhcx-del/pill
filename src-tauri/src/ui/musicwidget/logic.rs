@@ -791,6 +791,31 @@ mod tests {
         assert_eq!(seek_at(c.bar, c.bar.x + c.bar.w * 3.0), 1.0);
     }
 
+    #[test]
+    fn the_shared_parts_stand_where_the_capsule_and_the_card_put_them_and_travel_smoothly_between() {
+        let near = |a: Rect, b: Rect| (a.x - b.x).abs() < 0.01 && (a.y - b.y).abs() < 0.01 && (a.w - b.w).abs() < 0.01 && (a.h - b.h).abs() < 0.01;
+        for st in [Stand::from(Dock::Bottom), Stand::from(Dock::Top), in_bar(Align::Left, 48.0), in_bar(Align::Right, 48.0), in_bar(Align::Center, 40.0)] {
+            let (a, b) = (capsule_layout_in(st, frames(st, 0.0, 0.0).0), card_layout(frames(st, 1.0, 0.0).1));
+            let (p0, p1) = (parts(st, 0.0, 0.0), parts(st, 1.0, 0.0));
+            assert!(near(p0.cover, a.cover) && (0..3).all(|i| near(p0.btn[i], a.btn[i])), "folded: the capsule's places");
+            assert!(near(p1.cover, b.cover) && (0..3).all(|i| near(p1.btn[i], b.btn[i])) && near(p1.bar, b.bar) && near(p1.head, b.title) && near(p1.sub, b.sub), "open: the card's places");
+            assert_eq!((p1.cover_r, p1.cover.w), (card_cover_radius(), COVER));
+            // in between: the cover only grows, the corners only round off, nobody jumps
+            let mut prev = p0;
+            for i in 1..=40 {
+                let q = parts(st, i as f32 / 40.0, 0.0);
+                assert!(q.cover.w >= prev.cover.w - 0.01 && (q.cover.w - prev.cover.w) < 4.0, "{st:?}: the cover grows in small steps");
+                assert!((q.cover.y - prev.cover.y).abs() < 8.0 && (q.btn[1].cx() - prev.btn[1].cx()).abs() < 6.0, "{st:?}: the buttons travel, they do not jump");
+                prev = q;
+            }
+            // a spring's overshoot stays a sane rectangle
+            assert!(parts(st, 1.08, 0.0).cover.w > 0.0 && parts(st, -0.3, 0.0).cover.w > 0.0);
+        }
+        // a bar capsule too thin for a hairline grows its track from the card's
+        let thin = in_bar(Align::Left, 24.0);
+        assert!(near(parts(thin, 0.0, 0.0).bar, card_layout(frames(thin, 0.0, 0.0).1).bar));
+    }
+
     // ----- in the taskbar
 
     fn in_bar(align: Align, bar: f32) -> Stand {

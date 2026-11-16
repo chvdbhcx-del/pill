@@ -155,7 +155,9 @@ impl Gpu {
                 .and_then(data_url_bytes)
                 .and_then(|b| decode_cover(cv, &b, px))
                 .and_then(|p| cv.gfx.from_bgra(px, px, &p).ok());
-            let mut fade = Flow::new(0.0, Feel::FADE.within(250.0));
+            // the same picture decoded again at another size (the size setting glides) is not a new one: no fade, no old cover behind it
+            let again = self.covers.get(&id).is_some_and(|c| c.bmp.is_some());
+            let mut fade = Flow::new(if again { 1.0 } else { 0.0 }, Feel::FADE.within(250.0));
             fade.to(1.0);
             self.covers.insert(id, Cover { bmp, fade, t, px, had_url: url.is_some() });
             if self.covers.len() > 8 {

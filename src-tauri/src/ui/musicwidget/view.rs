@@ -40,6 +40,10 @@ use std::time::Duration;
 #[path = "view_kbd.rs"]
 mod kbd; // keyboard mode, UIA controls and high contrast of the widget
 
+#[cfg(test)]
+#[path = "view_tests.rs"]
+mod tests; // the view's own motion state: springs, ghosts, accent, bar
+
 const TITLE: Style = Style::new(13.0, 600).ellipsis();
 const SUB: Style = Style::new(11.5, 450).ellipsis();
 /// The artist's line box is a little lower than the title's so that the two share a baseline (their centres differ with the size).
@@ -146,6 +150,12 @@ pub struct MusicView {
     retired: bool,
     /// keyboard mode (the focus ring) and the high-contrast palette (view_kbd.rs)
     kbd: kbd::Kbd,
+}
+
+/// How visible the new title and the new artist are while `swap` runs 0 -> 1: the title arrives once the old one has mostly gone, the artist a
+/// beat after it, so the two lines are never laid over each other.
+fn arrival(swap: f32) -> (f32, f32) {
+    (((swap - 0.25) / 0.75).clamp(0.0, 1.0), ((swap - 0.4) / 0.6).clamp(0.0, 1.0))
 }
 
 fn flows<const N: usize>(x: f32, f: Feel) -> [Flow; N] {
@@ -408,7 +418,7 @@ impl MusicView {
         // old line back to full), the new text arrives, the bar starts over
         let changed = self.vis && !self.track.heading().is_empty() && t.identity() != self.track.identity();
         if changed {
-            let mut a = Flow::new(self.swap.at01(), Feel::FADE.within(170.0));
+            let mut a = Flow::new(arrival(self.swap.at01()).0, Feel::FADE.within(170.0)); // from as visible as it is
             a.to(0.0);
             self.ghosts.push(Ghost { head: self.track.heading(), sub: self.track.sub(), a });
             if self.ghosts.len() > 3 {
@@ -996,8 +1006,7 @@ impl Ink<'_> {
             });
         }
         let (h, s) = (self.track.heading(), self.track.sub());
-        // the title arrives once the old one has mostly gone, the artist a beat after it: never two lines laid over each other
-        let (kh, ks) = (((self.swap - 0.25) / 0.75).clamp(0.0, 1.0), ((self.swap - 0.4) / 0.6).clamp(0.0, 1.0));
+        let (kh, ks) = arrival(self.swap);
         cv.with_opacity(kh, |cv| cv.text(head.offset(0.0, 4.0 * (1.0 - kh)), &h, hs, th.text));
         cv.with_opacity(ks, |cv| cv.text(sub.offset(0.0, 4.0 * (1.0 - ks)), &s, ss, th.dim));
     }
@@ -1058,7 +1067,7 @@ impl Ink<'_> {
     /// is cut. The two sizes share one baseline (`SUB_DROP`).
     fn line(&self, cv: &Canvas, r: Rect, hs: Style, ss: Style) {
         let th = self.th;
-        let k = ((self.swap - 0.25) / 0.75).clamp(0.0, 1.0);
+        let k = arrival(self.swap).0;
         let pair = |cv: &Canvas, h: &str, s: &str, dy: f32| {
             let (hw, sub) = lg::bar_line(r.w, cv.text_width(h, hs), if s.is_empty() { 0.0 } else { cv.text_width(s, ss) });
             // a hair of slack: a layout box exactly as wide as its text may still decide to cut it
