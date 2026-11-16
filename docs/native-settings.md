@@ -44,10 +44,10 @@ panics when a row is left over). No settings key was renamed, dropped or given a
 
 | group | pages (id: sections) |
 |---|---|
-| Island | `look`: Island look (shape, theme, colour, size, monitor), Clock and date, Animation (Reduce motion); Advanced: colour / transparency / position, frame rate and GPU / `edge`: Island edge (style list + reactions), Pet (gallery, side, size) / `tabs`: island tabs, what is on Home, profiles |
+| Island | `look`: Island look (shape, theme, colour, size, monitor), Clock and date, Animation and contrast (Reduce motion, High contrast Auto / On / Off); Advanced: colour / transparency / position, frame rate and GPU / `edge`: Island edge (style list + reactions), Pet (gallery, side, size) / `tabs`: island tabs, what is on Home, profiles |
 | Features | `weather` / `media`: Media player, Volume and microphone (devices, mic and camera dots); Advanced: sound sources / `voice`: Voice to text (+ local Whisper; one function, one page: its provider chips and installer are long); Advanced: recognition service / `clipboard`; Advanced: pasting, exclusions, limits / `capture`: Screenshots, Screen recording; Advanced: details, encoder / `tools`: Notes and timer, Launcher, File shelf, Text tools, System controls, VPN; Advanced: own sound, your own VPN client / `phone`: Phone link, apps, shared clipboard, files, relay; Advanced: file details, relay address and cap / `ai`: AI assistant and chat, AI agents in the terminal, Local AI chat on this computer |
 | Events | `notifications`: Notifications, Downloads (+ Steam), Battery, Keyboard layout, Virtual desktops, USB drives; Advanced: display time and history, download details / `calendar`: Calendar, Mail (IMAP), OBS; Advanced: OBS connection |
-| App | `general`: ONE page of the general settings, in this order: Start and language (`language`, autostart), Hiding the pill (fullscreen, peek, auto-hide), Quiet hours, Command bar search (file search + browser engine), Settings window (the live-preview switch `settings.preview`); Advanced: hiding details and program lists, pass-through, Everything, settings backup (+ the data folder note), first run / `hotkeys`: every key on ONE page (the recorder checks a combo against all others) / `updates`: version and updates, what is new, help |
+| App | `general`: ONE page of the general settings, in this order: Start and language (`language`, autostart), Hiding the pill (fullscreen, peek, auto-hide), Quiet hours, Command bar search (file search + browser engine + your prefixes and bookmarks, `command.shortcuts`), Settings window (the live-preview switch `settings.preview`); Advanced: hiding details and program lists, pass-through, Everything, settings backup (+ the data folder note), first run / `hotkeys`: every key on ONE page (the recorder checks a combo against all others) / `updates`: version and updates, what is new, help |
 
 Where a page fetches data when it shows up and which pages poll status lines is decided per page id (`settings_view/nav.rs::page_shown`, `live_status`): `general`
 autostart, backup info and Everything, `hotkeys` launcher list, `look` monitors, `media` audio devices, `voice` the key and Whisper status, `clipboard` status, `ai` assistant
@@ -127,6 +127,7 @@ clipboard has invented lines, a notification is "Sample sender: ...".
 | `showTime` `showDate` `showWxIcon` `showTemp` `showSeconds` `clock24` `showBattery` | the folded clock row (weather and 76 % battery are samples) |
 | `pet` `pet.*` / `character` `character.liquid` | the folded island with the pet / the edge style |
 | `reduceMotion` `fps` `edgeIdleFps` | the folded island, Replay shows the motion |
+| `a11y.contrast` | the folded island (high contrast: system colours, opaque body, 2 px outline), see docs/native-a11y.md |
 | `net.weather` `weather.units` | the weather tab with the sample forecast |
 | `clipboard.*` `clipClickPaste` | the clipboard tab with sample items |
 | `module.*` `home.*` `music.lyrics` | the open island on Home (the tab strip changes) |

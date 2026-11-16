@@ -445,6 +445,18 @@ mod tests {
     }
 
     #[test]
+    fn high_contrast_makes_the_body_the_system_colour_and_opaque() {
+        let mut s = ShellSettings::from_json(&json!({"opacityCol": 30, "opacityExp": 20, "island.colorCustom": "#336699", "theme": "light"}));
+        assert!(s.op_col() < 1.0 && s.op_exp() < 1.0);
+        s.apply_json(&json!({"a11y.hc.bg": "#000000"}));
+        assert_eq!((s.op_col(), s.op_exp()), (1.0, 1.0), "no glass");
+        assert_eq!(s.island_color(), Some(Rgba::rgb(0, 0, 0)), "the system colour beats the user's colour");
+        assert_eq!(s.resolved_theme(true), Theme::Dark, "and decides the text by its brightness");
+        s.apply_json(&json!({"a11y.hc.bg": ""}));
+        assert!(s.op_exp() < 1.0 && s.island_color() == Some(Rgba::rgb(0x33, 0x66, 0x99)), "an empty value gives the normal look back");
+    }
+
+    #[test]
     fn apply_json_is_object_assign() {
         let mut s = ShellSettings::from_json(&json!({"showDate": true, "clock24": false}));
         assert!(s.show_date && !s.clock24);

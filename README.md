@@ -123,6 +123,7 @@ All of these are defaults and can be changed or cleared in *Settings → Hotkeys
 | Action | Default |
 | --- | --- |
 | Open / close the island | `Ctrl+Alt+I` |
+| **Keyboard control** of the island card (then the music widget, then off) | `Win+Alt+J` |
 | **Command bar** | `Alt+Shift+Space` |
 | Clipboard history | `Ctrl+Alt+V` |
 | Paste without formatting | `Ctrl+Alt+Shift+V` |

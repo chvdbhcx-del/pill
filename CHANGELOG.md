@@ -2,6 +2,14 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Highlights
+- Keyboard control: `Win+Alt+J` (Settings > Hotkeys) opens the island card for the keyboard. Tab and the arrows move an animated focus ring, Enter and Space press, Left / Right switch tabs, Alt+1..9 jump to a tab, Esc closes the card and gives the focus back to your window. A second press hands the keys to the music widget (Space play / pause, arrows seek, Shift+arrows previous / next), a third ends it.
+- Screen readers: the island's tabs, header buttons, card buttons and the Home tab's player, volume and tiles, and the music widget's buttons and position bar are exposed to UI Automation (names, roles, values; invoke, toggle, select and set-value).
+- High contrast: the island follows the Windows contrast themes (opaque body, system colours, solid 2 px outline); Look > Animation and contrast has Auto / On / Off.
+- Command bar: your own prefixes and bookmarks (Settings > General > Command bar search): `g = https://www.google.com/search?q={query}` makes `g cats` open that page.
+
 ## [0.9.0] - 2026-11-16
 
 ### Highlights
