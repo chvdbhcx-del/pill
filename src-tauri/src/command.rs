@@ -207,6 +207,11 @@ fn query(text: &str) -> Vec<Res> {
         } else {
             res("shell", format!("shell:{cmd}"), format!("Run: {cmd}"), "cmd /c, hidden window".into(), cmd.to_string())
         });
+    } else if let Some((sc, words)) = shortcuts::find(&shortcuts::configured(), q0) {
+        // the user's own prefix (Settings > General > Command bar search): `g query` opens that address, `gh` a bookmark
+        let url = sc.expand(&words);
+        let (title, sub) = if sc.is_template() { (format!("{}: {words}", sc.site()), format!("{} {words}", sc.prefix)) } else { (sc.site().to_string(), format!("Bookmark {}", sc.prefix)) };
+        out.push(res("web", format!("web:sc:{}:{words}", sc.prefix), title, format!("{sub}  -  opens in your default browser"), url));
     } else if let Some(rest) = crate::uninstall::trigger(q0).filter(|_| mod_on("module.uninstall")) {
         // `u foo` / `del foo` / `uninstall foo` / `удалить foo`: installed apps to uninstall completely (nothing runs before the confirm card)
         out = crate::uninstall::rows(rest).into_iter().map(|r| res(r.kind, r.id, r.title, r.sub, r.payload)).collect();
@@ -1262,6 +1267,7 @@ fn toggle_setting(app: &AppHandle, key: &str, label: &str) -> Outcome {
 mod calc;
 use calc::{calc_row, convert};
 pub(crate) mod power_timer; // "shut down in 30 minutes", "cancel shutdown": command/power_timer.rs
+mod shortcuts; // `g query` / `gh` prefix templates and bookmarks (command.shortcuts): command/shortcuts.rs
 
 #[cfg(test)]
 mod tests {
