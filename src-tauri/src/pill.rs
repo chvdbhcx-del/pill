@@ -153,7 +153,7 @@ fn frame_for(m: &crate::ui::host::MonitorInfo, expanded: bool) -> Lay {
     // `offsetX` (-50..50 % of the monitor width, 0 = middle) moves the window centre; the window stays inside the monitor.
     let off = crate::settings::get_f64("offsetX", 0.0).clamp(-50.0, 50.0);
     let dock = dock();
-    let bar = if dock == Dock::Taskbar { geom::bottom_bar(m.rect, m.work, m.scale, crate::taskbar::tray_rect(m.rect)) } else { None };
+    let bar = if dock == Dock::Taskbar { geom::bottom_bar(m.rect, crate::taskbar::trusted_work(m.rect, m.work, m.scale), m.scale, crate::taskbar::tray_rect(m.rect)) } else { None };
     let (x, y) = match bar {
         Some(b) => {
             h += b.h;

@@ -1642,6 +1642,7 @@ impl Host {
             }
             WM_DISPLAYCHANGE | WM_SETTINGCHANGE => {
                 // refresh rate / monitor layout / "show animations" may have changed
+                crate::guard::display_changed(); // the fullscreen guard looks again now, not at its next poll
                 for w in self.wins.values_mut() {
                     w.frame.request();
                 }

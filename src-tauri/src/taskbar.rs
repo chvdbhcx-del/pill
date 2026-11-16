@@ -4,17 +4,22 @@
 //  * at once, from an `EVENT_SYSTEM_FOREGROUND` hook that wakes only when the foreground window changes (zero idle cost, no timer);
 //  * and from the guard poll (500 ms, already running) as a safety net for a raise that gave no focus event.
 // Neither activates the island or takes the focus: `SWP_NOACTIVATE`, no move, no resize.
+// The same hook also tells the fullscreen guard (`guard.rs`, via `set_listener`) that the foreground window changed, and a second hook, scoped
+// to the foreground window's thread and moved on every foreground change, tells it when that window moved or resized (F11, a video going
+// fullscreen): the guard re-checks at once instead of waiting for its slow poll.
 // The standalone music widget (`media.widget.edge` = taskbar) stands in the same bar and rides the same hook: it is the second window the hook raises.
 use crate::ui::host::geom::{self, Align, IRect, IslandBar, WidgetAsk};
 use crate::ui::host::MonitorInfo;
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::OnceLock;
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, RECT};
-use windows::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
+use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowExW, FindWindowW, GetClassNameW, GetWindow, GetWindowRect, IsWindowVisible, SetWindowPos, EVENT_SYSTEM_FOREGROUND, GW_HWNDPREV, HWND_TOPMOST,
-    SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, WINEVENT_OUTOFCONTEXT,
+    FindWindowExW, FindWindowW, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible, SetWindowPos,
+    EVENT_OBJECT_LOCATIONCHANGE, EVENT_SYSTEM_FOREGROUND, GW_HWNDPREV, HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+    SWP_NOSIZE, WINEVENT_OUTOFCONTEXT,
 };
 
 /// The window classes of the primary and of a secondary monitor's taskbar.
@@ -73,6 +78,49 @@ pub fn tray_rect(mon: IRect) -> Option<IRect> {
     None
 }
 
+/// The taskbar window whose strip lies along the bottom of `mon` (physical px), if there is one.
+fn bar_rect_on(mon: IRect) -> Option<IRect> {
+    taskbars().into_iter().filter_map(rect_of).find(|r| r.l >= mon.l - 2 && r.r <= mon.r + 2 && (r.b - mon.b).abs() <= 2)
+}
+
+/// Why the strip the work area reserves at the bottom of `mon` is NOT a bottom taskbar the island can stand in (`None` = it is one, or there is no
+/// strip at all and the plain bottom edge applies anyway). `bar` = the rectangle of the taskbar window along this monitor's bottom. Pure. A shell
+/// replacement or tweaker that reserves a strip without a real `Shell_TrayWnd` there, a floating / inset bar, a bar that is mid-slide (auto-hide)
+/// or a work area that does not match the bar all end up here, and the island then takes the plain bottom edge.
+pub fn implausible_bar(mon: IRect, work: IRect, scale: f32, bar: Option<IRect>) -> Option<&'static str> {
+    if mon.b - work.b <= 0 {
+        return None;
+    }
+    let Some(b) = bar else { return Some("no taskbar window along the bottom of this monitor") };
+    let tol = ((4.0 * scale).round() as i32).max(3);
+    if b.r - b.l < mon.w() / 2 {
+        return Some("the taskbar window is not a full-width strip");
+    }
+    if b.h() < geom::phys(geom::BAR_MIN_H, scale) || b.h() > mon.h() / 3 {
+        return Some("the taskbar window has an implausible height");
+    }
+    if (b.t - work.b).abs() > tol {
+        return Some("the taskbar window and the work area disagree (floating or sliding bar)");
+    }
+    None
+}
+
+static DISTRUSTED: std::sync::Mutex<Option<&'static str>> = std::sync::Mutex::new(None);
+
+/// `work` when the bottom strip it leaves is a real taskbar, else the whole monitor (so `geom::bottom_bar` / `widget_bar` find no bar and the
+/// island / widget take the plain bottom edge). Logs one line per change of verdict.
+pub fn trusted_work(mon: IRect, work: IRect, scale: f32) -> IRect {
+    let why = implausible_bar(mon, work, scale, bar_rect_on(mon));
+    let mut last = DISTRUSTED.lock().unwrap_or_else(|e| e.into_inner());
+    if *last != why {
+        *last = why;
+        if let Some(w) = why {
+            eprintln!("taskbar: not used as the island's bar ({w}); using the plain bottom edge");
+        }
+    }
+    if why.is_some() { mon } else { work }
+}
+
 /// Puts the island back above a taskbar that got in front of it. True when it had to. No activation, no move.
 pub fn raise_over_taskbar(island: HWND) -> bool {
     if island.0.is_null() {
@@ -104,8 +152,56 @@ static WIDGET: AtomicIsize = AtomicIsize::new(0);
 static FOLLOW: AtomicBool = AtomicBool::new(false);
 static FOLLOW_WIDGET: AtomicBool = AtomicBool::new(false);
 static HOOKED: AtomicBool = AtomicBool::new(false);
+/// The foreground window the location hook watches, and that hook (0 = none).
+static WATCHED: AtomicIsize = AtomicIsize::new(0);
+static LOC_HOOK: AtomicIsize = AtomicIsize::new(0);
+
+/// What a listener is told: the foreground window changed / the foreground window moved or resized.
+pub const EV_FOREGROUND: u8 = 1;
+pub const EV_LOCATION: u8 = 2;
+static LISTENER: OnceLock<fn(u8)> = OnceLock::new();
+
+/// Registers the one listener of the foreground events (the fullscreen guard). It runs on the UI thread inside the hook: keep it to a flag and a wake-up.
+pub fn set_listener(f: fn(u8)) {
+    let _ = LISTENER.set(f);
+}
+
+fn notify(ev: u8) {
+    if let Some(f) = LISTENER.get() {
+        f(ev);
+    }
+}
+
+/// Points the location hook at `fg`'s thread (events of that one thread only: the cheapest scope that still sees its window change size).
+fn watch(fg: HWND) {
+    if WATCHED.swap(fg.0 as isize, Ordering::Relaxed) == fg.0 as isize || LISTENER.get().is_none() {
+        return;
+    }
+    let old = LOC_HOOK.swap(0, Ordering::Relaxed);
+    if old != 0 {
+        let _ = unsafe { UnhookWinEvent(HWINEVENTHOOK(old as *mut c_void)) };
+    }
+    if fg.0.is_null() {
+        return;
+    }
+    let tid = unsafe { GetWindowThreadProcessId(fg, None) };
+    if tid == 0 {
+        return;
+    }
+    let h = unsafe { SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, None, Some(on_location), 0, tid, WINEVENT_OUTOFCONTEXT) };
+    LOC_HOOK.store(h.0 as isize, Ordering::Relaxed); // a failed hook (null) leaves the guard's poll as the only net
+}
+
+unsafe extern "system" fn on_location(_hook: HWINEVENTHOOK, _event: u32, hwnd: HWND, object: i32, _child: i32, _thread: u32, _ms: u32) {
+    // OBJID_WINDOW (0) of the watched window only: not its carets, cursors or child controls
+    if object == 0 && hwnd.0 as isize == WATCHED.load(Ordering::Relaxed) {
+        notify(EV_LOCATION);
+    }
+}
 
 unsafe extern "system" fn on_foreground(_hook: HWINEVENTHOOK, _event: u32, hwnd: HWND, _object: i32, _child: i32, _thread: u32, _ms: u32) {
+    watch(hwnd);
+    notify(EV_FOREGROUND);
     let (island, widget) = (FOLLOW.load(Ordering::Relaxed), FOLLOW_WIDGET.load(Ordering::Relaxed));
     if (island || widget) && is_taskbar_class(&class_of(hwnd)) {
         if island {
@@ -124,14 +220,17 @@ fn hook() {
         let h = unsafe { SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, None, Some(on_foreground), 0, 0, WINEVENT_OUTOFCONTEXT) };
         if h.0.is_null() {
             HOOKED.store(false, Ordering::Relaxed); // the guard poll still keeps the island on top
+        } else {
+            watch(unsafe { GetForegroundWindow() });
         }
     }
 }
 
-/// The island stands in the taskbar (`on`) or not any more. The hook does nothing while `on` is false.
+/// The island stands in the taskbar (`on`) or not any more. The raise does nothing while `on` is false; the hook itself is installed with the
+/// first island window either way (the fullscreen guard listens on it).
 pub fn follow(island: HWND, on: bool) {
     FOLLOW.store(on && !island.0.is_null(), Ordering::Relaxed);
-    if !on || island.0.is_null() {
+    if island.0.is_null() {
         return;
     }
     ISLAND.store(island.0 as isize, Ordering::Relaxed);
@@ -175,7 +274,7 @@ pub fn island_bar(scale: f32) -> Option<IslandBar> {
 pub fn widget_place(mon: &MonitorInfo, ask: &WidgetAsk, size: (i32, i32)) -> ((i32, i32), Option<(geom::Bar, geom::BarSlot)>) {
     // the slot asked of the bar is as wide as the folded capsule at the current size
     let ask = WidgetAsk { body_w: ask.body_w * crate::ui::musicwidget::size_k(), ..*ask };
-    geom::widget_place(mon.rect, mon.work, mon.scale, tray_rect(mon.rect), island_bar(mon.scale), &ask, size)
+    geom::widget_place(mon.rect, trusted_work(mon.rect, mon.work, mon.scale), mon.scale, tray_rect(mon.rect), island_bar(mon.scale), &ask, size)
 }
 
 #[cfg(test)]
@@ -196,6 +295,24 @@ mod tests {
         assert!(!covered_by_taskbar(["Chrome_WidgetWin_1", "Notepad"]), "other topmost windows are none of our business");
         assert!(covered_by_taskbar(["Shell_TrayWnd"]));
         assert!(covered_by_taskbar(["Notepad", "Shell_SecondaryTrayWnd", "Chrome_WidgetWin_1"]));
+    }
+
+    #[test]
+    fn a_real_bottom_bar_is_trusted_at_every_dpi_and_a_dubious_one_is_not() {
+        for (s, h) in [(1.0f32, 48), (1.25, 60), (1.5, 72), (2.0, 96)] {
+            let (mon, work) = (IRect::new(0, 0, 2560, 1440), IRect::new(0, 0, 2560, 1440 - h));
+            let bar = IRect::new(0, 1440 - h, 2560, 1440);
+            assert_eq!(implausible_bar(mon, work, s, Some(bar)), None, "{s}");
+            assert!(implausible_bar(mon, work, s, None).is_some(), "no taskbar window: a shell replacement reserved the strip");
+            assert!(implausible_bar(mon, work, s, Some(IRect::new(800, 1440 - h, 1760, 1440))).is_some(), "a floating / inset bar");
+            assert!(implausible_bar(mon, work, s, Some(IRect::new(0, 1440 - h + 30, 2560, 1440 + 30))).is_some(), "a bar that is sliding out");
+            assert!(implausible_bar(mon, work, s, Some(IRect::new(0, 1440 - 6, 2560, 1440))).is_some(), "a sliver is no bar");
+        }
+        let mon = IRect::new(0, 0, 2560, 1440);
+        assert_eq!(implausible_bar(mon, mon, 1.0, None), None, "no strip reserved (auto-hide, no bar): the plain bottom edge applies already");
+        // a secondary monitor left of the primary, negative coordinates
+        let m2 = IRect::new(-1920, -300, 0, 780);
+        assert_eq!(implausible_bar(m2, IRect::new(-1920, -300, 0, 732), 1.0, Some(IRect::new(-1920, 732, 0, 780))), None);
     }
 
     #[test]
