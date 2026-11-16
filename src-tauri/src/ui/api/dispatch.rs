@@ -49,6 +49,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         "update_install" => ok(blk(updater::update_install(app.clone()))),
         "whatsnew_check" => ok(whatsnew::whatsnew_check()),
         "report_problem" => ok(report::report_problem()),
+        "report_issue" => ok(report::report_issue()),
         "media_state" => ok(blk(media::media_state(a.opt("known")?))),
         "lyrics_state" => ok(lyrics::lyrics_state()),
         "media_sessions" => ok(blk(media::media_sessions())),

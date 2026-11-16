@@ -66,6 +66,7 @@ pub enum BackendCall {
     UpdateCheck,
     UpdateInstall,
     ReportProblem,
+    ReportIssue,
     // live-event extras
     AgentsHookSnippets,
     ObsStatus,
@@ -158,6 +159,7 @@ impl BackendCall {
             UpdateCheck => "update_check",
             UpdateInstall => "update_install",
             ReportProblem => "report_problem",
+            ReportIssue => "report_issue",
             AgentsHookSnippets => "agents_hook_snippets",
             ObsStatus => "obs_status",
             ObsSetPassword { .. } => "obs_set_password",
@@ -234,6 +236,7 @@ pub fn action_call(action: Action) -> Option<BackendCall> {
         Action::EverythingDownload => C::EverythingDownload,
         Action::EverythingRunInstaller => C::EverythingRunInstaller,
         Action::ReportProblem => C::ReportProblem,
+        Action::ReportIssue => C::ReportIssue,
         Action::PlaySignal | Action::UpdateCheck | Action::ClipWipe | Action::AiSetupLater => return None,
         Action::WeatherRefresh => C::WeatherGet { force: true, tz_minutes: 0 },
         Action::AgentsSnippets => C::AgentsHookSnippets,

@@ -221,7 +221,7 @@ fn custom_widgets_and_actions_are_a_closed_vocabulary() {
         }
     }
     assert_eq!(used, known);
-    for a in ["RunWizard", "ReportProblem", "ClipWipe", "WeatherRefresh", "PlaySignal", "AgentsSnippets", "AiList", "AiTest", "UpdateCheck", "VoiceTestMic", "MailTest", "NotifAllow", "AiSetupLater"] {
+    for a in ["RunWizard", "ReportProblem", "ReportIssue", "ClipWipe", "WeatherRefresh", "PlaySignal", "AgentsSnippets", "AiList", "AiTest", "UpdateCheck", "VoiceTestMic", "MailTest", "NotifAllow", "AiSetupLater"] {
         assert!(actions.contains(a), "{a} is no longer used");
     }
 }
@@ -314,7 +314,7 @@ const OLD_KEYS: [&str; 181] = [
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
-const OLD_UNSTORED: [&str; 36] = [
+const OLD_UNSTORED: [&str; 37] = [
     "character.reactions", "general.autostart", "behavior.hideAddActive",
     "behavior.showAddActive", "search.everything", "general.backup",
     "general.wizard", "hotkeys.launcher", "modules.profiles",
@@ -326,7 +326,7 @@ const OLD_UNSTORED: [&str; 36] = [
     "phone.devices", "phone.apps", "ai.key",
     "ai.list", "ai.test", "aisetup.intro",
     "aisetup.whisper", "aisetup.cloud-voice", "aisetup.chat",
-    "updates.check", "updates.whatsnew", "updates.report",
+    "updates.check", "updates.whatsnew", "updates.report", "updates.issue",
 ];
 
 /// Ids of rows that are gone on purpose (and why): "Set up a cloud AI" only jumped to the assistant section that now stands right above it,
@@ -712,7 +712,7 @@ fn rows_per_page() {
         ("weather", 7), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
         ("notifications", 18), ("calendar", 12),
         ("phone", 16), ("ai", 14),
-        ("general", 25), ("hotkeys", 19), ("updates", 5),
+        ("general", 25), ("hotkeys", 19), ("updates", 6),
     ];
     for (id, n) in expect {
         assert_eq!(counts[id], n, "row count of {id}");
