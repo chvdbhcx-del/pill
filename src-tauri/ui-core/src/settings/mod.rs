@@ -30,6 +30,7 @@ pub mod anim;
 pub mod calls;
 pub mod flows;
 pub mod hotkey;
+pub mod look;
 pub mod model;
 pub mod nav;
 mod pages;
