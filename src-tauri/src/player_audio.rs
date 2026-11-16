@@ -6,9 +6,10 @@ use std::sync::Mutex;
 use windows::core::{Interface, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
 use windows::Win32::Media::Audio::{
-    eConsole, eRender, AudioSessionStateActive, IAudioMeterInformation, IAudioSessionControl, IAudioSessionControl2, IAudioSessionManager2,
+    eConsole, eRender, AudioSessionStateActive, IAudioSessionControl, IAudioSessionControl2, IAudioSessionManager2,
     IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
 };
+use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
 use windows::Win32::Storage::Packaging::Appx::GetPackageFamilyName;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 use windows::Win32::System::ProcessStatus::EnumProcesses;
