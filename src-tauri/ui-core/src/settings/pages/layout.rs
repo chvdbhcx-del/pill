@@ -3,20 +3,23 @@
 //! The rows themselves (label, hint, control, default, key) are defined once in `base.rs`, `system.rs`, `phone.rs` and `ai.rs` as the old
 //! 16 pages. This file only takes them out of a pool by id and arranges them into the pages of the sidebar.
 //!
-//! SIXTEEN pages, each one coherent family (`nav::NAV`, under four small group headings): Island (Look = look + clock and date + animation;
+//! SEVENTEEN pages, each one coherent family (`nav::NAV`, under four small group headings): Island (Look = look + clock and date + animation;
 //! Edge and character = edge + pet; Tabs and Home), Features (Weather; Media and sound = media player + volume and microphone;
 //! Voice to text; Clipboard; Screen capture = screenshots + recording; Tools = notes and timer, launcher, file shelf, text tools, system controls,
 //! VPN; Phone link; AI = assistant, agents, local AI), Events (Notifications and cards = notifications, downloads, battery, keyboard layout,
-//! virtual desktops, USB drives; Calendar and mail = calendar, mail, OBS), App (General, Hotkeys, Updates).
+//! virtual desktops, USB drives; Calendar and mail = calendar, mail, OBS), App (General, Performance = frame rate and GPU + power, Hotkeys, Updates).
 //!
 //! Every function is a titled SECTION of its page: its on/off switch first, then its events (the `live.*` rows), then its parameters. The rare
 //! and technical rows of all the functions of a page go into trailing `.adv()` sections that the window folds behind the one collapsed
 //! "Advanced" disclosure of THAT page (`Part` / `pg`). A row cannot be lost or doubled: `Pool::take` removes it, `Pool::finish` checks that
 //! nothing is left behind.
 //!
-//! Three groups of switches overlap on purpose and are NOT merged, only placed side by side and labelled apart (`Pool::edit`): Weather
-//! (`net.weather` asks the internet, `module.weather` is the tab), Phone (`phone.enabled` is the link itself, `module.phone` the tab,
-//! `live.phone` the cards) and File shelf (`module.shelf` is the shelf, `live.shelf` the badge on the island).
+//! Switches that said the same thing twice are ONE switch now (`overlap::fold` migrates the old keys, `Pool::drop_rows` removes the rows):
+//! Weather is `net.weather` alone (`module.weather` only hid the tab and blocked the same traffic; a hidden tab is the Tabs page's job),
+//! the Phone tab is hidden on the Tabs page, not by a `module.phone` row, and the notification centre is `module.notifs` alone
+//! (`history.keep` recorded the same history). Two groups of switches still overlap on purpose, because they are different things, and are
+//! only placed side by side and labelled apart (`Pool::edit`): Phone (`phone.enabled` is the link itself, `live.phone` the cards) and
+//! File shelf (`module.shelf` is the shelf, `live.shelf` the badge on the island).
 //!
 //! Everything that belongs to no single function (start and language, hiding, quiet hours, command bar search, the settings window's own switch,
 //! backup, first run) stands together on ONE page, `general`.
@@ -170,8 +173,22 @@ pub(super) fn look(p: &mut Pool) -> Page {
             ),
             part(vec![p.sec(tr("Часы и дата", "Clock and date"), &["showTime", "showDate", "showSeconds", "clock24"])], vec![]),
             part(vec![p.sec(tr("Поделиться оформлением", "Share your look"), &["look.share"])], vec![]),
-            part(vec![p.sec(tr("Анимация и контраст", "Motion and contrast"), &["reduceMotion", "a11y.contrast"])], vec![p.sec(tr("Частота кадров и видеокарта", "Frame rate and GPU"), &["fps", "edgeIdleFps", "ui.gpu"]).adv()]),
-            part(vec![], vec![p.sec(tr("Энергия", "Power"), &["energy.saver", "energy.battery", "energy.pauseLocked", "energy.pauseDisplayOff", "energy.pauseRdp", "energy.cost"]).adv()]),
+            part(vec![p.sec(tr("Анимация и контраст", "Motion and contrast"), &["reduceMotion", "a11y.contrast"])], vec![]),
+        ],
+    )
+}
+
+/// Frame rate, GPU and power: how Pill draws, not how it looks. They stood folded behind Look's Advanced section (29 rows on one page); now
+/// their own short page in the App group, in view.
+pub(super) fn performance(p: &mut Pool) -> Page {
+    pg(
+        "performance",
+        "chip",
+        tr("Производительность", "Performance"),
+        tr("Производительность и энергия", "Performance and power"),
+        vec![
+            part(vec![p.sec(tr("Частота кадров и видеокарта", "Frame rate and GPU"), &["fps", "edgeIdleFps", "ui.gpu"])], vec![]),
+            part(vec![p.sec(tr("Энергия", "Power"), &["energy.saver", "energy.battery", "energy.pauseLocked", "energy.pauseDisplayOff", "energy.pauseRdp", "energy.cost"])], vec![]),
         ],
     )
 }
@@ -294,25 +311,10 @@ pub(super) fn updates(p: &mut Pool) -> Page {
 // ------------------------------------------------------------------------------------------------ Features
 
 pub(super) fn weather(p: &mut Pool) -> Page {
-    // Weather: the forecast switch asks the internet (off by default), the module switch is the tab. Two switches, told apart by their words.
-    p.edit(
-        "net.weather",
-        Some(tr("Прогноз из интернета", "Forecast from the internet")),
-        Some(tr(
-            "Выключено по умолчанию. Включённое, оно обращается только к api.met.no и nominatim.openstreetmap.org. Без него вкладке «Погода» и значку у часов нечего показывать",
-            "Off by default. When on, it talks only to api.met.no and nominatim.openstreetmap.org. Without it the Weather tab and the chip by the clock have nothing to show",
-        )),
-    );
-    p.edit(
-        "module.weather",
-        Some(tr("Вкладка «Погода»", "Weather tab")),
-        Some(tr(
-            "Показывает вкладку. Выключено: вкладка скрыта и погода не запрашивается, даже если прогноз включён выше",
-            "Shows the tab. Off: the tab is hidden and the weather is not requested, even if the forecast above is on",
-        )),
-    );
+    // Weather is ONE switch: the forecast from the internet (off by default). `module.weather` only hid the tab and blocked the same traffic.
+    p.drop_rows(&["module.weather"]);
     let title = tr("Погода", "Weather");
-    pg("weather", "weather", title, Tr::NONE, vec![part(vec![p.main(title, &["net.weather", "module.weather", "weather.city", "weather.units", "weather.refresh", "showWxIcon", "showTemp"])], vec![])])
+    pg("weather", "weather", title, Tr::NONE, vec![part(vec![p.main(title, &["net.weather", "weather.city", "weather.units", "weather.refresh", "showWxIcon", "showTemp"])], vec![])])
 }
 
 pub(super) fn media(p: &mut Pool) -> Page {
@@ -437,6 +439,16 @@ pub(super) fn notifications(p: &mut Pool) -> Page {
         "Что читается. Caps Lock и Num Lock: только нажатия этих двух клавиш и их состояние, ничего из набираемого. Bluetooth: имена, подключение и заряд уже сопряжённых устройств, без поиска новых. Пока переключатель выключен, это не читается. Плашки не появляются в тихие часы и пока копятся карточки «Фокусировки» Windows.",
         "What is read. Caps Lock and Num Lock: only presses of those two keys and their state, nothing you type. Bluetooth: names, connection and charge of devices you have already paired, no search for new ones. While a switch is off, none of this is read. The chips stay away in quiet hours and while Windows Focus Assist cards are held.",
     );
+    // the notification centre is ONE switch: the tab and the history it shows (`history.keep` recorded the same history)
+    p.drop_rows(&["history.keep"]);
+    p.edit(
+        "module.notifs",
+        None,
+        Some(tr(
+            "Вкладка «Уведомления»: история карточек острова. Выключено: вкладка скрыта и история не пишется",
+            "The Notifications tab: the history of the island cards. Off: the tab is hidden and no history is kept",
+        )),
+    );
     pg(
         "notifications",
         "bell",
@@ -445,7 +457,7 @@ pub(super) fn notifications(p: &mut Pool) -> Page {
         vec![
             part(
                 vec![p.sec(tr("Уведомления", "Notifications"), &["module.notifs", "live.notifications", "live.notifications.allow"])],
-                vec![p.sec(tr("Время показа и история", "Display time and history"), &["cards.duration", "history.keep", "history.mail"]).adv()],
+                vec![p.sec(tr("Время показа и история", "Display time and history"), &["cards.duration", "history.mail"]).adv()],
             ),
             part(
                 vec![p.note(tr("Загрузки", "Downloads"), downloads, &["live.downloads", "live.dlDone", "live.steam"])],
@@ -482,21 +494,14 @@ pub(super) fn calendar(p: &mut Pool) -> Page {
 
 pub(super) fn phone(p: &mut Pool) -> Page {
     let (link, apps, clip, relay) = (p.footer("phone", 0), p.footer("phone", 1), p.footer("phone", 2), p.footer("phone", 4));
-    // the three switches of the Phone: the link (the server on this PC), the tab, the cards on the island
+    // the link (the server on this PC) and the cards on the island; the tab is hidden on the Tabs page (`module.phone` only did that)
+    p.drop_rows(&["module.phone"]);
     p.edit(
         "phone.enabled",
         None,
         Some(tr(
-            "Главный выключатель: Pill принимает соединения от телефона. Уведомления телефона на острове, ответы на них и файлы между телефоном и компьютером (приложение Pill Phone). Без него вкладка и карточки ниже ничего не получают",
-            "The main switch: Pill accepts connections from the phone. Your phone's notifications on the island, replies to them and files between phone and PC (the Pill Phone app). Without it the tab and the cards below receive nothing",
-        )),
-    );
-    p.edit(
-        "module.phone",
-        Some(tr("Вкладка «Телефон»", "Phone tab")),
-        Some(tr(
-            "Показывает вкладку с уведомлениями и файлами с телефона. Выключено: вкладка скрыта; сама связь включается выше",
-            "Shows the tab with your phone's notifications and files. Off: the tab is hidden; the link itself is switched on above",
+            "Главный выключатель: Pill принимает соединения от телефона. Уведомления телефона на острове, ответы на них и файлы между телефоном и компьютером (приложение Pill Phone). Без него вкладка «Телефон» и карточки ниже ничего не получают",
+            "The main switch: Pill accepts connections from the phone. Your phone's notifications on the island, replies to them and files between phone and PC (the Pill Phone app). Without it the Phone tab and the cards below receive nothing",
         )),
     );
     p.edit("live.phone", Some(tr("Карточки с телефона", "Cards from the phone")), None);
@@ -507,7 +512,7 @@ pub(super) fn phone(p: &mut Pool) -> Page {
         Tr::NONE,
         vec![part(
             vec![
-                p.main_note(tr("Связь с телефоном", "Phone link"), link, &["phone.enabled", "module.phone", "live.phone", "phone.link", "phone.devices"]),
+                p.main_note(tr("Связь с телефоном", "Phone link"), link, &["phone.enabled", "live.phone", "phone.link", "phone.devices"]),
                 p.note(tr("Приложения, чьи уведомления приходят", "Apps whose notifications arrive"), apps, &["phone.apps"]),
                 p.note(tr("Общий буфер с телефоном", "Clipboard shared with the phone"), clip, &["phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone"]),
                 p.sec(tr("Файлы с телефона", "Files from the phone"), &["phone.downloadDir", "phone.autoAccept"]),

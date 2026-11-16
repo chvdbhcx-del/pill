@@ -160,7 +160,7 @@ pub fn modules() -> Page {
                         ),
                         false,
                     )
-                    .enabled(Cond::On("history.keep")),
+                    .enabled(Cond::On("module.notifs")),
                 ],
             ),
         ],

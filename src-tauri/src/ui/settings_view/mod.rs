@@ -273,7 +273,7 @@ impl View for SettingsView {
     }
 
     fn on_show(&mut self, cx: &mut Cx) {
-        if self.model.current == "look" {
+        if self.model.current == "performance" {
             self.sample_cost(cx);
         }
         let reduce = self.reduce();

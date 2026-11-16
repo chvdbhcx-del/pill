@@ -86,7 +86,7 @@ pub fn content(step: u8) -> Content {
 
 /// The order of step 2: the `module.<id>` rows no longer stand together (each is a switch of its feature's section, on whichever page that
 /// feature lives), so the wizard keeps the order the Modules page used to have. A module that is not listed here comes last.
-const MODULE_ORDER: [&str; 12] = ["module.media", "module.shelf", "module.launcher", "module.fileSearch", "module.clipboard", "module.text", "module.chat", "module.note", "module.weather", "module.controls", "module.phone", "module.notifs"];
+const MODULE_ORDER: [&str; 10] = ["module.media", "module.shelf", "module.launcher", "module.fileSearch", "module.clipboard", "module.text", "module.chat", "module.note", "module.controls", "module.notifs"];
 
 /// The ids of the module rows step 2 shows (every `module.<id>` row of the schema except VPN, which is left for Settings).
 pub fn module_row_ids() -> Vec<&'static str> {

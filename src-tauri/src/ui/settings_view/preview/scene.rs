@@ -282,6 +282,7 @@ pub fn of_focus(key: &str) -> Option<Scene> {
 pub fn of_page(page: &str) -> Scene {
     match page {
         "look" => Scene::Pill(Look::Island),
+        "performance" => Scene::Pill(Look::Motion),
         "edge" => Scene::Pill(Look::Edge),
         "tabs" | "tools" => Scene::Panel(Tab::Home),
         "weather" => Scene::Panel(Tab::Weather),

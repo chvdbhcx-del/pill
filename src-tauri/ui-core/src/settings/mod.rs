@@ -6,7 +6,7 @@
 //! | module | what |
 //! |---|---|
 //! | `tr` | `Lang` and the `Tr(ru, en)` text pair every label uses |
-//! | `schema` | `Page > Group > Row`, `Control`, `Cond`, the lookups; `pages/*` hold the data (15 pages) |
+//! | `schema` | `Page > Group > Row`, `Control`, `Cond`, the lookups; `pages/*` hold the data (17 pages) |
 //! | `model` | `SettingsModel`: values, defaults, `try_set` -> `Vec<BackendCall>`, validation, `on_event`, row visibility |
 //! | `calls` | `BackendCall`: command name + camelCase args of every `invoke` the page makes, plus `Ui*` effects |
 //! | `hotkey` | action table, combo parsing/conflicts, the key recorder state machine |
@@ -33,6 +33,7 @@ pub mod hotkey;
 pub mod look;
 pub mod model;
 pub mod nav;
+pub mod overlap;
 mod pages;
 pub mod pickers;
 pub mod providers;

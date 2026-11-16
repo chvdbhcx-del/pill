@@ -112,7 +112,13 @@ fn load() -> Cfg {
     EXISTED.store(p.exists(), Ordering::Relaxed);
     let Ok(text) = std::fs::read_to_string(&p) else { return Cfg::new() }; // missing file = first run
     match serde_json::from_str::<Value>(&text) {
-        Ok(Value::Object(m)) => m,
+        Ok(Value::Object(mut m)) => {
+            // 0.9.0 and before: switches that said the same thing twice are one now (`overlap::fold`); write the file back once
+            if pill_ui_core::settings::overlap::fold(&mut m) {
+                save(&m);
+            }
+            m
+        }
         _ => {
             // Never overwrite a corrupt file: move it aside and start from defaults.
             eprintln!("settings: {} is corrupt, moved to settings.corrupt.json", p.display());
@@ -250,6 +256,7 @@ pub fn apply_patch(app: &tauri::AppHandle, mut patch: Cfg) -> (Cfg, Result<(), S
         for (k, v) in &patch {
             m.insert(k.clone(), v.clone());
         }
+        pill_ui_core::settings::overlap::fold(&mut m); // an imported 0.9.0 backup or an old profile may still carry the merged-away keys
         save(&m);
     }
     let mut res = Ok(());
@@ -291,7 +298,7 @@ pub fn apply_patch(app: &tauri::AppHandle, mut patch: Cfg) -> (Cfg, Result<(), S
 // (net.*, the mail and calendar-link feeds), secrets, paths and everything else are never read into a profile nor written by one.
 const MAX_PROFILES: usize = 8;
 const NAME_MAX: usize = 24;
-const PROFILE_DENY: &[&str] = &["live.mail", "live.calendar"];
+const PROFILE_DENY: &[&str] = &["live.mail", "live.calendar", "module.weather", "module.phone"]; // the last two are merged away (`overlap::fold`)
 
 fn profile_key(k: &str) -> bool {
     // `module.<id>` / `live.<id>` only: sub-settings such as live.calendar.path or live.obs.port are not toggles
