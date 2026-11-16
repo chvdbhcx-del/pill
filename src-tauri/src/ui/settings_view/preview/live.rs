@@ -89,6 +89,7 @@ impl Live {
         self.bus.emit("media:changed", json!({ "has_session": false, "playing": false }));
         self.bus.emit("rec:state", json!({ "recording": false }));
         self.bus.emit("live:privacy", json!({ "mic": false, "cam": false, "apps": [] }));
+        self.bus.emit("liveact:state", json!({ "acts": [], "queued": 0, "expand": [] })); // the sample live activity
     }
 
     pub fn is_awake(&self) -> bool {
