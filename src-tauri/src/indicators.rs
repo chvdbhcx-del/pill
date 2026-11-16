@@ -184,48 +184,63 @@ fn ensure_locks() {
 
 // ---------- Bluetooth ----------
 
+/// The 12 hex digits of a device's address, lower case, from an association-endpoint id ("Bluetooth#Bluetooth<adapter>-04:57:91:5a:9d:ff") or a
+/// device-node id ("BTHENUM\Dev_0457915A9DFF\..."); both name the same device, which is how the connection (endpoint) and the battery (node) meet.
+pub fn mac_of(id: &str) -> Option<String> {
+    let hex = if let Some(i) = id.to_ascii_lowercase().find("dev_") {
+        id.get(i + 4..i + 16)?.to_string()
+    } else {
+        id.rsplit('-').next()?.replace(':', "")
+    };
+    (hex.len() == 12 && hex.chars().all(|c| c.is_ascii_hexdigit())).then(|| hex.to_ascii_lowercase())
+}
+
 mod bt {
     use super::*;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
-    use windows::core::{Interface, HSTRING};
+    use windows::core::{IInspectable, Interface, HSTRING};
     use windows::Devices::Bluetooth::{BluetoothDevice, BluetoothLEDevice};
+    use windows::Devices::Enumeration::Pnp::{PnpObject, PnpObjectType, PnpObjectUpdate, PnpObjectWatcher};
     use windows::Devices::Enumeration::{DeviceInformation, DeviceInformationUpdate, DeviceWatcher};
     use windows::Foundation::Collections::{IIterable, IMapView};
     use windows::Foundation::{IReference, TypedEventHandler};
-    use windows::core::IInspectable;
 
-    /// The battery level (percent, a byte) Windows keeps for a Bluetooth device (classic hands-free and LE battery service).
-    pub const BATTERY_KEY: &str = "{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2";
+    /// The battery level (percent, a byte) Windows keeps on the PnP node of a Bluetooth device (classic hands-free and the LE battery service).
+    const BATTERY_KEY: &str = "{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2";
     const CONNECTED_KEY: &str = "System.Devices.Aep.IsConnected";
 
     #[derive(Default)]
     struct State {
+        /// address -> (name, state)
         devs: HashMap<String, (String, Dev)>,
-        /// the first enumeration is the baseline: nothing is announced for devices that were connected before
-        ready: bool,
+        /// endpoint enumerations that have finished; the first enumeration is the baseline, nothing is announced for devices connected before
+        done: u8,
     }
 
-    static WATCHERS: Mutex<Vec<DeviceWatcher>> = Mutex::new(Vec::new());
+    struct Watchers {
+        aep: Vec<DeviceWatcher>,
+        pnp: Vec<PnpObjectWatcher>,
+    }
 
-    pub fn prop<T: windows::core::RuntimeType + 'static>(m: &IMapView<HSTRING, IInspectable>, key: &str) -> Option<T> {
+    static WATCHERS: Mutex<Watchers> = Mutex::new(Watchers { aep: Vec::new(), pnp: Vec::new() });
+
+    fn prop<T: windows::core::RuntimeType + 'static>(m: &IMapView<HSTRING, IInspectable>, key: &str) -> Option<T> {
         m.Lookup(&HSTRING::from(key)).ok()?.cast::<IReference<T>>().ok()?.Value().ok()
     }
 
     /// A level as Windows may type it (a byte; some drivers write a wider integer).
-    pub fn level(m: &IMapView<HSTRING, IInspectable>) -> Option<u8> {
+    fn level(m: &IMapView<HSTRING, IInspectable>) -> Option<u8> {
         prop::<u8>(m, BATTERY_KEY)
             .or_else(|| prop::<i32>(m, BATTERY_KEY).map(|v| v.clamp(0, 100) as u8))
             .or_else(|| prop::<u32>(m, BATTERY_KEY).map(|v| v.min(100) as u8))
     }
 
-    fn apply(st: &Arc<Mutex<State>>, id: String, name: Option<String>, props: &IMapView<HSTRING, IInspectable>) {
-        let connected = prop::<bool>(props, CONNECTED_KEY);
-        let pct = level(props);
+    fn apply(st: &Arc<Mutex<State>>, mac: String, name: Option<String>, connected: Option<bool>, pct: Option<u8>) {
         let (changes, name, ready) = {
             let mut g = st.lock().unwrap_or_else(|e| e.into_inner());
-            let ready = g.ready;
-            let e = g.devs.entry(id.clone()).or_insert_with(|| (String::new(), Dev::default()));
+            let ready = g.done >= 2;
+            let e = g.devs.entry(mac.clone()).or_insert_with(|| (String::new(), Dev::default()));
             if let Some(n) = name.filter(|n| !n.is_empty()) {
                 e.0 = n;
             }
@@ -241,11 +256,10 @@ mod bt {
                     let _ = bus::emit("ind:bt", json!({ "kind": "low", "name": name, "percent": p }));
                 }
                 Change::Connected => {
-                    let st = st.clone();
-                    let (id, name) = (id.clone(), name.clone());
+                    let (st, mac, name) = (st.clone(), mac.clone(), name.clone());
                     let _ = std::thread::Builder::new().name("bt-connect".into()).spawn(move || {
                         std::thread::sleep(std::time::Duration::from_millis(SETTLE_MS));
-                        let r = st.lock().unwrap_or_else(|e| e.into_inner()).devs.get_mut(&id).and_then(|e| e.1.settle());
+                        let r = st.lock().unwrap_or_else(|e| e.into_inner()).devs.get_mut(&mac).and_then(|e| e.1.settle());
                         if let Some((pct, low)) = r {
                             let _ = bus::emit("ind:bt", json!({ "kind": "connect", "name": name, "percent": pct }));
                             if let (true, Some(p)) = (low, pct) {
@@ -258,14 +272,18 @@ mod bt {
         }
     }
 
-    fn watch(aqs: &HSTRING, st: &Arc<Mutex<State>>) -> windows::core::Result<DeviceWatcher> {
-        let want: IIterable<HSTRING> = IIterable::try_from(vec![HSTRING::from(CONNECTED_KEY), HSTRING::from(BATTERY_KEY)])?;
+    /// The paired devices of one kind: their name and connection flag. Paired only: the pairing-state selectors read the PnP store, they do
+    /// not scan the radio.
+    fn watch_endpoints(aqs: &HSTRING, st: &Arc<Mutex<State>>) -> windows::core::Result<DeviceWatcher> {
+        let want: IIterable<HSTRING> = IIterable::try_from(vec![HSTRING::from(CONNECTED_KEY)])?;
         let w = DeviceInformation::CreateWatcherAqsFilterAndAdditionalProperties(aqs, &want)?;
         let s = st.clone();
         w.Added(&TypedEventHandler::<DeviceWatcher, DeviceInformation>::new(move |_, i| {
             if let Some(i) = i.as_ref() {
                 if let (Ok(id), Ok(p)) = (i.Id(), i.Properties()) {
-                    apply(&s, id.to_string(), i.Name().ok().map(|n| n.to_string()), &p);
+                    if let Some(mac) = mac_of(&id.to_string()) {
+                        apply(&s, mac, i.Name().ok().map(|n| n.to_string()), prop::<bool>(&p, CONNECTED_KEY), None);
+                    }
                 }
             }
             Ok(())
@@ -274,14 +292,47 @@ mod bt {
         w.Updated(&TypedEventHandler::<DeviceWatcher, DeviceInformationUpdate>::new(move |_, u| {
             if let Some(u) = u.as_ref() {
                 if let (Ok(id), Ok(p)) = (u.Id(), u.Properties()) {
-                    apply(&s, id.to_string(), None, &p);
+                    if let Some(mac) = mac_of(&id.to_string()) {
+                        apply(&s, mac, None, prop::<bool>(&p, CONNECTED_KEY), None);
+                    }
                 }
             }
             Ok(())
         }))?;
         let s = st.clone();
         w.EnumerationCompleted(&TypedEventHandler::<DeviceWatcher, IInspectable>::new(move |_, _| {
-            s.lock().unwrap_or_else(|e| e.into_inner()).ready = true;
+            s.lock().unwrap_or_else(|e| e.into_inner()).done += 1;
+            Ok(())
+        }))?;
+        w.Start()?;
+        Ok(w)
+    }
+
+    /// The device nodes whose id starts with `prefix` (BTHENUM = classic, BTHLE = LE): the battery level and its changes.
+    fn watch_nodes(prefix: &str, st: &Arc<Mutex<State>>) -> windows::core::Result<PnpObjectWatcher> {
+        let want: IIterable<HSTRING> = IIterable::try_from(vec![HSTRING::from(BATTERY_KEY)])?;
+        let filter = HSTRING::from(format!("System.Devices.DeviceInstanceId:~<\"{prefix}\""));
+        let w = PnpObject::CreateWatcherAqsFilter(PnpObjectType::Device, &want, &filter)?;
+        let s = st.clone();
+        w.Added(&TypedEventHandler::<PnpObjectWatcher, PnpObject>::new(move |_, n| {
+            if let Some(n) = n.as_ref() {
+                if let (Ok(id), Ok(p)) = (n.Id(), n.Properties()) {
+                    if let Some(mac) = mac_of(&id.to_string()) {
+                        apply(&s, mac, None, None, level(&p));
+                    }
+                }
+            }
+            Ok(())
+        }))?;
+        let s = st.clone();
+        w.Updated(&TypedEventHandler::<PnpObjectWatcher, PnpObjectUpdate>::new(move |_, u| {
+            if let Some(u) = u.as_ref() {
+                if let (Ok(id), Ok(p)) = (u.Id(), u.Properties()) {
+                    if let Some(mac) = mac_of(&id.to_string()) {
+                        apply(&s, mac, None, None, level(&p));
+                    }
+                }
+            }
             Ok(())
         }))?;
         w.Start()?;
@@ -290,20 +341,29 @@ mod bt {
 
     pub fn start() {
         let mut g = WATCHERS.lock().unwrap_or_else(|e| e.into_inner());
-        if !g.is_empty() {
+        if !g.aep.is_empty() {
             return;
         }
         let st = Arc::new(Mutex::new(State::default()));
-        // paired devices only: the pairing-state selectors read the PnP store, they do not scan the radio
         for sel in [BluetoothDevice::GetDeviceSelectorFromPairingState(true), BluetoothLEDevice::GetDeviceSelectorFromPairingState(true)] {
-            if let Ok(w) = sel.and_then(|s| watch(&s, &st)) {
-                g.push(w);
+            match sel.and_then(|s| watch_endpoints(&s, &st)) {
+                Ok(w) => g.aep.push(w),
+                Err(_) => st.lock().unwrap_or_else(|e| e.into_inner()).done += 1, // a kind that cannot be watched must not hold the baseline back
+            }
+        }
+        for prefix in ["BTHENUM", "BTHLE"] {
+            if let Ok(w) = watch_nodes(prefix, &st) {
+                g.pnp.push(w);
             }
         }
     }
 
     pub fn stop() {
-        for w in WATCHERS.lock().unwrap_or_else(|e| e.into_inner()).drain(..) {
+        let mut g = WATCHERS.lock().unwrap_or_else(|e| e.into_inner());
+        for w in g.aep.drain(..) {
+            let _ = w.Stop();
+        }
+        for w in g.pnp.drain(..) {
             let _ = w.Stop();
         }
     }
@@ -385,10 +445,38 @@ mod tests {
     }
 
     #[test]
+    fn an_endpoint_and_its_node_name_the_same_address() {
+        assert_eq!(mac_of("Bluetooth#Bluetooth9c:b6:d0:11:22:33-04:57:91:5A:9D:FF").as_deref(), Some("0457915a9dff"));
+        assert_eq!(mac_of("BluetoothLE#BluetoothLE9c:b6:d0:11:22:33-04:57:91:5a:9d:ff").as_deref(), Some("0457915a9dff"));
+        assert_eq!(mac_of(r"BTHENUM\Dev_0457915A9DFF\a&2179a568&1&BluetoothDevice_0457915A9DFF").as_deref(), Some("0457915a9dff"));
+        assert_eq!(mac_of(r"BTHLE\DEV_0457915A9DFF\8&abc&0&0457915A9DFF").as_deref(), Some("0457915a9dff"));
+        assert_eq!(mac_of(r"USB\VID_0BDA&PID_B850\00e04c000001"), None);
+        assert_eq!(mac_of(r"BTH\MS_RFCOMM\9&6088e3e&0&0"), None);
+        assert_eq!(mac_of(r"BTHENUM\Dev_04579"), None, "a short id is nothing");
+    }
+
+    #[test]
     fn levels_are_clamped_and_lock_keys_named() {
         let mut d = Dev::default();
         d.update(Some(true), Some(250));
         assert_eq!(d.pct, Some(100));
         assert_eq!((lock_key(0x14), lock_key(0x90), lock_key(0x41), lock_key(0x91)), (Some("caps"), Some("num"), None, None), "Scroll Lock is not one of ours");
+    }
+
+    /// Live check on a PC with Bluetooth (not run by default): the four watchers start, finish their first enumeration without announcing anything
+    /// and stop again. `cargo test --bin pill -- --ignored indicators::tests::live_watchers_start_and_stop`
+    #[test]
+    #[ignore]
+    fn live_watchers_start_and_stop() {
+        let seen = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let s2 = seen.clone();
+        let id = crate::ui::bus::subscribe("ind:bt", move |_| {
+            s2.fetch_add(1, Ordering::SeqCst);
+        });
+        bt::start();
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        assert_eq!(seen.load(Ordering::SeqCst), 0, "devices that were there before are only a baseline");
+        bt::stop();
+        crate::ui::bus::unsubscribe(id);
     }
 }

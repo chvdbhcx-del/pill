@@ -650,4 +650,88 @@ mod tests {
             assert!(handled || tab_only.contains(&name), "{name} is neither subscribed by the island nor listed as tab/native-only");
         }
     }
+
+    // ---- Windows Focus Assist (opt-in `notify.respectFocus`)
+
+    fn cap_done() -> Value {
+        json!({"kind": "screenshot", "path": "C:/a/shot.png", "copied": true, "w": 1920, "h": 1080})
+    }
+    fn shown(c: &Core) -> Option<String> {
+        c.shell.cards().current_id().map(String::from)
+    }
+    fn watch_flags(outs: &[Out]) -> Vec<bool> {
+        outs.iter()
+            .filter_map(|o| match o {
+                Out::Run(Action::Invoke { cmd, args }) if cmd == "focus_watch" => args.get("on").and_then(Value::as_bool),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn focus_assist_is_ignored_unless_the_user_asked() {
+        let mut c = core();
+        c.bus_event("focus:changed", &json!({"state": "quiet-time", "quiet": true}), 1.0);
+        c.bus_event("capture:done", &cap_done(), 2.0);
+        assert_eq!(shown(&c).as_deref(), Some("cap"), "switch off (default): Windows' state changes nothing");
+        assert!(c.focus.is_empty() && c.take_outs().is_empty());
+    }
+
+    #[test]
+    fn cards_are_held_while_windows_is_quiet_counted_and_released_when_it_ends() {
+        let mut c = core();
+        c.bus_event("settings:changed", &json!({"notify.respectFocus": true}), 0.5);
+        c.bus_event("focus:changed", &json!({"state": "quiet-time", "quiet": true}), 1.0);
+        c.take_outs();
+        c.bus_event("capture:done", &cap_done(), 2.0);
+        assert_eq!(shown(&c), None, "held, not shown");
+        assert_eq!(c.focus.len(), 1);
+        assert_eq!(c.chips.held, 1, "the count chip beside the time");
+        assert_eq!(watch_flags(&c.take_outs()), [true], "the backend is asked to re-check while something is held");
+        assert_eq!(c.toast_recs.len(), 1, "the notifications history has it from the start");
+        // an urgent card (the battery) and the timers get through
+        let mut urgent = lm::CardSpec::text("battery", 8000, "Battery 5%", None);
+        urgent.urgent = true;
+        c.show_card(urgent);
+        assert_eq!(shown(&c).as_deref(), Some("battery"));
+        assert_eq!(c.focus.len(), 1);
+        // Windows is open again: the held card comes back, the chip goes, the re-check stops
+        c.bus_event("focus:changed", &json!({"state": "open", "quiet": false}), 5.0);
+        assert!(c.focus.is_empty() && c.chips.held == 0);
+        assert_eq!(watch_flags(&c.take_outs()), [false]);
+        assert!(c.cards.contains_key("cap"), "released into the shell's queue");
+        assert_eq!(c.toast_recs.len(), 2, "not recorded a second time on release");
+    }
+
+    #[test]
+    fn switching_the_option_off_releases_what_is_held() {
+        let mut c = core();
+        c.bus_event("settings:changed", &json!({"notify.respectFocus": true}), 0.5);
+        c.bus_event("focus:changed", &json!({"quiet": true}), 1.0);
+        c.bus_event("capture:done", &cap_done(), 2.0);
+        assert_eq!(c.focus.len(), 1);
+        c.bus_event("settings:changed", &json!({"notify.respectFocus": false}), 3.0);
+        assert!(c.focus.is_empty() && c.cards.contains_key("cap"));
+    }
+
+    #[test]
+    fn the_boot_answer_of_focus_state_is_taken_too() {
+        let mut c = core();
+        c.bus_event("settings:changed", &json!({"notify.respectFocus": true}), 0.5);
+        c.dispatch_answer("focus:changed", &json!({"state": "quiet-time", "quiet": true}), 1.0);
+        c.bus_event("capture:done", &cap_done(), 2.0);
+        assert_eq!(shown(&c), None);
+    }
+
+    #[test]
+    fn providers_see_the_hold_so_their_chips_stay_away() {
+        let mut c = core();
+        c.bus_event("settings:changed", &json!({"notify.respectFocus": true, "live.capsLock": true}), 0.5);
+        c.bus_event("ind:lock", &json!({"key": "caps", "on": true}), 1.0);
+        assert!(c.rows.contains_key("ind-caps"), "no Focus Assist: the chip shows");
+        c.apply_cmds(vec![LiveCmd::clear("ind-caps")]);
+        c.bus_event("focus:changed", &json!({"quiet": true}), 2.0);
+        c.bus_event("ind:lock", &json!({"key": "caps", "on": false}), 3.0);
+        assert!(!c.rows.contains_key("ind-caps"), "Windows is quiet and respected: a transient chip is not queued");
+    }
 }
