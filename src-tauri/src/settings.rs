@@ -367,6 +367,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn merged_away_switches_never_travel_in_a_profile() {
+        assert!(profile_key("module.notifs") && profile_key("module.chat"));
+        assert!(!profile_key("module.weather") && !profile_key("module.phone"), "folded into net.weather / tabs.hidden (settings::overlap)");
+    }
+
+    #[test]
     fn first_run_wizard_gate() {
         let none = Cfg::new();
         let some = json!({ "theme": "dark", "lastTab": "home" }).as_object().unwrap().clone();

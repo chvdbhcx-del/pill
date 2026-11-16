@@ -269,6 +269,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_openable_pages_are_the_ui_core_list() {
+        let (mut have, mut want) = (PAGES.to_vec(), pill_ui_core::settings::nav::OPENABLE.to_vec());
+        have.sort();
+        want.sort();
+        assert_eq!(have, want, "settingswin::PAGES and nav::OPENABLE name the same pages (voice, performance, ...)");
+    }
+
+    #[test]
     fn combos_normalise() {
         assert_eq!(parse_combo("alt+shift+space").unwrap().0, "Alt+Shift+Space");
         assert_eq!(parse_combo("Shift + Ctrl + v").unwrap().0, "Ctrl+Shift+V");
