@@ -122,6 +122,26 @@ pub fn phone() -> Page {
                         .kw(&["relay", "size", "limit", "размер", "лимит", "мб"]),
                 ],
             ),
+            group_note(
+                tr("Мои другие компьютеры", "My other PCs"),
+                tr(
+                    "Между вашими компьютерами скопированный текст появляется сам, в обе стороны; отключить любую сторону можно у каждого компьютера отдельно. Всё шифруется от компьютера к компьютеру: ретранслятор Pill видит только то, что два компьютера обмениваются данными, когда и сколько. Копии из менеджеров паролей не отправляются, а принятый текст не попадает в историю Windows (Win+V). Пока ни один компьютер не подключён, ничего не отправляется.",
+                    "Between your own PCs copied text shows up on its own, both ways; each direction can be switched off per PC. Everything is encrypted from PC to PC: the Pill relay sees only that two PCs exchange data, when and how much. Copies from password managers are never sent, and a text that arrived is kept out of the Windows history (Win+V). While no PC is paired nothing is sent.",
+                ),
+                vec![
+                    toggle(
+                        "pc.enabled",
+                        tr("Связь с другими компьютерами", "Link with my other PCs"),
+                        tr("Включается сама, когда вы подключаете первый компьютер. Выключено: ничего не слушает и не отправляется. Используется адрес ретранслятора из раздела выше", "Switches itself on when you pair the first PC. Off: nothing listens and nothing is sent. Uses the relay address further down"),
+                        false,
+                    )
+                    .kw(&["pc", "computer", "link", "pair", "clipboard", "компьютер", "связь", "подключить", "буфер"]),
+                    custom("pcs.link", tr("Подключить компьютер", "Pair a PC"), tr("На одном компьютере нажмите «Показать код», на другом вставьте его: код живёт 10 минут и подходит один раз; первый компьютер спросит разрешение", "On one PC press Show a token, on the other paste it: the token lives 10 minutes and works once; the first PC asks you to allow it"), "pcs.link")
+                        .kw(&["token", "code", "pair", "pairing", "paste", "код", "токен", "вставить"]),
+                    custom("pcs.devices", tr("Подключённые компьютеры", "Paired PCs"), tr("Кто на связи, и что передаётся в каждую сторону; «Отключить» работает на обоих компьютерах (на отсутствующем, когда он выйдет на связь)", "Who is online and what goes each way; Unpair works on both PCs (on an absent one when it comes back)"), "pcs.devices")
+                        .kw(&["unpair", "device", "paired", "отключить", "устройство", "компьютеры"]),
+                ],
+            ),
         ],
     )
 }

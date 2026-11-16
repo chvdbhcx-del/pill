@@ -86,6 +86,10 @@ pub enum BackendCall {
     PhonePairCode { renew: bool },
     PhoneRevoke { id: String },
     PhoneApps,
+    // PC link (docs/pc-link.md): status, pairing (`op` = start | join | allow | deny | cancel), one paired PC (`op` = clipTo | clipFrom | unpair)
+    PcStatus,
+    PcPair { op: String, token: Option<String> },
+    PcPeer { id: String, op: String, on: bool },
     // effects of the window itself
     UiSetLanguage { lang: String },
     UiRerender,
@@ -179,6 +183,9 @@ impl BackendCall {
             PhonePairCode { .. } => "phone_pair_code",
             PhoneRevoke { .. } => "phone_revoke",
             PhoneApps => "phone_apps",
+            PcStatus => "pc_status",
+            PcPair { .. } => "pc_pair",
+            PcPeer { .. } => "pc_peer",
             UiSetLanguage { .. } | UiRerender | UiShowPage { .. } | UiStartWizard | UiPickFile | UiSyncControls | UiRebuildSidebar | UiRedrawWizard | UiEndWizardChrome | UiSetReduceMotion { .. } | UiMinimize | UiToggleMaximize => "",
         }
     }
@@ -215,6 +222,8 @@ impl BackendCall {
             ObsSetPassword { password } | MailSetPassword { password } => json!({ "password": password }),
             PhonePairCode { renew } => json!({ "renew": renew }),
             PhoneRevoke { id } => json!({ "id": id }),
+            PcPair { op, token } => json!({ "op": op, "token": token }),
+            PcPeer { id, op, on } => json!({ "id": id, "op": op, "on": on }),
             UiSetLanguage { lang } => json!({ "lang": lang }),
             UiShowPage { page } => json!({ "page": page }),
             UiSetReduceMotion { on } => json!({ "on": on }),
@@ -281,6 +290,11 @@ mod tests {
         assert_eq!((c.command(), c.args()), ("phone_pair_code", json!({"renew": true})));
         let c = BackendCall::PhoneRevoke { id: "d1".into() };
         assert_eq!((c.command(), c.args()), ("phone_revoke", json!({"id": "d1"})));
+        let c = BackendCall::PcPair { op: "join".into(), token: Some("PILL-1".into()) };
+        assert_eq!((c.command(), c.args()), ("pc_pair", json!({"op": "join", "token": "PILL-1"})));
+        let c = BackendCall::PcPeer { id: "p1".into(), op: "clipTo".into(), on: false };
+        assert_eq!((c.command(), c.args()), ("pc_peer", json!({"id": "p1", "op": "clipTo", "on": false})));
+        assert_eq!(BackendCall::PcStatus.command(), "pc_status");
         assert_eq!((BackendCall::PhoneStatus.command(), BackendCall::PhoneApps.command()), ("phone_status", "phone_apps"));
         assert_eq!(BackendCall::OpenLink { url: "https://x".into() }.command(), "chat_open_link");
     }

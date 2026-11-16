@@ -494,7 +494,7 @@ pub(super) fn calendar(p: &mut Pool) -> Page {
 // ------------------------------------------------------------------------------------------------ Phone link and AI (in the Features group)
 
 pub(super) fn phone(p: &mut Pool) -> Page {
-    let (link, apps, clip, relay) = (p.footer("phone", 0), p.footer("phone", 1), p.footer("phone", 2), p.footer("phone", 4));
+    let (link, apps, clip, relay, pcs) = (p.footer("phone", 0), p.footer("phone", 1), p.footer("phone", 2), p.footer("phone", 4), p.footer("phone", 5));
     // the link (the server on this PC) and the cards on the island; the tab is hidden on the Tabs page (`module.phone` only did that)
     p.drop_rows(&["module.phone"]);
     p.edit(
@@ -518,6 +518,7 @@ pub(super) fn phone(p: &mut Pool) -> Page {
                 p.note(tr("Общий буфер с телефоном", "Clipboard shared with the phone"), clip, &["phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone"]),
                 p.sec(tr("Файлы с телефона", "Files from the phone"), &["phone.downloadDir", "phone.autoAccept"]),
                 p.note(tr("Через интернет (ретранслятор)", "Over the internet (relay)"), relay, &["phone.relay"]),
+                p.note(tr("Мои другие компьютеры", "My other PCs"), pcs, &["pc.enabled", "pcs.link", "pcs.devices"]),
             ],
             vec![
                 p.sec(tr("Файлы и приложение: подробности", "Files and the app: details"), &["phone.maxFileMB", "phone.apkUrl"]).adv(),

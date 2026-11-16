@@ -200,7 +200,7 @@ fn custom_widgets_and_actions_are_a_closed_vocabulary() {
     // the renderer must implement exactly these; adding one means adding it here and to the renderer
     let known: BTreeSet<&str> = [
         "character.reactions", "general.backup", "hotkeys.launcher", "modules.home", "modules.profiles", "modules.tabs", "search.everything", "ai.providers", "aisetup.intro", "aisetup.whisper", "aisetup.chat",
-        "voice.providers", "weather.city", "updates.whatsnew", "phone.link", "phone.devices", "phone.apps", "energy.cost", "look.share",
+        "voice.providers", "weather.city", "updates.whatsnew", "phone.link", "phone.devices", "phone.apps", "pcs.link", "pcs.devices", "energy.cost", "look.share",
     ]
     .into_iter()
     .collect();
@@ -264,7 +264,7 @@ fn no_row_needs_a_restart() {
 // ------------------------------------------------------------------------------------------------ the re-layout lost nothing
 
 // The settings.json keys of the 16-page schema this one replaced (a snapshot: none may be renamed, dropped or added by a re-layout).
-const OLD_KEYS: [&str; 195] = [
+const OLD_KEYS: [&str; 196] = [
     "shape", "theme", "island.color", "size",
     "monitor", "character", "character.liquid", "pet",
     "pet.side", "pet.size", "pet.keepDuringMusic", "showTime",
@@ -306,7 +306,7 @@ const OLD_KEYS: [&str; 195] = [
     "timer.soundFile", "voice.endpoint", "voice.model", "voice.autostop",
     "phone.enabled", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone",
     "phone.downloadDir", "phone.autoAccept", "phone.relay", "phone.maxFileMB",
-    "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB", "net.ai",
+    "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB", "net.ai", "pc.enabled",
     "ai.provider", "ai.baseUrl", "ai.model", "aiSetupDone",
     "updateAuto", "whatsNew",
     // added with the live preview panel and with the bottom edge (the only keys since the re-layout)
@@ -320,7 +320,7 @@ const OLD_KEYS: [&str; 195] = [
 ];
 
 // The ids of the rows that write no key (buttons, backend toggles, widgets) in that schema.
-const OLD_UNSTORED: [&str; 40] = [
+const OLD_UNSTORED: [&str; 42] = [
     "character.reactions", "general.autostart", "behavior.hideAddActive",
     "behavior.showAddActive", "search.everything", "general.backup",
     "general.wizard", "hotkeys.launcher", "modules.profiles",
@@ -329,7 +329,7 @@ const OLD_UNSTORED: [&str; 40] = [
     "live.agents.snippets", "live.obs.password", "clipboard.private",
     "clipboard.wipe", "sound.play", "voice.key",
     "voice.test-mic", "voice.test-service", "phone.link",
-    "phone.devices", "phone.apps", "ai.key",
+    "phone.devices", "phone.apps", "pcs.link", "pcs.devices", "ai.key",
     "ai.list", "ai.test", "aisetup.intro",
     "aisetup.whisper", "aisetup.cloud-voice", "aisetup.chat",
     "updates.check", "updates.whatsnew", "updates.report", "energy.cost", "updates.issue", "look.share",
@@ -722,7 +722,7 @@ fn rows_per_page() {
         ("look", 20), ("edge", 7), ("tabs", 3),
         ("weather", 6), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
         ("notifications", 20), ("calendar", 14),
-        ("phone", 15), ("ai", 14),
+        ("phone", 18), ("ai", 14),
         ("general", 26), ("performance", 9), ("hotkeys", 21), ("updates", 6),
     ];
     for (id, n) in expect {
@@ -1071,7 +1071,7 @@ fn every_control_family_has_feedback_or_is_documented_static() {
 fn the_phone_page_has_the_link_widgets_and_gated_rows() {
     let p = schema().page("phone").expect("phone page");
     let ids: Vec<&str> = p.rows().map(|r| r.id).collect();
-    assert_eq!(ids, ["phone.enabled", "live.phone", "phone.link", "phone.devices", "phone.apps", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone", "phone.downloadDir", "phone.autoAccept", "phone.relay", "phone.maxFileMB", "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB"]);
+    assert_eq!(ids, ["phone.enabled", "live.phone", "phone.link", "phone.devices", "phone.apps", "phone.clipboard", "phone.clipToPhone", "phone.clipFromPhone", "phone.downloadDir", "phone.autoAccept", "phone.relay", "pc.enabled", "pcs.link", "pcs.devices", "phone.maxFileMB", "phone.apkUrl", "phone.relayUrl", "phone.relayMaxFileMB"]);
     let sw = schema().row("phone.enabled").unwrap();
     assert_eq!(sw.default, json!(false), "the server never starts by itself");
     let note = p.groups[0].footer;

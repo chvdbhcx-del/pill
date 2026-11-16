@@ -95,7 +95,9 @@ pub(crate) fn defaults() -> Cfg {
         "phone.enabled": false, "phone.port": 41717, "phone.downloadDir": "", "phone.maxFileMB": 4096, "phone.autoAccept": true,
         "phone.apkUrl": "https://github.com/chvdbhcx-del/pill/releases/download/phone-latest/PillPhone.apk", "phone.mutedApps": [], "module.phone": true, "live.phone": true,
         "phone.relay": true, "phone.relayUrl": "wss://pill-relay.chvdbhcx-pill.workers.dev", "phone.relayMaxFileMB": 100,
-        "phone.clipboard": false, "phone.clipToPhone": true, "phone.clipFromPhone": true
+        "phone.clipboard": false, "phone.clipToPhone": true, "phone.clipFromPhone": true,
+        // PC link (phone/pc.rs, docs/pc-link.md): off until the first PC is paired (pairing switches it on); a paired PC shares the clipboard by default
+        "pc.enabled": false
     }) else { unreachable!() };
     m.extend(phone);
     // energy rules (ui/host/energy.rs): 30 fps on Windows Energy Saver (and, opt-in, on battery); draw nothing while locked, display off or a remote client is minimised

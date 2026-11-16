@@ -95,6 +95,7 @@ pub mod indicators;
 pub mod lyrics;
 pub mod media;
 pub mod model;
+pub mod pcs;
 pub mod phone;
 pub mod plus;
 pub mod powertimer;

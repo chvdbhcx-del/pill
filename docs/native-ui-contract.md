@@ -56,6 +56,8 @@ The names and shapes the Rust backend and the native UI say to each other. There
 | `pill:monitor` | pill | `json!({ "move": bool })`: the active window is on another monitor (`edge.monitor` = active), or the island must go home | pill.rs |
 | `phone:files` | pill | `json!({ "kind": "offer"\|"start"\|"progress"\|"done"\|"sent"\|"failed"\|"offered"\|"accepted"\|"rejected", "transfer": { "id", "device", "dir": "in"\|"out", "name", "size", "mime", "status", "path", "bytes", "at" } })` | phone/server.rs via phone.rs |
 | `phone:clip` | pill | `json!({ "device", "name" })` (a text from a phone was put on the PC clipboard; never the text) | phone/server.rs via phone.rs |
+| `pc:clip` | pill | `json!({ "device", "name" })` (a text from a paired PC was put on the clipboard; never the text) | phone/pc.rs via phone.rs |
+| `pc:state` | pill | `json!({ "enabled", "name", "peers": [{ "id", "name", "os", "online", "route", "lastSeen", "clipTo", "clipFrom" }], "pair": null \| { "mode": "show"\|"enter", "state", "token", "expires", "peer" } })` | phone/pc.rs via phone.rs |
 | `phone:notif` | pill | `json!({ "kind": "posted", "notif": { "key", "device", "pkg", "app", "title", "text", "sub", "when", "category", "ongoing", "progress", "icon", "avatar", "canReply", "actions", "group", "replay", "received", "fresh" } })`<br>`json!({ "kind": "removed"\|"read", "key" })`<br>`json!({ "kind": "reply", "key", "ok", "error" })` | phone/server.rs via phone.rs |
 | `phone:state` | pill | `json!({ "running", "ip", "port", "pcName", "devices": [{ "id", "name", "model", "os", "appVersion", "firstSeen", "lastSeen", "connected", "battery", "charging", "network", "ssid", "dnd", "statusAt" }], "connected", "enabled", "clipboard", "error" })` | phone/server.rs via phone.rs |
 | `power:timer` | pill | `p.clone()` | command/power_timer.rs |
@@ -294,6 +296,9 @@ inside the taskbar" section of `native-island.md`). The `media.widget.edge` sett
 | `phone_file_decide` | `id: String, accept: bool` | `Result<Value, String>` | phone.rs |
 | `phone_apps` | - | `Value` | phone.rs |
 | `phone_open_file` | `id: String, reveal: Option<bool>` | `bool` | phone.rs |
+| `pc_status` | - | `Value` | phone.rs |
+| `pc_pair` | `op: String, token: Option<String>` | `Result<Value, String>` | phone.rs |
+| `pc_peer` | `id: String, op: String, on: Option<bool>` | `Result<Value, String>` | phone.rs |
 | `notif_history_remove` | `id: i64` | `()` | notifhist.rs |
 
 
