@@ -2,6 +2,11 @@
 
 All notable changes to Pill. The `## [x.y.z]` sections are used as release notes by `ci-templates/release.yml`.
 
+## [Unreleased]
+
+### Highlights
+- Live activities from your own programs (Settings > Calendar and mail > Live activities, off by default): a script or an app can show one ongoing task on the island, such as a build or an export, with a title, a progress bar, a short chip and up to two buttons. It talks to a local named pipe that only you can open, or through `pill.exe live start|update|end`. Up to three at once; you can close any of them with the x on the capsule, and a closed one stays closed until its program ends it. Every activity ends by itself after its time-out (10 minutes by default, one hour at most). The schema, rules and PowerShell and Python examples are in `docs/live-activities.md`.
+
 ## [0.9.0] - 2026-11-16
 
 ### Highlights

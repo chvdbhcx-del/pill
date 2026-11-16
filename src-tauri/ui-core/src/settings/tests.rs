@@ -710,7 +710,7 @@ fn rows_per_page() {
     let expect = [
         ("look", 20), ("edge", 7), ("tabs", 3),
         ("weather", 7), ("media", 18), ("voice", 12), ("clipboard", 10), ("capture", 12), ("tools", 18),
-        ("notifications", 18), ("calendar", 12),
+        ("notifications", 18), ("calendar", 14),
         ("phone", 16), ("ai", 14),
         ("general", 25), ("hotkeys", 19), ("updates", 5),
     ];
