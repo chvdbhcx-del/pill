@@ -22,7 +22,7 @@ use super::rows::Dc;
 use super::txt;
 use super::ui::{key, Act};
 use super::{open, SettingsView};
-use crate::ui::host::geom::Align as Side;
+use crate::ui::host::geom::{Align as Side, Dock, ALIGN_PAD};
 use crate::ui::liquid::{Feel, Flow};
 use crate::ui::view::Cx;
 use glasskit::canvas::{mul, scale_about, translation};
@@ -31,7 +31,7 @@ use glasskit::geom::Rect;
 use glasskit::text::{Align, Style, VAlign};
 use live::Live;
 use pill_ui_core::settings::schema::schema;
-use scene::{of_focus, of_key, of_page, shareable, Scene};
+use scene::{handled, of_focus, of_key, of_page, shareable, Flash, Scene, CAMERA};
 use serde_json::{json, Map, Value};
 
 /// Width of the panel (css px) and the least width the page needs next to it (a card, 24 px on each side): below that the panel stays away.
@@ -50,6 +50,10 @@ const SETTLE_MS: f64 = 3000.0;
 const MAX_MS: f64 = 9000.0;
 /// The open panel needs the folded island out of the way first.
 const FOLD_MS: f64 = 520.0;
+/// The sketch of a monitor (css px of a small screen) that the camera looks at for the scenes about where things stand: the island and the music
+/// widget are drawn at their real size on it, so the side, the edge and the shift along the edge read as they would on a screen.
+const SCREEN_W: f32 = 880.0;
+const SCREEN_H: f32 = 480.0;
 
 pub struct Preview {
     live: Option<Live>,
@@ -79,6 +83,16 @@ pub struct Preview {
     placed: bool,
     /// the caption fades in when the scene changes
     note: Flow,
+    /// 1 = the camera looks at the sketch of a whole monitor (`Scene::screen`), 0 = close up on the island
+    mode: Flow,
+    /// on the sketch: how far (css px of the screen) the island and the widget are shifted along their edge (`offsetX`, `media.widget.offset`),
+    /// and how far the floor is raised for the taskbar they keep clear of (`underTaskbar`)
+    dx_i: Flow,
+    dx_w: Flow,
+    lift_i: Flow,
+    lift_w: Flow,
+    /// the strip of the imaginary taskbar along the floor of the stage
+    strip: Flow,
 }
 
 impl Preview {
@@ -102,6 +116,12 @@ impl Preview {
             cx_world: live::VW / 2.0,
             placed: false,
             note: Flow::new(1.0, Feel::FADE),
+            mode: Flow::new(0.0, Feel::FLOW),
+            dx_i: Flow::px(0.0, Feel::FLOW),
+            dx_w: Flow::px(0.0, Feel::FLOW),
+            lift_i: Flow::px(0.0, Feel::FLOW),
+            lift_w: Flow::px(0.0, Feel::FLOW),
+            strip: Flow::new(0.0, Feel::FLOW),
         }
     }
 
@@ -135,26 +155,42 @@ impl Preview {
         }
     }
 
-    /// Hands the settings that changed since the last look to the sandbox; the scene of the first one that shows something.
-    fn sync(&mut self, values: &Map<String, Value>) -> (Map<String, Value>, Option<Scene>) {
+    /// Hands the settings that changed since the last look to the sandbox (the camera's own keys stay here); the scene of the first one that
+    /// shows something; and whether anything the preview shows has changed.
+    fn sync(&mut self, values: &Map<String, Value>) -> (Map<String, Value>, Option<Scene>, bool) {
         let mut patch = Map::new();
         let mut scene = None;
+        let mut touched = false;
         for (k, v) in values {
-            if !shareable(k) {
+            let share = shareable(k);
+            if !share && !CAMERA.contains(&k.as_str()) {
                 continue;
             }
             let old = self.snap.get(k).cloned().or_else(|| schema().default_of(k).cloned());
             if old.as_ref() != Some(v) {
-                patch.insert(k.clone(), v.clone());
+                if share {
+                    patch.insert(k.clone(), v.clone());
+                }
+                touched = true;
                 scene = scene.or_else(|| of_key(k));
             }
             self.snap.insert(k.clone(), v.clone());
         }
-        (patch, scene)
+        (patch, scene, touched)
+    }
+
+    /// The scene that really shows `sc` now: the island has no player while the music widget is on, so the music reaction is the widget.
+    fn resolve(&self, sc: Scene) -> Scene {
+        if sc == Scene::Flash(Flash::Music) && self.snap.get("media.widget") == Some(&json!(true)) {
+            Scene::Widget
+        } else {
+            sc
+        }
     }
 
     /// Puts the sandbox island into `sc` (animated by the island itself). `fresh`: the scene is new, not a replay.
     fn go_scene(&mut self, sc: Scene, reduce: bool) {
+        let sc = self.resolve(sc);
         let prev = self.scene;
         if sc != self.scene {
             self.scene = sc;
@@ -167,6 +203,9 @@ impl Preview {
         }
         self.due.clear();
         let Some(live) = &mut self.live else { return };
+        if prev == Scene::Widget && sc != Scene::Widget {
+            live.widget_leave();
+        }
         // what the last reaction left on the island (a card, the music row, the recording capsule) goes before the next scene
         let left = matches!(prev, Scene::Flash(_));
         if left {
@@ -182,6 +221,18 @@ impl Preview {
                 if self.open {
                     live.emit("pill:collapse", Value::Null);
                     self.open = false;
+                }
+            }
+            Scene::Widget => {
+                if self.open {
+                    live.emit("pill:collapse", Value::Null);
+                    self.open = false;
+                }
+                // Replay: the widget comes in again
+                if self.replay {
+                    live.widget_restart();
+                } else {
+                    live.widget_show();
                 }
             }
             Scene::Flash(f) => {
@@ -209,6 +260,11 @@ impl Default for Preview {
 /// The settings the sandbox starts with: everything `shareable` the window has.
 fn shared_values(values: &Map<String, Value>) -> Map<String, Value> {
     values.iter().filter(|(k, _)| shareable(k)).map(|(k, v)| (k.clone(), v.clone())).collect()
+}
+
+/// What the preview has looked at so far: the sandbox's settings and the camera's own.
+fn seen_values(values: &Map<String, Value>) -> Map<String, Value> {
+    values.iter().filter(|(k, _)| handled(k)).map(|(k, v)| (k.clone(), v.clone())).collect()
 }
 
 /// A `live.*` switch as the island reads it: absent = on.
@@ -249,7 +305,7 @@ impl SettingsView {
         let model = &self.model;
         if pv.live.is_none() {
             let values = shared_values(model.values());
-            pv.snap = values.clone();
+            pv.snap = seen_values(model.values());
             let live = Live::new(cx, values, &open::system_lang());
             live.emit("weather:current", sample::weather_now());
             pv.live = Some(live);
@@ -261,9 +317,11 @@ impl SettingsView {
             pv.touch(now);
         }
         // the settings that changed, at once (the window's own copy, not what the backend has saved yet)
-        let (patch, sc) = pv.sync(model.values());
-        if !patch.is_empty() {
+        let (patch, sc, touched) = pv.sync(model.values());
+        if touched {
             pv.touch(now);
+        }
+        if !patch.is_empty() {
             if let Some(l) = &mut pv.live {
                 l.patch(patch);
             }
@@ -277,7 +335,7 @@ impl SettingsView {
             pv.touch(now);
             let sc = pv.hint.take().unwrap_or_else(|| of_page(model.current));
             pv.go_scene(sc, reduce);
-        } else if let Some(fs) = focus_scene.filter(|s| *s != pv.scene) {
+        } else if let Some(fs) = focus_scene.filter(|s| pv.resolve(*s) != pv.scene) {
             pv.touch(now);
             pv.go_scene(fs, reduce);
         } else if pv.replay {
@@ -288,6 +346,11 @@ impl SettingsView {
         pv.replay = false;
         pv.focus_key = fk;
         busy |= tick(&mut pv.note, dt);
+        // the camera's own settings (where along its edge the island and the widget stand, whether they keep clear of the taskbar)
+        let off = |k: &str| model.get(k).as_f64().unwrap_or(0.0) as f32;
+        let (off_island, off_widget, clear_of_bar) = (off("offsetX"), off("media.widget.offset"), model.get("underTaskbar") != json!(false));
+        let screen = pv.scene.screen();
+        go(&mut pv.mode, screen as u8 as f32, reduce);
         let Some(live) = &mut pv.live else { return busy };
         if !pv.active && live.has_mail() {
             pv.active = true;
@@ -309,13 +372,28 @@ impl SettingsView {
             // the camera: the island's body decides how much of the sandbox window to look at
             let (bl, bw, bh) = live.body();
             let sh_max = (self.size.1 - TITLE_H - 2.0 - HEAD_H - CAP_H - SIDE_PAD).max(100.0);
-            // a corner island needs room beside it on the stage, or the corner cannot be told from the middle
-            let room = if live.aligned() == Side::Center { 1.0 } else { 1.7 };
-            // in a taskbar the stage shows the bar under the island too
-            let (fw, fh) = ((bw + 2.0 * FOCUS_PAD_X) * room, bh + 6.0 + if live.in_bar() { live::BAR_H } else { 0.0 });
-            let k = ((PV_W - 2.0 * SIDE_PAD) / fw.max(1.0)).min((sh_max - STAGE_TOP - 12.0) / fh.max(1.0)).clamp(0.1, 2.0);
-            let h = (fh * k + STAGE_TOP + 12.0).clamp(84.0, sh_max);
+            let (k, h) = if screen {
+                // the sketch of a monitor: one fixed scale, so that the size of the island and of the widget reads against the screen
+                let k = (PV_W - 2.0 * SIDE_PAD) / SCREEN_W;
+                (k, (SCREEN_H * k).clamp(84.0, sh_max))
+            } else {
+                // a corner island needs room beside it on the stage, or the corner cannot be told from the middle
+                let room = if live.aligned() == Side::Center { 1.0 } else { 1.7 };
+                // in a taskbar the stage shows the bar under the island too
+                let (fw, fh) = ((bw + 2.0 * FOCUS_PAD_X) * room, bh + 6.0 + if live.in_bar() { live::BAR_H } else { 0.0 });
+                let k = ((PV_W - 2.0 * SIDE_PAD) / fw.max(1.0)).min((sh_max - STAGE_TOP - 12.0) / fh.max(1.0)).clamp(0.1, 2.0);
+                (k, (fh * k + STAGE_TOP + 12.0).clamp(84.0, sh_max))
+            };
             pv.cx_world = bl + bw / 2.0;
+            // on the sketch: the shift along the edge (a centred body only, and never off the screen), the floor raised over the taskbar
+            let shift = |pct: f32, w: f32| (pct / 100.0 * SCREEN_W).clamp(-(SCREEN_W - w).max(0.0) / 2.0, (SCREEN_W - w).max(0.0) / 2.0);
+            let in_bar = live.in_bar();
+            go(&mut pv.dx_i, if live.aligned() == Side::Center && !in_bar { shift(off_island, bw) } else { 0.0 }, reduce);
+            go(&mut pv.lift_i, if live.at_bottom() && !in_bar && clear_of_bar { live::BAR_H } else { 0.0 }, reduce);
+            let pg = live.player();
+            go(&mut pv.dx_w, pg.filter(|g| g.align == Side::Center).map_or(0.0, |g| shift(off_widget, g.win.0)), reduce);
+            go(&mut pv.lift_w, if pg.is_some_and(|g| g.dock == Dock::Bottom) && clear_of_bar { live::BAR_H } else { 0.0 }, reduce);
+            go(&mut pv.strip, (screen || in_bar || live.player_in_bar()) as u8 as f32, reduce);
             if pv.placed && !reduce {
                 pv.zoom.to(k);
                 pv.stage_h.to(h);
@@ -332,8 +410,9 @@ impl SettingsView {
             }
             busy |= pv.active;
         }
-        busy |= tick(&mut pv.zoom, dt);
-        busy |= tick(&mut pv.stage_h, dt);
+        for f in [&mut pv.zoom, &mut pv.stage_h, &mut pv.mode, &mut pv.dx_i, &mut pv.dx_w, &mut pv.lift_i, &mut pv.lift_w, &mut pv.strip] {
+            busy |= tick(f, dt);
+        }
         busy
     }
 
@@ -364,33 +443,53 @@ impl SettingsView {
                 cv.with_clip_rr(stage, 12.0, |cv| {
                     cv.fill_rect(stage, c0);
                     cv.fill_rect(Rect::new(stage.x, stage.y, stage.w, stage.h * 0.55), mix(c0, c1, 0.7));
+                    let (k, m) = (self.pv.zoom.at().clamp(0.1, 2.0), self.pv.mode.at01());
+                    let (dx_i, dx_w, lift_i, lift_w, strip_a) = (self.pv.dx_i.at(), self.pv.dx_w.at(), self.pv.lift_i.at(), self.pv.lift_w.at(), self.pv.strip.at01());
                     if let Some(live) = &mut self.pv.live {
-                        let k = self.pv.zoom.at().clamp(0.1, 2.0);
-                        // the island hangs from the top edge of the sandbox window, or stands on its bottom edge: the camera follows
-                        let top = if live.at_bottom() { stage.bottom() - STAGE_TOP - live::VH * k } else { stage.y + STAGE_TOP };
-                        // and a corner island stands in the corner of the stage, a centred one in the middle
-                        let (bl, bw, _) = live.body();
-                        let left = match live.aligned() {
-                            Side::Center => stage.cx() - self.pv.cx_world * k,
-                            Side::Left => stage.x + SIDE_PAD - bl * k,
-                            Side::Right => stage.right() - SIDE_PAD - (bl + bw) * k,
-                        };
-                        // the taskbar the island stands in: a strip along the floor of the stage, under the island
-                        if live.in_bar() {
+                        // the floor of the stage: a little above its edge close up, the very edge on the sketch of a monitor
+                        let floor = lerp(stage.bottom() - STAGE_TOP, stage.bottom(), m);
+                        // the taskbar the island or the widget stands in (or keeps clear of): a strip along the floor of the stage, under them
+                        if strip_a > 0.003 {
                             let bar = live::BAR_H * k;
-                            let floor = stage.bottom() - STAGE_TOP;
-                            let strip = Rect::new(stage.x, floor - bar, stage.w, bar + STAGE_TOP);
-                            cv.fill_rect(strip, if p.dark { Color::rgba(0.0, 0.0, 0.0, 0.42) } else { Color::rgba(1.0, 1.0, 1.0, 0.5) });
-                            cv.fill_rect(Rect::new(strip.x, strip.y, strip.w, 1.0), if p.dark { Color::rgba(1.0, 1.0, 1.0, 0.10) } else { Color::rgba(0.0, 0.0, 0.0, 0.12) });
+                            let strip = Rect::new(stage.x, floor - bar, stage.w, stage.bottom() - floor + bar);
+                            cv.fill_rect(strip, (if p.dark { Color::rgba(0.0, 0.0, 0.0, 0.42) } else { Color::rgba(1.0, 1.0, 1.0, 0.5) }).fade(strip_a));
+                            cv.fill_rect(Rect::new(strip.x, strip.y, strip.w, 1.0), (if p.dark { Color::rgba(1.0, 1.0, 1.0, 0.10) } else { Color::rgba(0.0, 0.0, 0.0, 0.12) }).fade(strip_a));
                         }
-                        let m = mul(&scale_about((0.0, 0.0), k, k), &translation(left, top));
-                        cv.with_transform(m, |cv| live.draw(cv, d.th, cx));
+                        // the island hangs from the top edge of the sandbox window, or stands on its bottom edge: the camera follows (on the sketch it
+                        // stands above the taskbar, or over it when it may)
+                        let (bl, bw, _) = live.body();
+                        let top = if live.at_bottom() { floor - lift_i * m * k - live::VH * k } else { lerp(stage.y + STAGE_TOP, stage.y, m) };
+                        // and a corner island stands in the corner of the stage, a centred one in the middle (shifted along the edge on the sketch)
+                        let (pad_a, pad_b) = (SIDE_PAD, ALIGN_PAD * k);
+                        let left = match live.aligned() {
+                            Side::Center => stage.cx() + dx_i * m * k - self.pv.cx_world * k,
+                            Side::Left => lerp(stage.x + pad_a, stage.x + pad_b, m) - bl * k,
+                            Side::Right => lerp(stage.right() - pad_a, stage.right() - pad_b, m) - (bl + bw) * k,
+                        };
+                        let xf = mul(&scale_about((0.0, 0.0), k, k), &translation(left, top));
+                        cv.with_transform(xf, |cv| live.draw(cv, d.th, cx));
+                        // the music widget: its window stands against the edge of the monitor on the side it is docked to
+                        if let Some(g) = live.player() {
+                            let (ww, wh) = (g.win.0 * k, g.win.1 * k);
+                            let x = match g.align {
+                                Side::Left => stage.x,
+                                Side::Right => stage.right() - ww,
+                                Side::Center => stage.cx() - ww / 2.0 + dx_w * k,
+                            };
+                            let y = match g.dock {
+                                Dock::Top => stage.y,
+                                Dock::Bottom => stage.bottom() - lift_w * k - wh,
+                                Dock::Taskbar => stage.bottom() - wh,
+                            };
+                            let xf = mul(&scale_about((0.0, 0.0), k, k), &translation(x.clamp(stage.x, (stage.right() - ww).max(stage.x)), y));
+                            cv.with_transform(xf, |cv| live.draw_player(cv, d.th, cx));
+                        }
                     }
                 });
                 cv.stroke_rr(stage, 12.0, 1.0, p.card_line);
                 // the caption
                 let sc = self.pv.scene;
-                let off = matches!(sc, Scene::Flash(f) if f.switch().is_some_and(|k| !switch_on(&self.model, k)));
+                let off = sc.switch().is_some_and(|k| !switch_on(&self.model, k)) || (sc == Scene::Widget && !switch_on(&self.model, "module.media"));
                 let a = self.pv.note.at01();
                 let (t_st, n_st) = (Style::new(13.0, 600), Style::new(12.0, 400));
                 let mut y = stage.bottom() + 14.0;
@@ -425,6 +524,10 @@ impl SettingsView {
         });
         w
     }
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
 }
 
 fn pick<'a>(lang: pill_ui_core::settings::tr::Lang, ru: &'a str, en: &'a str) -> &'a str {

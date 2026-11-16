@@ -404,11 +404,17 @@ fn the_preview_island_stands_in_an_imaginary_taskbar_when_the_edge_is_the_taskba
 
 #[test]
 fn only_plain_choices_reach_the_preview_never_text_the_user_typed() {
-    for k in ["showSeconds", "size", "shape", "theme", "pet", "character", "net.weather", "weather.units", "live.copy", "island.colorCustom", "clipClickPaste", "edge.position", "edge.align"] {
+    for k in ["showSeconds", "size", "shape", "theme", "pet", "character", "net.weather", "weather.units", "live.copy", "island.colorCustom", "clipClickPaste", "edge.position", "edge.align",
+        "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset", "tabs.hidden", "home.volume", "home.tile.qr", "live.agents", "live.calendar"]
+    {
         assert!(shareable(k), "{k} may go to the preview");
     }
+    // where the island and the widget stand along their edge is the camera's business: the preview reads them, the sandbox never hears them
+    for k in ["offsetX", "underTaskbar", "media.widget.offset"] {
+        assert!(super::scene::handled(k), "{k} is shown by the camera");
+    }
     for k in ["weather.city", "mail.user", "mail.host", "capture.folder", "capture.videoFolder", "hotkey.toggle", "search.customUrl", "clipboard.denyList", "hideInApps", "autoHide", "quiet.on",
-        "monitor", "sound.volumeDevice", "settings.preview", "phone.downloadDir", "ai.baseUrl", "settingsWin.x", "nonsense", "media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset"]
+        "monitor", "sound.volumeDevice", "settings.preview", "phone.downloadDir", "ai.baseUrl", "settingsWin.x", "nonsense", "offsetX", "underTaskbar"]
     {
         assert!(!shareable(k), "{k} stays in the window");
     }
@@ -567,7 +573,7 @@ fn every_function_page_opens_the_matching_scene() {
             ("animation", Scene::Pill(Look::Motion)),
             ("volume", Scene::Flash(Flash::Volume)),
             ("recording", Scene::Flash(Flash::Recording)),
-            ("downloads", Scene::Flash(Flash::Download)),
+            ("downloads", Scene::Flash(Flash::Progress)),
             ("battery", Scene::Flash(Flash::Battery)),
             ("notes", Scene::Panel(Tab::Home)),
         ] {
@@ -825,4 +831,145 @@ fn general_snap_page_end_closed_en_dark_900() {
         settle(&mut t, (900.0, 760.0), &th);
         snap(&mut t.sim, "general-end-closed-en-dark-900", &th, (900.0, 760.0));
     });
+}
+
+
+/// Settings that show nothing in the preview, and why. The test below holds every other keyed row of the schema to a scene, so a new visual
+/// setting cannot be added without either wiring it (`scene::of_key` + `scene::shareable` / `CAMERA`) or being listed here with its reason.
+const NO_PREVIEW: &[(&str, &str)] = &[
+    // text the user typed or a device: never handed to the sandbox, and a sample stands in where it would show (the tab has an invented city)
+    ("weather.city", "typed text; the weather tab shows an invented city"),
+    ("clipboard.denyList", "typed list of programs"),
+    ("capture.folder", "a folder"),
+    ("capture.videoFolder", "a folder"),
+    ("timer.soundFile", "a file"),
+    ("phone.downloadDir", "a folder"),
+    ("phone.apkUrl", "an address"),
+    ("phone.relayUrl", "an address"),
+    ("search.customUrl", "an address"),
+    ("ai.baseUrl", "an address"),
+    ("ai.provider", "which AI service"),
+    ("ai.model", "a model name"),
+    ("voice.provider", "which recognition service"),
+    ("voice.endpoint", "an address"),
+    ("voice.model", "a model name"),
+    ("sound.volumeDevice", "a sound device"),
+    ("sound.micDevice", "a sound device"),
+    ("mail.host", "an address"),
+    ("mail.port", "a port"),
+    ("mail.user", "a user name"),
+    ("mail.mailbox", "a folder of the mail account"),
+    ("live.calendar.path", "a file"),
+    ("live.obs.port", "a port"),
+    ("live.dlIgnoreExt", "typed list of extensions"),
+    ("vpn.own.name", "typed text"),
+    ("vpn.own.connect", "typed command"),
+    ("vpn.own.disconnect", "typed command"),
+    ("hideInApps", "list of programs"),
+    ("showInApps", "list of programs"),
+    ("aiSetupDone", "a flag of the local AI set-up"),
+    // which monitor: the preview has no real screens
+    ("monitor", "which monitor the island is on"),
+    // behaviour that would hide, mute or fade the preview itself (BLOCKED)
+    ("autoHide", "would hide the preview island"),
+    ("autoHideKeepDesktop", "would hide the preview island"),
+    ("hideInFullscreen", "depends on the user's programs"),
+    ("fullscreenPeek", "depends on the user's programs"),
+    ("fullscreenPeekEdge", "depends on the user's programs"),
+    ("passThrough", "click-through: the preview takes no clicks anyway"),
+    ("passThroughOpacity", "click-through: the preview takes no clicks anyway"),
+    ("showInCapture", "whether screenshots of the screen show the island"),
+    ("quiet.on", "quiet hours would mute the sample reactions"),
+    ("quiet.from", "quiet hours"),
+    ("quiet.to", "quiet hours"),
+    ("quiet.days", "quiet hours"),
+    ("settings.preview", "the switch of the preview itself"),
+    // behaviour without a look
+    ("ui.gpu", "which renderer draws the windows"),
+    ("audio.perApp", "which sources the player list reads"),
+    ("media.legacyPlayers", "which players are read"),
+    ("capture.annotate", "opens the editor after a screenshot"),
+    ("capture.encoder", "which video encoder"),
+    ("timer.sound", "the sound of a timer"),
+    ("vpn.admin", "how the VPN client is started"),
+    ("history.keep", "the notification history is not a preview tab"),
+    ("history.mail", "the notification history is not a preview tab"),
+    ("search.engine", "the command bar is a window of its own"),
+    ("everything.autostart", "starts a program"),
+    ("updateAuto", "updates"),
+    ("whatsNew", "a window that opens after an update"),
+    ("net.ai", "a privacy gate of the chat"),
+    ("voice.enabled", "dictation: the header button of the open island is not in the preview"),
+    ("voice.mode", "dictation"),
+    ("voice.language", "dictation"),
+    ("voice.paste", "dictation"),
+    ("voice.autostop", "dictation"),
+    ("phone.enabled", "the link itself: the phone's cards are `live.phone`"),
+    ("phone.clipboard", "phone clipboard sync"),
+    ("phone.clipToPhone", "phone clipboard sync"),
+    ("phone.clipFromPhone", "phone clipboard sync"),
+    ("phone.autoAccept", "phone files"),
+    ("phone.relay", "phone relay"),
+    ("phone.maxFileMB", "phone files"),
+    ("phone.relayMaxFileMB", "phone relay"),
+];
+
+#[test]
+fn every_visual_setting_is_shown_by_the_preview_or_listed_as_having_nothing_to_show() {
+    let sc = pill_ui_core::settings::schema::schema();
+    let (mut unlisted, mut both) = (Vec::new(), Vec::new());
+    let mut keys = std::collections::BTreeSet::new();
+    for p in &sc.pages {
+        for r in p.rows().filter(|r| !r.key.is_empty()) {
+            keys.insert(r.key);
+            let shown = super::scene::handled(r.key) && of_key(r.key).is_some();
+            let listed = NO_PREVIEW.iter().any(|(k, _)| *k == r.key) || r.key.starts_with("hotkey.");
+            match (shown, listed) {
+                (false, false) => unlisted.push(format!("{} ({})", r.key, p.id)),
+                (true, true) => both.push(r.key),
+                _ => {}
+            }
+        }
+    }
+    assert!(unlisted.is_empty(), "settings the preview does not show and nobody explained (wire them in preview/scene.rs or list them in NO_PREVIEW): {unlisted:?}");
+    assert!(both.is_empty(), "shown by the preview but still listed as having nothing to show: {both:?}");
+    // the list holds no key that is gone
+    let gone: Vec<_> = NO_PREVIEW.iter().map(|(k, _)| *k).filter(|k| !keys.contains(k)).collect();
+    assert!(gone.is_empty(), "NO_PREVIEW lists keys the schema does not have: {gone:?}");
+    // the Home chips and the tab strip write keys that no schema row has: the preview takes them too
+    for part in pill_ui_core::panel::a::home_mods::PARTS.iter() {
+        assert!(super::scene::handled(part.key) && of_key(part.key) == Some(Scene::Panel(Tab::Home)), "{}", part.key);
+    }
+    assert!(super::scene::handled("tabs.hidden") && of_key("tabs.hidden") == Some(Scene::Panel(Tab::Home)));
+}
+
+#[test]
+fn every_section_of_every_page_brings_something_into_view_or_has_nothing_to_show() {
+    let sc = pill_ui_core::settings::schema::schema();
+    for p in &sc.pages {
+        for g in &p.groups {
+            let keyed: Vec<_> = g.rows.iter().filter(|r| !r.key.is_empty()).collect();
+            if keyed.is_empty() {
+                continue; // buttons and the page's own widgets
+            }
+            let shows = keyed.iter().any(|r| super::scene::handled(r.key) && of_key(r.key).is_some());
+            let silent = keyed.iter().all(|r| NO_PREVIEW.iter().any(|(k, _)| *k == r.key) || r.key.starts_with("hotkey."));
+            assert!(shows || silent, "section {:?} of {} has rows nobody explained", g.title.en, p.id);
+        }
+    }
+}
+
+#[test]
+fn every_reaction_is_wired_to_a_key_a_switch_and_events() {
+    let sc = pill_ui_core::settings::schema::schema();
+    for f in Flash::ALL {
+        assert!(!sample::flash_events(f, false).is_empty(), "{f:?} has events to play");
+        let title = Scene::Flash(f).title(pill_ui_core::settings::tr::Lang::En);
+        assert!(!title.is_empty(), "{f:?}");
+        // some row of the schema brings this reaction up
+        assert!(sc.pages.iter().flat_map(|p| p.rows()).any(|r| of_key(r.key) == Some(Scene::Flash(f))), "{f:?} is reached from no setting");
+        if let Some(sw) = f.switch() {
+            assert!(sc.row_for_key(sw).is_some_and(|r| of_key(r.key) == Some(Scene::Flash(f))), "{sw} brings up {f:?}");
+        }
+    }
 }
