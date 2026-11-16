@@ -128,27 +128,38 @@ fn muted_list(v: &Value) -> Vec<String> {
 
 // ------------------------------------------------------------------------------------------------ state: replies, steps, clicks
 
+/// Brings the rows in line with the devices of a status answer: new ones flow in, missing ones flow out (also used by the PCs section).
+pub fn reconcile(rows: &mut Vec<PRow>, devs: &[Value], reduce: bool) {
+    for r in rows.iter_mut() {
+        r.present = devs.iter().any(|d| d["id"].as_str() == Some(&r.id));
+        if let Some(d) = devs.iter().find(|d| d["id"].as_str() == Some(&r.id)) {
+            r.dev = d.clone();
+        }
+    }
+    for d in devs {
+        let id = d["id"].as_str().unwrap_or("").to_string();
+        if !id.is_empty() && !rows.iter().any(|r| r.id == id) {
+            let mut f = Flow::new(0.0, Feel::FLOW);
+            from_to(&mut f, 0.0, 1.0, reduce);
+            rows.push(PRow { id, dev: d.clone(), flow: f, present: true });
+        }
+    }
+    for r in rows.iter_mut() {
+        go(&mut r.flow, if r.present { 1.0 } else { 0.0 }, reduce);
+    }
+}
+
+/// Advances the row flows and drops the rows that have left; true while one moves.
+pub fn step_rows(rows: &mut Vec<PRow>, dt: f32) -> bool {
+    let busy = rows.iter_mut().fold(false, |b, r| tick(&mut r.flow, dt) | b);
+    rows.retain(|r| r.present || r.flow.moving() || r.flow.at() > 0.01);
+    busy
+}
+
 impl PhoneData {
     /// The `phone_status` answer: reconcile the rows with the paired phones (new ones flow in, missing ones flow out).
     pub fn apply_status(&mut self, v: Value, reduce: bool) {
-        let devs: Vec<Value> = v["devices"].as_array().cloned().unwrap_or_default();
-        for r in self.rows.iter_mut() {
-            r.present = devs.iter().any(|d| d["id"].as_str() == Some(&r.id));
-            if let Some(d) = devs.iter().find(|d| d["id"].as_str() == Some(&r.id)) {
-                r.dev = d.clone();
-            }
-        }
-        for d in &devs {
-            let id = d["id"].as_str().unwrap_or("").to_string();
-            if !id.is_empty() && !self.rows.iter().any(|r| r.id == id) {
-                let mut f = Flow::new(0.0, Feel::FLOW);
-                from_to(&mut f, 0.0, 1.0, reduce);
-                self.rows.push(PRow { id, dev: d.clone(), flow: f, present: true });
-            }
-        }
-        for r in self.rows.iter_mut() {
-            go(&mut r.flow, if r.present { 1.0 } else { 0.0 }, reduce);
-        }
+        reconcile(&mut self.rows, v["devices"].as_array().map_or(&[], |a| a.as_slice()), reduce);
         self.status = v;
     }
 
@@ -187,10 +198,7 @@ impl PhoneData {
         }
         busy |= tick(&mut self.on_t, dt);
         busy |= tick(&mut self.qr_t, dt);
-        for r in self.rows.iter_mut() {
-            busy |= tick(&mut r.flow, dt);
-        }
-        self.rows.retain(|r| r.present || r.flow.moving() || r.flow.at() > 0.01);
+        busy |= step_rows(&mut self.rows, dt);
         if self.armed.as_ref().is_some_and(|(_, until)| now_ms >= *until) {
             self.armed = None;
             busy = true; // one more frame: the button reads "Revoke" again
@@ -226,6 +234,7 @@ impl SettingsView {
 
     /// The ticker of the open Phone page (every 2 s).
     pub(super) fn phone_tick(&mut self, cx: &mut Cx) {
+        self.call(cx, C::PcStatus, ""); // the PCs section on the same page
         if !self.model.get_bool("phone.enabled") && self.data.phone.rows.is_empty() {
             return; // nothing to watch while the link is off
         }

@@ -32,6 +32,7 @@ mod cw2;
 mod cw3;
 mod cw3b;
 mod cw_energy;
+mod cw_pcs;
 mod cw_phone;
 mod cw_home;
 mod customacts;
@@ -300,6 +301,8 @@ mod tests2;
 mod tests_motion;
 #[cfg(test)]
 mod tests_home;
+#[cfg(test)]
+mod tests_pcs;
 #[cfg(test)]
 mod tests_phone;
 #[cfg(test)]

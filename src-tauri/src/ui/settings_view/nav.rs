@@ -233,7 +233,7 @@ impl SettingsView {
                 self.ensure_ticker(cx, 1000);
             }
             "phone" => {
-                calls.extend([BackendCall::PhoneStatus, BackendCall::PhoneApps]);
+                calls.extend([BackendCall::PhoneStatus, BackendCall::PhoneApps, BackendCall::PcStatus]);
                 if self.model.get_bool("phone.enabled") {
                     calls.push(BackendCall::PhonePairCode { renew: false });
                 }

@@ -26,7 +26,7 @@ fn boot_phone(settings: Value) -> T {
 }
 
 /// Scrolls until the hit of `a` is on screen, then clicks it.
-fn click_act(t: &mut T, a: &Act) {
+pub(super) fn click_act(t: &mut T, a: &Act) {
     for step in 0..40 {
         t.v.borrow_mut().page.scroll.scroll_to(step as f32 * 60.0, false);
         t.settle();

@@ -224,6 +224,18 @@ fn cards_toast_notification_uninstall() {
 }
 
 #[test]
+fn pc_snapshot_the_pairing_card_and_the_clipboard_chip() {
+    let pair = json!({"enabled":true,"name":"DESK","peers":[],"pair":{"mode":"show","state":"request","token":"PILL-X","expires":1,"peer":{"name":"LAPTOP-X","os":"Windows"}}});
+    for (name, ev, payload) in [("pc-pair-card", "pc:state", pair), ("pc-clip-chip", "pc:clip", json!({"device":"d1","name":"LAPTOP-X"}))] {
+        let mut s = Scn::new(base(json!({"language":"en"})), (720.0, 200.0), 1.0, false);
+        s.emit(ev, payload);
+        let img = s.shot(name, 600.0);
+        let (x0, y0, x1, y1) = opaque(&img).unwrap_or_else(|| panic!("{name}: nothing drawn"));
+        assert!(y1 - y0 >= 40 && x1 - x0 >= 160, "{name}: the island grew to the card ({}x{})", x1 - x0, y1 - y0);
+    }
+}
+
+#[test]
 fn expanded_with_the_placeholder_tab() {
     let mut s = Scn::new(base(json!({})), (720.0, 480.0), 1.0, false);
     s.emit("pill:expand", json!({"tab":"home","via":"test"}));

@@ -54,6 +54,8 @@ pub struct Data {
     pub home: crate::ui::tabs::a::home::slots::Slots,
     /// the Phone page (QR, paired phones, apps)
     pub phone: super::cw_phone::PhoneData,
+    /// the PCs section of the Phone page
+    pub pcs: super::cw_pcs::PcsData,
     pub energy: super::cw_energy::EnergyData,
     /// Share your look (look.rs)
     pub look: super::look::LookState,
@@ -86,6 +88,7 @@ impl Default for Data {
             tick: 0,
             home: crate::ui::tabs::a::home::slots::Slots::new(),
             phone: Default::default(),
+            pcs: Default::default(),
             energy: Default::default(),
             look: Default::default(),
         }
@@ -147,6 +150,8 @@ impl SettingsView {
             "phone.link" => self.w_phone_link(d, r, full, paint),
             "phone.devices" => self.w_phone_devices(d, r, full, paint),
             "phone.apps" => self.w_phone_apps(d, r, full, paint),
+            "pcs.link" => self.w_pcs_link(d, r, full, paint),
+            "pcs.devices" => self.w_pcs_devices(d, r, full, paint),
             "energy.cost" => self.w_energy_cost(d, r, full, paint),
             "aisetup.whisper" => self.w_whisper(d, r, full, paint),
             "aisetup.chat" => self.w_chat(d, r, full, paint),
@@ -179,6 +184,7 @@ impl SettingsView {
         let mut busy = self.data.wtoggle.step(dt);
         busy |= tick(&mut self.data.whatsnew, dt);
         busy |= self.data.energy.step(dt);
+        busy |= self.data.pcs.step(dt, self.now_ms);
         for f in self.data.fields.values_mut() {
             busy |= f.step(dt);
         }
@@ -194,14 +200,22 @@ impl SettingsView {
     pub(super) fn custom_key(&mut self, n: &'static str, ev: &glasskit::input::InputEvent, activate: bool, cx: &mut Cx) -> glasskit::input::Response {
         let rc = glasskit::input::Response { consumed: true, redraw: true, ..glasskit::input::Response::NONE };
         match n {
-            "weather.city" | "modules.profiles" => {
-                let name = if n == "weather.city" { "city" } else { "profile" };
+            "weather.city" | "modules.profiles" | "pcs.link" => {
+                let name = match n {
+                    "weather.city" => "city",
+                    "pcs.link" => "token",
+                    _ => "profile",
+                };
                 if let Some(f) = self.data.fields.get_mut(name) {
                     let r = f.rect;
                     f.queue(ev, r);
                     self.edits_due = true;
                     if matches!(ev, glasskit::input::InputEvent::Key { code: glasskit::input::KeyCode::Enter, down: true, .. }) {
-                        self.act(if n == "weather.city" { Act::CitySearch } else { Act::ProfileSave }, cx);
+                        self.act(match n {
+                            "weather.city" => Act::CitySearch,
+                            "pcs.link" => Act::PcJoin,
+                            _ => Act::ProfileSave,
+                        }, cx);
                     }
                     return rc;
                 }
