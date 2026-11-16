@@ -196,6 +196,17 @@ pub fn appearance() -> Page {
                     .enabled(Cond::Ne("edge.position", json!("taskbar")))
                     .kw(&["taskbar", "панель задач", "above", "below", "над", "под", "поверх"]),
                     monitor.kw(&["monitor", "display", "screen", "монитор", "экран"]),
+                    seg(
+                        "edge.monitor",
+                        tr("Следовать за активным окном", "Follow the active window"),
+                        tr(
+                            "«За окном»: остров переходит на тот монитор, где сейчас активное окно: уезжает с края, встаёт там со своей рабочей областью, панелью задач и масштабом и выезжает обратно. Не двигается, пока открыт, показывает карточку, идёт запись или перетаскивание — дождётся покоя. Музыкальный виджет идёт следом. Главнее выбора монитора выше",
+                            "“Follows”: the pill moves to the monitor that holds the active window. It slides off its edge, stands there with that monitor's own work area, taskbar and scale, and slides back in. It never moves while it is open, showing a card, recording or dragging; it waits until things are quiet. The music widget goes along. Beats the monitor chosen above",
+                        ),
+                        so(&[("primary", tr("Остаётся", "Stays")), ("active", tr("За окном", "Follows"))]),
+                        json!("primary"),
+                    )
+                    .kw(&["follow", "active", "monitor", "screen", "multi", "следовать", "активный", "монитор", "экран", "окно", "за окном"]),
                 ],
             ),
             group(

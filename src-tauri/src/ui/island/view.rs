@@ -222,6 +222,11 @@ pub struct IslandView {
     tuck: Flow,
     tuck_px: f32,
     last_edge: Option<(Dock, Align)>,
+    /// `pill:monitor`: the active window is on another monitor (`edge.monitor` = active): the same slide as an edge change takes the island there
+    /// once it is quiet (`mon_idle`); `pill_edge` then carries `follow`
+    mon_move: bool,
+    /// files are dragged over the folded island (the shelf's pull): it must not leave under them
+    dragging: bool,
 }
 
 /// Leaving an edge, and arriving at the new one.
@@ -319,6 +324,8 @@ impl IslandView {
             tuck: Flow::new(0.0, TUCK_OUT),
             tuck_px: 0.0,
             last_edge: None,
+            mon_move: false,
+            dragging: false,
             now: cx.now_ms,
             started: false,
             device_id: 0,
@@ -692,13 +699,22 @@ impl IslandView {
         if dock == Dock::Taskbar {
             args["bar"] = json!(true);
         }
+        if std::mem::take(&mut self.mon_move) {
+            args["follow"] = json!(true); // the window also goes to the monitor of the active window (`pill.rs` publishes again if it is still wrong)
+        }
         self.call(cx, "pill_edge", args, Pending::Fire);
+    }
+
+    /// Nothing the island must not leave in the middle of: it is folded (or hidden, or slid away by auto-hide), shows no card and no panel, no files
+    /// are dragged over it and no recording tile is up. A change of monitor waits for this.
+    fn mon_idle(&self, v: &ShellView) -> bool {
+        matches!(v.phase, Phase::Collapsed | Phase::Hidden | Phase::AutoHidden) && !v.panel.visible && !self.dragging && self.core.rec_tile.is_none()
     }
 
     /// The settings changed while nothing is on screen (hidden island, reduced motion): there is nothing to slide, take the edge at once.
     fn edge_now(&mut self, cx: &mut Cx) {
         let want = (self.want_dock(), self.want_align());
-        if want != (self.dock, self.align) && self.slide == Slide::Rest && (self.core.shell.is_hidden() || self.core.shell.reduce()) {
+        if (want != (self.dock, self.align) || self.mon_move) && self.slide == Slide::Rest && (self.core.shell.is_hidden() || self.core.shell.reduce()) {
             self.set_edge(want, cx);
         }
     }
@@ -708,8 +724,10 @@ impl IslandView {
     fn step_edge(&mut self, v: &ShellView, dt_ms: f64, cx: &mut Cx) -> bool {
         let (want, now, instant) = ((self.want_dock(), self.want_align()), cx.now_ms, v.reduced || v.phase == Phase::Hidden);
         let cur = (self.dock, self.align);
+        // a change of monitor is an edge change that also waits for quiet (an open island, a card, a drag, a recording are never moved away)
+        let go_mon = self.mon_move && self.mon_idle(v);
         match self.slide {
-            Slide::Rest if want != cur => {
+            Slide::Rest if want != cur || go_mon => {
                 if instant {
                     self.set_edge(want, cx);
                 } else {
@@ -717,7 +735,7 @@ impl IslandView {
                     self.slide = Slide::Out;
                 }
             }
-            Slide::Out if want == cur => {
+            Slide::Out if want == cur && !self.mon_move => {
                 self.tuck.set_feel(TUCK_IN);
                 self.slide = Slide::In;
             }
@@ -729,7 +747,7 @@ impl IslandView {
                 self.tuck.set_feel(TUCK_IN);
                 self.slide = Slide::In;
             }
-            Slide::In if want != cur => {
+            Slide::In if want != cur || go_mon => {
                 self.tuck.set_feel(TUCK_OUT);
                 self.slide = Slide::Out;
             }
@@ -965,6 +983,10 @@ impl View for IslandView {
                         self.eq_target = eq_levels(&bands);
                         self.eq_seen = cx.now_ms;
                     }
+                }
+                if name == "pill:monitor" {
+                    // `pill.rs`: the foreground window is on another monitor (or no longer: the island stays / comes back); `step_edge` decides when
+                    self.mon_move = payload.get("move").and_then(|m| m.as_bool()).unwrap_or(false);
                 }
                 if name == "pill:taskbar" {
                     // `pill.rs`: the height of the bar the window stands in (logical px, 0 = none); the next frame moves the body
@@ -1289,6 +1311,7 @@ impl View for IslandView {
                     self.core.drop_phase(DropStep::Enter, now);
                     // the shelf's glow on the edge while files hang over the folded island (Pill.setDragPull)
                     self.core.shell.set_drag_pull(true);
+                    self.dragging = true;
                 }
                 self.exec(cx);
                 return Response::consumed();
@@ -1297,9 +1320,11 @@ impl View for IslandView {
             DropPhase::Leave => {
                 self.core.drop_phase(DropStep::Leave, now);
                 self.core.shell.set_drag_pull(false);
+                self.dragging = false;
             }
             DropPhase::Drop => {
                 self.core.shell.set_drag_pull(false);
+                self.dragging = false;
                 if let Some(DropPayload::Files(f)) = &ev.payload {
                     let paths: Vec<String> = f.iter().map(|p| p.to_string_lossy().into_owned()).collect();
                     self.core.drop_phase(DropStep::Landed, now);

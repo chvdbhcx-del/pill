@@ -162,6 +162,7 @@ pub(crate) fn pick_monitor(sel: &MonitorSel, mons: &[MonitorInfo], cursor: (i32,
         MonitorSel::Index(i) => mons.get(*i).cloned().unwrap_or_else(primary),
         MonitorSel::UnderCursor => geom::monitor_at(&mons.iter().map(|m| m.rect).collect::<Vec<_>>(), cursor.0, cursor.1).map(|i| mons[i].clone()).unwrap_or_else(primary),
         MonitorSel::Rect(r) => mons.iter().find(|m| m.rect == *r).cloned().unwrap_or_else(primary),
+        MonitorSel::Island => crate::pill::island_monitor().and_then(|r| mons.iter().find(|m| m.rect == r).cloned()).unwrap_or_else(primary),
     }
 }
 
@@ -1689,6 +1690,9 @@ impl Host {
                 Some(LRESULT(0))
             }
             WM_DISPLAYCHANGE | WM_SETTINGCHANGE => {
+                if msg == WM_DISPLAYCHANGE {
+                    crate::pill::monitor_event(); // a monitor came or went: an island that follows the active one looks again
+                }
                 // refresh rate / monitor layout / "show animations" may have changed
                 crate::guard::display_changed(); // the fullscreen guard looks again now, not at its next poll
                 for w in self.wins.values_mut() {

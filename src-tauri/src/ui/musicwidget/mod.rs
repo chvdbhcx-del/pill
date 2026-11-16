@@ -14,7 +14,8 @@
 //!   the capsule, the card, the fonts, the cover, the paddings, the radii and the shadow all scale, and so do the hit region and the placement
 //!   numbers. A change of `size` re-targets the view's factor (a Flow: Reduce motion lands at once); the window is not re-created or moved, the
 //!   body grows from its corner / side. In the taskbar the capsule is still capped by the bar's height (`Stand::fold_h`) and the slot asked of the
-//!   bar is as wide as the scaled capsule (`taskbar::widget_place`). It uses the island's monitor (`monitor`), the work area (`underTaskbar`) and `showInCapture`.
+//!   bar is as wide as the scaled capsule (`taskbar::widget_place`). It uses the island's monitor (`monitor`; with `edge.monitor` = active the monitor the
+//!   island stands on right now, `MonitorSel::Island`: the island moves first, then `pill_edge` re-places the widget with it), the work area (`underTaskbar`) and `showInCapture`.
 //! * `view.rs` draws it and `logic.rs` decides everything (when it shows, the geometry, what a click hits); both are fed by the SAME backend
 //!   the island's player uses (`media:changed`, `media_state`, `media_control`, `media_seek`): there is no second media backend.
 //! * De-duplication: while `media.widget` is on, the island does not show the player (`ui-core` `live::media` gives no row and no edge
@@ -50,7 +51,7 @@ pub struct Sig {
     pub align: Align,
     /// `media.widget.offset`, whole percent (only for the centre)
     pub offset: i32,
-    /// `monitor` of the island: "primary" or "1".."n"
+    /// `monitor` of the island: "primary" or "1".."n"; "active" while the island follows the active monitor (`edge.monitor`): it stands where the island does
     pub monitor: String,
     /// `underTaskbar`
     pub inside_work: bool,
@@ -59,7 +60,7 @@ pub struct Sig {
 }
 
 /// Every key that matters to the window (what `on_settings` watches).
-pub const KEYS: &[&str] = &["media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset", "monitor", "underTaskbar", "showInCapture"];
+pub const KEYS: &[&str] = &["media.widget", "media.widget.edge", "media.widget.align", "media.widget.offset", "monitor", "edge.monitor", "underTaskbar", "showInCapture"];
 
 /// The island's settings the widget keeps clear of while both stand in the taskbar: a change re-checks the place, it does not re-create the window.
 /// (`size` is the island's and also the widget's own: the view scales, see [`size_k`].)
@@ -90,7 +91,7 @@ pub fn sig_from(get: &dyn Fn(&str) -> Value) -> Option<Sig> {
             _ => Align::Left,
         },
         offset: get("media.widget.offset").as_f64().unwrap_or(0.0).clamp(-50.0, 50.0).round() as i32,
-        monitor: s("monitor", "primary"),
+        monitor: if s("edge.monitor", "primary") == "active" { "active".to_string() } else { s("monitor", "primary") },
         inside_work: get("underTaskbar") != Value::Bool(false),
         in_capture: get("showInCapture") != Value::Bool(false),
     })
@@ -98,6 +99,9 @@ pub fn sig_from(get: &dyn Fn(&str) -> Value) -> Option<Sig> {
 
 /// The monitor of the island's `monitor` setting ("1".. = list order, else the primary): the same rule as `pill::layout_native`.
 pub fn monitor_sel(setting: &str) -> MonitorSel {
+    if setting == "active" {
+        return MonitorSel::Island;
+    }
     match setting.parse::<usize>() {
         Ok(i) if i >= 1 => MonitorSel::Index(i - 1),
         _ => MonitorSel::Primary,
@@ -201,6 +205,7 @@ fn monitor_of(host: &host::HostHandle, s: &Sig) -> Option<host::MonitorInfo> {
     let mons = host.monitors();
     match monitor_sel(&s.monitor) {
         MonitorSel::Index(i) => mons.get(i).cloned(),
+        MonitorSel::Island => crate::pill::island_monitor().and_then(|r| mons.iter().find(|m| m.rect == r).cloned()),
         _ => None,
     }
     .or_else(|| mons.iter().find(|m| m.primary).cloned())

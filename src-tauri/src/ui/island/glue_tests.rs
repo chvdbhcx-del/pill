@@ -504,6 +504,82 @@ fn changing_the_edge_slides_out_moves_the_window_unseen_and_slides_in() {
     assert!(g.v.borrow().dbg_body_win().y < 12.0);
 }
 
+// Following the active monitor (`edge.monitor` = active): `pill.rs` says `pill:monitor` { move }, the island takes the same slide as an edge change.
+#[test]
+fn a_monitor_change_slides_out_asks_for_the_window_with_follow_and_slides_in() {
+    let _m = crate::ui::host::testing::motion_on();
+    let mut g = G::new();
+    let _ = g.draw_h(120);
+    let rest = g.v.borrow().dbg_body_win();
+    g.emit("pill:monitor", json!({ "move": true }));
+    assert!(g.calls("pill_edge").is_empty(), "the slide comes first: the window has not been asked to move");
+    let mut out = false;
+    for _ in 0..400 {
+        g.sim.step_frame();
+        let _ = g.draw_h(120);
+        out |= g.v.borrow().dbg_body_win().bottom() <= 0.0;
+    }
+    assert!(out, "the body left the window through its edge before the window moved");
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": false, "align": "center", "follow": true })], "asked once, with the follow flag");
+    assert!(!g.v.borrow().dbg_sliding() && g.v.borrow().dbg_tuck_px().abs() < 0.2, "and it came back and rests");
+    let end = g.v.borrow().dbg_body_win();
+    assert!((end.y - rest.y).abs() < 0.8 && (end.cx() - rest.cx()).abs() < 0.8, "to where it was in the (new) window: {end:?} vs {rest:?}");
+    // the answer of `pill.rs` after the move: nothing pending, so nothing slides again
+    g.emit("pill:monitor", json!({ "move": false }));
+    g.sim.run(200);
+    assert_eq!(g.calls("pill_edge").len(), 1);
+}
+
+#[test]
+fn a_monitor_change_that_is_taken_back_in_time_never_moves_the_window() {
+    let _m = crate::ui::host::testing::motion_on();
+    let mut g = G::new();
+    let _ = g.draw_h(120);
+    g.emit("pill:monitor", json!({ "move": true }));
+    g.sim.step_frame();
+    let _ = g.draw_h(120);
+    g.emit("pill:monitor", json!({ "move": false })); // the user alt-tabbed back
+    g.sim.run(400);
+    let _ = g.draw_h(120);
+    assert!(g.calls("pill_edge").is_empty() && !g.v.borrow().dbg_sliding());
+}
+
+#[test]
+fn an_open_island_a_card_or_a_recording_is_never_moved_away_it_waits_until_quiet() {
+    let _m = crate::ui::host::testing::motion_on();
+    let mut g = G::new();
+    g.expand("home");
+    g.emit("pill:monitor", json!({ "move": true }));
+    g.sim.run(400);
+    assert!(g.calls("pill_edge").is_empty() && !g.v.borrow().dbg_sliding(), "open: it stays, and asks for no frames while it waits");
+    g.emit("pill:collapse", json!({}));
+    g.sim.run(600);
+    let _ = g.draw_h(120);
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": false, "align": "center", "follow": true })], "folded again: now it goes");
+    // a card on screen holds it too
+    let mut g = G::new();
+    g.emit("phone:notif", phone_notif("k1"));
+    for _ in 0..3 {
+        let _ = g.draw();
+        g.settle(40);
+    }
+    assert!(card_title(&g).is_some(), "the card is up");
+    g.emit("pill:monitor", json!({ "move": true }));
+    g.sim.run(400);
+    assert!(g.calls("pill_edge").is_empty(), "a card owns the island: it does not leave");
+}
+
+#[test]
+fn with_reduced_motion_a_monitor_change_takes_place_at_once() {
+    let mut g = G::new();
+    g.sim.cx.reduced_motion = true;
+    let _ = g.draw_h(120);
+    g.emit("pill:monitor", json!({ "move": true }));
+    g.sim.run(3);
+    assert_eq!(g.calls("pill_edge"), vec![json!({ "bottom": false, "align": "center", "follow": true })]);
+    assert!(!g.v.borrow().dbg_sliding() && g.v.borrow().dbg_tuck_px().abs() < 0.2, "no slide");
+}
+
 #[test]
 fn the_left_corner_island_stands_against_the_left_side_and_grows_up() {
     use crate::ui::host::geom::Align;

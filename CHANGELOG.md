@@ -11,6 +11,7 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 - Settings > Updates > Report a bug: shows exactly what will be included (versions, monitor count and scale, placement settings; no names, paths or window titles), then opens a prefilled GitHub issue in your browser. Nothing is sent by Pill.
 - Packaging: Scoop manifest and one script (tools/update-manifests.ps1) for winget and Scoop; docs/DISTRIBUTION.md says what is signed and how to sign.
 - Share your look (Look > Share your look): save the island's appearance as a small `.pilllook` file or copy it as one line of text (`pill-look:...`) for a chat, and open one from a file or the clipboard. A look is shown in the live preview first; Apply writes it, Cancel leaves everything as it was, and a toast offers Undo. Four built-in looks (Midnight, Paper, Neon, Quiet) go through the same door. Only appearance travels: theme, colours, size, transparency, place, clock and date, edge style, pet, the player widget's place. No module or privacy switches, hotkeys, accounts, addresses or paths.
+- The island can follow you between monitors (Look > Screen edge > Follow the active window). It moves to the monitor that holds the active window when it is quiet (never while open, showing a card, recording or dragging): it slides off its edge, stands there with that monitor's own taskbar and scale, and slides in. The music widget goes along.
 
 ## [0.9.0] - 2026-11-16
 

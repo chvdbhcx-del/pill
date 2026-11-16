@@ -83,6 +83,27 @@ hidden island take the edge at once. `pill.rs` keeps the edge the window is on (
 `pill_edge`. The settings preview (`settings_view/preview`) runs the same view in its sandbox; its camera stands the island on the floor of the
 stage when `Live::at_bottom`; `offsetX` and `underTaskbar` (the host's placement, not the view's) are read by the camera and shown on the sketch of a monitor.
 
+## Following the active monitor (`edge.monitor` = `primary` | `active`)
+
+Look > Screen edge, next to the Monitor row. `primary` (default) changes nothing: the island stands on the `monitor` setting's monitor (the primary, or "1".. in
+list order). `active` makes the island stand on the monitor that holds the foreground window; it beats the `monitor` row. The standalone music widget
+follows the island (`Sig.monitor` = `"active"` -> `MonitorSel::Island`, which resolves to the monitor the island stands on now), because it has no monitor
+setting of its own; a widget whose island does not follow keeps using `monitor`.
+
+| piece | how |
+|---|---|
+| when it looks | ONLY on `EVENT_SYSTEM_FOREGROUND` (the hook `taskbar.rs` already owns; installed when the switch turns on) and on `WM_DISPLAYCHANGE`. Both only call `pill::monitor_poke`: a ~400 ms debounce (a generation counter and a one-shot thread per poke, nothing running while idle), then ONE look off the UI thread (`pill::monitor_look`). No timer, no polling |
+| what it picks | `geom::follow_monitor(monitors, foreground rect, cursor, primary)` (pure, tested): the monitor with most of the foreground window; no usable window (the desktop `Progman` / `WorkerW`, a minimised or hidden one, an empty rect) -> the monitor under the cursor; nothing -> the primary. One of our own windows in front (settings, the command bar) changes nothing. A taskbar in front counts by its rect, i.e. the click lands on its own monitor |
+| who is told | the look stores the target (`geom::monitor_key`: the monitor's top-left corner, stable when the list reorders) and `pill::publish_move` tells the view `pill:monitor { move }` when the target is a monitor that exists and is not where the island stands (or, switched off, while the window is still on a followed monitor: it goes home). `place()` publishes again, and while a move is pending every placement repeats it, so a view that was busy looks again |
+| when it moves | the view (`IslandView::step_edge`): the SAME slide as an edge change (out through the edge with `tuck`, `pill_edge` re-places the window while nothing shows, `EDGE_HOLD_MS`, in from the edge), started only when `mon_idle`: folded (or hidden / auto-hidden), no card (`Phase::Cards`), no open panel, no file drag over it, no recording tile. Otherwise it waits (no frames are asked) and starts at the next step after it is quiet; a move taken back in time (`move: false` before the body left) cancels. Reduce motion and a hidden island move at once |
+| the re-place | `pill_edge { follow: true }` commits the target (`MON_COMMITTED`) and `layout_native` -> `frame_for` lays the window out on that monitor with ITS work area, DPI, size, side and `offsetX`; in taskbar mode `geom::bottom_bar` / `taskbar::tray_rect` look for the bar of THAT monitor and, with no visible strip there, the existing fallback is the plain bottom edge. The proximity engine rows (edge dwell) follow the placed monitor (`pill::edge_geometry`). The music widget is re-laid out right after (`musicwidget::relayout`; in the bar it slides out and in as for any monitor change, otherwise it is re-placed) |
+| unplug / replug | a committed monitor that is gone is dropped by `layout_native` (the island is on the primary, or the `monitor` row's) and is NOT remembered: when the monitor returns the next look decides. A target that is not in the monitor list never makes a move pending, so there is no slide loop |
+| fullscreen guard | unchanged and per monitor (`guard.rs` already reads the monitor of the foreground window) |
+| settings preview | the row is shown, the preview ignores it (`BLOCKED`): one stage, no second monitor |
+
+Unverified live (needs two monitors): the slide over a mixed-DPI pair, the secondary monitor's taskbar strip in `taskbar` mode, a hot-unplug while the island
+is committed to the unplugged monitor, and the widget's own slide on a non-taskbar dock (it is re-placed at once there).
+
 ## The music widget (`media.widget`): the player as its own window
 
 `ui/musicwidget/` puts the island's player into a SEPARATE small window, so it can stand apart from the island: in the bottom left corner next to
