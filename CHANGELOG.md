@@ -4,8 +4,13 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-11-17
+
+### Highlights
+- The small music widget is redone: one line of text, a round cover, big buttons, the progress as a mini waveform of the track and a body in the cover's colour.
+
 ### Changed
-- Music widget: the folded capsule is more minimal. The body takes the colour of the cover (a gradient from the cover's tint, whatever the Home player style is, with the text turning light or dark to stay readable) and eases into the card's own look as it opens; the title and the artist are one line (the artist muted, a cut line fades out), the cover is a circle that turns into the card's cover shape as it opens, the progress is a mini waveform of the track's loudness (the played bars bright, the rest dim) instead of the hairline, and the buttons are big (previous / next 33, the round play disc 43 at 56 px, scaled with the taskbar height). Also fixes the size test's stale capsule width.
+- Music widget: the folded capsule is more minimal. The body takes the colour of the cover (a calm, soft gradient of the cover's tint, whatever the Home player style is, with the text turning light or dark to stay readable) and eases into the card's own look as it opens; the title and the artist are one line (the artist muted, a cut line fades out), the cover is a circle that turns into the card's cover shape as it opens, the progress is a mini waveform of the track's loudness (the played bars bright, the rest dim) instead of the hairline, and the buttons are big (previous / next 33, the round play disc 43 at 56 px, scaled with the taskbar height). Also fixes the size test's stale capsule width.
 
 ## [0.13.1] - 2026-11-17
 
