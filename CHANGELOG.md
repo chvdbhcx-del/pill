@@ -4,7 +4,16 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-17
+
+### Highlights
+- Fixed a crash that started in 0.13.0: Pill could close by itself every few minutes (a Windows "heap corruption" error). Two parts of Pill read the clipboard at the same moment, which Windows does not allow inside one process; all clipboard access now goes through one lock.
+
 ### Changed
+- Settings: the "Phone link" page is now called "Phone and other PCs" (it holds the pairing of your other PCs too).
+- The phone panel on the island shows the unread count inside the Notifications chip, after its name, so it is no longer read as belonging to the next tab.
+- Covers: a round avatar saved as a square picture with black corners (a chat's photo, for example) now has transparent corners instead of black wedges.
+- The PC link code is shorter (the PCs list reuses the phone device list; one clipboard intake for phones and PCs). Nothing changes for you.
 - Pill Phone 1.3.0: a new Home and navigation. Home is the title with the gear, a hero card (the PC's name, how it is reached and a Connected / Connecting / Offline pill), four quick actions (Send file, Send clip, History, Apps with the number of mirrored apps on its corner), a "Recent" list (the newest clipboard text and file) and one slim strip with the phone's battery, free storage, free memory and temperature. A bottom bar switches between Home, Files (send files and the transfers list), Clipboard and Apps; Settings stays behind the gear. Every screen now shares one look (22 dp cards, flat neutral surfaces, the same top bar), the QR scanner frame is neutral, and the transitions between tabs, the status pill and the count badge are animated.
 - Pill Phone 1.2.0: the app is neutral black and white now (white accent on black, near black on white; the periwinkle/violet is gone from the screens and the launcher icon), and it keeps a clipboard history: a new Clipboard screen on Home lists the texts received from your PC, sent from the phone or added from the current clipboard (tap to copy, send to a PC, delete, search, clear all), with a "Keep clipboard history" switch in Settings.
 
