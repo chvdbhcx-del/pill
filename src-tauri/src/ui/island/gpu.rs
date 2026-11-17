@@ -91,7 +91,68 @@ pub fn decode_cover(cv: &Canvas, bytes: &[u8], px: u32) -> Option<Vec<u8>> {
         cvt.Initialize(&cl, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom).ok()?;
         let mut buf = vec![0u8; (px * px * 4) as usize];
         cvt.CopyPixels(std::ptr::null(), px * 4, &mut buf).ok()?;
+        mask_round_avatar(&mut buf, px);
         Some(buf)
+    }
+}
+
+/// A round avatar saved as a square JPEG (a chat's picture, say) has pure black corners: JPEG has no alpha. When the corners are black but the ring
+/// inside the inscribed circle is not, everything outside that circle fades to transparent, so the cover's own tile shows there, not black wedges.
+fn mask_round_avatar(buf: &mut [u8], px: u32) {
+    let (n, r) = (px as usize, px as f32 / 2.0);
+    let peak = |buf: &[u8], x: usize, y: usize| buf[(y * n + x) * 4..][..3].iter().copied().max().unwrap_or(0);
+    let m = n.saturating_sub(2);
+    if n < 8 || [(1, 1), (m, 1), (1, m), (m, m)].iter().any(|&(x, y)| peak(buf, x, y) > 6) {
+        return;
+    }
+    let ring = (0..8)
+        .filter(|i| {
+            let a = *i as f32 * std::f32::consts::FRAC_PI_4;
+            let at = |c: f32| ((r + 0.85 * r * c) as usize).min(n - 1);
+            peak(buf, at(a.cos()), at(a.sin())) > 20
+        })
+        .count();
+    if ring < 6 {
+        return;
+    }
+    for (i, p) in buf.chunks_exact_mut(4).enumerate() {
+        let (x, y) = ((i % n) as f32 + 0.5 - r, (i / n) as f32 + 0.5 - r);
+        let k = (r - x.hypot(y) + 0.5).clamp(0.0, 1.0);
+        p.iter_mut().for_each(|c| *c = (*c as f32 * k) as u8);
+    }
+}
+
+#[cfg(test)]
+mod avatar_tests {
+    use super::mask_round_avatar;
+
+    fn disc(px: u32, edge: u8) -> Vec<u8> {
+        let r = px as f32 / 2.0;
+        (0..px * px).flat_map(|i| {
+            let (x, y) = ((i % px) as f32 + 0.5 - r, (i / px) as f32 + 0.5 - r);
+            if x.hypot(y) < r { [60, 220, 90, 255] } else { [edge, edge, edge, 255] }
+        }).collect()
+    }
+
+    #[test]
+    fn black_corners_of_a_round_avatar_turn_transparent() {
+        let mut b = disc(64, 0);
+        mask_round_avatar(&mut b, 64);
+        assert_eq!(b[3], 0, "the corner pixel is gone");
+        let c = (32 * 64 + 32) * 4;
+        assert_eq!(&b[c..c + 4], &[60, 220, 90, 255], "the middle stays as it was");
+    }
+
+    #[test]
+    fn a_normal_cover_is_left_alone() {
+        let mut lit = disc(64, 90); // corners are not black
+        let before = lit.clone();
+        mask_round_avatar(&mut lit, 64);
+        assert_eq!(lit, before);
+        let mut dark = vec![0u8; 64 * 64 * 4]; // all black: no ring to speak of
+        let before = dark.clone();
+        mask_round_avatar(&mut dark, 64);
+        assert_eq!(dark, before);
     }
 }
 
