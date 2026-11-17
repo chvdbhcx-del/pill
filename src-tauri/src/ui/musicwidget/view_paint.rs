@@ -104,18 +104,37 @@ fn fill_pair(th: &Theme, tint: Option<(Color, Color)>, accent: Color) -> (Color,
     (css::mix(fa, 84.0, th.card), css::mix(fb, 70.0, th.card))
 }
 
-/// The relative luminance of the tint above which the ink is the dark one. The island's `player::ink_for` flips at 0.34, which keeps white on a
-/// mid-tone (a salmon pink reads at 2.8:1); the capsule's text is smaller and half of it is muted, so it flips earlier, nearer the point where
-/// black and white read equally (0.19): the title keeps at least 3.6:1 (light ink) / 4.7:1 (dark ink) on every tint.
-const INK_FLIP: f32 = 0.22;
+/// The folded capsule's own, much calmer body: the cover's first colour mixed in at [`SOFT_TINT`] % over the card colour, running into a slightly
+/// darker version of the same hue (no sweep through a second colour). The open card's fill style keeps its strong pair (`fill_pair`).
+const SOFT_TINT: f32 = 34.0;
+const SOFT_DARKEN: f32 = 0.12;
 
-/// Which ink the fill tint calls for, 0 = light, 1 = dark (what the view's `ink` spring heads for): the dark ink on a bright tint, like
-/// `player::ink_for`, from [`INK_FLIP`] on.
-pub(super) fn ink_target(th: &Theme, tint: Option<(Color, Color)>, accent: Color) -> f32 {
-    let (a, b) = fill_pair(th, tint, accent);
-    let m = a.mix(b, 0.5);
+fn soft_pair(th: &Theme, tint: Option<(Color, Color)>, accent: Color) -> (Color, Color) {
+    let a = css::mix(tint.map_or(accent, |t| t.0), SOFT_TINT, th.card);
+    (a, a.mix(Color::rgb8(0, 0, 0), SOFT_DARKEN))
+}
+
+/// The WCAG contrast of two colours.
+fn contrast(a: Color, b: Color) -> f32 {
     let lin = |c: f32| if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) };
-    (0.2126 * lin(m.r) + 0.7152 * lin(m.g) + 0.0722 * lin(m.b) > INK_FLIP) as u8 as f32
+    let lum = |c: Color| 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+    let (x, y) = (lum(a), lum(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+/// The colour the ink has to read on: the middle of the capsule's body, or (`strong`: the card is open in the fill style) of the card's.
+pub(super) fn body_mid(th: &Theme, tint: Option<(Color, Color)>, accent: Color, strong: bool) -> Color {
+    let (a, b) = if strong { fill_pair(th, tint, accent) } else { soft_pair(th, tint, accent) };
+    a.mix(b, 0.5)
+}
+
+/// Which ink the tint calls for, 0 = light, 1 = dark (what the view's `ink` spring heads for): the one that reads best on the
+/// body. The island's `player::ink_for` flips at a luminance of 0.34, which keeps white on a mid-tone (a salmon pink reads at 2.8:1); the
+/// capsule's text is small and half of it is muted, so the dark ink is chosen as soon as it reads 1.3 times better than the light one (a
+/// luminance of about 0.22): the title keeps at least 3.6:1 (light ink) / 4.7:1 (dark ink) on every tint.
+pub(super) fn ink_target(th: &Theme, tint: Option<(Color, Color)>, accent: Color, strong: bool) -> f32 {
+    let body = body_mid(th, tint, accent, strong);
+    (contrast(INK_DARK, body) >= 1.31 * contrast(INK_LIGHT, body)) as u8 as f32
 }
 
 /// What the capsule's colours are made of, once per `paint`.
@@ -146,7 +165,9 @@ impl Ink<'_> {
         let cap = if self.hc { 0.0 } else { 1.0 - q * q * (3.0 - 2.0 * q) };
         let fc = (st.style == PlayerStyle::Fill && !self.hc) as u8 as f32;
         let fk = fc + (1.0 - fc) * cap;
-        let fill = self.fill_colors();
+        // the body's two colours: the capsule's calm tint, easing into the card's own (strong for the fill style) as it opens
+        let (card_fill, soft) = (self.fill_colors(), soft_pair(self.th, self.tint, self.accent));
+        let fill = (card_fill.0.mix(soft.0, cap), card_fill.1.mix(soft.1, cap));
         let (ink, inv) = (INK_LIGHT.mix(INK_DARK, self.ink_dark), INK_DARK.mix(INK_LIGHT, self.ink_dark));
         let look = Look { ink, inv, fk, cap, fill };
         let thc = self.themed(ink, fk);

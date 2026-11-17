@@ -472,7 +472,7 @@ impl MusicView {
     fn follow_ink(&mut self, at_once: bool) {
         let th = self.theme();
         let tint = self.cov_to.filter(|_| self.kbd.hc.is_none());
-        let g = paint::ink_target(&th, tint, self.accent_goal(&th));
+        let g = paint::ink_target(&th, tint, self.accent_goal(&th), self.stand.style == PlayerStyle::Fill && self.expand.target() > 0.5);
         if (self.ink.target() - g).abs() > 1e-4 || at_once {
             self.ink.to(g);
             if at_once {

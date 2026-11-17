@@ -139,7 +139,7 @@ fn the_shared_parts_stand_where_the_capsule_and_the_card_put_them_and_travel_smo
         let (p0, p1) = (parts(st, 0.0, 0.0), parts(st, 1.0, 0.0));
         assert!(near(p0.cover, a.cover) && (0..3).all(|i| near(p0.btn[i], a.btn[i])), "folded: the capsule's places");
         assert!(near(p1.cover, b.cover) && (0..3).all(|i| near(p1.btn[i], b.btn[i])) && near(p1.bar, b.bar) && near(p1.head, b.title) && near(p1.sub, b.sub), "open: the card's places");
-        assert_eq!((p1.cover_r, p1.cover.w), (CARD_COVER_R, 84.0), "the Home card's cover (the mirror style)");
+        assert!((p1.cover_r - CARD_COVER_R).abs() < 1e-4 && p1.cover.w == 84.0, "the Home card's cover (the mirror style): {} {}", p1.cover_r, p1.cover.w);
         // in between: the cover only grows, the corners only round off, nobody jumps
         let mut prev = p0;
         for i in 1..=40 {
@@ -263,8 +263,8 @@ fn the_bar_capsule_is_symmetrical_centred_and_its_waveform_stays_on_the_straight
         let left = l.cover.x - cap.x;
         let right = cap.right() - l.btn[2].right();
         assert!(left >= cap.h * 0.1 && right >= cap.h * 0.1 && (left - right).abs() <= cap.h * 0.08 + tol, "{tag}: {left} on the left, {right} on the right");
-        // the cover's corner arcs stay inside the capsule's left end: the arc's centre is `r` from the cover's corner, the end is a circle of radius h / 2
-        let r = l.cover.w * COVER_R_RATIO;
+        // the cover is a circle here, and stays inside the capsule's left end: the arc's centre is `r` from the cover's corner, the end is a circle of radius h / 2
+        let r = l.cover.w / 2.0;
         let (cx, cy) = (cap.x + cap.h / 2.0, cap.cy());
         let d = ((l.cover.x + r - cx).powi(2) + (l.cover.y + r - cy).powi(2)).sqrt() + r;
         assert!(d <= cap.h / 2.0 + tol, "{tag}: the cover's corner reaches {d} of {}", cap.h / 2.0);
@@ -555,11 +555,16 @@ fn the_capsule_is_the_card_in_small_one_cover_shape_and_reflections_that_spread_
     for style in [PlayerStyle::Mirror, PlayerStyle::Compact, PlayerStyle::Fill] {
         for st in [Stand { style, ..Stand::from(Dock::Bottom) }, Stand { style, ..in_bar(Align::Left, 48.0) }, Stand { style, ..in_bar(Align::Right, 40.0) }] {
             let (p0, p1) = (parts(st, 0.0, 0.0), parts(st, 1.0, 0.0));
-            // the same cover shape at every size: the corner radius is the same share of the side
+            // the cover is a circle in the capsule and takes the card's shape as it opens, in steps that never go back
+            assert!((p0.cover_r / p0.cover.w - 0.5).abs() < 1e-4, "{style:?}: a circle folded");
+            let mut last = 1.0;
             for p in [0.0, 0.3, 0.7, 1.0] {
                 let q = parts(st, p, 0.0);
-                assert!((q.cover_r / q.cover.w - COVER_R_RATIO).abs() < 1e-4, "{style:?} p={p}");
+                let ratio = q.cover_r / q.cover.w;
+                assert!(ratio <= last + 1e-4 && ratio >= COVER_R_RATIO - 1e-4, "{style:?} p={p}: {ratio}");
+                last = ratio;
             }
+            assert!((p1.cover_r / p1.cover.w - COVER_R_RATIO).abs() < 1e-4, "{style:?}: the card's shape open");
             assert!((p1.cover_r - CARD_COVER_R).abs() < 0.3 || style != PlayerStyle::Mirror, "{style:?}: the card's own radius at the end: {}", p1.cover_r);
             // the cover is bigger inside the capsule than the old 40, and still smaller than the card's
             assert!(p0.cover.w > 20.0 && p0.cover.w < p1.cover.w, "{style:?}: {} -> {}", p0.cover.w, p1.cover.w);
@@ -589,7 +594,7 @@ fn the_text_is_one_line_in_the_cards_size_scaled_with_the_capsule_and_the_wavefo
     // 14.5 at the full height (the mockup's 12.5 at 48), never unreadably small in a strip, never bigger than the card's title
     assert!((capsule_text_size(CAPSULE_H) - 14.5).abs() < 0.01 && (capsule_text_size(48.0) - 12.5).abs() < 0.05);
     assert_eq!((capsule_text_size(20.0), capsule_text_size(90.0)), (11.5, 14.5));
-    assert_eq!((wave_n(CAPSULE_H), wave_n(40.0), wave_n(39.0), wave_n(28.0)), (12, 12, 8, 8));
+    assert_eq!((wave_n(CAPSULE_H), wave_n(52.0), wave_n(48.0), wave_n(28.0)), (10, 10, 8, 8));
     // the line sits in the text rect, centred on the capsule's height (the text is vertically centred in a rect as tall as the capsule)
     for h in [32.0, 44.0, 48.0, CAPSULE_H] {
         let c = Rect::new(0.0, 0.0, CAP_W, h);

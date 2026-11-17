@@ -271,47 +271,50 @@ fn contrast(a: Color, b: Color) -> f32 {
 #[test]
 fn the_capsules_ink_turns_light_or_dark_with_the_covers_tint_and_stays_readable_on_every_tint() {
     let _m = motion_on();
+    let (l, d) = (Color::rgb8(0xf6, 0xf6, 0xf6), Color::rgb8(0x14, 0x14, 0x14));
     for th in [Theme::pill_dark(), Theme::pill_light()] {
         let tint = |c: Color| Some((c, c));
-        let (white, yellow, black, blue, green, none) = (Color::rgb8(250, 250, 250), Color::rgb8(250, 222, 40), Color::rgb8(4, 4, 6), Color::rgb8(40, 90, 210), Color::rgb8(70, 200, 120), None);
-        // a bright cover gets the dark ink, a dark one the light ink; none: the accent decides (a dark red here)
-        let ink = |t, a: Color| paint::ink_target(&th, t, a);
-        assert_eq!((ink(tint(white), white), ink(tint(yellow), yellow)), (1.0, 1.0), "dark ink on a bright cover (dark theme {})", th.dark);
-        assert_eq!((ink(tint(black), black), ink(tint(blue), blue)), (0.0, 0.0), "light ink on a dark cover (dark theme {})", th.dark);
-        assert_eq!(ink(none, Color::rgb8(10, 10, 12)), 0.0);
-        // the title is readable against the middle of the body on every tint of a sweep of the colour cube
-        let (l, d) = (Color::rgb8(0xf6, 0xf6, 0xf6), Color::rgb8(0x14, 0x14, 0x14));
-        for r in (0..=255).step_by(51) {
-            for g in (0..=255).step_by(51) {
-                for b in (0..=255).step_by(51) {
-                    let c = Color::rgb8(r as u8, g as u8, b as u8);
-                    let body = crate::ui::tabs::a::home::css::mix(c, 84.0, th.card).mix(crate::ui::tabs::a::home::css::mix(c, 70.0, th.card), 0.5);
-                    let k = ink(tint(c), c);
-                    let cr = contrast(if k > 0.5 { d } else { l }, body);
-                    assert!(cr >= 3.5, "rgb({r},{g},{b}) on the {} theme: the ink reads at {cr:.2}:1", if th.dark { "dark" } else { "light" });
+        let name = if th.dark { "dark" } else { "light" };
+        let (white, yellow, black, blue) = (Color::rgb8(250, 250, 250), Color::rgb8(250, 222, 40), Color::rgb8(4, 4, 6), Color::rgb8(40, 90, 210));
+        let ink = |t, a: Color| paint::ink_target(&th, t, a, false);
+        // the body is a calm tint over the card colour: it follows the theme (the dark ink on the light theme's body, the light ink on the dark one's)
+        let want = if th.dark { 0.0 } else { 1.0 };
+        for c in [white, yellow, black, blue] {
+            assert_eq!(ink(tint(c), c), want, "{name} theme, rgb({}, {}, {})", c.r, c.g, c.b);
+        }
+        assert_eq!(ink(None, Color::rgb8(10, 10, 12)), want);
+        // the open fill card is strong: a bright cover gets the dark ink and a dark one the light ink there on both themes
+        assert_eq!((paint::ink_target(&th, tint(yellow), yellow, true), paint::ink_target(&th, tint(black), black, true)), (1.0, 0.0));
+        // the title is readable against the middle of the body on every tint of a sweep of the colour cube, on the capsule's calm body and on the
+        // open fill card's strong one
+        for strong in [false, true] {
+            for r in (0..=255).step_by(51) {
+                for g in (0..=255).step_by(51) {
+                    for b in (0..=255).step_by(51) {
+                        let c = Color::rgb8(r as u8, g as u8, b as u8);
+                        let k = paint::ink_target(&th, tint(c), c, strong);
+                        let cr = contrast(if k > 0.5 { d } else { l }, paint::body_mid(&th, tint(c), c, strong));
+                        assert!(cr >= 3.5, "rgb({r},{g},{b}) on the {name} theme (strong {strong}): the ink reads at {cr:.2}:1");
+                    }
                 }
             }
         }
-        let _ = green;
     }
 }
 
 #[test]
-fn a_new_covers_ink_glides_instead_of_flipping_and_lands_at_once_while_nobody_looks() {
+fn the_ink_glides_when_the_body_turns_light_or_dark_and_lands_at_once_while_nobody_looks() {
     let _m = motion_on();
     let mut h = shown("Song");
     let with_cover = |id: u64| json!({ "has_session": true, "playing": true, "title": "Song", "artist": "Band", "app": "Spotify.exe", "position_ms": 0, "duration_ms": 200_000, "thumb_id": id, "thumbnail": "data:image/png;base64,AAAA" });
     h.apply(with_cover(7));
     let key = h.v.cov_key.clone().unwrap();
-    let dark = (Color::rgb8(20, 20, 30), Color::rgb8(10, 10, 20));
-    assert!(h.v.cover_ready(CoverReady { key, colors: Some(dark), tiny: None }));
+    assert!(h.v.cover_ready(CoverReady { key, colors: Some((Color::rgb8(250, 230, 60), Color::rgb8(240, 200, 40))), tiny: None }));
     h.run(1500.0);
-    assert_eq!(h.v.ink.at01(), 0.0, "light ink on a dark cover");
-    // a bright cover: the ink turns over on its spring, in steps, and lands on the dark ink
-    h.apply(with_cover(8));
-    let key = h.v.cov_key.clone().unwrap();
-    let bright = (Color::rgb8(250, 230, 60), Color::rgb8(240, 200, 40));
-    assert!(h.v.cover_ready(CoverReady { key, colors: Some(bright), tiny: None }));
+    assert_eq!(h.v.ink.at01(), 0.0, "light ink on the calm dark body");
+    // the light theme: the body is light now and the ink turns over on its spring, in steps, and lands on the dark ink
+    let settings = |theme: &str| json!({ "media.widget": true, "module.media": true, "theme": theme, "language": "en" });
+    h.v.take_settings(&settings("light"));
     assert_eq!(h.v.ink.target(), 1.0);
     assert!(h.v.ink.at01() < 0.5 && h.v.moving(), "it has not flipped yet");
     h.run(60.0);
@@ -321,8 +324,6 @@ fn a_new_covers_ink_glides_instead_of_flipping_and_lands_at_once_while_nobody_lo
     assert_eq!(h.v.ink.at01(), 1.0);
     // nobody looks (the window is hidden): it lands without a frame
     h.v.on_hide(&mut h.cx);
-    h.apply(with_cover(9));
-    let key = h.v.cov_key.clone().unwrap();
-    assert!(h.v.cover_ready(CoverReady { key, colors: Some(dark), tiny: None }));
+    h.v.take_settings(&settings("dark"));
     assert_eq!((h.v.ink.at01(), h.v.ink.moving()), (0.0, false));
 }

@@ -452,18 +452,18 @@ pub struct CapsuleLayout {
 /// The cover's corner radius over its side: the card's (14 of 84), the same shape at every size.
 pub const COVER_R_RATIO: f32 = CARD_COVER_R / 84.0;
 
-/// How many bars the capsule's mini waveform has: 12 (the mockup's) at a roomy height, 8 in a thin strip.
+/// How many bars the capsule's mini waveform has: 10 at the full height, 8 in a strip (the big buttons leave it little room).
 pub fn wave_n(h: f32) -> usize {
-    if h >= 40.0 {
-        12
+    if h >= 52.0 {
+        10
     } else {
         8
     }
 }
 
 /// The folded capsule: the card in small, drawn for the height [`CAPSULE_H`] (a smaller `c.h`, a taskbar strip, scales all of it by `c.h / 56`).
-/// From the left: a round-cornered cover (40 of 56), ONE line of text (the title, then the artist muted), a mini waveform of the track (12 bars of
-/// 2 px) that is its progress, previous, a round play button and next. The ends of the capsule are half circles; the cover's corner arcs stay inside
+/// From the left: a ROUND cover (a circle, 40 of 56; it takes the card's corner shape as it opens), ONE line of text (the title, then the artist muted), a mini waveform of the track (10 bars of
+/// 2 px) that is its progress, previous (33), a round play button (43) and next (33). The ends of the capsule are half circles; the cover's corner arcs stay inside
 /// the left end and the last button's edge stands as far from the right one. `k` = device px per base px: every size is a whole number of them with
 /// the same room above and below. The waveform is dropped (zero size) when there is no room for it.
 pub fn capsule_layout(c: Rect, k: f32) -> CapsuleLayout {
@@ -479,22 +479,22 @@ pub fn capsule_layout(c: Rect, k: f32) -> CapsuleLayout {
         }
         p.max(1) as f32 / k
     };
-    let (cs, side, play) = (even(40.0 * s, 14.0), even(26.0 * s, 16.0), even(34.0 * s, 20.0));
-    let (e, pad, gap) = (sp(8.0 * s), sp(10.0 * s), sp(3.0 * s));
+    let (cs, side, play) = (even(40.0 * s, 14.0), even(33.0 * s, 18.0), even(43.0 * s, 22.0));
+    let (e, pad, gap) = (sp(8.0 * s), sp(8.0 * s), sp(2.0 * s));
     let y = |size: f32| c.y + (c.h - size) / 2.0;
     let next_x = c.right() - pad - side;
     let play_x = next_x - gap - play;
     let prev_x = play_x - gap - side;
     let btn = [Rect::new(prev_x, y(side), side, side), Rect::new(play_x, y(play), play, play), Rect::new(next_x, y(side), side, side)];
     let cover = Rect::new(c.x + e, y(cs), cs, cs);
-    let text_x = cover.right() + sp(10.0 * s);
+    let text_x = cover.right() + sp(9.0 * s);
     // the waveform: thin bars with a gap as wide as a bar, centred, as far from the buttons as from the text
     let (bar, text_end) = if c.h >= 28.0 {
         let n = wave_n(c.h) as f32;
         let bw = ((2.0 * s * k).round().max(1.0)) / k;
         let (w, h) = (n * 2.0 * bw - bw, even(22.0 * s, 8.0));
-        let r = Rect::new(prev_x - sp(10.0 * s) - w, y(h), w, h);
-        (r, r.x - sp(10.0 * s))
+        let r = Rect::new(prev_x - sp(8.0 * s) - w, y(h), w, h);
+        (r, r.x - sp(8.0 * s))
     } else {
         (Rect::new(c.x, c.bottom(), 0.0, 0.0), prev_x - sp(8.0 * s))
     };
@@ -578,7 +578,7 @@ pub fn card_layout(c: Rect, style: PlayerStyle) -> CardLayout {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Parts {
     pub cover: Rect,
-    /// the cover's corner radius (base px): the same shape at every size ([`COVER_R_RATIO`])
+    /// the cover's corner radius (base px): a circle in the capsule, the card's shape ([`COVER_R_RATIO`] of the side) in the card, between them as it opens
     pub cover_r: f32,
     /// the title and the artist line (the capsule's text rect and the card's two lines: the view cross-fades the text)
     pub head: Rect,
@@ -608,7 +608,7 @@ pub fn parts(st: impl Into<Stand>, p: f32, dy: f32) -> Parts {
     let cover = mix(a.cover, b.cover, t);
     Parts {
         cover,
-        cover_r: cover.w * COVER_R_RATIO,
+        cover_r: cover.w * lerp(0.5, COVER_R_RATIO, t.min(1.0)),
         head: mix(a.text, b.title, t),
         sub: mix(a.text, b.sub, t),
         btn: std::array::from_fn(|i| mix(a.btn[i], b.btn[i], t)),
