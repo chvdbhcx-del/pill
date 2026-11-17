@@ -9,7 +9,7 @@ use windows::core::{implement, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{BOOL, DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, HGLOBAL, HWND, S_OK, SIZE};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::Com::{CoInitializeEx, IBindCtx, IDataObject, COINIT_APARTMENTTHREADED};
-use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
+use windows::Win32::System::DataExchange::{EmptyClipboard, SetClipboardData};
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::System::Ole::{
     DoDragDrop, IDropSource, IDropSource_Impl, OleInitialize, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_NONE,
@@ -157,17 +157,7 @@ pub fn shelf_copy_path(id: i64) -> bool {
 fn set_clipboard_text(s: &str) -> bool {
     let w: Vec<u16> = s.encode_utf16().chain(Some(0)).collect();
     unsafe {
-        let mut opened = false;
-        for _ in 0..10 {
-            if OpenClipboard(HWND::default()).is_ok() {
-                opened = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(30));
-        }
-        if !opened {
-            return false;
-        }
+        let Some(_g) = crate::clipboard::open_clipboard() else { return false };
         let ok = (|| -> Option<()> {
             EmptyClipboard().ok()?;
             let h: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, w.len() * 2).ok()?;
@@ -181,7 +171,6 @@ fn set_clipboard_text(s: &str) -> bool {
             Some(())
         })()
         .is_some();
-        let _ = CloseClipboard();
         ok
     }
 }

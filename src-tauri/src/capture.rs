@@ -36,7 +36,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::Com::{CoInitializeEx, CoTaskMemFree, COINIT_MULTITHREADED};
 use windows::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
+    EmptyClipboard, RegisterClipboardFormatW, SetClipboardData,
 };
 use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
@@ -432,23 +432,12 @@ unsafe fn set_global(fmt: u32, data: &[u8]) -> bool {
 /// Replace the clipboard content with these formats. Returns false when it could not be opened or nothing was stored.
 fn clip_put(items: &[(u32, Vec<u8>)]) -> bool {
     unsafe {
-        let mut opened = false;
-        for _ in 0..10 {
-            if OpenClipboard(HWND::default()).is_ok() {
-                opened = true;
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(30));
-        }
-        if !opened {
-            return false;
-        }
+        let Some(_g) = crate::clipboard::open_clipboard() else { return false };
         let _ = EmptyClipboard();
         let mut any = false;
         for (fmt, data) in items {
             any |= set_global(*fmt, data);
         }
-        let _ = CloseClipboard();
         any
     }
 }

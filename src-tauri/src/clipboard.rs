@@ -187,14 +187,28 @@ pub(crate) unsafe fn exe_stem(hwnd: HWND) -> Option<String> {
     Some(std::path::Path::new(&p).file_stem()?.to_string_lossy().to_lowercase())
 }
 
-pub(crate) unsafe fn open_clipboard() -> bool {
+/// One thread at a time in the clipboard. OpenClipboard(NULL) lets two threads of this process in together, and the history and phone-clip
+/// listeners both wake on every change: two GetClipboardData calls at once corrupt user32's handle cache (heap-corruption crash, 0.13.0).
+static CLIP_LOCK: Mutex<()> = Mutex::new(());
+
+/// Holds the in-process lock and the open clipboard; dropping it closes the clipboard.
+pub(crate) struct ClipGuard(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
+
+impl Drop for ClipGuard {
+    fn drop(&mut self) {
+        let _ = unsafe { CloseClipboard() }; // runs before the lock field is released
+    }
+}
+
+pub(crate) unsafe fn open_clipboard() -> Option<ClipGuard> {
+    let g = CLIP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     for _ in 0..10 {
         if OpenClipboard(HWND::default()).is_ok() {
-            return true;
+            return Some(ClipGuard(g));
         }
         std::thread::sleep(std::time::Duration::from_millis(30));
     }
-    false
+    None
 }
 
 pub(crate) unsafe fn global_bytes(fmt: u32, max: usize) -> Option<Vec<u8>> {
@@ -241,10 +255,8 @@ enum Content {
 
 /// Runs the privacy filters, then reads one representation. Returns None when the change must not be stored.
 unsafe fn read_clipboard(source: &Option<String>) -> Option<Content> {
-    if !open_clipboard() {
-        return None;
-    }
-    let r = (|| {
+    let _g = open_clipboard()?;
+    (|| {
         let (mut text, mut files, mut dib) = (false, false, None);
         let mut f = 0;
         loop {
@@ -298,9 +310,7 @@ unsafe fn read_clipboard(source: &Option<String>) -> Option<Content> {
             return (!s.trim().is_empty() && s.len() <= MAX_TEXT).then_some(Content::Text(s));
         }
         global_bytes(dib?, MAX_IMAGE).map(Content::Dib)
-    })();
-    let _ = CloseClipboard();
-    r
+    })()
 }
 
 fn capture(_app: &AppHandle) {
@@ -511,9 +521,8 @@ pub async fn clip_wipe() {
     let _ = std::fs::create_dir_all(&d);
     // the live system clipboard and the Win+V history go too, so the last copied item cannot be pasted or re-captured
     unsafe {
-        if open_clipboard() {
+        if let Some(_g) = open_clipboard() {
             let _ = EmptyClipboard();
-            let _ = CloseClipboard();
             IGNORE_SEQ.store(GetClipboardSequenceNumber(), Ordering::Relaxed);
         }
     }
@@ -565,9 +574,7 @@ unsafe fn foreground_blocked() -> bool {
 }
 
 unsafe fn put_on_clipboard(p: &Payload) -> bool {
-    if !open_clipboard() {
-        return false;
-    }
+    let Some(_g) = open_clipboard() else { return false };
     let _ = EmptyClipboard();
     let ok = match p {
         Payload::Text(s) => set_global(CF_UNICODETEXT, &utf16_bytes(s, false)),
@@ -596,7 +603,6 @@ unsafe fn put_on_clipboard(p: &Payload) -> bool {
             None => false,
         },
     };
-    let _ = CloseClipboard();
     IGNORE_SEQ.store(GetClipboardSequenceNumber(), Ordering::Relaxed); // our own write must not re-enter the history
     ok
 }
@@ -668,14 +674,12 @@ pub async fn clip_paste_text(text: String, copy_only: Option<bool>) -> &'static 
 /// then Ctrl+V goes to the window in front once the hotkey's own modifiers are released. Anything but text is left alone.
 pub fn paste_plain() {
     std::thread::spawn(|| unsafe {
-        if !open_clipboard() {
-            return;
-        }
+        let Some(g) = open_clipboard() else { return };
         let text = global_bytes(CF_UNICODETEXT, MAX_TEXT * 4).map(|raw| {
             let u: Vec<u16> = raw.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&c| c != 0).collect();
             String::from_utf16_lossy(&u)
         });
-        let _ = CloseClipboard();
+        drop(g); // put_on_clipboard opens it again
         let Some(t) = text.filter(|t| !t.is_empty()) else { return };
         if !put_on_clipboard(&Payload::Text(t)) || foreground_blocked() {
             return;
@@ -706,5 +710,25 @@ mod tests {
         assert_eq!(sha_hex("t", b"abc"), sha_hex("t", b"abc"));
         assert_ne!(sha_hex("t", b"abc"), sha_hex("f", b"abc")); // kind is part of the dedupe key
         assert_eq!(like_escape("50%_"), "%50\\%\\_%");
+    }
+
+    /// The 0.13.0 crash: two threads inside the clipboard at once. Open-only, never writes the user's clipboard.
+    #[test]
+    fn clipboard_is_one_thread_at_a_time() {
+        let (inside, worst) = (&AtomicU32::new(0), &AtomicU32::new(0));
+        std::thread::scope(|s| {
+            for _ in 0..4 {
+                s.spawn(|| {
+                    for _ in 0..3 {
+                        if let Some(_g) = unsafe { open_clipboard() } {
+                            worst.fetch_max(inside.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                            inside.fetch_sub(1, Ordering::SeqCst);
+                        }
+                    }
+                });
+            }
+        });
+        assert!(worst.load(Ordering::SeqCst) <= 1);
     }
 }

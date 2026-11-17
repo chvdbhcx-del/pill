@@ -24,7 +24,7 @@ use windows::Win32::Media::Audio::{
     AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
 };
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED};
-use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
+use windows::Win32::System::DataExchange::{EmptyClipboard, SetClipboardData};
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::System::Threading::{CreateEventW, GetCurrentProcessId, WaitForSingleObject};
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VIRTUAL_KEY};
@@ -729,17 +729,7 @@ fn hotkey_event(app: &AppHandle, pressed: bool) {
 // ---------------------------------------------------------------------------------------------------------------
 
 unsafe fn set_clipboard_text(s: &str) -> bool {
-    let mut ok_open = false;
-    for _ in 0..10 {
-        if OpenClipboard(windows::Win32::Foundation::HWND::default()).is_ok() {
-            ok_open = true;
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(30));
-    }
-    if !ok_open {
-        return false;
-    }
+    let Some(_g) = crate::clipboard::open_clipboard() else { return false };
     let _ = EmptyClipboard();
     let bytes: Vec<u8> = s.encode_utf16().chain(Some(0)).flat_map(|u| u.to_le_bytes()).collect();
     let ok = (|| {
@@ -753,7 +743,6 @@ unsafe fn set_clipboard_text(s: &str) -> bool {
         SetClipboardData(13, HANDLE(h.0)).ok() // CF_UNICODETEXT; on success the system owns the memory
     })()
     .is_some();
-    let _ = CloseClipboard();
     ok
 }
 

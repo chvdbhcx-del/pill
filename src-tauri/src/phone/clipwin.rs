@@ -37,9 +37,7 @@ impl WinClip {
 impl ClipIo for WinClip {
     fn set_text(&self, text: &str, private: bool) -> bool {
         unsafe {
-            if !open_clipboard() {
-                return false;
-            }
+            let Some(_g) = open_clipboard() else { return false };
             let _ = EmptyClipboard();
             let ok = set_global(CF_UNICODETEXT, &utf16_bytes(text, false));
             if private {
@@ -47,7 +45,6 @@ impl ClipIo for WinClip {
                     set_global(RegisterClipboardFormatW(name), &0u32.to_le_bytes()); // 0 = no history entry, no cloud sync
                 }
             }
-            let _ = CloseClipboard();
             IGNORE_SEQ.store(GetClipboardSequenceNumber(), Ordering::Relaxed);
             ok
         }
@@ -76,10 +73,8 @@ impl ClipIo for WinClip {
 
 /// Reads the formats first, then (only when they allow it) the text. None = nothing to send.
 unsafe fn read_text() -> Option<String> {
-    if !open_clipboard() {
-        return None;
-    }
-    let r = (|| {
+    let _g = open_clipboard()?;
+    (|| {
         let (mut f, mut formats, mut text) = (0u32, Formats::default(), false);
         loop {
             f = EnumClipboardFormats(f);
@@ -100,9 +95,7 @@ unsafe fn read_text() -> Option<String> {
         let raw = global_bytes(CF_UNICODETEXT, MAX_BYTES * 2 + 4)?; // UTF-16 is at most twice the UTF-8 size for text that fits
         let u: Vec<u16> = raw.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&c| c != 0).collect();
         Some(String::from_utf16_lossy(&u))
-    })();
-    let _ = CloseClipboard();
-    r
+    })()
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
