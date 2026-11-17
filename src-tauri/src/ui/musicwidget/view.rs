@@ -144,6 +144,8 @@ pub struct MusicView {
     kick: [Flow; 2],
     /// the accent colour (r, g, b in 0..1), easing to the cover's
     acc: [Flow; 3],
+    /// which ink the capsule's tint calls for (0 = light, 1 = dark), eased: a new cover turns the text over instead of flipping it
+    ink: Flow,
     hot: Option<Btn>,
     down: Option<Btn>,
     /// the cursor is on the widget (proximity)
@@ -229,6 +231,7 @@ impl MusicView {
             press: flows(0.0, Feel::SNAP),
             kick: std::array::from_fn(|_| Flow::px(0.0, Feel::POP)),
             acc: flows(0.0, ACCENT),
+            ink: Flow::new(0.0, ACCENT),
             hot: None,
             down: None,
             near: false,
@@ -259,6 +262,7 @@ impl MusicView {
         v.kf.jump(v.kf.target());
         v.apply_k();
         v.follow_accent(true);
+        v.follow_ink(true);
         v.os_light = crate::ui::island::sys::os_prefers_light();
         v.state_ticket = Some(cx.call_async("media_state", json!({ "known": null })));
         v
@@ -350,6 +354,7 @@ impl MusicView {
         self.module_on = s.get("module.media") != Some(&Value::Bool(false));
         self.presence.set_enabled(self.widget_on && self.module_on);
         self.follow_accent(!self.vis);
+        self.follow_ink(!self.vis);
         if let Some(pct) = s.get("size").and_then(Value::as_f64) {
             let k = lg::size_k(pct);
             if (k - self.kf.target()).abs() > 1e-6 {
@@ -408,6 +413,7 @@ impl MusicView {
         let cur = self.cov_tint();
         self.cov_from = cur.filter(|_| c.colors.is_some() && self.vis);
         self.cov_to = c.colors;
+        self.follow_ink(!self.vis);
         if self.cov_from.is_some() {
             self.cov_t.jump(0.0);
             self.cov_t.to(1.0);
@@ -458,6 +464,19 @@ impl MusicView {
                 if at_once {
                     f.jump(v);
                 }
+            }
+        }
+    }
+
+    /// Points the ink spring at the ink the cover's tint calls for (`paint::ink_target`); `at_once` lands it there (nobody is looking).
+    fn follow_ink(&mut self, at_once: bool) {
+        let th = self.theme();
+        let tint = self.cov_to.filter(|_| self.kbd.hc.is_none());
+        let g = paint::ink_target(&th, tint, self.accent_goal(&th));
+        if (self.ink.target() - g).abs() > 1e-4 || at_once {
+            self.ink.to(g);
+            if at_once {
+                self.ink.jump(g);
             }
         }
     }
@@ -671,6 +690,7 @@ impl MusicView {
             || self.cov_t.moving()
             || self.knob.moving()
             || self.ghosts.iter().any(|g| g.a.moving())
+            || self.ink.moving()
             || self.hov.iter().chain(self.press.iter()).chain(self.kick.iter()).chain(self.acc.iter()).any(Flow::moving)
             // the new cover fades in on draws only a frame can make (it is not drawn while the window is away or still invisible)
             || (self.vis && self.fade.at01() > 0.002 && self.gpu.cover_fading(self.art_id))
@@ -903,6 +923,7 @@ impl View for MusicView {
         self.prog.step(dt);
         self.loud.step(dt);
         self.cov_t.step(dt);
+        self.ink.step(dt);
         self.knob.step(dt);
         for f in self.hov.iter_mut().chain(self.press.iter_mut()).chain(self.kick.iter_mut()).chain(self.acc.iter_mut()) {
             f.step(dt);
@@ -913,6 +934,7 @@ impl View for MusicView {
         self.ghosts.retain(|g| g.a.moving());
         if self.vis {
             self.follow_accent(false); // a theme or contrast change eases too
+            self.follow_ink(false);
         }
         let kbd_busy = self.kbd_step(dt, cx);
         let body = self.body_now();
@@ -955,6 +977,7 @@ impl View for MusicView {
         self.ghosts.clear();
         self.art_prev = None;
         self.follow_accent(true);
+        self.follow_ink(true);
         // a jump lands with no target left: head for the presence again, so the enter animation runs from the edge
         self.shown.set_feel(Feel::FLOW);
         self.shown.to(self.want as u8 as f32);
@@ -1017,6 +1040,7 @@ impl View for MusicView {
             press: &self.press,
             kick: [self.kick[0].at(), self.kick[1].at()],
             frac: self.prog.at().clamp(0.0, 1.0),
+            ink_dark: self.ink.at01(),
             knob: self.knob.at().clamp(0.0, 1.1),
             pos,
             now: cx.now_ms,

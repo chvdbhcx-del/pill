@@ -33,7 +33,7 @@ fn tile(img: &Image, r: Rect) -> Image {
 }
 
 fn sheet(tiles: &[Image], cols: u32) -> Image {
-    let (tw, th) = (tiles[0].w + 4, tiles[0].h + 4);
+    let (tw, th) = (tiles.iter().map(|t| t.w).max().unwrap_or(0) + 4, tiles.iter().map(|t| t.h).max().unwrap_or(0) + 4);
     let rows = (tiles.len() as u32).div_ceil(cols);
     let (w, h) = (tw * cols, th * rows);
     let mut bgra = vec![30u8; (w * h * 4) as usize];
@@ -303,7 +303,9 @@ fn variant_sheets() {
     });
 }
 
-/// What one folded capsule is made of: the settings, the track and the strip it stands in (`None` = the plain bottom edge).
+/// What one folded capsule is made of: the settings, the track and the strip it stands in (`None` = the plain bottom edge); the rest (`Default`) is
+/// a playing track 61 s into 200 s, unmeasured, at 100 %.
+#[derive(Default)]
 struct Folded<'a> {
     extra: Value,
     title: &'a str,
@@ -312,6 +314,11 @@ struct Folded<'a> {
     url: Option<&'a str>,
     accent: &'a str,
     bar: Option<f32>,
+    /// the DPI scale (0 = 1), the position (ms; 0 = 61 s), how many of the 32 loudness bars are known, paused
+    scale: f32,
+    pos: u64,
+    known: usize,
+    paused: bool,
 }
 
 /// A widget showing `f` folded, settled and drawn a few times so that the cover is decoded; the stand that places it.
@@ -319,21 +326,28 @@ fn folded_sim(f: &Folded) -> (Sim, lg::Stand) {
     let (svc, fb) = Services::fake();
     fb.api.reply("settings_get", Ok(cfg(f.extra.clone())));
     let mut s = Sim::with_services(Box::new(Blank), svc);
+    let scale = if f.scale > 0.0 { f.scale } else { 1.0 };
+    s.cx.scale = scale;
     let st = match f.bar {
         Some(b) => {
             let v = MusicView::new(&mut s.cx, Dock::Taskbar).with_slot(b, Align::Left);
             s.view = Box::new(v);
-            bar_st(Align::Left, b, 1.0)
+            bar_st(Align::Left, b, scale)
         }
         None => {
-            let v = MusicView::new(&mut s.cx, Dock::Bottom);
+            let mut v = MusicView::new(&mut s.cx, Dock::Bottom);
+            if f.known > 0 {
+                // a loudness profile as if the track had been heard (the memory is keyed by title, artist and length)
+                let bytes: [u8; 32] = std::array::from_fn(|i| if i < f.known { (60.0 + 190.0 * (0.5 + 0.5 * ((i as f32 * 0.7).sin() * (i as f32 * 0.23).cos()))) as u8 } else { 0 });
+                v.seed_loudness(crate::ui::musicwidget::wave::key_of(f.title, f.artist, 200_000), bytes);
+            }
             s.view = Box::new(v);
-            base(Dock::Bottom)
+            lg::Stand { scale, ..base(Dock::Bottom) }
         }
     };
     s.set_refresh_hz(60.0);
     s.pump();
-    let mut m = json!({ "has_session": true, "playing": true, "title": f.title, "artist": f.artist, "album": "", "app": "Spotify.exe", "position_ms": 61_000, "duration_ms": 200_000, "thumb_id": if f.url.is_some() { 1 } else { 0 }, "accent": f.accent });
+    let mut m = json!({ "has_session": true, "playing": !f.paused, "title": f.title, "artist": f.artist, "album": "", "app": "Spotify.exe", "position_ms": if f.pos > 0 { f.pos } else { 61_000 }, "duration_ms": 200_000, "thumb_id": if f.url.is_some() { 1 } else { 0 }, "accent": f.accent });
     if let Some(u) = f.url {
         m["thumbnail"] = json!(u);
     }
@@ -365,7 +379,7 @@ fn capsule_sheets() {
         let red = art([200, 50, 70, 255], [90, 20, 40, 255]);
         let blue = art([40, 90, 210, 255], [20, 30, 90, 255]);
         let gold = art([230, 190, 60, 255], [120, 70, 20, 255]);
-        let f = |extra: Value, title: &'static str, artist: &'static str, url: Option<&str>, accent: &'static str, bar: Option<f32>| Folded { extra, title, artist, url: url.map(|u| Box::leak(u.to_string().into_boxed_str()) as &str), accent, bar };
+        let f = |extra: Value, title: &'static str, artist: &'static str, url: Option<&str>, accent: &'static str, bar: Option<f32>| Folded { extra, title, artist, url: url.map(|u| Box::leak(u.to_string().into_boxed_str()) as &str), accent, bar, ..Default::default() };
         // 1. the three modes, dark and light
         let mut t = Vec::new();
         for theme in ["dark", "light"] {
@@ -420,7 +434,7 @@ fn the_folded_capsule_is_tinted_by_the_cover_and_flat_in_high_contrast() {
     gfx(|| {
         let _m = motion_on();
         let red = art([200, 50, 70, 255], [90, 20, 40, 255]);
-        let f = |extra: Value| Folded { extra, title: "Invented Song", artist: "Invented Band", url: Some(Box::leak(red.clone().into_boxed_str())), accent: "#cc3246", bar: None };
+        let f = |extra: Value| Folded { extra, title: "Invented Song", artist: "Invented Band", url: Some(Box::leak(red.clone().into_boxed_str())), accent: "#cc3246", ..Default::default() };
         let reddish = |p: [u8; 4]| p[3] > 200 && p[0] as i32 > p[1] as i32 + 12 && p[0] as i32 > p[2] as i32 + 6;
         let count = |extra: Value| {
             let (mut s, st) = folded_sim(&f(extra));
@@ -445,7 +459,7 @@ fn the_tinted_body_grows_with_the_shape_and_nothing_pops_while_the_capsule_opens
     gfx(|| {
         let _m = motion_on();
         let red = art([200, 50, 70, 255], [90, 20, 40, 255]);
-        let (mut s, st) = folded_sim(&Folded { extra: json!({}), title: "Invented Song", artist: "Invented Band", url: Some(&red), accent: "#cc3246", bar: None });
+        let (mut s, st) = folded_sim(&Folded { extra: json!({}), title: "Invented Song", artist: "Invented Band", url: Some(&red), accent: "#cc3246", ..Default::default() });
         let th = Theme::pill_dark();
         let bb = lg::body(st, 0.0, 0.0);
         // a spot in the lower part of the body, below the hairline and clear of the cover, that stays inside it all the way up
@@ -474,5 +488,93 @@ fn the_tinted_body_grows_with_the_shape_and_nothing_pops_while_the_capsule_opens
         }
         assert!(worst < 48, "the body's colour at a fixed spot changes by {worst} in one 16 ms frame: a pop");
         assert!(prev.is_some_and(|p| p[3] == 255), "the spot is inside the body");
+    });
+}
+
+/// The folded capsule alone at its DPI scale, over the backdrop, zoomed to about twice the size on a 100 % screen (nearest, for judging pixels).
+fn zoom_tile(f: &Folded) -> Image {
+    let (mut s, st) = folded_sim(f);
+    let scale = if f.scale > 0.0 { f.scale } else { 1.0 };
+    let win = if f.bar.is_some() { lg::WIN_BAR_REAL } else { lg::WIN_REAL };
+    let th = Theme::pill_dark();
+    let img = s.render(win, &th);
+    let b = st.rect_to_real(lg::body(st, 0.0, 0.0));
+    let (x0, y0) = (((b.x - 8.0) * scale).max(0.0) as u32, ((b.y - 8.0) * scale).max(0.0) as u32);
+    let (w, h) = (((lg::CAP_W + 16.0) * scale) as u32, ((b.h + 16.0) * scale) as u32);
+    let z = (2.0 / scale).round().max(1.0) as u32;
+    let mut bgra = vec![255u8; (w * z * h * z * 4) as usize];
+    for y in 0..h * z {
+        for x in 0..w * z {
+            let p = img.px((x0 + x / z).min(img.w - 1), (y0 + y / z).min(img.h - 1));
+            let bg = [70u32 + (y / z * 40 / h), 78 + (y / z * 40 / h), 100 + (y / z * 30 / h)];
+            let a = p[3] as u32;
+            let i = ((y * w * z + x) * 4) as usize;
+            for c in 0..3 {
+                bgra[i + 2 - c] = (p[c] as u32 + bg[c] * (255 - a) / 255).min(255) as u8;
+            }
+            bgra[i + 3] = 255;
+        }
+    }
+    Image { w: w * z, h: h * z, scale: 1.0, bgra }
+}
+
+/// Zoomed folded capsules (`PILL_SNAP_DIR=<dir>`): the covers (bright, dark, colourful, none) in both themes, the states (progress, measured or not,
+/// paused, long and missing text), the modes, high contrast and the scales.
+#[test]
+fn capsule_zoom_sheets() {
+    let Some(d) = dir() else { return };
+    gfx(move || {
+        let _m = motion_on();
+        let cover = |a: [u8; 4], b: [u8; 4]| -> &'static str { Box::leak(art(a, b).into_boxed_str()) };
+        let yellow = cover([250, 222, 40, 255], [232, 176, 14, 255]);
+        let white = cover([252, 252, 252, 255], [226, 226, 226, 255]);
+        let black = cover([16, 16, 18, 255], [0, 0, 0, 255]);
+        let green = cover([70, 200, 120, 255], [20, 90, 56, 255]);
+        let blue = cover([40, 90, 210, 255], [20, 30, 90, 255]);
+        let red = cover([200, 50, 70, 255], [90, 20, 40, 255]);
+        let f = |extra: Value, url: Option<&'static str>, accent: &'static str| Folded { extra, title: "Midnight City", artist: "M83", url, accent, known: 32, pos: 80_000, ..Default::default() };
+        let covers = [(Some(yellow), "#fade28"), (Some(white), "#fcfcfc"), (Some(black), "#101012"), (Some(green), "#46c878"), (Some(blue), "#2850d2"), (Some(red), "#cc3246"), (None, "#cc3246")];
+        let mut t = Vec::new();
+        for (u, a) in covers {
+            for theme in ["dark", "light"] {
+                t.push(zoom_tile(&f(json!({ "theme": theme }), u, a)));
+            }
+        }
+        crate::ui::host::testing::save_png(&sheet(&t, 2), d.join("z1-covers.png"));
+        // states: not measured / half / all, played 0 / 40 / 100 %, paused, a long title, no artist, Cyrillic, no cover and paused
+        let g = |known: usize, pos: u64, paused: bool, title: &'static str, artist: &'static str| Folded { known, pos, paused, title, artist, url: Some(blue), accent: "#2850d2", ..Default::default() };
+        let t = [
+            zoom_tile(&g(0, 1_000, false, "Midnight City", "M83")),
+            zoom_tile(&g(16, 80_000, false, "Midnight City", "M83")),
+            zoom_tile(&g(32, 1_000, false, "Midnight City", "M83")),
+            zoom_tile(&g(32, 80_000, false, "Midnight City", "M83")),
+            zoom_tile(&g(32, 199_500, false, "Midnight City", "M83")),
+            zoom_tile(&g(32, 80_000, true, "Midnight City", "M83")),
+            zoom_tile(&g(32, 80_000, false, "A Title That Is Much Too Long To Fit In The Folded Capsule At All", "An Artist")),
+            zoom_tile(&g(32, 80_000, false, "Short", "")),
+            zoom_tile(&g(32, 80_000, false, "Очень длинное название трека", "Исполнитель")),
+            zoom_tile(&g(32, 80_000, false, "Song", "Short Band")),
+        ];
+        crate::ui::host::testing::save_png(&sheet(&t, 2), d.join("z2-states.png"));
+        // modes and high contrast, dark and light
+        let t: Vec<Image> = [
+            json!({ "home.player": "mirror" }),
+            json!({ "home.player": "compact" }),
+            json!({ "home.player": "fill" }),
+            json!({ "theme": "light", "home.player": "mirror" }),
+            json!({ "theme": "light", "home.player": "fill" }),
+            json!({ "a11y.contrast": "on" }),
+        ]
+        .into_iter()
+        .map(|e| zoom_tile(&f(e, Some(green), "#46c878")))
+        .collect();
+        crate::ui::host::testing::save_png(&sheet(&t, 2), d.join("z3-modes.png"));
+        // scales and the heights of a taskbar
+        let mut t: Vec<Image> = [1.0f32, 1.25, 1.5, 2.0].iter().map(|&sc| zoom_tile(&Folded { scale: sc, ..f(json!({}), Some(yellow), "#fade28") })).collect();
+        for b in [56.0f32, 48.0, 44.0, 40.0, 32.0] {
+            t.push(zoom_tile(&Folded { bar: Some(b), ..f(json!({}), Some(blue), "#2850d2") }));
+        }
+        t.push(zoom_tile(&Folded { bar: Some(48.0), scale: 1.5, ..f(json!({ "theme": "light" }), Some(green), "#46c878") }));
+        crate::ui::host::testing::save_png(&sheet(&t, 2), d.join("z4-scales.png"));
     });
 }

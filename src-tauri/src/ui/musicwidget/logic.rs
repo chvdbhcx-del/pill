@@ -2,8 +2,8 @@
 //! click on a spot means. No drawing, no window, no clock of its own (every function gets `now`), so all of it is unit-tested.
 //!
 //! The look is the island's own player: the open card IS the Home player card (its geometry, `Geo`, is used as it is, in the style `home.player`
-//! says) and the folded capsule is the same card at a small size: the same tinted body and reflections, the same cover shape, the same smoked play
-//! disc, previous / next and text styles, with a hairline of progress; one object that grows.
+//! says) and the folded capsule is the same card at a small size: the cover's own colour as its body, the same cover shape, one line of text, the track's
+//! loudness as a mini waveform (its progress), previous / a round play button / next; one object that grows.
 //!
 //! The window is one fixed frame, [`WIN`] logical px, that never resizes: the capsule (collapsed) and the card (open) both stand flush against
 //! the window's DOCK edge (the bottom for `media.widget.edge` = bottom, the top otherwise) and the body between them grows away from that edge,
@@ -440,10 +440,10 @@ impl Btn {
 /// Every rectangle of the capsule, relative to its frame `c`.
 pub struct CapsuleLayout {
     pub cover: Rect,
-    /// where the text goes (the line or the two lines are fitted into it by [`capsule_lines`])
+    /// where the one line of text goes (title, then the artist, fitted into it by [`bar_line`])
     pub text: Rect,
     pub btn: [Rect; 3],
-    /// the progress hairline (empty when the capsule is too thin for one)
+    /// the mini waveform between the text and the buttons (empty when the capsule is too thin for one); `wave_n(c.h)` bars of the track's loudness
     pub bar: Rect,
     /// the blurred reflections of the cover: to its left, to its right (the card's `Geo::refl`, small) and one coming in from the far end
     pub refl: [Rect; 3],
@@ -452,11 +452,20 @@ pub struct CapsuleLayout {
 /// The cover's corner radius over its side: the card's (14 of 84), the same shape at every size.
 pub const COVER_R_RATIO: f32 = CARD_COVER_R / 84.0;
 
-/// The folded capsule: the card in small. A round-cornered cover (44 of 56), the title over the artist or on one line, previous / the smoked play
-/// disc / next, and a hairline of progress at the bottom edge. The design is drawn for the height [`CAPSULE_H`]; a smaller `c.h` (a taskbar strip)
-/// scales all of it by `c.h / 56`. The ends of the capsule are half circles; the cover's corner arcs stay inside the left end and the last
-/// button's edge stands as far from the right one. `k` = device px per base px: every size is a whole number of them with the same room above
-/// and below. The hairline is dropped (zero height) when there is no room for it.
+/// How many bars the capsule's mini waveform has: 12 (the mockup's) at a roomy height, 8 in a thin strip.
+pub fn wave_n(h: f32) -> usize {
+    if h >= 40.0 {
+        12
+    } else {
+        8
+    }
+}
+
+/// The folded capsule: the card in small, drawn for the height [`CAPSULE_H`] (a smaller `c.h`, a taskbar strip, scales all of it by `c.h / 56`).
+/// From the left: a round-cornered cover (40 of 56), ONE line of text (the title, then the artist muted), a mini waveform of the track (12 bars of
+/// 2 px) that is its progress, previous, a round play button and next. The ends of the capsule are half circles; the cover's corner arcs stay inside
+/// the left end and the last button's edge stands as far from the right one. `k` = device px per base px: every size is a whole number of them with
+/// the same room above and below. The waveform is dropped (zero size) when there is no room for it.
 pub fn capsule_layout(c: Rect, k: f32) -> CapsuleLayout {
     let k = k.max(0.25);
     let s = c.h / CAPSULE_H;
@@ -470,27 +479,31 @@ pub fn capsule_layout(c: Rect, k: f32) -> CapsuleLayout {
         }
         p.max(1) as f32 / k
     };
-    let (cs, side, play) = (even(44.0 * s, 14.0), even(30.0 * s, 16.0), even(38.0 * s, 20.0));
-    let (e, pad, gap) = (sp(8.0 * s), sp(10.0 * s), sp(4.0 * s));
+    let (cs, side, play) = (even(40.0 * s, 14.0), even(26.0 * s, 16.0), even(34.0 * s, 20.0));
+    let (e, pad, gap) = (sp(8.0 * s), sp(10.0 * s), sp(3.0 * s));
     let y = |size: f32| c.y + (c.h - size) / 2.0;
     let next_x = c.right() - pad - side;
     let play_x = next_x - gap - play;
     let prev_x = play_x - gap - side;
     let btn = [Rect::new(prev_x, y(side), side, side), Rect::new(play_x, y(play), play, play), Rect::new(next_x, y(side), side, side)];
     let cover = Rect::new(c.x + e, y(cs), cs, cs);
-    let text_x = cover.right() + sp(12.0 * s);
-    let bar = if c.h >= 28.0 {
-        let t = (2.0 * s * k).floor().max(1.0) / k;
-        Rect::new(c.x + c.h / 2.0, c.bottom() - sp(5.0 * s) - t, (c.w - c.h).max(0.0), t)
+    let text_x = cover.right() + sp(10.0 * s);
+    // the waveform: thin bars with a gap as wide as a bar, centred, as far from the buttons as from the text
+    let (bar, text_end) = if c.h >= 28.0 {
+        let n = wave_n(c.h) as f32;
+        let bw = ((2.0 * s * k).round().max(1.0)) / k;
+        let (w, h) = (n * 2.0 * bw - bw, even(22.0 * s, 8.0));
+        let r = Rect::new(prev_x - sp(10.0 * s) - w, y(h), w, h);
+        (r, r.x - sp(10.0 * s))
     } else {
-        Rect::new(c.x, c.bottom(), 0.0, 0.0)
+        (Rect::new(c.x, c.bottom(), 0.0, 0.0), prev_x - sp(8.0 * s))
     };
     // the reflections are as tall as the card's are over its cover (96 of 84), so their hidden edges stay behind the cover while it grows
     let (big, hid, tall) = (player::REFL * s, player::REFL_HIDDEN * s, cs * player::REFL / 84.0);
     let ry = c.cy() - tall / 2.0;
     CapsuleLayout {
         cover,
-        text: Rect::new(text_x, c.y, (prev_x - sp(8.0 * s) - text_x).max(0.0), c.h),
+        text: Rect::new(text_x, c.y, (text_end - text_x).max(0.0), c.h),
         btn,
         bar,
         refl: [Rect::new(cover.x + hid - big, ry, big, tall), Rect::new(cover.right() - hid, ry, big, tall), Rect::new(c.right() + hid - big, c.y, big, c.h)],
@@ -502,40 +515,13 @@ pub fn capsule_layout_in(st: impl Into<Stand>, c: Rect) -> CapsuleLayout {
     capsule_layout(c, st.into().bs())
 }
 
-/// Gap between the title and the artist when they share a line, and the least room the artist is worth drawing in (less: it is dropped).
-pub const LINE_GAP: f32 = 8.0;
-pub const SUB_MIN: f32 = 32.0;
-/// The capsule is tall enough for the title over the artist from this height on.
-pub const TWO_MIN_H: f32 = 44.0;
+/// Gap between the title and the artist on the capsule's line, and the least room the artist is worth drawing in (less: it is dropped).
+pub const LINE_GAP: f32 = 4.0;
+pub const SUB_MIN: f32 = 28.0;
 
-/// The sizes of the capsule's title and artist at the capsule's height `h`: the card's 16 and 13 at the full height, smaller in a bar's strip.
-pub fn capsule_text_sizes(h: f32) -> (f32, f32) {
-    ((h * 0.2857).clamp(12.0, 16.0), (h * 0.232).clamp(11.0, 13.0))
-}
-
-/// One line (title, then artist) or two (title over artist).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Lines {
-    One,
-    Two,
-}
-
-/// Which way the capsule's text is laid out in `avail` px: on ONE line when the whole title and the whole artist fit side by side (or there is no
-/// artist), else on TWO (title over artist, each cut with a faded end) when the capsule is tall enough ([`TWO_MIN_H`]), else on one line the
-/// artist of which gives way (`bar_line`). `head` / `sub` are the natural text widths.
-pub fn capsule_lines(avail: f32, h: f32, head: f32, sub: f32) -> Lines {
-    if sub <= 0.0 || head + LINE_GAP + sub <= avail || h < TWO_MIN_H {
-        Lines::One
-    } else {
-        Lines::Two
-    }
-}
-
-/// The two lines' boxes in the capsule's text rect `t` (the block is centred above the progress hairline): the title's and the artist's.
-pub fn two_lines(t: Rect, sizes: (f32, f32)) -> (Rect, Rect) {
-    let (lt, la) = (sizes.0 * 1.4, sizes.1 * 1.4);
-    let y0 = t.y + (t.h - 4.0 * t.h / CAPSULE_H - lt - la) / 2.0;
-    (Rect::new(t.x, y0, t.w, lt), Rect::new(t.x, y0 + lt, t.w, la))
+/// The size of the capsule's text at the capsule's height `h`: 14.5 at the full height (12.5 in the mockup's 48), never unreadably small in a strip.
+pub fn capsule_text_size(h: f32) -> f32 {
+    (h * 0.26).clamp(11.5, 14.5)
 }
 
 /// What the capsule's one line shows in `avail` px: the heading's width (the whole title, or all there is when it is cut) and, when there is
@@ -617,7 +603,7 @@ pub fn parts(st: impl Into<Stand>, p: f32, dy: f32) -> Parts {
     let (cap, card) = frames(st, p, dy);
     let (a, b) = (capsule_layout_in(st, cap), card_layout(card, st.style));
     let t = p.clamp(0.0, 1.1);
-    // a capsule too thin for a progress hairline has none to grow from: the card's own shows
+    // a capsule too thin for a mini waveform has none to grow from: the card's own shows
     let bar = if a.bar.h > 0.0 { mix(a.bar, b.bar, t) } else { b.bar };
     let cover = mix(a.cover, b.cover, t);
     Parts {

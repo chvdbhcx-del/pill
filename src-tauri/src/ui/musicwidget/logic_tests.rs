@@ -241,18 +241,18 @@ fn the_capsule_parts_fit_every_bar() {
         assert!(l.cover.h >= 14.0 - 1.0 / scale && l.cover.h <= cap.h - 6.0, "{tag}: a small cover with room round it");
         assert!(l.btn[0].right() <= l.btn[1].x + 0.01 && l.btn[1].right() <= l.btn[2].x + 0.01, "the buttons do not overlap");
         assert!(l.cover.right() < l.text.x && l.text.right() <= l.btn[0].x && l.text.w > 100.0, "{tag}: one line of text between the cover and the buttons: {:?}", l.text);
-        // the progress is a hairline under the buttons, or it is gone
+        // the progress is a mini waveform between the text and the buttons, or it is gone
         if l.bar.h > 0.0 {
-            assert!(l.bar.h <= 2.0 && l.bar.y >= l.btn[1].bottom() && l.bar.bottom() <= cap.bottom() && l.bar.x >= cap.x && l.bar.right() <= cap.right(), "{tag}: {:?}", l.bar);
+            assert!(l.bar.x >= l.text.right() && l.bar.right() <= l.btn[0].x && l.bar.y >= cap.y && l.bar.bottom() <= cap.bottom(), "{tag}: {:?}", l.bar);
         }
     }
-    // a bar so thin that nothing fits under the buttons has no progress bar at all
+    // a bar so thin that nothing fits beside the text has no waveform at all
     let thin = capsule_layout_in(in_bar(Align::Left, 24.0), frames(in_bar(Align::Left, 24.0), 0.0, 0.0).0);
     assert_eq!(thin.bar.h, 0.0);
 }
 
 #[test]
-fn the_bar_capsule_is_symmetrical_centred_and_its_hairline_stays_on_the_straight_part() {
+fn the_bar_capsule_is_symmetrical_centred_and_its_waveform_stays_on_the_straight_part() {
     for (bar, scale) in bars() {
         let st = Stand { scale, ..in_bar(Align::Right, bar) };
         let (cap, _) = frames(st, 0.0, 0.0);
@@ -274,10 +274,10 @@ fn the_bar_capsule_is_symmetrical_centred_and_its_hairline_stays_on_the_straight
             assert!(((r.y - cap.y) * scale - ((r.y - cap.y) * scale).round()).abs() < 0.02, "{tag}: on a device px");
         }
         assert!(l.cover.h <= cap.h - 6.0 + 0.01 && l.btn[1].h <= cap.h - 6.0 + 0.01, "{tag}: room round both");
-        // the hairline lies in the straight part of the capsule (the rounded ends are never reached) and clear of its edge
+        // the waveform lies in the straight part of the capsule (the rounded ends are never reached)
         if l.bar.h > 0.0 {
             assert!(l.bar.x >= cap.x + cap.h / 2.0 - 0.01 && l.bar.right() <= cap.right() - cap.h / 2.0 + 0.01, "{tag}: {:?}", l.bar);
-            assert!(cap.bottom() - l.bar.bottom() >= 2.0 - 0.01, "{tag}: off the bottom edge");
+            assert!(((l.bar.y - cap.y) - (cap.bottom() - l.bar.bottom())).abs() < 0.01, "{tag}: centred");
         }
     }
 }
@@ -285,11 +285,11 @@ fn the_bar_capsule_is_symmetrical_centred_and_its_hairline_stays_on_the_straight
 #[test]
 fn the_artist_gives_way_before_the_title_is_cut() {
     assert_eq!(bar_line(200.0, 80.0, 60.0), (80.0, Some((80.0 + LINE_GAP, 60.0))), "both fit");
-    assert_eq!(bar_line(200.0, 150.0, 90.0), (150.0, Some((158.0, 42.0))), "a whole title and what is left of the artist, cut");
-    assert_eq!(bar_line(200.0, 185.0, 90.0), (185.0, None), "no room worth an artist: it is dropped and the title is whole");
+    assert_eq!(bar_line(200.0, 150.0, 90.0), (150.0, Some((150.0 + LINE_GAP, 46.0))), "a whole title and what is left of the artist, cut");
+    assert_eq!(bar_line(200.0, 175.0, 90.0), (175.0, None), "no room worth an artist: it is dropped and the title is whole");
     assert_eq!(bar_line(200.0, 260.0, 50.0), (200.0, None), "only a title alone on the line is cut");
     assert_eq!(bar_line(200.0, 200.0, 50.0), (200.0, None));
-    assert_eq!(bar_line(200.0, 150.0, 20.0).1, Some((158.0, 20.0)), "a short artist needs only its own length");
+    assert_eq!(bar_line(200.0, 150.0, 20.0).1, Some((150.0 + LINE_GAP, 20.0)), "a short artist needs only its own length");
     assert_eq!(bar_line(200.0, 80.0, 0.0), (80.0, None), "no artist, nothing to place");
     for head in [0.0, 40.0, 120.0, 199.0, 400.0] {
         let (hw, sub) = bar_line(200.0, head, 120.0);
@@ -506,7 +506,7 @@ fn every_size_edge_align_bar_and_dpi_keeps_the_body_in_its_window_on_device_pixe
                         // the open card floats the same gap above the bar, in the window
                         assert!((win.1 - bar_real - k * geom::BAR_FLOAT_GAP - card.bottom()).abs() <= tol, "{tag}: floats over the bar: {card:?}");
                     } else {
-                        assert!((cap.h - CAPSULE_H * k).abs() <= tol && (cap.w - BODY_W * k).abs() <= tol, "{tag}: the capsule scales: {cap:?}");
+                        assert!((cap.h - CAPSULE_H * k).abs() <= tol && (cap.w - CAP_W * k).abs() <= tol, "{tag}: the capsule scales: {cap:?}");
                         // the margins to the corner / edge are PAD at the size, so the shadow (PAD) is never cut by the window
                         let m = PAD * k;
                         match align {
@@ -585,29 +585,30 @@ fn the_capsule_is_the_card_in_small_one_cover_shape_and_reflections_that_spread_
 }
 
 #[test]
-fn the_text_is_one_line_when_both_fit_whole_two_lines_when_the_capsule_is_tall_enough_else_one_line_with_the_artist_giving_way() {
-    // plenty of room: one line
-    assert_eq!(capsule_lines(300.0, 56.0, 90.0, 70.0), Lines::One);
-    // no artist: always one line
-    assert_eq!(capsule_lines(100.0, 56.0, 300.0, 0.0), Lines::One);
-    // too long to share a line: the title over the artist in a tall capsule, one line (artist gives way) in a low strip
-    assert_eq!(capsule_lines(200.0, 56.0, 150.0, 90.0), Lines::Two);
-    assert_eq!(capsule_lines(200.0, TWO_MIN_H, 150.0, 90.0), Lines::Two);
-    assert_eq!(capsule_lines(200.0, TWO_MIN_H - 1.0, 150.0, 90.0), Lines::One);
-    // exactly fitting still shares the line
-    assert_eq!(capsule_lines(200.0, 56.0, 100.0, 200.0 - 100.0 - LINE_GAP), Lines::One);
-    // the sizes: the card's 16 and 13 at the full height, smaller (never unreadable) in a strip
-    let (t, a) = capsule_text_sizes(CAPSULE_H);
-    assert!((t - 16.0).abs() < 0.1 && (a - 13.0).abs() < 0.1, "{t} {a}");
-    let (t, a) = capsule_text_sizes(24.0);
-    assert!(t >= 12.0 && a >= 11.0 && t > a);
-    // two lines are a block centred above the hairline, inside the capsule, the title over the artist
-    for h in [TWO_MIN_H, 48.0, CAPSULE_H] {
-        let c = Rect::new(0.0, 0.0, 340.0, h);
+fn the_text_is_one_line_in_the_cards_size_scaled_with_the_capsule_and_the_waveform_gets_fewer_bars_in_a_strip() {
+    // 14.5 at the full height (the mockup's 12.5 at 48), never unreadably small in a strip, never bigger than the card's title
+    assert!((capsule_text_size(CAPSULE_H) - 14.5).abs() < 0.01 && (capsule_text_size(48.0) - 12.5).abs() < 0.05);
+    assert_eq!((capsule_text_size(20.0), capsule_text_size(90.0)), (11.5, 14.5));
+    assert_eq!((wave_n(CAPSULE_H), wave_n(40.0), wave_n(39.0), wave_n(28.0)), (12, 12, 8, 8));
+    // the line sits in the text rect, centred on the capsule's height (the text is vertically centred in a rect as tall as the capsule)
+    for h in [32.0, 44.0, 48.0, CAPSULE_H] {
+        let c = Rect::new(0.0, 0.0, CAP_W, h);
         let tx = capsule_layout(c, 1.0).text;
-        let (rt, ra) = two_lines(tx, capsule_text_sizes(h));
-        assert!(rt.y >= 0.0 && ra.bottom() <= h - 2.0 && rt.bottom() <= ra.y + 0.01, "{h}: {rt:?} {ra:?}");
-        assert!(rt.x == tx.x && rt.w == tx.w && ra.w == tx.w);
+        assert!(tx.y == 0.0 && tx.h == h && tx.w > 80.0, "{h}: {tx:?}");
+    }
+}
+
+#[test]
+fn the_waveform_is_a_strip_of_two_px_bars_with_equal_gaps_between_the_text_and_the_buttons() {
+    for (h, k) in [(CAPSULE_H, 1.0f32), (CAPSULE_H, 2.0), (48.0, 1.0), (48.0, 1.25), (40.0, 1.5), (32.0, 1.0)] {
+        let c = Rect::new(0.0, 0.0, if h < CAPSULE_H { BAR_FOLD_W } else { CAP_W }, h);
+        let l = capsule_layout(c, k);
+        let n = wave_n(h) as f32;
+        let bw = l.bar.w / (2.0 * n - 1.0);
+        assert!(bw >= 1.0 - 0.01 && bw <= 2.0 + 0.01, "{h}@{k}: a thin bar: {bw}");
+        assert!(l.bar.h > 0.0 && l.bar.h <= h - 8.0 && ((l.bar.y - c.y) - (c.bottom() - l.bar.bottom())).abs() < 0.01, "{h}@{k}: centred: {:?}", l.bar);
+        assert!(l.text.right() < l.bar.x && l.bar.right() < l.btn[0].x, "{h}@{k}: text, waveform, buttons in a row");
+        assert!(((l.bar.x - l.text.right()) - (l.btn[0].x - l.bar.right())).abs() < 1.0 / k + 0.01, "{h}@{k}: the same room on both sides");
     }
 }
 

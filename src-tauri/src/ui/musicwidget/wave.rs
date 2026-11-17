@@ -80,6 +80,30 @@ pub fn slice_of(frac: f32) -> usize {
     ((frac.clamp(0.0, 1.0) * BARS as f32) as usize).min(BARS - 1)
 }
 
+/// The profile's `BARS` heights squashed into `n` (at most `BARS`) bars for a small waveform: bar `j` is the mean of the measured slices under it
+/// (all of them, when every one is measured) and is measured itself when any of them is; the others keep their own unmeasured height. The bars
+/// still glide (the heights come from springs), so a bar measured later grows to its height.
+pub fn squash(heights: &[f32; BARS], known: &[bool; BARS], n: usize) -> Vec<(f32, bool)> {
+    let n = n.clamp(1, BARS);
+    (0..n)
+        .map(|j| {
+            let (a, b) = (j * BARS / n, ((j + 1) * BARS / n).max(j * BARS / n + 1));
+            let (mut sum, mut got) = (0.0, 0);
+            for i in a..b {
+                if known[i] {
+                    sum += heights[i];
+                    got += 1;
+                }
+            }
+            if got > 0 {
+                (sum / got as f32, true)
+            } else {
+                (heights[a], false)
+            }
+        })
+        .collect()
+}
+
 impl Profile {
     /// A profile from what was remembered.
     pub fn from_bytes(b: &[u8]) -> Profile {
