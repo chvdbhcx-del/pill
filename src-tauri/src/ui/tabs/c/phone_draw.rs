@@ -66,8 +66,12 @@ impl PhoneView {
         let st = th.seg_text();
         let mut x = r.x + 2.0;
         let mut cache = [Rect::default(); 3];
+        // the unread count sits INSIDE the Notifications chip, after its label, so it can't be read as belonging to the next tab
+        let unread = self.model.unread();
+        let bst = Style::new(10.0, 700);
+        let bw = if unread > 0 && !self.link_off() { (cv.text_width(&unread.min(99).to_string(), bst) + 10.0).max(16.0) } else { 0.0 };
         for (i, s) in Sub::ALL.iter().enumerate() {
-            let w = cv.text_width(s.title(l), st).ceil() + 28.0;
+            let w = cv.text_width(s.title(l), st).ceil() + 28.0 + if *s == Sub::Notifs && bw > 0.0 { bw + 4.0 } else { 0.0 };
             cache[i] = Rect::new(x - r.x, r.y + 3.0, w, 28.0);
             x += w + 4.0;
         }
@@ -76,7 +80,6 @@ impl PhoneView {
         let ind = Rect::new(r.x + self.seg_x.at(), r.y + 3.0, self.seg_w.at().max(0.0), 28.0);
         cv.fill_rr(ind, 14.0, th.raised2);
         let ind_c = ind.cx();
-        let unread = self.model.unread();
         for (i, s) in Sub::ALL.iter().enumerate() {
             let c = Rect::new(r.x + cache[i].x, cache[i].y, cache[i].w, 28.0);
             self.clicks.add(K::Sub(i), c);
@@ -84,14 +87,16 @@ impl PhoneView {
             let h = self.clicks.hover_amt(&K::Sub(i));
             let col = th.dim.mix(th.text, on.max(h * 0.6));
             let sc = self.clicks.press_scale(&K::Sub(i), 0.96);
-            cv.with_scale_about(c.center(), sc, |cv| cv.text(c, s.title(l), st.center(), col));
-            if *s == Sub::Notifs && unread > 0 && !self.link_off() {
-                let t = unread.min(99).to_string();
-                let bw = (cv.text_width(&t, Style::new(10.0, 700)) + 10.0).max(16.0);
-                let b = Rect::new(c.right() - 4.0, c.y - 1.0, bw, 16.0);
-                cv.fill_rr(b, 8.0, th.accent);
-                cv.text(b, &t, Style::new(10.0, 700).center(), th.on_accent);
-            }
+            let has_badge = *s == Sub::Notifs && bw > 0.0;
+            let label = if has_badge { Rect::new(c.x, c.y, c.w - bw - 4.0, c.h) } else { c };
+            cv.with_scale_about(c.center(), sc, |cv| {
+                cv.text(label, s.title(l), st.center(), col);
+                if has_badge {
+                    let b = Rect::new(c.right() - 10.0 - bw, c.cy() - 8.0, bw, 16.0);
+                    cv.fill_rr(b, 8.0, th.accent);
+                    cv.text(b, &unread.min(99).to_string(), bst.center(), th.on_accent);
+                }
+            });
         }
         // the link state, right aligned
         let k = self.conn_k.at();
