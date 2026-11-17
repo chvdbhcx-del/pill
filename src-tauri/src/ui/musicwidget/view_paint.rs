@@ -1,13 +1,16 @@
 //! The pixels of the music widget (a child module of `view`). The look is the island's own player, drawn with its own pieces, and the folded capsule is
-//! the open card at a small size: ONE object that grows. Both have the Home player card's body (`tabs::a::home::paint::paint_player`: the
+//! the open card at a small size: ONE object that grows. The card is the Home player card's body (`tabs::a::home::paint::paint_player`: the
 //! cover-tinted background, the blurred reflections of the cover, the cover with its shadow and its corner shape, the title over the artist line,
-//! the previous / next icons and the smoked play disc); the card adds the source label, the times and the progress track, which shows the loudness
-//! of the track as thin rounded bars; the capsule adds a hairline of progress. Colours, radii and text styles are the theme's and the island's.
+//! the previous / next icons and the play disc, the source label, the times and the progress track, which shows the loudness of the track as thin
+//! rounded bars). The capsule is the minimal one: the body is ALWAYS in the cover's colour (the fill style's gradient, whatever `home.player` says;
+//! the ink turns light or dark with it), ONE line of text (the title, then the artist muted), the track's loudness as a mini waveform that is its
+//! progress, previous, a round play button (an ink disc with the glyph cut out in the body's colour) and next. As the card opens the tint eases to
+//! the card's own look for the player style (`Ink::paint`: `fk`, `cap`). Colours, radii and text styles are the theme's and the island's.
 //!
 //! `Ink` is everything one `draw` needs, copied out of the view so the cover cache can be borrowed mutably next to it; nothing here moves by
 //! itself (every animated value arrives as a number from the view's springs).
 use super::lg::{self, Btn, BTNS};
-use crate::ui::musicwidget::wave::BARS;
+use crate::ui::musicwidget::wave::{squash, BARS};
 use super::{arrival, Ghost};
 use crate::ui::island::gpu::Gpu;
 use crate::ui::liquid::Flow;
@@ -65,6 +68,9 @@ pub(super) struct Ink<'a> {
     /// prev's and next's push (px, signed: toward where the track goes)
     pub kick: [f32; 2],
     pub frac: f32,
+    /// which ink the tint calls for as it eases: 0 = the light one, 1 = the dark one (`ink_target`; a spring in the view, so a new cover's colour
+    /// turns the text over smoothly instead of flipping it)
+    pub ink_dark: f32,
     /// 0 = nobody near the track, 0.75 under the pointer, 1 while it is dragged: the bars grow a little with it
     pub knob: f32,
     pub pos: u64,
@@ -88,29 +94,68 @@ pub(super) struct Ink<'a> {
     pub blur: Option<&'a str>,
 }
 
+/// The two inks (`player::ink_for`): near white on a dark tint, near black on a light one.
+const INK_LIGHT: Color = Color::rgb8(0xf6, 0xf6, 0xf6);
+const INK_DARK: Color = Color::rgb8(0x14, 0x14, 0x14);
+
+/// The card's two fill colours (`paint_player`): the cover's, mixed into the card colour; the accent when the cover has none.
+fn fill_pair(th: &Theme, tint: Option<(Color, Color)>, accent: Color) -> (Color, Color) {
+    let (fa, fb) = tint.unwrap_or((accent, accent.mix(Color::rgb8(0, 0, 0), 0.35)));
+    (css::mix(fa, 84.0, th.card), css::mix(fb, 70.0, th.card))
+}
+
+/// The relative luminance of the tint above which the ink is the dark one. The island's `player::ink_for` flips at 0.34, which keeps white on a
+/// mid-tone (a salmon pink reads at 2.8:1); the capsule's text is smaller and half of it is muted, so it flips earlier, nearer the point where
+/// black and white read equally (0.19): the title keeps at least 3.6:1 (light ink) / 4.7:1 (dark ink) on every tint.
+const INK_FLIP: f32 = 0.22;
+
+/// Which ink the fill tint calls for, 0 = light, 1 = dark (what the view's `ink` spring heads for): the dark ink on a bright tint, like
+/// `player::ink_for`, from [`INK_FLIP`] on.
+pub(super) fn ink_target(th: &Theme, tint: Option<(Color, Color)>, accent: Color) -> f32 {
+    let (a, b) = fill_pair(th, tint, accent);
+    let m = a.mix(b, 0.5);
+    let lin = |c: f32| if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) };
+    (0.2126 * lin(m.r) + 0.7152 * lin(m.g) + 0.0722 * lin(m.b) > INK_FLIP) as u8 as f32
+}
+
+/// What the capsule's colours are made of, once per `paint`.
+#[derive(Clone, Copy)]
+struct Look {
+    ink: Color,
+    /// the other ink (the glyph on a button that takes the ink as its fill)
+    inv: Color,
+    /// how much of the fill tint is in the body now: 1 in the capsule, easing to the card's (1 for the fill style, else 0) as it opens
+    fk: f32,
+    /// how much of the folded capsule is left (1 folded, 0 open; always 0 in high contrast, which has no tint)
+    cap: f32,
+    fill: (Color, Color),
+}
+
 impl Ink<'_> {
-    /// The whole body: the card's tinted body and reflections over the whole shape (they grow with it), the shared parts (cover, buttons, progress)
-    /// travelling between their places, the capsule's text fading out as the card's lines, the source label, the times and the loudness bars fade in.
+    /// The whole body: the tinted body (and the reflections of the open card) over the whole shape (they grow with it), the shared parts (cover,
+    /// buttons, progress) travelling between their places, the capsule's line of text fading out as the card's lines, the source label, the times
+    /// and the loudness bars fade in.
     pub fn paint(&self, cv: &Canvas, gpu: &mut Gpu) {
         let (st, p, pt) = (self.st, self.p, self.pt);
         let (capl, cardl) = (lg::capsule_layout_in(st, self.cap), lg::card_layout(self.card, st.style));
         let card_a = ((p - 0.3) / 0.7).clamp(0.0, 1.0);
-        let cap_a = (1.0 - p * 1.7).clamp(0.0, 1.0);
-        // the fill style turns the text light or dark with its tint, folded and open alike
-        let fill = st.style == PlayerStyle::Fill && !self.hc;
-        let (ca, cb) = self.fill_colors();
-        let ink = player::ink_for(ca.mix(cb, 0.5));
-        let fk = if fill { 1.0 } else { 0.0 };
+        let cap_a = (1.0 - p * 3.6).clamp(0.0, 1.0);
+        // the capsule's body is the fill style's, always: the cover's colour. As the card opens it eases to the card's own look for the style
+        // (still the tint for the fill style); high contrast has none of it
+        let q = p.clamp(0.0, 1.0);
+        let cap = if self.hc { 0.0 } else { 1.0 - q * q * (3.0 - 2.0 * q) };
+        let fc = (st.style == PlayerStyle::Fill && !self.hc) as u8 as f32;
+        let fk = fc + (1.0 - fc) * cap;
+        let fill = self.fill_colors();
+        let (ink, inv) = (INK_LIGHT.mix(INK_DARK, self.ink_dark), INK_DARK.mix(INK_LIGHT, self.ink_dark));
+        let look = Look { ink, inv, fk, cap, fill };
         let thc = self.themed(ink, fk);
         let th = &thc;
-        self.card_bg(cv, fill, (ca, cb));
+        self.card_bg(cv, fk, fill);
         if st.style == PlayerStyle::Mirror && !self.hc && self.cap.h >= REFL_MIN_H {
-            // the cover's reflections: the one to its right is always there (softer while it is small, so that the text on it reads), the one to its
-            // left grows with the card, and the one coming in from the far end of the capsule is gone by the time the card is open
-            let q = p.clamp(0.0, 1.0);
+            // the cover's reflections belong to the open card (the folded capsule is one clean colour): they spread out of the cover as it opens
             let r = &pt.refl;
-            player::paint_reflection(cv, self.images, self.blur, r[2], true, 0.6 * (1.0 - q));
-            player::paint_reflection(cv, self.images, self.blur, r[1], false, lg::lerp(0.6, 1.0, q));
+            player::paint_reflection(cv, self.images, self.blur, r[1], false, q);
             player::paint_reflection(cv, self.images, self.blur, r[0], true, q);
         }
         // the cover: the island's shadow under it, scaled with it
@@ -120,9 +165,10 @@ impl Ink<'_> {
         }
         let px = ((lg::COVER * st.bs() / 32.0).ceil().max(1.0) * 32.0) as u32;
         gpu.cover_sized(cv, self.th, self.art, self.url, pt.cover, self.now, pt.cover_r, px, self.under);
-        // the capsule's text (the title over the artist, or one line), riding up with the cover as the body rises
+        // the capsule's line of text, riding up with the cover as the body rises
         if cap_a > 0.01 {
-            cv.with_opacity(cap_a, |cv| self.capsule_text(cv, th, capl.text.offset(0.0, pt.cover.y - capl.cover.y)));
+            let muted = th.text2.mix(th.text.fade(0.7), fk);
+            cv.with_opacity(cap_a, |cv| self.capsule_text(cv, th, muted, capl.text.offset(0.0, pt.cover.y - capl.cover.y)));
         }
         if card_a > 0.01 {
             cv.with_opacity(card_a, |cv| {
@@ -135,24 +181,41 @@ impl Ink<'_> {
                 cv.text(cardl.total, &rem, TIMES.right(), th.dim);
             });
         }
-        // the progress: the capsule's hairline becomes the loudness bars of the card, in the island's accent fill and track colours
+        // the progress: the capsule's mini waveform becomes the loudness bars of the card, in the island's accent fill and track colours (the
+        // cover tint's ink and its dim on the capsule)
         let tc = if self.hc { self.th.border } else { track_color(self.th) }.mix(ink.fade(0.28), fk);
         let acc = self.accent.mix(ink, fk);
-        if card_a < 0.99 && capl.bar.h > 0.0 {
-            cv.with_opacity(1.0 - card_a, |cv| self.hairline(cv, pt.bar, tc, acc));
+        let mini_a = (1.0 - p * 2.6).clamp(0.0, 1.0);
+        if mini_a > 0.01 && capl.bar.h > 0.0 {
+            // the little waveform keeps its own size and only travels with the progress track's place
+            let r = Rect::new(pt.bar.x, pt.bar.cy() - capl.bar.h / 2.0, capl.bar.w, capl.bar.h);
+            cv.with_opacity(mini_a, |cv| self.mini_wave(cv, r, tc, acc));
         }
         if card_a > 0.01 {
             cv.with_opacity(card_a, |cv| self.bars(cv, pt.bar, card_a, tc, acc));
         }
         for b in BTNS {
-            self.button(cv, gpu, th, b, pt.btn[b.index()], ink, fk);
+            self.button(cv, gpu, th, b, pt.btn[b.index()], &look);
+        }
+        // the capsule's inner edge: one light (or dark) hairline inside the shape, so a body in the colour of whatever is behind it still reads
+        if cap > 0.01 {
+            cv.stroke_rr(self.body.inset(0.5), (self.rad - 0.5).max(0.0), 1.0, ink.fade(0.12 * cap));
         }
     }
 
     /// The card's two fill colours (`paint_player`): the cover's, mixed into the card colour; the accent when the cover has none.
     fn fill_colors(&self) -> (Color, Color) {
-        let (fa, fb) = self.tint.unwrap_or((self.accent, self.accent.mix(Color::rgb8(0, 0, 0), 0.35)));
-        (css::mix(fa, 84.0, self.th.card), css::mix(fb, 70.0, self.th.card))
+        fill_pair(self.th, self.tint, self.accent)
+    }
+
+    /// The colour of the fill gradient (`card_bg`, 118 degrees across the body) at the point `q`.
+    fn body_at(&self, q: (f32, f32), (ca, cb): (Color, Color)) -> Color {
+        let t = 118.0f32.to_radians();
+        let (sx, sy) = (t.sin(), -t.cos());
+        let b = self.body;
+        let half = (b.w * sx.abs() + b.h * sy.abs()) / 2.0;
+        let c = b.center();
+        ca.mix(cb, (0.5 + ((q.0 - c.0) * sx + (q.1 - c.1) * sy) / (2.0 * half.max(1.0))).clamp(0.0, 1.0))
     }
 
     /// The theme the card's text is drawn with: it turns to `ink` as the fill tint comes in (`PlayerFx::themed`).
@@ -165,8 +228,8 @@ impl Ink<'_> {
     }
 
     /// The Home card's background over the whole body (the capsule's too): the cover's gradient over the card colour, else a tinted corner glow of
-    /// the accent; the whole tint on the fill style. The recipe is the card's, its rectangle is the body, so it grows with the shape.
-    fn card_bg(&self, cv: &Canvas, fill: bool, (ca, cb): (Color, Color)) {
+    /// the accent; the whole tint (`fk` of it) on the fill style and the folded capsule. The recipe is the card's, its rectangle is the body, so it grows with the shape.
+    fn card_bg(&self, cv: &Canvas, fk: f32, (ca, cb): (Color, Color)) {
         let (th, b, rad) = (self.th, self.body, self.rad);
         cv.fill_rr(b, rad, th.card);
         if self.hc {
@@ -179,20 +242,34 @@ impl Ink<'_> {
             let mixed = css::mix(self.accent, if th.dark { 17.0 } else { 22.0 }, base);
             draw::radial(cv, b, rad, (b.x, b.y), b.w * 1.3, b.h * 1.5, &[(0.0, mixed), (0.72, th.card), (1.0, th.card)]);
         }
-        if fill {
-            draw::linear_deg(cv, b, rad, 118.0, &[(0.0, ca), (1.0, cb)]);
+        if fk > 0.004 {
+            draw::linear_deg(cv, b, rad, 118.0, &[(0.0, ca.fade(fk)), (1.0, cb.fade(fk))]);
         }
     }
 
-    /// The capsule's progress: a hairline track and the part that has played.
-    fn hairline(&self, cv: &Canvas, r: Rect, track: Color, fill: Color) {
-        if r.h <= 0.0 {
-            return;
-        }
-        cv.fill_rr(r, r.h / 2.0, track);
-        let w = (r.w * self.frac.clamp(0.0, 1.0)).clamp(0.0, r.w);
-        if w > 0.5 {
-            cv.fill_rr(Rect::new(r.x, r.y, w.max(r.h), r.h), r.h / 2.0, fill);
+    /// The capsule's progress: the track's loudness as a few thin rounded bars (the card's 32 squashed into `lg::wave_n`), the ones the playhead has
+    /// passed in the ink, the rest dim; a bar not measured yet is a short flat one, dimmer. The colour follows the playhead bar by bar (it glides
+    /// with the progress spring) and the heights are the springs of `Loud`, so a bar that gets measured grows to its height.
+    fn mini_wave(&self, cv: &Canvas, r: Rect, track: Color, fill: Color) {
+        let n = lg::wave_n(self.cap.h);
+        let bars = squash(&self.heights, &self.known, n);
+        let gap = r.w / (2 * n - 1) as f32;
+        let head = self.frac.clamp(0.0, 1.0) * n as f32;
+        let k = self.st.bs();
+        let (lo, hi) = (r.h * 0.2, r.h * 0.92);
+        // a bar's height on device px with the parity of the strip, so that it stands centred without a half-pixel row
+        let rp = (r.h * k).round() as i32;
+        for (i, &(h, known)) in bars.iter().enumerate() {
+            let (x, w) = lg::wave_cell(r, n, gap, i);
+            let nat = if known { lo + (hi - lo) * ((h - 0.2) / 0.8).clamp(0.0, 1.0) } else { lo };
+            let mut hp = (nat * k).round() as i32;
+            if (rp - hp) % 2 != 0 {
+                hp += 1;
+            }
+            let h = hp.max(1) as f32 / k;
+            let (rest, played) = if known { (track, fill) } else { (track.fade(0.8), fill.fade(0.6)) };
+            let col = rest.mix(played, (head - i as f32).clamp(0.0, 1.0));
+            cv.fill_rr(Rect::new(x, r.cy() - h / 2.0, w, h), (w / 2.0).min(h / 2.0), col);
         }
     }
 
@@ -234,41 +311,34 @@ impl Ink<'_> {
         cv.with_opacity(ks, |cv| cv.text(sub.offset(0.0, 4.0 * (1.0 - ks)), &s, ss, th.text2));
     }
 
-    /// The capsule's text in `r`, the track change cross-fade included: the title (the card's title style, scaled) and the artist (the card's artist
-    /// style) on ONE line when both fit whole, else the title over the artist, each with a faded end when it is cut; in a bar's strip too low for two
-    /// lines, one line the artist of which gives way (`lg::capsule_lines`). The old text rises away and the new one rises in, the artist a beat later.
-    fn capsule_text(&self, cv: &Canvas, th: &Theme, r: Rect) {
-        let sizes = lg::capsule_text_sizes(self.cap.h);
-        let (ts, ss) = (Style { size: sizes.0, ellipsis: false, ..TITLE }, Style { size: sizes.1, ellipsis: false, ..ARTIST });
+    /// The capsule's ONE line of text in `r`, the track change cross-fade included: the title (semi-bold), then the artist after a "· " in the muted
+    /// colour. The artist gives way first (cut to what is left behind a whole title, dropped when that is hardly anything, `lg::bar_line`); a part
+    /// that is cut has a faded end. The old text rises away and the new one rises in, the artist a beat later.
+    fn capsule_text(&self, cv: &Canvas, th: &Theme, muted: Color, r: Rect) {
+        let size = lg::capsule_text_size(self.cap.h);
+        let (ts, ss) = (Style::new(size, 600), Style::new(size, 500));
         let (kh, ks) = arrival(self.swap);
-        let pair = |cv: &Canvas, h: &str, s: &str, (kh, ks): (f32, f32), (dh, ds): (f32, f32)| {
-            let (wt, wa) = (cv.text_width(h, ts), if s.is_empty() { 0.0 } else { cv.text_width(s, ss) });
-            match lg::capsule_lines(r.w, self.cap.h, wt, wa) {
-                lg::Lines::Two => {
-                    let (rt, ra) = lg::two_lines(r, sizes);
-                    cv.with_opacity(kh, |cv| faded(cv, rt.offset(0.0, dh), h, ts, th.text));
-                    cv.with_opacity(ks, |cv| faded(cv, ra.offset(0.0, ds), s, ss, th.text2));
-                }
-                lg::Lines::One => {
-                    let (hw, sub) = lg::bar_line(r.w, wt, wa);
-                    cv.with_opacity(kh, |cv| faded(cv, Rect::new(r.x, r.y + dh, hw.ceil() + 1.0, r.h).intersect_w(r.w), h, ts, th.text));
-                    if let Some((sx, sw)) = sub {
-                        cv.with_opacity(ks, |cv| faded(cv, Rect::new(r.x + sx, r.y + ds, sw.ceil() + 1.0, r.h).intersect_w(r.w - sx), s, ss, th.text2));
-                    }
-                }
+        let line = |cv: &Canvas, h: &str, s: &str, (kh, ks): (f32, f32), d: (f32, f32)| {
+            let sub = if s.is_empty() { String::new() } else { format!("\u{b7} {s}") };
+            let (wt, wa) = (cv.text_width(h, ts), if sub.is_empty() { 0.0 } else { cv.text_width(&sub, ss) });
+            let (hw, subp) = lg::bar_line(r.w, wt, wa);
+            cv.with_opacity(kh, |cv| faded(cv, Rect::new(r.x, r.y + d.0, hw.ceil() + 1.0, r.h).intersect_w(r.w), h, ts, th.text));
+            if let Some((sx, sw)) = subp {
+                cv.with_opacity(ks, |cv| faded(cv, Rect::new(r.x + sx, r.y + d.1, sw.ceil() + 1.0, r.h).intersect_w(r.w - sx), &sub, ss, muted));
             }
         };
         for g in self.ghosts {
             let a = g.a.at01();
-            pair(cv, &g.head, &g.sub, (a, a), (-3.0 * (1.0 - a), -3.0 * (1.0 - a)));
+            let d = -3.0 * (1.0 - a);
+            line(cv, &g.head, &g.sub, (a, a), (d, d));
         }
-        pair(cv, &self.track.heading(), &self.track.sub(), (kh, ks), (3.0 * (1.0 - kh), 3.0 * (1.0 - ks)));
+        line(cv, &self.track.heading(), &self.track.sub(), (kh, ks), (3.0 * (1.0 - kh), 3.0 * (1.0 - ks)));
     }
 
-    /// A button, the card's way at the capsule's size too: previous / next are a plain icon with a hover disc; play is the Home card's main button,
-    /// a smoked disc (a solid disc on the other styles, the card's ink on the fill tint).
-    #[allow(clippy::too_many_arguments)]
-    fn button(&self, cv: &Canvas, gpu: &mut Gpu, th: &Theme, b: Btn, r: Rect, ink: Color, fk: f32) {
+    /// A button, the card's way at the capsule's size too: previous / next are a plain icon with a hover disc; play is the Home card's main button. In
+    /// the folded capsule (`look.cap`) it is a solid disc in the ink with the glyph cut out in the colour of the body behind it; opened, it is the
+    /// card's own (a solid disc on the other styles, the card's ink on the fill tint, smoked on the mirror style).
+    fn button(&self, cv: &Canvas, gpu: &mut Gpu, th: &Theme, b: Btn, r: Rect, look: &Look) {
         let (h, q) = (self.hov[b.index()].at01(), self.press[b.index()].at().clamp(0.0, 1.0));
         let c = r.center();
         match b {
@@ -284,8 +354,9 @@ impl Ink<'_> {
             Btn::Play => {
                 let ir = r.centered(r.w * 0.56, r.w * 0.56);
                 let (bg, fg) = if th.dark { (Color::rgb8(255, 255, 255), Color::rgb8(0, 0, 0)) } else { (Color::rgb8(0x15, 0x15, 0x15), Color::rgb8(255, 255, 255)) };
-                let mir = (self.st.style == PlayerStyle::Mirror) as u8 as f32;
-                let (bg, fg) = (bg.mix(ink, fk).mix(Color::rgba(0.0, 0.0, 0.0, 0.52), mir), fg.mix(player::ink_inverse(ink), fk).mix(Color::rgb8(255, 255, 255), mir));
+                let mir = (self.st.style == PlayerStyle::Mirror) as u8 as f32 * (1.0 - look.cap);
+                let (bg, fg) = (bg.mix(look.ink, look.fk).mix(Color::rgba(0.0, 0.0, 0.0, 0.52), mir), fg.mix(look.inv, look.fk).mix(Color::rgb8(255, 255, 255), mir));
+                let fg = fg.mix(self.body_at(c, look.fill), look.cap);
                 let s = (1.0 - 0.06 * q) * (1.0 + 0.06 * h);
                 cv.with_scale_about(c, s, |cv| {
                     cv.fill_circle(c, r.w / 2.0, bg);

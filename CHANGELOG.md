@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Changed
+- Music widget: the folded capsule is more minimal. The body takes the colour of the cover (a gradient from the cover's tint, whatever the Home player style is, with the text turning light or dark to stay readable) and eases into the card's own look as it opens; the title and the artist are one line (the artist muted, a cut line fades out), the progress is a mini waveform of the track's loudness (the played bars bright, the rest dim) instead of the hairline, and the play button is a round disc with the glyph cut out in the body's colour. Also fixes the size test's stale capsule width.
+
 ## [0.13.1] - 2026-11-17
 
 ### Highlights

@@ -17,7 +17,7 @@
 //!   bar is as wide as the scaled capsule (`taskbar::widget_place`). It uses the island's monitor (`monitor`; with `edge.monitor` = active the monitor the
 //!   island stands on right now, `MonitorSel::Island`: the island moves first, then `pill_edge` re-places the widget with it), the work area (`underTaskbar`) and `showInCapture`.
 //! * Look: the island's own player. The open card is the Home player card (the island's geometry, tint, reflections of the cover, text styles and
-//!   transport, in the style `home.player` says), the folded capsule is the same card at a small size (the cover-tinted body with the cover's reflections, the cover, title over artist, previous / smoked play disc / next, a hairline of progress; it grows into the card as one piece), all colours
+//!   transport, in the style `home.player` says), the folded capsule is the same card at a small size (a body always in the cover's colour, the cover, one line of text, the track's loudness as a mini waveform that is its progress, previous / a round play button / next; it grows into the card as one piece), all colours
 //!   from the island's theme and settings. The card's progress track is drawn as the loudness of the track (`wave.rs`, `view_wave.rs`: the player's
 //!   peak level is read ~8 times a second while it plays, kept per track; nothing is recorded).
 //! * `view.rs` draws it (`view_paint.rs`) and `logic.rs` decides everything (when it shows, the geometry, what a click hits); both are fed by the SAME backend

@@ -175,3 +175,20 @@ fn the_file_round_trips_and_a_damaged_one_is_just_empty() {
     let m = Memory::from_bytes(&big);
     assert!(m.len() == KEEP && m.get(4).is_none() && m.get(KEEP as u64 + 4).is_some());
 }
+
+#[test]
+fn a_small_waveform_squashes_the_profile_into_fewer_bars() {
+    let h: [f32; BARS] = std::array::from_fn(|i| i as f32 / BARS as f32);
+    let all = [true; BARS];
+    let s = squash(&h, &all, 12);
+    assert_eq!(s.len(), 12);
+    assert!(s.iter().all(|b| b.1) && s.windows(2).all(|w| w[0].0 < w[1].0), "measured and still rising");
+    // a bar is measured when any slice under it is, and then takes only the measured ones
+    let mut known = [false; BARS];
+    known[3] = true;
+    let s = squash(&h, &known, 8);
+    assert_eq!((s[0].1, s[1].1, s[0].0), (true, false, h[3]));
+    // nothing measured: every bar keeps its unmeasured height; more bars than slices is clamped
+    let s = squash(&[UNKNOWN_H; BARS], &[false; BARS], 99);
+    assert_eq!((s.len(), s.iter().any(|b| b.1)), (BARS, false));
+}
