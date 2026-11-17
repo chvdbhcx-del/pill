@@ -441,7 +441,7 @@ fn the_folded_capsule_is_tinted_by_the_cover_and_flat_in_high_contrast() {
             let img = s.render(lg::WIN_REAL, &Theme::pill_dark());
             let bb = lg::body(st, 0.0, 0.0);
             let l = lg::capsule_layout_in(st, bb);
-            // the body to the right of the cover, over the text and the buttons (nothing of the cover, the hairline or its accent)
+            // the body to the right of the cover, over the text and the buttons (nothing of the cover or the waveform's accent)
             let r = st.rect_to_real(Rect::new(l.text.x, bb.y + 3.0, l.btn[2].right() - l.text.x, 30.0));
             img.count(Some(r), reddish)
         };
@@ -462,7 +462,7 @@ fn the_tinted_body_grows_with_the_shape_and_nothing_pops_while_the_capsule_opens
         let (mut s, st) = folded_sim(&Folded { extra: json!({}), title: "Invented Song", artist: "Invented Band", url: Some(&red), accent: "#cc3246", ..Default::default() });
         let th = Theme::pill_dark();
         let bb = lg::body(st, 0.0, 0.0);
-        // a spot in the lower part of the body, below the hairline and clear of the cover, that stays inside it all the way up
+        // a spot in the lower part of the body, clear of the cover and the text, that stays inside it all the way up
         let at = st.to_real((bb.x + 150.0, bb.bottom() - 2.0));
         let mut prev: Option<[u8; 4]> = None;
         let mut worst = 0i32;

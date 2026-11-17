@@ -106,8 +106,8 @@ fn fill_pair(th: &Theme, tint: Option<(Color, Color)>, accent: Color) -> (Color,
 
 /// The relative luminance of the tint above which the ink is the dark one. The island's `player::ink_for` flips at 0.34, which keeps white on a
 /// mid-tone (a salmon pink reads at 2.8:1); the capsule's text is smaller and half of it is muted, so it flips earlier, nearer the point where
-/// black and white read equally (0.19), and is readable on every tint.
-const INK_FLIP: f32 = 0.27;
+/// black and white read equally (0.19): the title keeps at least 3.6:1 (light ink) / 4.7:1 (dark ink) on every tint.
+const INK_FLIP: f32 = 0.22;
 
 /// Which ink the fill tint calls for, 0 = light, 1 = dark (what the view's `ink` spring heads for): the dark ink on a bright tint, like
 /// `player::ink_for`, from [`INK_FLIP`] on.
@@ -139,7 +139,7 @@ impl Ink<'_> {
         let (st, p, pt) = (self.st, self.p, self.pt);
         let (capl, cardl) = (lg::capsule_layout_in(st, self.cap), lg::card_layout(self.card, st.style));
         let card_a = ((p - 0.3) / 0.7).clamp(0.0, 1.0);
-        let cap_a = (1.0 - p * 2.6).clamp(0.0, 1.0);
+        let cap_a = (1.0 - p * 3.6).clamp(0.0, 1.0);
         // the capsule's body is the fill style's, always: the cover's colour. As the card opens it eases to the card's own look for the style
         // (still the tint for the fill style); high contrast has none of it
         let q = p.clamp(0.0, 1.0);

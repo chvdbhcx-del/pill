@@ -611,4 +611,3 @@ fn the_waveform_is_a_strip_of_two_px_bars_with_equal_gaps_between_the_text_and_t
         assert!(((l.bar.x - l.text.right()) - (l.btn[0].x - l.bar.right())).abs() < 1.0 / k + 0.01, "{h}@{k}: the same room on both sides");
     }
 }
-

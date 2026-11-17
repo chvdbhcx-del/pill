@@ -256,3 +256,73 @@ fn the_cover_worker_brings_the_blurred_cover_and_the_tint_which_ease_from_the_la
     assert_eq!(h.v.cov_tint(), Some(blue));
     assert!(!h.v.moving());
 }
+
+/// The relative luminance and the WCAG contrast of two colours.
+fn lum(c: Color) -> f32 {
+    let lin = |v: f32| if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
+    0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+}
+
+fn contrast(a: Color, b: Color) -> f32 {
+    let (x, y) = (lum(a), lum(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+#[test]
+fn the_capsules_ink_turns_light_or_dark_with_the_covers_tint_and_stays_readable_on_every_tint() {
+    let _m = motion_on();
+    for th in [Theme::pill_dark(), Theme::pill_light()] {
+        let tint = |c: Color| Some((c, c));
+        let (white, yellow, black, blue, green, none) = (Color::rgb8(250, 250, 250), Color::rgb8(250, 222, 40), Color::rgb8(4, 4, 6), Color::rgb8(40, 90, 210), Color::rgb8(70, 200, 120), None);
+        // a bright cover gets the dark ink, a dark one the light ink; none: the accent decides (a dark red here)
+        let ink = |t, a: Color| paint::ink_target(&th, t, a);
+        assert_eq!((ink(tint(white), white), ink(tint(yellow), yellow)), (1.0, 1.0), "dark ink on a bright cover (dark theme {})", th.dark);
+        assert_eq!((ink(tint(black), black), ink(tint(blue), blue)), (0.0, 0.0), "light ink on a dark cover (dark theme {})", th.dark);
+        assert_eq!(ink(none, Color::rgb8(10, 10, 12)), 0.0);
+        // the title is readable against the middle of the body on every tint of a sweep of the colour cube
+        let (l, d) = (Color::rgb8(0xf6, 0xf6, 0xf6), Color::rgb8(0x14, 0x14, 0x14));
+        for r in (0..=255).step_by(51) {
+            for g in (0..=255).step_by(51) {
+                for b in (0..=255).step_by(51) {
+                    let c = Color::rgb8(r as u8, g as u8, b as u8);
+                    let body = crate::ui::tabs::a::home::css::mix(c, 84.0, th.card).mix(crate::ui::tabs::a::home::css::mix(c, 70.0, th.card), 0.5);
+                    let k = ink(tint(c), c);
+                    let cr = contrast(if k > 0.5 { d } else { l }, body);
+                    assert!(cr >= 3.5, "rgb({r},{g},{b}) on the {} theme: the ink reads at {cr:.2}:1", if th.dark { "dark" } else { "light" });
+                }
+            }
+        }
+        let _ = green;
+    }
+}
+
+#[test]
+fn a_new_covers_ink_glides_instead_of_flipping_and_lands_at_once_while_nobody_looks() {
+    let _m = motion_on();
+    let mut h = shown("Song");
+    let with_cover = |id: u64| json!({ "has_session": true, "playing": true, "title": "Song", "artist": "Band", "app": "Spotify.exe", "position_ms": 0, "duration_ms": 200_000, "thumb_id": id, "thumbnail": "data:image/png;base64,AAAA" });
+    h.apply(with_cover(7));
+    let key = h.v.cov_key.clone().unwrap();
+    let dark = (Color::rgb8(20, 20, 30), Color::rgb8(10, 10, 20));
+    assert!(h.v.cover_ready(CoverReady { key, colors: Some(dark), tiny: None }));
+    h.run(1500.0);
+    assert_eq!(h.v.ink.at01(), 0.0, "light ink on a dark cover");
+    // a bright cover: the ink turns over on its spring, in steps, and lands on the dark ink
+    h.apply(with_cover(8));
+    let key = h.v.cov_key.clone().unwrap();
+    let bright = (Color::rgb8(250, 230, 60), Color::rgb8(240, 200, 40));
+    assert!(h.v.cover_ready(CoverReady { key, colors: Some(bright), tiny: None }));
+    assert_eq!(h.v.ink.target(), 1.0);
+    assert!(h.v.ink.at01() < 0.5 && h.v.moving(), "it has not flipped yet");
+    h.run(60.0);
+    let mid = h.v.ink.at01();
+    assert!(mid > 0.0 && mid < 1.0, "on its way: {mid}");
+    h.run(1500.0);
+    assert_eq!(h.v.ink.at01(), 1.0);
+    // nobody looks (the window is hidden): it lands without a frame
+    h.v.on_hide(&mut h.cx);
+    h.apply(with_cover(9));
+    let key = h.v.cov_key.clone().unwrap();
+    assert!(h.v.cover_ready(CoverReady { key, colors: Some(dark), tiny: None }));
+    assert_eq!((h.v.ink.at01(), h.v.ink.moving()), (0.0, false));
+}
