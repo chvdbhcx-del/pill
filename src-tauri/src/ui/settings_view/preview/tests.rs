@@ -1018,9 +1018,9 @@ fn stage_of(t: &T) -> Rect {
 }
 
 /// Opaque black (the body of an island) or the widget's body inside `r`: the folded capsule is in the colour of the cover, and the sandbox's track
-/// has none (its accent, a blue, tints it), so that blue counts too (the stage's own backdrop is a darker, greyer one); the open card is near black (the island's card colour, #0f0f0f).
+/// has none (its accent, a blue, tints it), so that its calm dark blue counts too (about rgb(22, 49, 73); the stage's own backdrop is another one); the open card is near black (the island's card colour, #0f0f0f).
 fn black_in(img: &Image, r: Rect) -> usize {
-    img.count(Some(r), |px| px[3] == 255 && (px[0].max(px[1]).max(px[2]) < 20 || (px[1] as i32 > px[0] as i32 + 45 && px[2] as i32 > px[0] as i32 + 45)))
+    img.count(Some(r), |px| px[3] == 255 && (px[0].max(px[1]).max(px[2]) < 20 || ((px[0] as i32 - 22).abs() <= 9 && (px[1] as i32 - 49).abs() <= 10 && (px[2] as i32 - 73).abs() <= 12)))
 }
 
 /// The black of the stage in its four quarters: (top left, top right, bottom left, bottom right).
