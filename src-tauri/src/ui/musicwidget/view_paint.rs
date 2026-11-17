@@ -104,21 +104,29 @@ fn fill_pair(th: &Theme, tint: Option<(Color, Color)>, accent: Color) -> (Color,
     (css::mix(fa, 84.0, th.card), css::mix(fb, 70.0, th.card))
 }
 
-/// The folded capsule's own, much calmer body: the cover's first colour mixed in at [`SOFT_TINT`] % over the card colour, running into a slightly
-/// darker version of the same hue (no sweep through a second colour). The open card's fill style keeps its strong pair (`fill_pair`).
+/// The folded capsule's own, much calmer body: the cover's first colour mixed in at [`SOFT_TINT`] % over the card colour, running top to bottom into a
+/// hardly darker version of the same hue (no sweep through a second colour, no diagonal: a wide diagonal ramp of a few levels shows as slanting
+/// bands). The open card's fill style keeps its strong pair (`fill_pair`).
 const SOFT_TINT: f32 = 34.0;
-const SOFT_DARKEN: f32 = 0.12;
+const SOFT_DARKEN: f32 = 0.08;
+
+/// The relative luminance of a colour, 0 (black) .. 1 (white).
+fn luma(c: Color) -> f32 {
+    let lin = |c: f32| if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) };
+    0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+}
 
 fn soft_pair(th: &Theme, tint: Option<(Color, Color)>, accent: Color) -> (Color, Color) {
-    let a = css::mix(tint.map_or(accent, |t| t.0), SOFT_TINT, th.card);
+    let c = tint.map_or(accent, |t| t.0);
+    // on a dark card a pale cover would wash the body into a dirty grey: its share eases off as the cover gets lighter
+    let pct = if th.dark { SOFT_TINT * (1.0 - 0.45 * luma(c).sqrt()) } else { SOFT_TINT };
+    let a = css::mix(c, pct, th.card);
     (a, a.mix(Color::rgb8(0, 0, 0), SOFT_DARKEN))
 }
 
 /// The WCAG contrast of two colours.
 fn contrast(a: Color, b: Color) -> f32 {
-    let lin = |c: f32| if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) };
-    let lum = |c: Color| 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
-    let (x, y) = (lum(a), lum(b));
+    let (x, y) = (luma(a), luma(b));
     (x.max(y) + 0.05) / (x.min(y) + 0.05)
 }
 
@@ -172,7 +180,8 @@ impl Ink<'_> {
         let look = Look { ink, inv, fk, cap, fill };
         let thc = self.themed(ink, fk);
         let th = &thc;
-        self.card_bg(cv, fk, fill);
+        // the ramp of the folded capsule is vertical; it swings to the card's own diagonal as it opens
+        self.card_bg(cv, fk, fill, 118.0 + 62.0 * cap);
         if st.style == PlayerStyle::Mirror && !self.hc && self.cap.h >= REFL_MIN_H {
             // the cover's reflections belong to the open card (the folded capsule is one clean colour): they spread out of the cover as it opens
             let r = &pt.refl;
@@ -250,7 +259,7 @@ impl Ink<'_> {
 
     /// The Home card's background over the whole body (the capsule's too): the cover's gradient over the card colour, else a tinted corner glow of
     /// the accent; the whole tint (`fk` of it) on the fill style and the folded capsule. The recipe is the card's, its rectangle is the body, so it grows with the shape.
-    fn card_bg(&self, cv: &Canvas, fk: f32, (ca, cb): (Color, Color)) {
+    fn card_bg(&self, cv: &Canvas, fk: f32, (ca, cb): (Color, Color), deg: f32) {
         let (th, b, rad) = (self.th, self.body, self.rad);
         cv.fill_rr(b, rad, th.card);
         if self.hc {
@@ -264,7 +273,7 @@ impl Ink<'_> {
             draw::radial(cv, b, rad, (b.x, b.y), b.w * 1.3, b.h * 1.5, &[(0.0, mixed), (0.72, th.card), (1.0, th.card)]);
         }
         if fk > 0.004 {
-            draw::linear_deg(cv, b, rad, 118.0, &[(0.0, ca.fade(fk)), (1.0, cb.fade(fk))]);
+            draw::linear_deg(cv, b, rad, deg, &[(0.0, ca.fade(fk)), (1.0, cb.fade(fk))]);
         }
     }
 
@@ -274,6 +283,9 @@ impl Ink<'_> {
     fn mini_wave(&self, cv: &Canvas, r: Rect, track: Color, fill: Color) {
         let n = lg::wave_n(self.cap.h);
         let bars = squash(&self.heights, &self.known, n);
+        if !bars.iter().any(|b| b.1) {
+            return self.mini_line(cv, r, track, fill);
+        }
         let gap = r.w / (2 * n - 1) as f32;
         let head = self.frac.clamp(0.0, 1.0) * n as f32;
         let k = self.st.bs();
@@ -282,7 +294,7 @@ impl Ink<'_> {
         let rp = (r.h * k).round() as i32;
         for (i, &(h, known)) in bars.iter().enumerate() {
             let (x, w) = lg::wave_cell(r, n, gap, i);
-            let nat = if known { lo + (hi - lo) * ((h - 0.2) / 0.8).clamp(0.0, 1.0) } else { lo };
+            let nat = if known { lo + (hi - lo) * ((h - 0.2) / 0.8).clamp(0.0, 1.0) } else { r.h * 0.3 };
             let mut hp = (nat * k).round() as i32;
             if (rp - hp) % 2 != 0 {
                 hp += 1;
@@ -291,6 +303,20 @@ impl Ink<'_> {
             let (rest, played) = if known { (track, fill) } else { (track.fade(0.8), fill.fade(0.6)) };
             let col = rest.mix(played, (head - i as f32).clamp(0.0, 1.0));
             cv.fill_rr(Rect::new(x, r.cy() - h / 2.0, w, h), (w / 2.0).min(h / 2.0), col);
+        }
+    }
+
+    /// The mini waveform of a track nothing is measured of yet (a stream, a first listen): not a row of dots but a calm thin rounded line, the played part
+    /// of it in the ink, which the bars replace as they are learned.
+    fn mini_line(&self, cv: &Canvas, r: Rect, track: Color, fill: Color) {
+        let k = self.st.bs();
+        // 2 device px, 3 when the strip is an odd number of them (so it stands centred on a whole pixel row)
+        let h = if (r.h * k).round() as i32 % 2 == 0 { 2.0 } else { 3.0 } / k;
+        let line = Rect::new(r.x, r.cy() - h / 2.0, r.w, h);
+        cv.fill_rr(line, h / 2.0, track.fade(0.8));
+        let w = (r.w * self.frac.clamp(0.0, 1.0)).max(if self.frac > 0.0 { h } else { 0.0 });
+        if w > 0.0 {
+            cv.fill_rr(Rect::new(r.x, line.y, w, h), h / 2.0, fill);
         }
     }
 
@@ -337,13 +363,15 @@ impl Ink<'_> {
     /// that is cut has a faded end. The old text rises away and the new one rises in, the artist a beat later.
     fn capsule_text(&self, cv: &Canvas, th: &Theme, muted: Color, r: Rect) {
         let size = lg::capsule_text_size(self.cap.h);
-        let (ts, ss) = (Style::new(size, 600), Style::new(size, 500));
+        // soft: a medium title and a regular artist, the title a touch under the full ink (a white 600 on a dark body glares at this size)
+        let (ts, ss) = (Style::new(size, 500), Style::new(size, 400));
+        let title_ink = th.text.fade(0.9);
         let (kh, ks) = arrival(self.swap);
         let line = |cv: &Canvas, h: &str, s: &str, (kh, ks): (f32, f32), d: (f32, f32)| {
             let sub = if s.is_empty() { String::new() } else { format!("\u{b7} {s}") };
             let (wt, wa) = (cv.text_width(h, ts), if sub.is_empty() { 0.0 } else { cv.text_width(&sub, ss) });
             let (hw, subp) = lg::bar_line(r.w, wt, wa);
-            cv.with_opacity(kh, |cv| faded(cv, Rect::new(r.x, r.y + d.0, hw.ceil() + 1.0, r.h).intersect_w(r.w), h, ts, th.text));
+            cv.with_opacity(kh, |cv| faded(cv, Rect::new(r.x, r.y + d.0, hw.ceil() + 1.0, r.h).intersect_w(r.w), h, ts, title_ink));
             if let Some((sx, sw)) = subp {
                 cv.with_opacity(ks, |cv| faded(cv, Rect::new(r.x + sx, r.y + d.1, sw.ceil() + 1.0, r.h).intersect_w(r.w - sx), &sub, ss, muted));
             }

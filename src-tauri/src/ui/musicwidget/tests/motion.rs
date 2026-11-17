@@ -328,19 +328,23 @@ fn folded_sim(f: &Folded) -> (Sim, lg::Stand) {
     let mut s = Sim::with_services(Box::new(Blank), svc);
     let scale = if f.scale > 0.0 { f.scale } else { 1.0 };
     s.cx.scale = scale;
+    // a loudness profile as if the track had been heard (the memory is keyed by title, artist and length)
+    let seed = |v: &mut MusicView| {
+        if f.known > 0 {
+            let bytes: [u8; 32] = std::array::from_fn(|i| if i < f.known { (60.0 + 190.0 * (0.5 + 0.5 * ((i as f32 * 0.7).sin() * (i as f32 * 0.23).cos()))) as u8 } else { 0 });
+            v.seed_loudness(crate::ui::musicwidget::wave::key_of(f.title, f.artist, 200_000), bytes);
+        }
+    };
     let st = match f.bar {
         Some(b) => {
-            let v = MusicView::new(&mut s.cx, Dock::Taskbar).with_slot(b, Align::Left);
-            s.view = Box::new(v);
+            let mut v = MusicView::new(&mut s.cx, Dock::Taskbar);
+            seed(&mut v);
+            s.view = Box::new(v.with_slot(b, Align::Left));
             bar_st(Align::Left, b, scale)
         }
         None => {
             let mut v = MusicView::new(&mut s.cx, Dock::Bottom);
-            if f.known > 0 {
-                // a loudness profile as if the track had been heard (the memory is keyed by title, artist and length)
-                let bytes: [u8; 32] = std::array::from_fn(|i| if i < f.known { (60.0 + 190.0 * (0.5 + 0.5 * ((i as f32 * 0.7).sin() * (i as f32 * 0.23).cos()))) as u8 } else { 0 });
-                v.seed_loudness(crate::ui::musicwidget::wave::key_of(f.title, f.artist, 200_000), bytes);
-            }
+            seed(&mut v);
             s.view = Box::new(v);
             lg::Stand { scale, ..base(Dock::Bottom) }
         }
@@ -426,6 +430,78 @@ fn capsule_sheets() {
         let (mut s, _) = folded_sim(&f(json!({ "theme": "light" }), "Invented Song", "Invented Band", Some(&blue), "#2850d2", None));
         s.send_proximity(&ProximityEvent::Hover);
         save(&d, "c6-morph-light.png", &film(&mut s, &th, lg::WIN_REAL, r, 24.0, 16));
+    });
+}
+
+/// `img` blown up `k` times (nearest), for a person to judge pixels.
+fn zoom(img: &Image, k: u32) -> Image {
+    let mut bgra = vec![0u8; (img.w * k * img.h * k * 4) as usize];
+    for y in 0..img.h * k {
+        for x in 0..img.w * k {
+            let (s, o) = (img.px(x / k, y / k), ((y * img.w * k + x) * 4) as usize);
+            bgra[o..o + 4].copy_from_slice(&[s[2], s[1], s[0], 255]);
+        }
+    }
+    Image { w: img.w * k, h: img.h * k, scale: 1.0, bgra }
+}
+
+/// The capsule in the taskbar strip at the sizes of the owner's screens, 3x for a person to judge pixels: a dark teal cover, a Russian title, with
+/// the loudness measured and not (`strip.png`), and the body's colour over several covers in three heights (`body-<h>.png`).
+/// `PILL_SNAP_DIR=<dir> cargo test --locked --bin pill strip_sheets`.
+#[test]
+fn strip_sheets() {
+    let Some(d) = dir() else { return };
+    gfx(move || {
+        let _m = motion_on();
+        let teal = art([70, 100, 110, 255], [20, 34, 44, 255]);
+        let mut t = Vec::new();
+        for bar in [Some(40.0f32), Some(48.0), None] {
+            for known in [0usize, 32] {
+                let f = Folded { extra: json!({}), title: "Вечно молодой", artist: "Смысловые Галлюцинации", url: Some(&teal), accent: "#3a7080", bar, known, ..Default::default() };
+                t.push(zoom(&folded_tile(&f), 3));
+            }
+        }
+        crate::ui::host::testing::save_png(&sheet(&t, 2), d.join("strip.png"));
+        // the body over a dark teal, a bright red, a near-black, a near-white, a grey and a saturated blue cover
+        let covers: [(&str, [u8; 4], [u8; 4], &str); 6] = [
+            ("teal", [60, 90, 100, 255], [30, 50, 62, 255], "#3a7080"),
+            ("red", [220, 40, 60, 255], [150, 20, 40, 255], "#dc283c"),
+            ("black", [14, 14, 16, 255], [6, 6, 8, 255], "#101012"),
+            ("white", [244, 242, 238, 255], [226, 224, 220, 255], "#f4f2ee"),
+            ("grey", [120, 120, 124, 255], [96, 96, 100, 255], "#78787c"),
+            ("blue", [40, 90, 220, 255], [24, 50, 150, 255], "#285adc"),
+        ];
+        for (name, bar) in [("56", None), ("40", Some(48.0f32)), ("32", Some(40.0))] {
+            let t: Vec<Image> = covers
+                .iter()
+                .map(|(_, a, b, acc)| {
+                    let u = art(*a, *b);
+                    zoom(&folded_tile(&Folded { extra: json!({}), title: "Вечно молодой", artist: "Смысловые Галлюцинации", url: Some(&u), accent: acc, bar, known: 32, ..Default::default() }), 2)
+                })
+                .collect();
+            crate::ui::host::testing::save_png(&sheet(&t, 2), d.join(format!("body-{name}.png")));
+        }
+    });
+}
+
+/// A track nothing is measured of has a calm thin line for its progress in the strip, not a row of dots; once it is measured the bars are bars.
+#[test]
+fn an_unmeasured_track_shows_a_thin_line_and_a_measured_one_shows_bars_in_the_strip() {
+    gfx(|| {
+        let _m = motion_on();
+        let teal = art([70, 100, 110, 255], [20, 34, 44, 255]);
+        let height_of_light = |known: usize| {
+            let (mut s, st) = folded_sim(&Folded { extra: json!({}), title: "Invented Song", artist: "Invented Band", url: Some(&teal), accent: "#3a7080", bar: Some(40.0), known, ..Default::default() });
+            let img = s.render(lg::WIN_BAR_REAL, &Theme::pill_dark());
+            let l = lg::capsule_layout_in(st, lg::body(st, 0.0, 0.0));
+            let r = st.rect_to_real(l.bar);
+            let light = |p: [u8; 4]| p[3] > 200 && p[0] as u32 + p[1] as u32 + p[2] as u32 > 3 * 90;
+            bounds_in(&img, r, light).map(|b| (b.3 - b.1, b.2 - b.0))
+        };
+        let (h, w) = height_of_light(0).expect("the played part of the line is drawn");
+        assert!(h <= 3 && w >= 4, "a thin line: {h} px tall, {w} wide");
+        let (h, _) = height_of_light(32).expect("the bars are drawn");
+        assert!(h >= 6, "bars, not a line: {h} px tall");
     });
 }
 

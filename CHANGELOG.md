@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Changed
+- Music widget capsule in the taskbar strip: softer text (medium title, regular artist, a touch under full white), a bigger cover with a smaller, more even set of buttons, a progress of fewer, wider bars (a thin line while the track is not measured yet instead of a row of dots), and a smoother body: a vertical, barely-there ramp of the cover's colour (a pale cover no longer turns it grey).
+
 ## [0.13.2] - 2026-11-17
 
 ### Highlights

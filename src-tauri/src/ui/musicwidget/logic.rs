@@ -452,12 +452,15 @@ pub struct CapsuleLayout {
 /// The cover's corner radius over its side: the card's (14 of 84), the same shape at every size.
 pub const COVER_R_RATIO: f32 = CARD_COVER_R / 84.0;
 
-/// How many bars the capsule's mini waveform has: 10 at the full height, 8 in a strip (the big buttons leave it little room).
+/// How many bars the capsule's mini waveform has: 10 at the full height, 8 a little lower, 5 in a taskbar strip (the bars are at least 2 px wide, so a
+/// small capsule has fewer of them rather than hairlines that read as noise).
 pub fn wave_n(h: f32) -> usize {
     if h >= 52.0 {
         10
-    } else {
+    } else if h >= 44.0 {
         8
+    } else {
+        5
     }
 }
 
@@ -479,7 +482,11 @@ pub fn capsule_layout(c: Rect, k: f32) -> CapsuleLayout {
         }
         p.max(1) as f32 / k
     };
-    let (cs, side, play) = (even(40.0 * s, 14.0), even(33.0 * s, 18.0), even(43.0 * s, 22.0));
+    // the parts as a share of the height: 40 / 33 / 43 of 56 at the full height; in a strip (40 and under) the cover is the biggest thing and the buttons
+    // are of one family (the play disc a little bigger), so the white disc does not shout over the cover
+    let t = ((CAPSULE_H - c.h) / 16.0).clamp(0.0, 1.0);
+    let part = |full: f32, strip: f32, lo: f32| even((full / CAPSULE_H + (strip - full / CAPSULE_H) * t) * c.h, lo);
+    let (cs, side, play) = (part(40.0, 0.78, 14.0), part(33.0, 0.62, 16.0), part(43.0, 0.68, 18.0));
     let (e, pad, gap) = (sp(8.0 * s), sp(8.0 * s), sp(2.0 * s));
     let y = |size: f32| c.y + (c.h - size) / 2.0;
     let next_x = c.right() - pad - side;
@@ -491,7 +498,7 @@ pub fn capsule_layout(c: Rect, k: f32) -> CapsuleLayout {
     // the waveform: thin bars with a gap as wide as a bar, centred, as far from the buttons as from the text
     let (bar, text_end) = if c.h >= 28.0 {
         let n = wave_n(c.h) as f32;
-        let bw = ((2.0 * s * k).round().max(1.0)) / k;
+        let bw = ((2.0 * s * k).round().max(2.0)) / k;
         let (w, h) = (n * 2.0 * bw - bw, even(22.0 * s, 8.0));
         let r = Rect::new(prev_x - sp(8.0 * s) - w, y(h), w, h);
         (r, r.x - sp(8.0 * s))
@@ -519,9 +526,9 @@ pub fn capsule_layout_in(st: impl Into<Stand>, c: Rect) -> CapsuleLayout {
 pub const LINE_GAP: f32 = 4.0;
 pub const SUB_MIN: f32 = 28.0;
 
-/// The size of the capsule's text at the capsule's height `h`: 14.5 at the full height (12.5 in the mockup's 48), never unreadably small in a strip.
+/// The size of the capsule's text at the capsule's height `h`: 14.5 at the full height (12.5 in the mockup's 48), never under 12 in a strip.
 pub fn capsule_text_size(h: f32) -> f32 {
-    (h * 0.26).clamp(11.5, 14.5)
+    (h * 0.26).clamp(12.0, 14.5)
 }
 
 /// What the capsule's one line shows in `avail` px: the heading's width (the whole title, or all there is when it is cut) and, when there is

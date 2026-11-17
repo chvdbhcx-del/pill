@@ -252,6 +252,28 @@ fn the_capsule_parts_fit_every_bar() {
 }
 
 #[test]
+fn in_a_strip_the_cover_leads_the_buttons_are_one_family_and_the_text_keeps_its_room() {
+    for (h, k) in [(32.0f32, 1.0f32), (32.0, 1.25), (40.0, 1.0), (40.0, 1.5)] {
+        let c = Rect::new(0.0, 0.0, BAR_FOLD_W, h);
+        let l = capsule_layout(c, k);
+        let tag = format!("{h}@{k}");
+        let tol = 1.0 / k + 0.01;
+        // the cover is the biggest thing; the white play disc does not shout over it, and the side buttons are not lost beside the disc
+        assert!(l.cover.h >= l.btn[1].h + 2.0 - tol, "{tag}: the cover {} over the disc {}", l.cover.h, l.btn[1].h);
+        assert!(l.btn[0].h >= 0.8 * l.btn[1].h - tol && l.btn[0].h <= l.btn[1].h + tol, "{tag}: side {} next to play {}", l.btn[0].h, l.btn[1].h);
+        // room for the title and a good bit of the artist, and the waveform is whole bars of at least 2 device px
+        assert!(l.text.w >= 134.0, "{tag}: the text has {} px", l.text.w);
+        let n = wave_n(h) as f32;
+        assert!(l.bar.w / (2.0 * n - 1.0) * k >= 2.0 - 0.01, "{tag}: bars of {} device px", l.bar.w / (2.0 * n - 1.0) * k);
+        // the same gap on both sides of the waveform and between the cover and the text
+        assert!(((l.bar.x - l.text.right()) - (l.btn[0].x - l.bar.right())).abs() <= tol, "{tag}");
+    }
+    // the full height is the one the owner already accepted: 40 / 33 / 43 of 56 (each one device px less when the margins would be uneven)
+    let l = capsule_layout(Rect::new(0.0, 0.0, CAP_W, CAPSULE_H), 1.0);
+    assert_eq!((l.cover.h, l.btn[0].h, l.btn[1].h), (40.0, 32.0, 42.0));
+}
+
+#[test]
 fn the_bar_capsule_is_symmetrical_centred_and_its_waveform_stays_on_the_straight_part() {
     for (bar, scale) in bars() {
         let st = Stand { scale, ..in_bar(Align::Right, bar) };
@@ -591,10 +613,10 @@ fn the_capsule_is_the_card_in_small_one_cover_shape_and_reflections_that_spread_
 
 #[test]
 fn the_text_is_one_line_in_the_cards_size_scaled_with_the_capsule_and_the_waveform_gets_fewer_bars_in_a_strip() {
-    // 14.5 at the full height (the mockup's 12.5 at 48), never unreadably small in a strip, never bigger than the card's title
+    // 14.5 at the full height (the mockup's 12.5 at 48), never under 12 in a strip, never bigger than the card's title
     assert!((capsule_text_size(CAPSULE_H) - 14.5).abs() < 0.01 && (capsule_text_size(48.0) - 12.5).abs() < 0.05);
-    assert_eq!((capsule_text_size(20.0), capsule_text_size(90.0)), (11.5, 14.5));
-    assert_eq!((wave_n(CAPSULE_H), wave_n(52.0), wave_n(48.0), wave_n(28.0)), (10, 10, 8, 8));
+    assert_eq!((capsule_text_size(20.0), capsule_text_size(32.0), capsule_text_size(90.0)), (12.0, 12.0, 14.5));
+    assert_eq!((wave_n(CAPSULE_H), wave_n(52.0), wave_n(48.0), wave_n(44.0), wave_n(40.0), wave_n(28.0)), (10, 10, 8, 8, 5, 5));
     // the line sits in the text rect, centred on the capsule's height (the text is vertically centred in a rect as tall as the capsule)
     for h in [32.0, 44.0, 48.0, CAPSULE_H] {
         let c = Rect::new(0.0, 0.0, CAP_W, h);
