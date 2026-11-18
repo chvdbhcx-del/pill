@@ -498,7 +498,8 @@ pub fn capsule_layout(c: Rect, k: f32) -> CapsuleLayout {
     let text_x = cover.right() + sp(9.0 * s);
     // the progress, as far from the buttons as from the text: thin bars (a strip's too) of whole device px, at least 2 wide, with a gap as wide as a bar
     let g = sp(8.0 * s);
-    let (bar, text_end) = if c.h >= 28.0 {
+    // none in a taskbar strip (the user did not want them there): the title gets the room; the full-height capsule keeps them
+    let (bar, text_end) = if c.h >= STRIP_H {
         let n = wave_n(c.h) as f32;
         let bw = ((2.0 * s * k).round().max(2.0)) / k;
         let (w, h) = (n * 2.0 * bw - bw, even(22.0 * s, 8.0));

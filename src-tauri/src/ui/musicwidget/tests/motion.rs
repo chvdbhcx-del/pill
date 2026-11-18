@@ -519,7 +519,7 @@ fn strip_user_case() {
 /// The strip's progress is crisp bars, measured or not: a track nothing is measured of gets the calm placeholder pattern (never a flat line of dots), a measured
 /// one its loudness; every bar is at least 4 px tall.
 #[test]
-fn the_strip_shows_bars_for_a_measured_and_an_unmeasured_track_alike() {
+fn the_strip_has_no_bars_and_the_full_height_capsule_keeps_them() {
     gfx(|| {
         let _m = motion_on();
         let teal = art([70, 100, 110, 255], [20, 34, 44, 255]);
@@ -540,10 +540,10 @@ fn the_strip_shows_bars_for_a_measured_and_an_unmeasured_track_alike() {
             }
             (cols.iter().copied().max().unwrap_or(0), cols.iter().copied().min().unwrap_or(0))
         };
-        for known in [0usize, 32] {
-            let (tall, short) = heights(known, Some(40.0));
-            assert!(tall >= 6, "{known}: bars in the strip, not a line: tallest {tall} px");
-            assert!(short >= 4, "{known}: no bar shorter than 4 px (no stubs): {short}");
+        // in a strip the capsule has no bars, measured or not
+        for _known in [0usize, 32] {
+            let (_, st) = folded_sim(&Folded { extra: json!({}), title: "Invented Song", artist: "Invented Band", url: Some(&teal), accent: "#3a7080", bar: Some(40.0), known: _known, pos: 160_000, ..Default::default() });
+            assert_eq!(lg::capsule_layout_in(st, lg::body(st, 0.0, 0.0)).bar.h, 0.0, "{_known}: no bars in a strip");
         }
         let (h, _) = heights(32, None);
         assert!(h >= 6, "bars at the full height: {h} px tall");
