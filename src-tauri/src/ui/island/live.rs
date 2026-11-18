@@ -220,9 +220,9 @@ fn paint_item(cv: &Canvas, th: &Theme, gpu: &mut Gpu, it: &ClockItem, r: Rect, s
 
 // ------------------------------------------------------------------------------------------------ cards
 
-const TITLE: Style = Style::new(14.0, 600).ellipsis();
-const SUB: Style = Style::new(12.0, 500).ellipsis();
-const BTN: Style = Style::new(12.0, 600);
+const TITLE: Style = Style::new(14.0, 500).ellipsis();
+const SUB: Style = Style::new(12.0, 400).ellipsis();
+const BTN: Style = Style::new(12.0, 500);
 const MAX_W: f32 = 480.0;
 
 #[derive(Clone, Debug)]
