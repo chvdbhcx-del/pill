@@ -490,17 +490,21 @@ fn an_unmeasured_track_shows_a_thin_line_and_a_measured_one_shows_bars_in_the_st
     gfx(|| {
         let _m = motion_on();
         let teal = art([70, 100, 110, 255], [20, 34, 44, 255]);
-        let height_of_light = |known: usize| {
-            let (mut s, st) = folded_sim(&Folded { extra: json!({}), title: "Invented Song", artist: "Invented Band", url: Some(&teal), accent: "#3a7080", bar: Some(40.0), known, ..Default::default() });
-            let img = s.render(lg::WIN_BAR_REAL, &Theme::pill_dark());
+        let height_of_light = |known: usize, bar: Option<f32>| {
+            let (mut s, st) = folded_sim(&Folded { extra: json!({}), title: "Invented Song", artist: "Invented Band", url: Some(&teal), accent: "#3a7080", bar, known, ..Default::default() });
+            let win = if bar.is_some() { lg::WIN_BAR_REAL } else { lg::WIN_REAL };
+            let img = s.render(win, &Theme::pill_dark());
             let l = lg::capsule_layout_in(st, lg::body(st, 0.0, 0.0));
             let r = st.rect_to_real(l.bar);
             let light = |p: [u8; 4]| p[3] > 200 && p[0] as u32 + p[1] as u32 + p[2] as u32 > 3 * 90;
             bounds_in(&img, r, light).map(|b| (b.3 - b.1, b.2 - b.0))
         };
-        let (h, w) = height_of_light(0).expect("the played part of the line is drawn");
+        // a strip draws the line for the progress, measured or not; the full height draws bars once they are measured
+        let (h, w) = height_of_light(0, Some(40.0)).expect("the played part of the line is drawn");
         assert!(h <= 3 && w >= 4, "a thin line: {h} px tall, {w} wide");
-        let (h, _) = height_of_light(32).expect("the bars are drawn");
+        let (h, _) = height_of_light(32, Some(40.0)).expect("the line is drawn");
+        assert!(h <= 3, "a strip keeps its line even when the track is measured: {h} px tall");
+        let (h, _) = height_of_light(32, None).expect("the bars are drawn");
         assert!(h >= 6, "bars, not a line: {h} px tall");
     });
 }

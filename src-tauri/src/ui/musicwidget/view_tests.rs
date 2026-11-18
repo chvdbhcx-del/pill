@@ -269,7 +269,7 @@ fn contrast(a: Color, b: Color) -> f32 {
 }
 
 #[test]
-fn the_capsules_ink_turns_light_or_dark_with_the_covers_tint_and_stays_readable_on_every_tint() {
+fn the_capsules_ink_is_always_light_on_its_dark_body_and_reads_on_the_cover_end_for_every_tint() {
     let _m = motion_on();
     let (l, d) = (Color::rgb8(0xf6, 0xf6, 0xf6), Color::rgb8(0x14, 0x14, 0x14));
     for th in [Theme::pill_dark(), Theme::pill_light()] {
@@ -277,29 +277,42 @@ fn the_capsules_ink_turns_light_or_dark_with_the_covers_tint_and_stays_readable_
         let name = if th.dark { "dark" } else { "light" };
         let (white, yellow, black, blue) = (Color::rgb8(250, 250, 250), Color::rgb8(250, 222, 40), Color::rgb8(4, 4, 6), Color::rgb8(40, 90, 210));
         let ink = |t, a: Color| paint::ink_target(&th, t, a, false);
-        // the body is a calm tint over the card colour: it follows the theme (the dark ink on the light theme's body, the light ink on the dark one's)
-        let want = if th.dark { 0.0 } else { 1.0 };
+        // the folded body runs from the cover's deep tone into black, on either theme: the light ink, whatever the cover is
         for c in [white, yellow, black, blue] {
-            assert_eq!(ink(tint(c), c), want, "{name} theme, rgb({}, {}, {})", c.r, c.g, c.b);
+            assert_eq!(ink(tint(c), c), 0.0, "{name} theme, rgb({}, {}, {})", c.r, c.g, c.b);
         }
-        assert_eq!(ink(None, Color::rgb8(10, 10, 12)), want);
+        assert_eq!(ink(None, Color::rgb8(10, 10, 12)), 0.0);
         // the open fill card is strong: a bright cover gets the dark ink and a dark one the light ink there on both themes
         assert_eq!((paint::ink_target(&th, tint(yellow), yellow, true), paint::ink_target(&th, tint(black), black, true)), (1.0, 0.0));
-        // the title is readable against the middle of the body on every tint of a sweep of the colour cube, on the capsule's calm body and on the
-        // open fill card's strong one
-        for strong in [false, true] {
-            for r in (0..=255).step_by(51) {
-                for g in (0..=255).step_by(51) {
-                    for b in (0..=255).step_by(51) {
-                        let c = Color::rgb8(r as u8, g as u8, b as u8);
-                        let k = paint::ink_target(&th, tint(c), c, strong);
-                        let cr = contrast(if k > 0.5 { d } else { l }, paint::body_mid(&th, tint(c), c, strong));
-                        assert!(cr >= 3.5, "rgb({r},{g},{b}) on the {name} theme (strong {strong}): the ink reads at {cr:.2}:1");
-                    }
+        // the title is readable on the cover end of the capsule (its lightest part) on every tint of a sweep of the colour cube, and on the open fill
+        // card's strong body with the ink it picks
+        for r in (0..=255).step_by(51) {
+            for g in (0..=255).step_by(51) {
+                for b in (0..=255).step_by(51) {
+                    let c = Color::rgb8(r as u8, g as u8, b as u8);
+                    let cr = contrast(l, paint::soft_pair(&th, tint(c), c).0);
+                    assert!(cr >= 3.5, "rgb({r},{g},{b}): the light ink reads at {cr:.2}:1 on the capsule's cover end");
+                    let k = paint::ink_target(&th, tint(c), c, true);
+                    let cr = contrast(if k > 0.5 { d } else { l }, paint::body_mid(&th, tint(c), c, true));
+                    assert!(cr >= 3.5, "rgb({r},{g},{b}) on the {name} theme (strong): the ink reads at {cr:.2}:1");
                 }
             }
         }
     }
+}
+
+/// The capsule's body is the cover's own deep colour at its end, a clean tone of the same hue (a yellow turns amber, not olive) and near black at the far end.
+#[test]
+fn the_capsule_body_runs_from_a_clean_deep_tone_of_the_cover_into_black() {
+    let th = Theme::pill_dark();
+    let ends = |c: Color| paint::soft_pair(&th, Some((c, c)), c);
+    let (left, right) = ends(Color::rgb8(250, 215, 40));
+    assert!(left.r > left.g && left.g > left.b * 1.8 && (left.g / left.r) < 0.85, "yellow turns deep amber, not olive: {left:?}");
+    assert!(right.r < 0.08 && right.g < 0.08 && right.b < 0.08, "near black at the far end: {right:?}");
+    let (red, _) = ends(Color::rgb8(210, 40, 60));
+    assert!(red.r > 0.3 && red.r > red.g * 2.5, "a red stays a clear red: {red:?}");
+    let (pale, _) = ends(Color::rgb8(245, 243, 240));
+    assert!((0.3..0.5).contains(&pale.r), "a pale cover gives a mid grey, not a glowing one: {pale:?}");
 }
 
 #[test]
@@ -311,10 +324,11 @@ fn the_ink_glides_when_the_body_turns_light_or_dark_and_lands_at_once_while_nobo
     let key = h.v.cov_key.clone().unwrap();
     assert!(h.v.cover_ready(CoverReady { key, colors: Some((Color::rgb8(250, 230, 60), Color::rgb8(240, 200, 40))), tiny: None }));
     h.run(1500.0);
-    assert_eq!(h.v.ink.at01(), 0.0, "light ink on the calm dark body");
-    // the light theme: the body is light now and the ink turns over on its spring, in steps, and lands on the dark ink
-    let settings = |theme: &str| json!({ "media.widget": true, "module.media": true, "theme": theme, "language": "en" });
-    h.v.take_settings(&settings("light"));
+    assert_eq!(h.v.ink.at01(), 0.0, "light ink on the dark capsule");
+    // the open fill card has a strong, bright body for a bright cover: the ink turns over on its spring, in steps, and lands on the dark ink
+    h.v.stand.style = PlayerStyle::Fill;
+    h.v.expand.to(1.0);
+    h.v.follow_ink(false);
     assert_eq!(h.v.ink.target(), 1.0);
     assert!(h.v.ink.at01() < 0.5 && h.v.moving(), "it has not flipped yet");
     h.run(60.0);
@@ -324,6 +338,7 @@ fn the_ink_glides_when_the_body_turns_light_or_dark_and_lands_at_once_while_nobo
     assert_eq!(h.v.ink.at01(), 1.0);
     // nobody looks (the window is hidden): it lands without a frame
     h.v.on_hide(&mut h.cx);
-    h.v.take_settings(&settings("dark"));
+    h.v.expand.jump(0.0);
+    h.v.follow_ink(true);
     assert_eq!((h.v.ink.at01(), h.v.ink.moving()), (0.0, false));
 }
