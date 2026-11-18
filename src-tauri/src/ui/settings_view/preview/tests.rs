@@ -1017,10 +1017,12 @@ fn stage_of(t: &T) -> Rect {
     Rect::new(p.x + 16.0, p.y + 48.0, PV_W - 32.0, t.v.borrow().pv.stage_h.at())
 }
 
-/// Opaque black (the body of an island) or the widget's body inside `r`: the folded capsule is in the colour of the cover, and the sandbox's track
-/// has none (its accent, a blue, tints it), so that its calm dark blue counts too (about rgb(22, 49, 73); the stage's own backdrop is another one); the open card is near black (the island's card colour, #0f0f0f).
+/// Opaque black (the body of an island) or the widget's body inside `r`: the folded capsule runs from the cover's deep tone into near black, and the
+/// sandbox's track has no cover (its accent, a blue, tints it), so the saturated blues of that ramp count too (the stage's own backdrop is another colour);
+/// the open card is near black (the island's card colour, #0f0f0f).
 fn black_in(img: &Image, r: Rect) -> usize {
-    img.count(Some(r), |px| px[3] == 255 && (px[0].max(px[1]).max(px[2]) < 20 || ((px[0] as i32 - 22).abs() <= 9 && (px[1] as i32 - 49).abs() <= 10 && (px[2] as i32 - 73).abs() <= 12)))
+    // the ramp's blues are saturated and darker than any backdrop of the sketch (about rgb(22, 98, 169) down to rgb(6, 25, 44))
+    img.count(Some(r), |px| px[3] == 255 && (px[0].max(px[1]).max(px[2]) < 20 || (px[2] as i32 - px[0] as i32 >= 36 && px[1] as i32 - px[0] as i32 >= 14)))
 }
 
 /// The black of the stage in its four quarters: (top left, top right, bottom left, bottom right).

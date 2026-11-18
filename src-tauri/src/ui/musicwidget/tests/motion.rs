@@ -484,6 +484,35 @@ fn strip_sheets() {
     });
 }
 
+/// The owner's own case at the owner's screen (100%: the strip 32 px tall), 6x for a person to judge pixels: a yellow cover (the screenshot) and a
+/// teal, a red, a near-black, a near-white and a grey one, «Утро» / «Дайте танк (!)» at 80 %, at the three heights (`u-<h>.png`).
+/// `PILL_SNAP_DIR=<dir> cargo test --locked --bin pill strip_user_case`.
+#[test]
+fn strip_user_case() {
+    let Some(d) = dir() else { return };
+    gfx(move || {
+        let _m = motion_on();
+        let covers: [(&str, [u8; 4], [u8; 4], &str); 6] = [
+            ("yellow", [250, 215, 60, 255], [240, 190, 40, 255], "#fad73c"),
+            ("teal", [70, 100, 110, 255], [20, 34, 44, 255], "#3a7080"),
+            ("red", [200, 50, 70, 255], [90, 20, 40, 255], "#cc3246"),
+            ("black", [14, 14, 16, 255], [6, 6, 8, 255], "#0e0e10"),
+            ("white", [244, 242, 238, 255], [226, 224, 220, 255], "#f4f2ee"),
+            ("grey", [120, 120, 124, 255], [96, 96, 100, 255], "#78787c"),
+        ];
+        for (name, bar) in [("56", None), ("40", Some(48.0f32)), ("32", Some(40.0))] {
+            let t: Vec<Image> = covers
+                .iter()
+                .map(|(_, a, b, acc)| {
+                    let u = art(*a, *b);
+                    zoom(&folded_tile(&Folded { extra: json!({}), title: "Утро", artist: "Дайте танк (!)", url: Some(&u), accent: acc, bar, pos: 160_000, known: 32, ..Default::default() }), 3)
+                })
+                .collect();
+            crate::ui::host::testing::save_png(&sheet(&t, 2), d.join(format!("u-{name}.png")));
+        }
+    });
+}
+
 /// A track nothing is measured of has a calm thin line for its progress in the strip, not a row of dots; once it is measured the bars are bars.
 #[test]
 fn an_unmeasured_track_shows_a_thin_line_and_a_measured_one_shows_bars_in_the_strip() {
