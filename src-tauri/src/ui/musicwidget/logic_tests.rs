@@ -240,7 +240,7 @@ fn the_capsule_parts_fit_every_bar() {
         }
         assert!(l.cover.h >= 14.0 - 1.0 / scale && l.cover.h <= cap.h - 6.0, "{tag}: a small cover with room round it");
         assert!(l.btn[0].right() <= l.btn[1].x + 0.01 && l.btn[1].right() <= l.btn[2].x + 0.01, "the buttons do not overlap");
-        assert!(l.cover.right() < l.text.x && l.text.right() <= l.btn[0].x && l.text.w > 100.0, "{tag}: one line of text between the cover and the buttons: {:?}", l.text);
+        assert!(l.cover.right() < l.text.x && l.text.right() <= l.btn[0].x && l.text.w > 90.0, "{tag}: one line of text between the cover and the buttons: {:?}", l.text);
         // the progress is a mini waveform between the text and the buttons, or it is gone
         if l.bar.h > 0.0 {
             assert!(l.bar.x >= l.text.right() && l.bar.right() <= l.btn[0].x && l.bar.y >= cap.y && l.bar.bottom() <= cap.bottom(), "{tag}: {:?}", l.bar);
@@ -262,11 +262,15 @@ fn in_a_strip_the_cover_leads_the_buttons_are_one_family_and_the_text_keeps_its_
         assert!(l.cover.h >= l.btn[1].h + 2.0 - tol, "{tag}: the cover {} over the disc {}", l.cover.h, l.btn[1].h);
         assert!(l.btn[0].h >= 0.8 * l.btn[1].h - tol && l.btn[0].h <= l.btn[1].h + tol, "{tag}: side {} next to play {}", l.btn[0].h, l.btn[1].h);
         // room for the title and a good bit of the artist, and the waveform is whole bars of at least 2 device px
-        assert!(l.text.w >= 134.0, "{tag}: the text has {} px", l.text.w);
-        let n = wave_n(h) as f32;
-        assert!(l.bar.w / (2.0 * n - 1.0) * k >= 2.0 - 0.01, "{tag}: bars of {} device px", l.bar.w / (2.0 * n - 1.0) * k);
-        // the same gap on both sides of the waveform and between the cover and the text
+        assert!(l.text.w >= 100.0, "{tag}: the text has {} px", l.text.w);
+        // the progress is ONE line of a fixed length (whole device px), the same gap on both sides of it
+        assert!((l.bar.w * k - (44.0 * k).round()).abs() < 0.01, "{tag}: the line is {} device px", l.bar.w * k);
         assert!(((l.bar.x - l.text.right()) - (l.btn[0].x - l.bar.right())).abs() <= tol, "{tag}");
+        // everything stands on whole device px: the cover, the buttons, the line, and previous / next are of one size
+        for r in [l.cover, l.btn[0], l.btn[1], l.btn[2], l.bar] {
+            assert!((r.x * k - (r.x * k).round()).abs() < 0.01 && (r.w * k - (r.w * k).round()).abs() < 0.01, "{tag}: {r:?} is not on whole px");
+        }
+        assert!(l.btn[0].w == l.btn[2].w && l.btn[0].h == l.btn[2].h, "{tag}: previous and next are one size");
     }
     // the full height is the one the owner already accepted: 40 / 33 / 43 of 56 (each one device px less when the margins would be uneven)
     let l = capsule_layout(Rect::new(0.0, 0.0, CAP_W, CAPSULE_H), 1.0);
@@ -627,14 +631,20 @@ fn the_text_is_one_line_in_the_cards_size_scaled_with_the_capsule_and_the_wavefo
 
 #[test]
 fn the_waveform_is_a_strip_of_two_px_bars_with_equal_gaps_between_the_text_and_the_buttons() {
-    for (h, k) in [(CAPSULE_H, 1.0f32), (CAPSULE_H, 2.0), (48.0, 1.0), (48.0, 1.25), (40.0, 1.5), (32.0, 1.0)] {
-        let c = Rect::new(0.0, 0.0, if h < CAPSULE_H { BAR_FOLD_W } else { CAP_W }, h);
+    for (h, k) in [(CAPSULE_H, 1.0f32), (CAPSULE_H, 2.0), (48.0, 1.0), (48.0, 1.25)] {
+        let c = Rect::new(0.0, 0.0, CAP_W, h);
         let l = capsule_layout(c, k);
         let n = wave_n(h) as f32;
         let bw = l.bar.w / (2.0 * n - 1.0);
-        assert!(bw >= 1.0 - 0.01 && bw <= 2.0 + 0.01, "{h}@{k}: a thin bar: {bw}");
+        assert!(bw * k >= 2.0 - 0.01 && bw <= 2.0 + 0.01, "{h}@{k}: a thin bar: {bw}");
         assert!(l.bar.h > 0.0 && l.bar.h <= h - 8.0 && ((l.bar.y - c.y) - (c.bottom() - l.bar.bottom())).abs() < 0.01, "{h}@{k}: centred: {:?}", l.bar);
         assert!(l.text.right() < l.bar.x && l.bar.right() < l.btn[0].x, "{h}@{k}: text, waveform, buttons in a row");
         assert!(((l.bar.x - l.text.right()) - (l.btn[0].x - l.bar.right())).abs() < 1.0 / k + 0.01, "{h}@{k}: the same room on both sides");
+    }
+    // a strip has a line in the same place, not bars
+    for (h, k) in [(40.0f32, 1.5f32), (32.0, 1.0), (31.0, 1.0)] {
+        let l = capsule_layout(Rect::new(0.0, 0.0, BAR_FOLD_W, h), k);
+        assert!(l.bar.h > 0.0 && ((l.bar.y) - (h - l.bar.bottom())).abs() < 1.0 / k + 0.01 && l.bar.w * k >= 40.0, "{h}@{k}: a line: {:?}", l.bar);
+        assert!(l.text.right() < l.bar.x && l.bar.right() < l.btn[0].x, "{h}@{k}: text, line, buttons in a row");
     }
 }

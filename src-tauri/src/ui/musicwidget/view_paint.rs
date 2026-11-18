@@ -104,11 +104,13 @@ fn fill_pair(th: &Theme, tint: Option<(Color, Color)>, accent: Color) -> (Color,
     (css::mix(fa, 84.0, th.card), css::mix(fb, 70.0, th.card))
 }
 
-/// The folded capsule's own, much calmer body: the cover's first colour mixed in at [`SOFT_TINT`] % over the card colour, running top to bottom into a
-/// hardly darker version of the same hue (no sweep through a second colour, no diagonal: a wide diagonal ramp of a few levels shows as slanting
-/// bands). The open card's fill style keeps its strong pair (`fill_pair`).
-const SOFT_TINT: f32 = 34.0;
-const SOFT_DARKEN: f32 = 0.08;
+/// The folded capsule's body: a soft gradient from the cover's own colour at the cover's end (left) into near black at the far end (right), eased
+/// ([`ease_stops`]) so it has no seam. The left stop is a deep, clean tone of the cover's hue, never lighter than [`BODY_LUMA`], so the light ink
+/// reads on it for ANY cover (a pale cover gives a mid grey, a yellow one a deep amber). The open card's fill style keeps its strong pair
+/// (`fill_pair`).
+const BODY_LUMA: f32 = 0.16;
+/// How much of the left stop is left at the right end (a hair of the cover's hue in the black).
+const BODY_TAIL: f32 = 0.07;
 
 /// The relative luminance of a colour, 0 (black) .. 1 (white).
 fn luma(c: Color) -> f32 {
@@ -116,12 +118,52 @@ fn luma(c: Color) -> f32 {
     0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
 }
 
-fn soft_pair(th: &Theme, tint: Option<(Color, Color)>, accent: Color) -> (Color, Color) {
-    let c = tint.map_or(accent, |t| t.0);
-    // on a dark card a pale cover would wash the body into a dirty grey: its share eases off as the cover gets lighter
-    let pct = if th.dark { SOFT_TINT * (1.0 - 0.45 * luma(c).sqrt()) } else { SOFT_TINT };
-    let a = css::mix(c, pct, th.card);
-    (a, a.mix(Color::rgb8(0, 0, 0), SOFT_DARKEN))
+/// (hue in degrees, saturation, value) of a colour (HSV: a near white or near black cover keeps its tiny chroma instead of getting it blown up).
+fn to_hsv(c: Color) -> (f32, f32, f32) {
+    let (mx, mn) = (c.r.max(c.g).max(c.b), c.r.min(c.g).min(c.b));
+    let d = mx - mn;
+    if d < 1e-4 {
+        return (0.0, 0.0, mx);
+    }
+    let h = if mx == c.r { ((c.g - c.b) / d).rem_euclid(6.0) } else if mx == c.g { (c.b - c.r) / d + 2.0 } else { (c.r - c.g) / d + 4.0 };
+    (h * 60.0, d / mx, mx)
+}
+
+fn from_hsv(h: f32, s: f32, v: f32) -> Color {
+    let f = |n: f32| {
+        let k = (n + h / 60.0).rem_euclid(6.0);
+        v - v * s * k.min(4.0 - k).clamp(0.0, 1.0)
+    };
+    Color::rgba(f(5.0), f(3.0), f(1.0), 1.0)
+}
+
+/// The deep tone of a cover colour the body starts with: the same hue (a dark yellow looks olive, so yellows turn a little toward amber), the
+/// saturation kept (a touch more), the brightness lowered until the colour is no brighter than [`BODY_LUMA`] (and never a black hole: a dark cover
+/// gets a hair of brightness, its faint hue faded out).
+fn deep(c: Color) -> Color {
+    let (h, s, v) = to_hsv(c);
+    let bump = ((h - 35.0) / 10.0).clamp(0.0, 1.0).min(((85.0 - h) / 20.0).clamp(0.0, 1.0));
+    let (h, s) = (h - 9.0 * bump, (s * 1.1).min(0.95) * (v / 0.2).min(1.0));
+    let mut v = v.clamp(0.22, 0.8);
+    while v > 0.08 && luma(from_hsv(h, s, v)) > BODY_LUMA {
+        v -= 0.01;
+    }
+    from_hsv(h, s, v)
+}
+
+pub(super) fn soft_pair(_th: &Theme, tint: Option<(Color, Color)>, accent: Color) -> (Color, Color) {
+    let a = deep(tint.map_or(accent, |t| t.0));
+    (a, a.mix(Color::rgb8(0, 0, 0), 1.0 - BODY_TAIL))
+}
+
+/// The gradient's stops from `ca` to `cb`: five of them on a curve that eases from the straight line (`ease` 0, the card's own) to a smoothstep
+/// (`ease` 1, the capsule: the cover's colour holds for a while at its end, then falls softly into the dark with no seam at either end).
+fn ease_stops(ca: Color, cb: Color, ease: f32, fk: f32) -> [(f32, Color); 5] {
+    std::array::from_fn(|i| {
+        let t = i as f32 / 4.0;
+        let w = t + (t * t * (3.0 - 2.0 * t) - t) * ease;
+        (t, ca.mix(cb, w).fade(fk))
+    })
 }
 
 /// The WCAG contrast of two colours.
@@ -141,6 +183,9 @@ pub(super) fn body_mid(th: &Theme, tint: Option<(Color, Color)>, accent: Color, 
 /// capsule's text is small and half of it is muted, so the dark ink is chosen as soon as it reads 1.3 times better than the light one (a
 /// luminance of about 0.22): the title keeps at least 3.6:1 (light ink) / 4.7:1 (dark ink) on every tint.
 pub(super) fn ink_target(th: &Theme, tint: Option<(Color, Color)>, accent: Color, strong: bool) -> f32 {
+    if !strong {
+        return 0.0; // the folded capsule's body is always dark (the cover's deep tone into black): the light ink
+    }
     let body = body_mid(th, tint, accent, strong);
     (contrast(INK_DARK, body) >= 1.31 * contrast(INK_LIGHT, body)) as u8 as f32
 }
@@ -181,7 +226,7 @@ impl Ink<'_> {
         let thc = self.themed(ink, fk);
         let th = &thc;
         // the ramp of the folded capsule is vertical; it swings to the card's own diagonal as it opens
-        self.card_bg(cv, fk, fill, 118.0 + 62.0 * cap);
+        self.card_bg(cv, fk, fill, cap);
         if st.style == PlayerStyle::Mirror && !self.hc && self.cap.h >= REFL_MIN_H {
             // the cover's reflections belong to the open card (the folded capsule is one clean colour): they spread out of the cover as it opens
             let r = &pt.refl;
@@ -239,13 +284,14 @@ impl Ink<'_> {
     }
 
     /// The colour of the fill gradient (`card_bg`, 118 degrees across the body) at the point `q`.
-    fn body_at(&self, q: (f32, f32), (ca, cb): (Color, Color)) -> Color {
-        let t = 118.0f32.to_radians();
+    fn body_at(&self, q: (f32, f32), (ca, cb): (Color, Color), cap: f32) -> Color {
+        let t = (118.0 - 28.0 * cap).to_radians();
         let (sx, sy) = (t.sin(), -t.cos());
         let b = self.body;
         let half = (b.w * sx.abs() + b.h * sy.abs()) / 2.0;
         let c = b.center();
-        ca.mix(cb, (0.5 + ((q.0 - c.0) * sx + (q.1 - c.1) * sy) / (2.0 * half.max(1.0))).clamp(0.0, 1.0))
+        let t = (0.5 + ((q.0 - c.0) * sx + (q.1 - c.1) * sy) / (2.0 * half.max(1.0))).clamp(0.0, 1.0);
+        ca.mix(cb, t + (t * t * (3.0 - 2.0 * t) - t) * cap)
     }
 
     /// The theme the card's text is drawn with: it turns to `ink` as the fill tint comes in (`PlayerFx::themed`).
@@ -259,7 +305,7 @@ impl Ink<'_> {
 
     /// The Home card's background over the whole body (the capsule's too): the cover's gradient over the card colour, else a tinted corner glow of
     /// the accent; the whole tint (`fk` of it) on the fill style and the folded capsule. The recipe is the card's, its rectangle is the body, so it grows with the shape.
-    fn card_bg(&self, cv: &Canvas, fk: f32, (ca, cb): (Color, Color), deg: f32) {
+    fn card_bg(&self, cv: &Canvas, fk: f32, (ca, cb): (Color, Color), cap: f32) {
         let (th, b, rad) = (self.th, self.body, self.rad);
         cv.fill_rr(b, rad, th.card);
         if self.hc {
@@ -273,7 +319,7 @@ impl Ink<'_> {
             draw::radial(cv, b, rad, (b.x, b.y), b.w * 1.3, b.h * 1.5, &[(0.0, mixed), (0.72, th.card), (1.0, th.card)]);
         }
         if fk > 0.004 {
-            draw::linear_deg(cv, b, rad, deg, &[(0.0, ca.fade(fk)), (1.0, cb.fade(fk))]);
+            draw::linear_deg(cv, b, rad, 118.0 - 28.0 * cap, &ease_stops(ca, cb, cap, fk));
         }
     }
 
@@ -283,7 +329,7 @@ impl Ink<'_> {
     fn mini_wave(&self, cv: &Canvas, r: Rect, track: Color, fill: Color) {
         let n = lg::wave_n(self.cap.h);
         let bars = squash(&self.heights, &self.known, n);
-        if !bars.iter().any(|b| b.1) {
+        if self.cap.h < lg::STRIP_H || !bars.iter().any(|b| b.1) {
             return self.mini_line(cv, r, track, fill);
         }
         let gap = r.w / (2 * n - 1) as f32;
@@ -314,7 +360,7 @@ impl Ink<'_> {
         let h = if (r.h * k).round() as i32 % 2 == 0 { 2.0 } else { 3.0 } / k;
         let line = Rect::new(r.x, r.cy() - h / 2.0, r.w, h);
         cv.fill_rr(line, h / 2.0, track.fade(0.8));
-        let w = (r.w * self.frac.clamp(0.0, 1.0)).max(if self.frac > 0.0 { h } else { 0.0 });
+        let w = ((r.w * self.frac.clamp(0.0, 1.0) * k).round() / k).max(if self.frac > 0.0 { h } else { 0.0 });
         if w > 0.0 {
             cv.fill_rr(Rect::new(r.x, line.y, w, h), h / 2.0, fill);
         }
@@ -363,6 +409,7 @@ impl Ink<'_> {
     /// that is cut has a faded end. The old text rises away and the new one rises in, the artist a beat later.
     fn capsule_text(&self, cv: &Canvas, th: &Theme, muted: Color, r: Rect) {
         let size = lg::capsule_text_size(self.cap.h);
+        let k = self.st.bs();
         // soft: a medium title and a regular artist, the title a touch under the full ink (a white 600 on a dark body glares at this size)
         let (ts, ss) = (Style::new(size, 500), Style::new(size, 400));
         let title_ink = th.text.fade(0.9);
@@ -371,9 +418,11 @@ impl Ink<'_> {
             let sub = if s.is_empty() { String::new() } else { format!("\u{b7} {s}") };
             let (wt, wa) = (cv.text_width(h, ts), if sub.is_empty() { 0.0 } else { cv.text_width(&sub, ss) });
             let (hw, subp) = lg::bar_line(r.w, wt, wa);
-            cv.with_opacity(kh, |cv| faded(cv, Rect::new(r.x, r.y + d.0, hw.ceil() + 1.0, r.h).intersect_w(r.w), h, ts, title_ink));
+            // in a strip the line is centred in its room (equal gaps to the cover and to the progress line), on a whole device px
+            let dx = if self.cap.h < lg::STRIP_H { (((r.w - subp.map_or(hw, |(sx, sw)| sx + sw)) / 2.0).max(0.0) * k).floor() / k } else { 0.0 };
+            cv.with_opacity(kh, |cv| faded(cv, Rect::new(r.x + dx, r.y + d.0, hw.ceil() + 1.0, r.h).intersect_w(r.w - dx), h, ts, title_ink));
             if let Some((sx, sw)) = subp {
-                cv.with_opacity(ks, |cv| faded(cv, Rect::new(r.x + sx, r.y + d.1, sw.ceil() + 1.0, r.h).intersect_w(r.w - sx), &sub, ss, muted));
+                cv.with_opacity(ks, |cv| faded(cv, Rect::new(r.x + dx + sx, r.y + d.1, sw.ceil() + 1.0, r.h).intersect_w(r.w - dx - sx), &sub, ss, muted));
             }
         };
         for g in self.ghosts {
@@ -392,7 +441,7 @@ impl Ink<'_> {
         let c = r.center();
         match b {
             Btn::Prev | Btn::Next => {
-                let ir = r.centered(r.w * 0.64, r.w * 0.64);
+                let ir = glyph_rect(r, 0.64, self.st.bs(), (4.0, 2.0, 2.0), look.cap);
                 let kick = if b == Btn::Prev { self.kick[0] } else { self.kick[1] };
                 cv.with_scale_about(c, 1.0 - 0.06 * q, |cv| {
                     // the island's hover disc: 14 px round a 28 px button
@@ -401,11 +450,11 @@ impl Ink<'_> {
                 });
             }
             Btn::Play => {
-                let ir = r.centered(r.w * 0.56, r.w * 0.56);
+                let ir = glyph_rect(r, 0.56, self.st.bs(), (12.0, 0.0, 1.0), look.cap);
                 let (bg, fg) = if th.dark { (Color::rgb8(255, 255, 255), Color::rgb8(0, 0, 0)) } else { (Color::rgb8(0x15, 0x15, 0x15), Color::rgb8(255, 255, 255)) };
                 let mir = (self.st.style == PlayerStyle::Mirror) as u8 as f32 * (1.0 - look.cap);
                 let (bg, fg) = (bg.mix(look.ink, look.fk).mix(Color::rgba(0.0, 0.0, 0.0, 0.52), mir), fg.mix(look.inv, look.fk).mix(Color::rgb8(255, 255, 255), mir));
-                let fg = fg.mix(self.body_at(c, look.fill), look.cap);
+                let fg = fg.mix(self.body_at(c, look.fill, look.cap), look.cap);
                 let s = (1.0 - 0.06 * q) * (1.0 + 0.06 * h);
                 cv.with_scale_about(c, s, |cv| {
                     cv.fill_circle(c, r.w / 2.0, bg);
@@ -420,6 +469,24 @@ impl Ink<'_> {
             }
         }
     }
+}
+
+/// The square of a button's glyph on WHOLE device px, so its edges are crisp: `share` of the button, its size `a * n + b` device px (`n` at least `lo`)
+/// and its corner on a whole pixel. Previous / next: 4n + 2 (their bar then stands on a pixel's middle, one clean pixel line, the same for both);
+/// play / pause: a multiple of 12 (the pause bars' edges fall on whole pixels). Only the folded capsule is snapped (`cap` 1): as it opens the glyph
+/// glides back to the free size, so nothing steps while the shape moves.
+fn glyph_rect(r: Rect, share: f32, k: f32, (a, b, lo): (f32, f32, f32), cap: f32) -> Rect {
+    let free = r.centered(r.w * share, r.w * share);
+    let m = ((cap - 0.9) / 0.1).clamp(0.0, 1.0);
+    if m <= 0.0 {
+        return free;
+    }
+    let n = ((r.w * share * k - b) / a).round().max(lo);
+    let sp = a * n + b;
+    let at = |v: f32, len: f32| ((v + (len - sp / k) / 2.0) * k).round() / k;
+    let (x, y, s) = (at(r.x, r.w), at(r.y, r.h), sp / k);
+    let l = |f: f32, g: f32| f + (g - f) * m;
+    Rect::new(l(free.x, x), l(free.y, y), l(free.w, s), l(free.h, s))
 }
 
 /// The smallest capsule (a bar's strip) that still has the reflections: below it there is no room for them to read as anything.
