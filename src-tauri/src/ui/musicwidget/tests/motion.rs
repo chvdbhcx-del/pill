@@ -500,41 +500,72 @@ fn strip_user_case() {
             ("white", [244, 242, 238, 255], [226, 224, 220, 255], "#f4f2ee"),
             ("grey", [120, 120, 124, 255], [96, 96, 100, 255], "#78787c"),
         ];
-        for (name, bar) in [("56", None), ("40", Some(48.0f32)), ("32", Some(40.0))] {
-            let t: Vec<Image> = covers
-                .iter()
-                .map(|(_, a, b, acc)| {
-                    let u = art(*a, *b);
-                    zoom(&folded_tile(&Folded { extra: json!({}), title: "Утро", artist: "Дайте танк (!)", url: Some(&u), accent: acc, bar, pos: 160_000, known: 32, ..Default::default() }), 3)
-                })
-                .collect();
-            crate::ui::host::testing::save_png(&sheet(&t, 2), d.join(format!("u-{name}.png")));
+        // `u-<h>.png`: the loudness measured; `n-<h>.png`: nothing measured (the placeholder bars)
+        for (tag, known) in [("u", 32usize), ("n", 0)] {
+            for (name, bar) in [("56", None), ("40", Some(48.0f32)), ("32", Some(40.0))] {
+                let t: Vec<Image> = covers
+                    .iter()
+                    .map(|(_, a, b, acc)| {
+                        let u = art(*a, *b);
+                        zoom(&folded_tile(&Folded { extra: json!({}), title: "Утро", artist: "Дайте танк (!)", url: Some(&u), accent: acc, bar, pos: 160_000, known, ..Default::default() }), 3)
+                    })
+                    .collect();
+                crate::ui::host::testing::save_png(&sheet(&t, 2), d.join(format!("{tag}-{name}.png")));
+            }
         }
     });
 }
 
-/// A track nothing is measured of has a calm thin line for its progress in the strip, not a row of dots; once it is measured the bars are bars.
+/// The strip's progress is crisp bars, measured or not: a track nothing is measured of gets the calm placeholder pattern (never a flat line of dots), a measured
+/// one its loudness; every bar is at least 4 px tall.
 #[test]
-fn an_unmeasured_track_shows_a_thin_line_and_a_measured_one_shows_bars_in_the_strip() {
+fn the_strip_shows_bars_for_a_measured_and_an_unmeasured_track_alike() {
     gfx(|| {
         let _m = motion_on();
         let teal = art([70, 100, 110, 255], [20, 34, 44, 255]);
-        let height_of_light = |known: usize, bar: Option<f32>| {
-            let (mut s, st) = folded_sim(&Folded { extra: json!({}), title: "Invented Song", artist: "Invented Band", url: Some(&teal), accent: "#3a7080", bar, known, ..Default::default() });
+        // (tallest, shortest) of the bars' columns in the strip's bar rect, the played bars only (they are the ones bright enough to count)
+        let heights = |known: usize, bar: Option<f32>| {
+            let (mut s, st) = folded_sim(&Folded { extra: json!({}), title: "Invented Song", artist: "Invented Band", url: Some(&teal), accent: "#3a7080", bar, known, pos: 160_000, ..Default::default() });
             let win = if bar.is_some() { lg::WIN_BAR_REAL } else { lg::WIN_REAL };
             let img = s.render(win, &Theme::pill_dark());
             let l = lg::capsule_layout_in(st, lg::body(st, 0.0, 0.0));
             let r = st.rect_to_real(l.bar);
             let light = |p: [u8; 4]| p[3] > 200 && p[0] as u32 + p[1] as u32 + p[2] as u32 > 3 * 90;
-            bounds_in(&img, r, light).map(|b| (b.3 - b.1, b.2 - b.0))
+            let mut cols = Vec::new();
+            for x in r.x as u32..r.right() as u32 {
+                let col = bounds_in(&img, Rect::new(x as f32, r.y, 1.0, r.h), light);
+                if let Some((_, y0, _, y1)) = col {
+                    cols.push(y1 - y0);
+                }
+            }
+            (cols.iter().copied().max().unwrap_or(0), cols.iter().copied().min().unwrap_or(0))
         };
-        // a strip draws the line for the progress, measured or not; the full height draws bars once they are measured
-        let (h, w) = height_of_light(0, Some(40.0)).expect("the played part of the line is drawn");
-        assert!(h <= 3 && w >= 4, "a thin line: {h} px tall, {w} wide");
-        let (h, _) = height_of_light(32, Some(40.0)).expect("the line is drawn");
-        assert!(h <= 3, "a strip keeps its line even when the track is measured: {h} px tall");
-        let (h, _) = height_of_light(32, None).expect("the bars are drawn");
-        assert!(h >= 6, "bars, not a line: {h} px tall");
+        for known in [0usize, 32] {
+            let (tall, short) = heights(known, Some(40.0));
+            assert!(tall >= 6, "{known}: bars in the strip, not a line: tallest {tall} px");
+            assert!(short >= 4, "{known}: no bar shorter than 4 px (no stubs): {short}");
+        }
+        let (h, _) = heights(32, None);
+        assert!(h >= 6, "bars at the full height: {h} px tall");
+    });
+}
+
+/// The strip's body is plain dark from a little past the middle: the pixels at 75 % and at 95 % of the capsule's width are the same dark, and the cover's
+/// end (20 %) is clearly lighter. Read on the row just under the top edge, where nothing but the body is drawn.
+#[test]
+fn the_strip_body_is_dark_from_a_little_past_the_middle() {
+    gfx(|| {
+        let _m = motion_on();
+        let yellow = art([250, 215, 60, 255], [240, 190, 40, 255]);
+        let (mut s, st) = folded_sim(&Folded { extra: json!({}), title: "Утро", artist: "Дайте танк (!)", url: Some(&yellow), accent: "#fad73c", bar: Some(40.0), known: 32, ..Default::default() });
+        let img = s.render(lg::WIN_BAR_REAL, &Theme::pill_dark());
+        let r = st.rect_to_real(lg::body(st, 0.0, 0.0));
+        let y = (r.y + 3.0) as u32;
+        let at = |q: f32| img.px((r.x + r.w * q) as u32, y);
+        let (a, b, c) = (at(0.2), at(0.75), at(0.95));
+        let lum = |p: [u8; 4]| p[0] as i32 + p[1] as i32 + p[2] as i32;
+        assert!((lum(b) - lum(c)).abs() <= 12, "plain dark from 75 % on: {b:?} vs {c:?}");
+        assert!(lum(a) > lum(b) + 60, "the cover's end is clearly lighter: {a:?} vs {b:?}");
     });
 }
 

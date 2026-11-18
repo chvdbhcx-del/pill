@@ -315,6 +315,22 @@ fn the_capsule_body_runs_from_a_clean_deep_tone_of_the_cover_into_black() {
     assert!((0.3..0.5).contains(&pale.r), "a pale cover gives a mid grey, not a glowing one: {pale:?}");
 }
 
+/// The folded body reaches its dark end a little past the middle, as the open card's does, and holds it to the far end; the open card spans the whole body.
+#[test]
+fn the_folded_body_is_plain_dark_from_a_little_past_the_middle_and_the_open_card_spans_the_whole_body() {
+    let (a, b) = (Color::rgb8(180, 120, 20), Color::rgb8(10, 10, 10));
+    assert!((0.55..=0.6).contains(&paint::BODY_END), "{}", paint::BODY_END);
+    let s = paint::ease_stops(a, b, 1.0, 1.0);
+    assert!(s[0].0 == 0.0 && (s[4].0 - paint::BODY_END).abs() < 1e-6 && s[5].0 == 1.0, "{s:?}");
+    assert!(s.windows(2).all(|w| w[0].0 <= w[1].0), "stops in order: {s:?}");
+    assert!((s[4].1.r - s[5].1.r).abs() < 1e-6 && (s[4].1.g - s[5].1.g).abs() < 1e-6, "dark from the end on: {s:?}");
+    // smooth: no step bigger than a third of the whole change between neighbouring stops (no seam)
+    let total = s[0].1.r - s[4].1.r;
+    assert!(s.windows(2).all(|w| (w[0].1.r - w[1].1.r).abs() <= total / 2.0 + 1e-4), "{s:?}");
+    let card = paint::ease_stops(a, b, 0.0, 1.0);
+    assert!((card[4].0 - 1.0).abs() < 1e-6, "the card's gradient spans the whole body: {card:?}");
+}
+
 #[test]
 fn the_ink_glides_when_the_body_turns_light_or_dark_and_lands_at_once_while_nobody_looks() {
     let _m = motion_on();
