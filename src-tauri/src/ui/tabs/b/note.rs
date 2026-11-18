@@ -162,6 +162,10 @@ pub struct NoteScreen {
     carry: f64,
     /// the island has been told that a field of this tab owns the keyboard
     kb: bool,
+    /// a note's text has been put into the editor (before that the caret has nothing to stand at the end of)
+    loaded: bool,
+    /// the user opened the tab before the note arrived: the caret goes to the end of it when it does
+    end_on_load: bool,
     settings_t: Option<Ticket>,
     /// the toast rises in and settles (soft overshoot); its opacity is the same flow held inside 0..1
     toast_t: Flow,
@@ -223,6 +227,8 @@ impl NoteScreen {
             visible: false,
             carry: 0.0,
             kb: false,
+            loaded: false,
+            end_on_load: false,
             settings_t: None,
             toast_t: Flow::new(0.0, Feel::FLOW),
             toast: (String::new(), false),
@@ -356,7 +362,13 @@ impl NoteScreen {
         let rest = route_effects(self.m.take_effects(), cx);
         for e in rest {
             match e {
-                Effect::SetEditorHtml(h) => self.ed.set_html(&h),
+                Effect::SetEditorHtml(h) => {
+                    self.ed.set_html(&h);
+                    self.loaded = true;
+                    if std::mem::take(&mut self.end_on_load) {
+                        self.ed.focus_end();
+                    }
+                }
                 Effect::EditorExec(c) => self.ed.exec(c),
                 Effect::Focus("note-editor") => self.ed.set_focused(true),
                 Effect::ScrollIntoView("note-chip") => self.chip_to_show = true,
@@ -417,8 +429,26 @@ impl View for NoteScreen {
         cx.request_frame();
     }
 
+    /// The user opened this tab on purpose (see `View::on_user_open`): the editor gets the caret at the end of the note, which takes the
+    /// keyboard (`sync_keyboard`) and keeps the island open while they type. Not on a hover open: that must not steal the keys.
+    fn on_user_open(&mut self, cx: &mut Cx) {
+        self.sync_cx(cx);
+        if !self.visible {
+            return;
+        }
+        if self.loaded {
+            self.ed.focus_end();
+        } else {
+            self.end_on_load = true;
+            self.ed.set_focused(true);
+        }
+        self.sync_keyboard();
+        cx.request_frame();
+    }
+
     fn on_hide(&mut self, cx: &mut Cx) {
         self.visible = false;
+        self.end_on_load = false;
         self.ed.set_focused(false);
         let calls = self.m.on_hide();
         self.calls.run(cx, calls);

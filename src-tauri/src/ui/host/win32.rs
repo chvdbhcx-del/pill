@@ -935,6 +935,17 @@ impl Host {
                 let attached = theirs != 0 && theirs != mine && AttachThreadInput(mine, theirs, true).as_bool();
                 let _ = SetForegroundWindow(hwnd);
                 let _ = SetFocus(hwnd);
+                if GetForegroundWindow() != hwnd {
+                    // Windows refused (the app in front is another process that does not let go: Electron, Chrome...): the keys would keep
+                    // going to it. The usual way round: a synthetic Alt press makes this thread "the last to get input", then ask again.
+                    keybd_event(VK_MENU.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
+                    let _ = SetForegroundWindow(hwnd);
+                    keybd_event(VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+                    if GetForegroundWindow() != hwnd {
+                        SwitchToThisWindow(hwnd, true);
+                    }
+                    let _ = SetFocus(hwnd);
+                }
                 if attached {
                     let _ = AttachThreadInput(mine, theirs, false);
                 }

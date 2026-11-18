@@ -220,6 +220,13 @@ impl Editor {
         }
     }
 
+    /// The caret at the very end of the note, and the editor focused (a tab opened on purpose).
+    pub fn focus_end(&mut self) {
+        let e = self.doc.end();
+        self.set_selection(e, e);
+        self.set_focused(true);
+    }
+
     pub fn take_out(&mut self) -> Vec<EdOut> {
         std::mem::take(&mut self.out)
     }

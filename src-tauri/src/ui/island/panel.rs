@@ -167,6 +167,9 @@ pub struct TabHost {
     pub dir: Option<TabDir>,
     /// the last `step` kept the frames coming only for an ambient animation of a tab (see `Cx::ambient_frame`)
     ambient: bool,
+    /// The current tab got `on_hide` because the island folded: when the panel opens again on the same tab it needs its `on_show`
+    /// (a tab that never saw it still thinks it is hidden: no ticks, no keyboard for its text field). `show` clears it.
+    pub parked: bool,
 }
 
 /// The sideways offset a view comes from when the switch goes in direction `dir` (it leaves towards the opposite side).
@@ -260,6 +263,7 @@ impl TabHost {
             }
         }
         self.cur = Some(id.to_string());
+        self.parked = false;
         self.dir = Some(dir);
         let reduced = cx.reduced_motion;
         if let Some(s) = self.slots.get_mut(id) {
@@ -277,6 +281,13 @@ impl TabHost {
                 s.a.jump(if here { 1.0 } else { 0.0 });
                 s.dx.jump(0.0);
             }
+        }
+    }
+
+    /// The user opened the tab `id` on purpose (`View::on_user_open`).
+    pub fn user_open(&mut self, id: &str, cx: &mut Cx) {
+        if let Some(s) = self.slots.get_mut(id) {
+            guarded(cx, |cx| s.view.on_user_open(cx));
         }
     }
 

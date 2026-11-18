@@ -752,6 +752,15 @@ impl View for ChatScreen {
         Response::redraw()
     }
 
+    /// The user opened the tab on purpose (`View::on_user_open`): the composer gets the caret, which takes the keyboard. The settings sheet,
+    /// when it is the open one, has its own fields: leave it alone.
+    fn on_user_open(&mut self, _cx: &mut Cx) {
+        if !self.set.visible() {
+            self.focus_field(Some(0));
+            self.sync_keyboard();
+        }
+    }
+
     fn on_hide(&mut self, cx: &mut Cx) {
         self.run(Action::ClickOutside, cx);
         self.focus_field(None);

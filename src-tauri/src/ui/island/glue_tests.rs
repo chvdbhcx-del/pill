@@ -1159,3 +1159,59 @@ fn high_contrast_drops_the_glass_and_follows_the_setting() {
     let v = g.v.borrow();
     assert!(v.core.shell.settings().op_exp() < 1.0 && v.core.shell.settings().island_color().is_none(), "Off gives the normal look back");
 }
+
+fn open_via(g: &mut G, tab: Option<&str>, via: &str) {
+    g.emit("pill:expand", json!({ "tab": tab, "via": via }));
+    let _ = g.draw();
+    g.settle(120);
+    let _ = g.draw();
+    g.settle(40);
+}
+
+fn fold(g: &mut G) {
+    g.emit("pill:collapse", json!({}));
+    let _ = g.draw();
+    g.settle(120);
+}
+
+#[test]
+fn the_notes_tab_takes_the_keyboard_when_the_user_opens_it_and_not_when_the_island_just_opens() {
+    // the island opens by itself (hover / edge: no explicit `via`) on the Notes tab: the keys stay with the app the user is typing in
+    let mut g = G::new();
+    let _ = g.sim.take_fx();
+    open_via(&mut g, Some("note"), "test");
+    assert_eq!(g.v.borrow().dbg_tab().as_deref(), Some("note"));
+    assert_ne!(g.sim.take_fx().focus, Some(true), "an automatic open must not steal the keyboard");
+    // the user presses the hotkey: the editor has the caret and the keyboard is taken
+    fold(&mut g);
+    let _ = g.sim.take_fx();
+    open_via(&mut g, None, "hotkey");
+    assert_eq!(g.sim.take_fx().focus, Some(true), "the hotkey reopened the Notes tab: the keyboard is the island's");
+    // folding gives it back; the SAME tab opened again on purpose takes it again (the tab was told it is shown once more)
+    fold(&mut g);
+    assert_eq!(g.sim.take_fx().focus, Some(false), "the keyboard went back when the island folded");
+    open_via(&mut g, None, "command");
+    assert_eq!(g.sim.take_fx().focus, Some(true), "a reopen on the same tab on purpose takes the keyboard again");
+    // and a plain reopen (hover) after that does not
+    fold(&mut g);
+    let _ = g.sim.take_fx();
+    open_via(&mut g, None, "test");
+    assert_ne!(g.sim.take_fx().focus, Some(true));
+}
+
+#[test]
+fn clicking_the_notes_tab_takes_the_keyboard() {
+    let mut g = G::new();
+    g.expand("home");
+    let _ = g.sim.take_fx();
+    let p = g.v.borrow().dbg_tab_center("note").expect("the Notes tab is in the strip");
+    click_at(&mut g, p);
+    g.settle(60);
+    assert_eq!(g.v.borrow().dbg_tab().as_deref(), Some("note"));
+    assert_eq!(g.sim.take_fx().focus, Some(true), "a click on the tab: the editor has the caret, the keyboard is taken");
+    // going back to another tab gives it back
+    let p = g.v.borrow().dbg_tab_center("home").unwrap();
+    click_at(&mut g, p);
+    g.settle(60);
+    assert_eq!(g.sim.take_fx().focus, Some(false), "leaving the tab hands the keyboard back");
+}
