@@ -4,12 +4,18 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+## [0.13.3] - 2026-11-18
+
+### Highlights
+- Answering Claude Code from the island now shows the whole question and every option, however long, and the Notes tab takes your typing when you open it on purpose. The small music widget got its taskbar look reworked: crisp frequency bars, a body that fades from the cover's colour into black.
+
 ### Fixed
 - The Notes tab (and Chat) take the keyboard when you open them on purpose (a tab click, the hotkey, the command bar): after the island had been folded once it ignored keys, so typing went to the app behind it. Opening by hovering still leaves your keyboard alone, and when Windows refuses to hand over the foreground the island retries.
 - The island's "Claude Code asks" card (answering from the island) shows the whole question and every option, however long: the question wraps over as many lines as it needs, the options sit side by side while each fits one line and otherwise stack one full-width button per option with its label wrapped, and the island and its window grow to the card (up to 60 % of the screen's height, then the text is cut with an ellipsis). Questions with 4 options are answered from the island too, and the answer goes back with Claude Code's own question and option text. The card is laid out for the window it has (a tall card is painted shorter, never cut off, while its window is still growing) and asks for its taller window before its first frame.
 
 ### Changed
-- Music widget capsule in the taskbar strip: softer text (medium title, regular artist, a touch under full white), a bigger cover with a smaller, more even set of buttons, every glyph on whole pixels (previous and next look the same), the progress one calm line with the title centred between the cover and the line, and the body fades from a clean deep tone of the cover's colour into black (a yellow cover is amber, a pale one grey, never muddy; the light text always reads on it).
+- Music widget capsule in the taskbar strip: softer text (medium title, regular artist, a touch under full white), a bigger cover with a smaller, more even set of buttons, every glyph on whole pixels (previous and next look the same), the progress a few crisp frequency bars (a calm dim pattern while the track is not measured yet) with the title centred between the cover and the bars, and the body fades from a clean deep tone of the cover's colour into black a little past the middle, like the open card's (a yellow cover is amber, a pale one grey, never muddy; the light text always reads on it).
+- The island's cards (the "Claude Code asks" card, notifications, activity) use lighter type: the title in medium weight, the second line regular, the buttons medium.
 
 ## [0.13.2] - 2026-11-17
 
