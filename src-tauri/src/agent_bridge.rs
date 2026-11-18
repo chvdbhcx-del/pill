@@ -29,7 +29,7 @@ const SCRIPT_NAME: &str = "answer-hook.ps1";
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     Permission,
-    /// AskUserQuestion with one single-choice question and 2-3 options
+    /// AskUserQuestion with one single-choice question and 2-4 options (the cleaned texts the card shows; the answer goes back with the originals)
     Question { question: String, options: Vec<String> },
 }
 
@@ -48,6 +48,11 @@ fn str_of<'a>(v: &'a Value, k: &str) -> Option<&'a str> {
     v.get(k).and_then(Value::as_str)
 }
 
+/// Longest question, option label and permission summary the card shows (the island wraps them; the cap only keeps a runaway payload bounded).
+const MAX_QUESTION: usize = 800;
+const MAX_LABEL: usize = 240;
+const MAX_SUMMARY: usize = 400;
+
 /// One line saying what is asked: the command, the file, the address...
 fn summary(tool: &str, input: &Value) -> String {
     let raw = match tool {
@@ -60,7 +65,7 @@ fn summary(tool: &str, input: &Value) -> String {
         "ExitPlanMode" => str_of(input, "plan"),
         _ => None,
     };
-    crate::agents::clean_text(raw.unwrap_or(""), 160)
+    crate::agents::clean_text(raw.unwrap_or(""), MAX_SUMMARY)
 }
 
 /// The hook's stdin JSON. None = not something to ask the island about (the hook then gets "no decision" at once).
@@ -77,11 +82,11 @@ pub fn parse_request(body: &[u8]) -> Option<Request> {
     let kind = if tool == "AskUserQuestion" {
         let qs = input.get("questions")?.as_array()?;
         let [q] = qs.as_slice() else { return None };
-        let opts: Vec<String> = q.get("options")?.as_array()?.iter().filter_map(|o| str_of(o, "label")).map(|l| crate::agents::clean_text(l, 80)).collect();
-        if q.get("multiSelect").and_then(Value::as_bool) == Some(true) || !(2..=3).contains(&opts.len()) || opts.iter().any(String::is_empty) || opts.len() != q["options"].as_array()?.len() {
+        let opts: Vec<String> = q.get("options")?.as_array()?.iter().filter_map(|o| str_of(o, "label")).map(|l| crate::agents::clean_text(l, MAX_LABEL)).collect();
+        if q.get("multiSelect").and_then(Value::as_bool) == Some(true) || !(2..=4).contains(&opts.len()) || opts.iter().any(String::is_empty) || opts.len() != q["options"].as_array()?.len() {
             return None;
         }
-        Kind::Question { question: crate::agents::clean_text(str_of(q, "question")?, 200), options: opts }
+        Kind::Question { question: crate::agents::clean_text(str_of(q, "question")?, MAX_QUESTION), options: opts }
     } else {
         Kind::Permission
     };
@@ -120,10 +125,14 @@ pub fn decide(req: &Request, choice: &str) -> Option<String> {
     match (&req.kind, choice) {
         (Kind::Permission, "allow") => decision(json!({ "behavior": "allow" })),
         (Kind::Permission, "deny") => decision(json!({ "behavior": "deny", "message": "Denied from the Pill island", "interrupt": false })),
-        (Kind::Question { question, options }, c) => {
-            let label = options.get(c.strip_prefix("opt:")?.parse::<usize>().ok()?)?;
+        (Kind::Question { options, .. }, c) => {
+            let i = c.strip_prefix("opt:")?.parse::<usize>().ok()?;
+            options.get(i)?;
+            // the answer names the question and the option exactly as Claude Code sent them, not the cleaned (flattened, capped) text of the card
+            let q = req.input.get("questions")?.get(0)?;
+            let (question, label) = (str_of(q, "question")?, str_of(q.get("options")?.get(i)?, "label")?);
             let mut input = req.input.clone();
-            input.as_object_mut()?.insert("answers".into(), json!({ question.as_str(): label }));
+            input.as_object_mut()?.insert("answers".into(), json!({ question: label }));
             decision(json!({ "behavior": "allow", "updatedInput": input }))
         }
         _ => None,
@@ -508,7 +517,7 @@ mod tests {
         assert!(parse_request(&json!({ "hook_event_name": "PreToolUse", "tool_name": "Bash" }).to_string().into_bytes()).is_none());
         assert!(parse_request(&json!({ "tool_input": {} }).to_string().into_bytes()).is_none(), "no tool name");
         let long = parse_request(&perm("Bash", json!({ "command": "x".repeat(1000) }))).unwrap();
-        assert_eq!(long.summary.chars().count(), 160);
+        assert_eq!(long.summary.chars().count(), MAX_SUMMARY);
     }
 
     #[test]
@@ -516,7 +525,8 @@ mod tests {
         let r = parse_request(&ask(labels(&["SQLite", "Postgres"]), false)).unwrap();
         assert_eq!(r.kind, Kind::Question { question: "Which db?".into(), options: vec!["SQLite".into(), "Postgres".into()] });
         assert!(parse_request(&ask(labels(&["a", "b", "c"]), false)).is_some());
-        assert!(parse_request(&ask(labels(&["a", "b", "c", "d"]), false)).is_none(), "too many buttons for a card");
+        assert!(parse_request(&ask(labels(&["a", "b", "c", "d"]), false)).is_some());
+        assert!(parse_request(&ask(labels(&["a", "b", "c", "d", "e"]), false)).is_none(), "AskUserQuestion has at most 4 options");
         assert!(parse_request(&ask(labels(&["only"]), false)).is_none());
         assert!(parse_request(&ask(labels(&["a", "b"]), true)).is_none(), "multi-select");
         assert!(parse_request(&ask(json!([{ "label": "" }, { "label": "b" }]), false)).is_none());
@@ -542,6 +552,21 @@ mod tests {
         assert_eq!((d["behavior"].as_str(), d["updatedInput"]["answers"]["Which db?"].as_str()), (Some("allow"), Some("\u{41f}\u{43e}\u{441}\u{442}\u{433}\u{440}\u{435}\u{441}")));
         assert_eq!(d["updatedInput"]["questions"][0]["question"], "Which db?", "the original input is kept");
         assert!(decide(&q, "opt:2").is_none() && decide(&q, "allow").is_none() && decide(&q, "opt:x").is_none());
+    }
+
+    #[test]
+    fn a_long_question_is_shown_whole_and_answered_with_its_original_text() {
+        let question = format!("First line\n{}", "Long question. ".repeat(40));
+        let long = "A very long option label. ".repeat(12);
+        let body = perm("AskUserQuestion", json!({ "questions": [{ "question": question, "multiSelect": false, "options": labels(&["a", &long, "c", "d"]) }] }));
+        let r = parse_request(&body).unwrap();
+        let Kind::Question { question: shown, options } = &r.kind else { panic!() };
+        assert!(shown.chars().count() > 200 && !shown.contains('\n') && options[1].chars().count() > 80, "shown whole and flattened");
+        let v: Value = serde_json::from_str(&decide(&r, "opt:1").unwrap()).unwrap();
+        assert_eq!(v["hookSpecificOutput"]["decision"]["updatedInput"]["answers"][question.as_str()], long.as_str(), "the key and the label are Claude Code's own text");
+        let huge = parse_request(&perm("AskUserQuestion", json!({ "questions": [{ "question": "q".repeat(5000), "options": labels(&[&"x".repeat(5000), "y"]) }] }))).unwrap();
+        let Kind::Question { question: q, options: o } = &huge.kind else { panic!() };
+        assert_eq!((q.chars().count(), o[0].chars().count()), (MAX_QUESTION, MAX_LABEL), "a runaway payload stays bounded");
     }
 
     #[test]

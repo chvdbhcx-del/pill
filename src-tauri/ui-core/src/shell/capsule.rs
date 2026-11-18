@@ -168,6 +168,8 @@ pub struct Shell<B: Backend, C: Clock> {
     // --- cards ---
     pub(super) cards: Cards,
     pub(super) carding: bool,
+    /// the OS frame height (css px) asked for while a card is up: grows to a tall card, back to `CARD_FRAME_H` when the frame is given back
+    pub(super) card_frame_h: f64,
     pub(super) card_gen: u64,
     pub(super) shown_card: u64,
     // --- settings bookkeeping ---
@@ -237,6 +239,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             panel_shown_at: f64::NEG_INFINITY,
             cards: Cards::new(),
             carding: false,
+            card_frame_h: CARD_FRAME_H,
             card_gen: 0,
             shown_card: 0,
             applied_layout: None,
@@ -535,6 +538,14 @@ impl<B: Backend, C: Clock> Shell<B, C> {
         if imp && d.abs() > 0.02 && !self.reduce() && !self.hidden {
             let c = self.liq_ctx();
             self.liq.impulse(d, &c);
+        }
+    }
+    /// A card taller than the card frame asks the OS for a taller one (the card, the cap above the body and a margin for its glow fit in it).
+    pub(super) fn grow_card_frame(&mut self) {
+        let need = (self.measure.1 / self.scale() + CAP_TOP + 24.0).ceil();
+        if need > self.card_frame_h {
+            self.card_frame_h = need;
+            self.invoke("pill_cards", json!({"on": true, "h": need}));
         }
     }
     pub(super) fn col_target(&self) -> Target {
@@ -1177,6 +1188,9 @@ impl<B: Backend, C: Clock> Shell<B, C> {
                 if self.state == PillState::Collapsed && !self.hidden {
                     self.retarget(false, None, Mode::Resize);
                 }
+                if self.carding {
+                    self.grow_card_frame();
+                }
             }
             Event::Character { side, legs } => {
                 let changed = side != self.char_side || legs != self.char_legs;
@@ -1270,6 +1284,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
                 }
                 CardEvent::FrameOff => {
                     self.carding = false;
+                    self.card_frame_h = CARD_FRAME_H;
                     self.invoke("pill_cards", json!({"on": false}));
                 }
             }

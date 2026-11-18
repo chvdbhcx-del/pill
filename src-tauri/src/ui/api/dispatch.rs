@@ -42,7 +42,7 @@ pub fn dispatch(app: &AppHandle, cmd: &str, v: &Value, caller: &str, body: Optio
         "pill_auto_hide" => ok(pill::pill_auto_hide(app.clone(), a.req("on")?)),
         "pill_monitors" => ok(pill::pill_monitors(app.clone())),
         "pill_set_gaze" => ok(pill::pill_set_gaze(a.req("on")?)),
-        "pill_cards" => ok(pill::pill_cards(app.clone(), a.req("on")?)),
+        "pill_cards" => ok(pill::pill_cards(app.clone(), a.req("on")?, a.opt("h")?)),
         "pill_desktop_fg" => ok(guard::pill_desktop_fg()),
         "pill_add_active_app" => ok(guard::pill_add_active_app(app.clone(), a.req("key")?)),
         "update_check" => ok(blk(updater::update_check(app.clone()))),

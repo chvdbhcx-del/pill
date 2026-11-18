@@ -1,7 +1,7 @@
 //! The "answer Claude Code from the island" cards (backend: `src/agent_bridge.rs`, setting `agents.answerFromIsland`, default off).
 //!
 //! * `agents:ask {id, kind, toolName, summary, question, options, project, ...}` -> an amber card: a permission request has Deny / Allow,
-//!   a question has one button per option (2-3). A button calls `agents_answer {id, choice}` (`allow`, `deny`, `opt:N`) and dismisses the
+//!   a question has one button per option (2-4). A button calls `agents_answer {id, choice}` (`allow`, `deny`, `opt:N`) and dismisses the
 //!   card (the island plays the leave; the pressed button stays lit while it goes). Quiet hours do not hold it back: the agent is blocked.
 //! * `agents:ask-gone {id}` (the user answered in the terminal) -> the same card id is replaced by a short "answered in the terminal" note.
 //!
@@ -36,11 +36,11 @@ pub fn ask(env: &dyn Env, p: &Value) -> Vec<LiveCmd> {
     let at = if proj.is_empty() { String::new() } else { format!(" · {proj}") };
     let tool = cut(&text_or_empty(p.get("toolName")), 24);
     let card = if text_or_empty(p.get("kind")) == "question" {
-        let q = cut(&text_or_empty(p.get("question")), 140);
+        let q = cut(&text_or_empty(p.get("question")), 800);
         let actions: Vec<CardAction> = p
             .get("options")
             .and_then(Value::as_array)
-            .map(|o| o.iter().take(3).enumerate().map(|(i, l)| CardAction::new(cut(&text(Some(l)), 32), ActionKind::White, answer(&id, &format!("opt:{i}")))).collect())
+            .map(|o| o.iter().take(4).enumerate().map(|(i, l)| CardAction::new(cut(&text(Some(l)), 240), ActionKind::White, answer(&id, &format!("opt:{i}")))).collect())
             .unwrap_or_default();
         if actions.len() < 2 {
             return Vec::new();
@@ -49,7 +49,7 @@ pub fn ask(env: &dyn Env, p: &Value) -> Vec<LiveCmd> {
             .icon(IconName::Sparkles)
             .actions(actions)
     } else {
-        let sub = cut(&text_or_empty(p.get("summary")), 120);
+        let sub = cut(&text_or_empty(p.get("summary")), 400);
         let icon = match tool.as_str() {
             "Bash" | "PowerShell" => IconName::Terminal,
             "Write" | "Edit" | "MultiEdit" | "NotebookEdit" | "Read" => IconName::File,
@@ -119,9 +119,24 @@ mod tests {
         let c = ask(&on(), &json!({ "id": "9", "kind": "question", "question": "Which database should we use?", "options": ["SQLite", "Postgres", "A very long option label that goes on and on"] }));
         let t = toast(&c);
         assert_eq!(t.body, CardBody::Text { title: "Which database should we use?".into(), sub: Some("Claude Code asks".into()) });
-        assert_eq!(t.actions.iter().map(|a| a.label.as_str()).collect::<Vec<_>>(), ["SQLite", "Postgres", "A very long option label that g…"]);
+        assert_eq!(t.actions.iter().map(|a| a.label.as_str()).collect::<Vec<_>>(), ["SQLite", "Postgres", "A very long option label that goes on and on"], "a long label is not cut");
         assert_eq!(t.actions[2].action, Action::invoke("agents_answer", json!({ "id": "9", "choice": "opt:2" })));
         assert!(ask(&on(), &json!({ "id": "9", "kind": "question", "question": "q", "options": ["only"] })).is_empty());
+    }
+
+    #[test]
+    fn a_long_question_and_four_long_options_are_kept_and_only_a_runaway_text_is_cut() {
+        let q = "Which of these approaches should we take for the new storage layer? ".repeat(8);
+        let long = "An option with a long explanation of what it does. ".repeat(3);
+        let c = ask(&on(), &json!({ "id": "9", "kind": "question", "question": q, "options": [long, "b", "c", "d", "e"] }));
+        let t = toast(&c);
+        assert_eq!(t.actions.len(), 4, "AskUserQuestion has at most 4 options");
+        assert_eq!(t.actions[0].label, long.trim());
+        let CardBody::Text { title, .. } = &t.body else { panic!() };
+        assert_eq!(title, q.trim());
+        let huge = ask(&on(), &json!({ "id": "9", "kind": "question", "question": "q".repeat(5000), "options": ["x".repeat(5000), "y"] }));
+        let t = toast(&huge);
+        assert_eq!((t.actions[0].label.encode_utf16().count(), t.actions[1].label.as_str()), (240, "y"));
     }
 
     #[test]

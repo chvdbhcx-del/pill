@@ -32,6 +32,8 @@ pub struct Ctx<'a> {
     pub eq: Option<[f32; 4]>,
     /// where the content's own entry motions stand (the flows of `fx.rs`)
     pub fx: Fx<'a>,
+    /// the tallest an event card may be (css px): 60 % of the work area
+    pub card_max_h: f32,
 }
 
 /// The card on screen as the flows of `fx.rs` have it right now.
@@ -229,47 +231,104 @@ pub struct CardLayout {
     /// heights of the title and the sub line inside `text` (a text card that needs two rows wraps them to several lines)
     pub title_h: f32,
     pub sub_h: f32,
+    /// the two-row layout: the painter cuts what does not fit its lines with an ellipsis
+    pub stacked: bool,
     pub buttons: Vec<Rect>,
 }
 
 /// The widest a card gets when its buttons go under the text (a one-row card stops at [`MAX_W`]).
 const STACK_W: f32 = 560.0;
 const TITLE_PITCH: f32 = 18.0;
+/// DirectWrite's line pitch of the 14 px title when it wraps (a one-line title is centred in an 18 px box)
+const TITLE_LINE: f32 = 20.0;
 const SUB_PITCH: f32 = 16.0;
+/// A card's tallest height (css px) when the screen is not known (the tests); the island passes 60 % of the work area.
+pub const CARD_MAX_H: f32 = 520.0;
 
-/// A text card whose text and buttons do not fit one row: the icon and the text (title up to 3 lines, sub up to 2) on top, the buttons in a row
-/// of their own under it, filling it (equal widths when every label fits its share, else the labels' own widths, shrunk when they must).
-fn stacked(title: &str, sub: Option<&str>, icon_w: f32, btn_ws: &[f32], m: &dyn Meter) -> CardLayout {
+/// How many lines `w` px of text take in `avail` px (8 % slack: a line breaks at a word, so it holds a little less than its width).
+fn lines_of(w: f32, avail: f32, max: f32) -> f32 {
+    (w / (avail * 0.92).max(1.0)).ceil().clamp(1.0, max)
+}
+
+/// `s` (`total` px wide on one line) cut with an ellipsis so that it fits `lines` lines of `w` px; as it is when it fits.
+pub fn clip_lines(s: &str, total: f32, w: f32, lines: f32) -> std::borrow::Cow<'_, str> {
+    let room = w * 0.92 * lines;
+    if total <= room {
+        return s.into();
+    }
+    let keep = ((s.chars().count() as f32) * (room / total)).floor() as usize;
+    let cut: String = s.chars().take(keep.saturating_sub(2).max(1)).collect();
+    format!("{}\u{2026}", cut.trim_end()).into()
+}
+
+/// The text of a stacked card cut to the lines it was given.
+fn fit_text<'s>(cv: &Canvas, lay: &CardLayout, s: &'s str, st: Style, w: f32, h: f32, pitch: f32) -> std::borrow::Cow<'s, str> {
+    if lay.stacked {
+        clip_lines(s, cv.text_width(s, st), w, h / pitch)
+    } else {
+        s.into()
+    }
+}
+
+/// A text card whose text and buttons do not fit one row: the icon and the text (the title and the sub line wrap to as many lines as they need) on
+/// top, the buttons under it: side by side while every label fits its share on one line, else one full-width button per option with its label
+/// wrapped (the button grows with its lines). The card never gets taller than `max_h`: the text gives lines up first, then the labels (the painter
+/// cuts what does not fit with an ellipsis).
+fn stacked(title: &str, sub: Option<&str>, icon_w: f32, btn_ws: &[f32], m: &dyn Meter, max_h: f32) -> CardLayout {
     let (pad_x, gap, bgap, top, mid, bot) = (20.0, 12.0, 8.0, 12.0, 10.0, 12.0);
     let lead = pad_x * 2.0 + icon_w + if icon_w > 0.0 { gap } else { 0.0 };
     let (tw, sw) = (m.w(title, TITLE) + 6.0, sub.map_or(0.0, |s| m.w(s, SUB) + 6.0));
     let n = btn_ws.len() as f32;
     let sum: f32 = btn_ws.iter().sum();
     let w = (lead + tw.max(sw).max(sum + bgap * (n - 1.0))).clamp(280.0, STACK_W);
-    let avail = w - lead;
-    // 8 % slack: a line breaks at a word, so it holds a little less than its width
-    let lines = |tw: f32, max: f32| (tw / (avail * 0.92)).ceil().clamp(1.0, max);
-    let (title_h, sub_h) = (TITLE_PITCH * lines(tw, 3.0), if sub.is_some() { SUB_PITCH * lines(sw, 2.0) } else { 0.0 });
+    let (avail, row_w) = (w - lead, w - 2.0 * pad_x);
+    let free = row_w - bgap * (n - 1.0);
+    let side = sum <= free;
+    let mut bl: Vec<f32> = if side { vec![1.0; btn_ws.len()] } else { btn_ws.iter().map(|b| lines_of(b - 32.0, row_w - 32.0, 8.0)).collect() };
+    let (mut tl, mut sl) = (lines_of(tw, avail, 40.0), if sub.is_some() { lines_of(sw, avail, 12.0) } else { 0.0 });
+    let btn_h = |l: f32| if l <= 1.0 { 32.0 } else { 16.0 + SUB_PITCH * l };
+    let total = |tl: f32, sl: f32, bl: &[f32]| {
+        let th_ = TITLE_LINE * tl + if sub.is_some() { 4.0 + SUB_PITCH * sl } else { 0.0 };
+        top + icon_w.max(th_) + mid + if side { 32.0 } else { bl.iter().map(|l| btn_h(*l)).sum::<f32>() + bgap * (n - 1.0) } + bot
+    };
+    while total(tl, sl, &bl) > max_h && (tl > 1.0 || sl > 1.0) {
+        if sl >= tl && sl > 1.0 {
+            sl -= 1.0;
+        } else if tl > 1.0 {
+            tl -= 1.0;
+        } else {
+            sl -= 1.0;
+        }
+    }
+    while total(tl, sl, &bl) > max_h && !side && bl.iter().any(|l| *l > 1.0) {
+        let i = (0..bl.len()).max_by(|a, b| bl[*a].total_cmp(&bl[*b])).unwrap_or(0);
+        bl[i] -= 1.0;
+    }
+    let (title_h, sub_h) = (TITLE_LINE * tl, SUB_PITCH * sl);
     let th_ = title_h + if sub.is_some() { 4.0 + sub_h } else { 0.0 };
     let row1 = icon_w.max(th_);
-    let h = top + row1 + mid + 32.0 + bot;
+    let h = total(tl, sl, &bl);
     let by = top + row1 + mid;
-    let row_w = w - 2.0 * pad_x;
-    let free = row_w - bgap * (n - 1.0);
-    let widths: Vec<f32> = if n == 1.0 {
-        vec![btn_ws[0].min(row_w)]
-    } else if btn_ws.iter().all(|b| *b <= free / n) {
-        vec![free / n; btn_ws.len()]
-    } else if sum <= free {
-        btn_ws.iter().map(|b| b + (free - sum) / n).collect()
-    } else {
-        btn_ws.iter().map(|b| b * free / sum).collect()
-    };
-    let mut bx = if n == 1.0 { w - pad_x - widths[0] } else { pad_x };
     let mut buttons = Vec::new();
-    for bw in widths {
-        buttons.push(Rect::new(bx, by, bw, 32.0));
-        bx += bw + bgap;
+    if !side {
+        let mut y = by;
+        for l in &bl {
+            buttons.push(Rect::new(pad_x, y, row_w, btn_h(*l)));
+            y += btn_h(*l) + bgap;
+        }
+    } else {
+        let widths: Vec<f32> = if n == 1.0 {
+            vec![btn_ws[0].min(row_w)]
+        } else if btn_ws.iter().all(|b| *b <= free / n) {
+            vec![free / n; btn_ws.len()]
+        } else {
+            btn_ws.iter().map(|b| b + (free - sum) / n).collect()
+        };
+        let mut bx = if n == 1.0 { w - pad_x - widths[0] } else { pad_x };
+        for bw in widths {
+            buttons.push(Rect::new(bx, by, bw, 32.0));
+            bx += bw + bgap;
+        }
     }
     CardLayout {
         w,
@@ -278,19 +337,20 @@ fn stacked(title: &str, sub: Option<&str>, icon_w: f32, btn_ws: &[f32], m: &dyn 
         text: Rect::new(lead - pad_x, top + (row1 - th_) / 2.0, avail, th_),
         title_h,
         sub_h,
+        stacked: true,
         buttons,
     }
 }
 
 pub fn layout_card(c: &lm::CardSpec, m: &dyn Meter) -> CardLayout {
-    layout_card_open(c, m, false)
+    layout_card_open(c, m, false, CARD_MAX_H)
 }
 
 /// `open`: only a phone card has one, its second row (hover / typing) is part of the card.
-pub fn layout_card_open(c: &lm::CardSpec, m: &dyn Meter, open: bool) -> CardLayout {
+pub fn layout_card_open(c: &lm::CardSpec, m: &dyn Meter, open: bool, max_h: f32) -> CardLayout {
     if let CardBody::Phone(p) = &c.body {
         let l = super::phonecard::layout(p, m, open);
-        return CardLayout { w: l.w, h: l.h, icon: l.avatar, text: l.text, title_h: TITLE_PITCH, sub_h: SUB_PITCH, buttons: l.buttons.to_vec() };
+        return CardLayout { w: l.w, h: l.h, icon: l.avatar, text: l.text, title_h: TITLE_PITCH, sub_h: SUB_PITCH, stacked: false, buttons: l.buttons.to_vec() };
     }
     let (pad_x, pad_y, gap) = (20.0, 8.0, 12.0);
     let btn_ws: Vec<f32> = c.actions.iter().map(|a| (m.w(&a.label, BTN) + 32.0).max(32.0)).collect();
@@ -325,7 +385,7 @@ pub fn layout_card_open(c: &lm::CardSpec, m: &dyn Meter, open: bool) -> CardLayo
     };
     let one_row = pad_x * 2.0 + icon_w + if icon_w > 0.0 { gap } else { 0.0 } + tw + if actions_w > 0.0 { gap + actions_w - 8.0 } else { 0.0 };
     if let (CardBody::Text { title, sub }, true) = (&c.body, one_row > MAX_W && !btn_ws.is_empty()) {
-        return stacked(title, sub.as_deref(), icon_w, &btn_ws, m);
+        return stacked(title, sub.as_deref(), icon_w, &btn_ws, m, max_h);
     }
     let w = one_row.clamp(160.0, MAX_W);
     let h = (pad_y * 2.0 + icon_w.max(th_).max(if actions_w > 0.0 { 32.0 } else { 0.0 })).max(48.0);
@@ -341,7 +401,7 @@ pub fn layout_card_open(c: &lm::CardSpec, m: &dyn Meter, open: bool) -> CardLayo
     buttons.reverse();
     let tx = pad_x + icon_w + if icon_w > 0.0 { gap } else { 0.0 };
     let tr = if buttons.is_empty() { w - pad_x } else { buttons[0].x - gap };
-    CardLayout { w, h, icon, text: Rect::new(tx, cy - th_ / 2.0, (tr - tx).max(0.0), th_), title_h: TITLE_PITCH, sub_h: SUB_PITCH, buttons }
+    CardLayout { w, h, icon, text: Rect::new(tx, cy - th_ / 2.0, (tr - tx).max(0.0), th_), title_h: TITLE_PITCH, sub_h: SUB_PITCH, stacked: false, buttons }
 }
 
 fn tone_colors(t: Tone, th: &Theme) -> (Color, Color) {
@@ -395,10 +455,11 @@ pub fn paint_card(cv: &Canvas, th: &Theme, gpu: &mut Gpu, c: &lm::CardSpec, lay:
     match &c.body {
         CardBody::Text { title, sub } => {
             // a card that needed two rows wraps its text (its lines are taller than one), else one line cut with an ellipsis
-            let wrapped = |st: Style, h: f32, one: f32| if h > one { Style { wrap: true, ellipsis: false, valign: VAlign::Top, ..st } } else { st };
-            cv.text(Rect::new(tr.x, tr.y, tr.w, lay.title_h), title, wrapped(TITLE, lay.title_h, TITLE_PITCH), th.text);
+            let wrapped = |st: Style, h: f32, one: f32| if lay.stacked || h > one { Style { wrap: true, ellipsis: false, valign: VAlign::Top, ..st } } else { st };
+            // what does not fit its lines is cut with an ellipsis (a card that grew to the screen's limit)
+            cv.text(Rect::new(tr.x, tr.y, tr.w, lay.title_h), &fit_text(cv, lay, title, TITLE, tr.w, lay.title_h, TITLE_LINE), wrapped(TITLE, lay.title_h, TITLE_PITCH), th.text);
             if let Some(s) = sub {
-                cv.text(Rect::new(tr.x, tr.y + lay.title_h + 4.0, tr.w, lay.sub_h), s, wrapped(SUB, lay.sub_h, SUB_PITCH), th.dim);
+                cv.text(Rect::new(tr.x, tr.y + lay.title_h + 4.0, tr.w, lay.sub_h), &fit_text(cv, lay, s, SUB, tr.w, lay.sub_h, SUB_PITCH), wrapped(SUB, lay.sub_h, SUB_PITCH), th.dim);
             }
         }
         CardBody::Notification { title, body, .. } => {
@@ -446,7 +507,14 @@ pub fn paint_card(cv: &Canvas, th: &Theme, gpu: &mut Gpu, c: &lm::CardSpec, lay:
         let h = hover.get(i).copied().unwrap_or(0.0).clamp(0.0, 1.0);
         let bg = if white { base.mix(Color::rgb8(220, 220, 220), 0.5 * h) } else { rows_hover(base, h) };
         cv.fill_rr(r, 16.0, bg);
-        cv.text(r, &a.label, BTN.center().ellipsis(), if white { Color::rgb8(0, 0, 0) } else { th.text2 });
+        let ink = if white { Color::rgb8(0, 0, 0) } else { th.text2 };
+        if r.h > 33.0 {
+            // a full-width button of a stacked card: the label wraps over its lines
+            let (tw, lines) = (r.w - 32.0, ((r.h - 16.0) / SUB_PITCH).round());
+            cv.text(Rect::new(r.x + 16.0, r.y, tw, r.h), &clip_lines(&a.label, cv.text_width(&a.label, BTN), tw, lines), Style { wrap: true, ellipsis: false, ..BTN.center() }, ink);
+        } else {
+            cv.text(r, &a.label, BTN.center().ellipsis(), ink);
+        }
         out.push(r);
     }
     out
@@ -468,7 +536,7 @@ pub fn measure(content: &LiveContent, ctx: &Ctx, m: &dyn Meter, th: &Theme) -> O
             (l.w, l.h)
         }),
         LiveContent::Card(cv) => cv.spec.id.as_ref().and_then(|id| ctx.cards.get(id)).map(|c| {
-            let l = layout_card_open(c, m, ctx.fx.card.phone_open);
+            let l = layout_card_open(c, m, ctx.fx.card.phone_open, ctx.card_max_h);
             (l.w, l.h)
         }),
     }
@@ -527,7 +595,7 @@ pub fn paint_content(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, content:
 fn paint_card_view(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, view: &CardView, area: Rect, alpha: f32, out: &mut Painted) {
     let Some(card) = view.spec.id.as_ref().and_then(|id| ctx.cards.get(id)) else { return };
     let m = CvMeter(cv);
-    let lay = layout_card_open(card, &m, ctx.fx.card.phone_open);
+    let lay = layout_card_open(card, &m, ctx.fx.card.phone_open, ctx.card_max_h);
     let k = ctx.fx.card;
     if matches!(card.body, CardBody::Phone(_)) {
         // anchored at the top: the second row is revealed by the growing body instead of sliding the first row
@@ -611,7 +679,7 @@ mod tests {
     fn assert_tidy(l: &CardLayout) {
         let inside = |r: &Rect| r.x >= -1e-3 && r.y >= -1e-3 && r.right() <= l.w + 1e-3 && r.bottom() <= l.h + 1e-3;
         assert!(inside(&l.icon) && inside(&l.text) && l.buttons.iter().all(inside), "{l:?}");
-        assert!(l.buttons.windows(2).all(|p| p[0].right() <= p[1].x), "{l:?}");
+        assert!(l.buttons.windows(2).all(|p| p[0].right() <= p[1].x + 1e-3 || p[0].bottom() <= p[1].y + 1e-3), "{l:?}");
         assert!(l.buttons.iter().all(|b| l.icon.right() <= b.x || l.icon.bottom() <= b.y) && l.buttons.iter().all(|b| l.text.bottom() <= b.y + 1e-3), "{l:?}");
     }
 
@@ -632,6 +700,50 @@ mod tests {
         // labels that cannot fit even a full row are shrunk, never pushed out of the card
         let wide = ask("Pick one", "", &["A".repeat(60).as_str(), "B".repeat(60).as_str(), "C".repeat(60).as_str()]);
         assert_tidy(&layout_card(&wide, &m));
+    }
+
+    const LONG_Q: &str = "Какой из подходов выбрать для нового слоя хранения данных: оставить текущую базу, перейти на отдельный сервис или хранить всё в файлах рядом с проектом, учитывая, что синхронизация между машинами понадобится позже?";
+    const LONG_OPT: &str = "Перейти на отдельный сервис и переписать слой доступа к данным целиком, с миграцией старых записей и временной поддержкой обоих форматов";
+
+    #[test]
+    fn long_options_stack_one_full_width_button_each_and_the_card_grows_to_fit() {
+        let m = Mono(0.5);
+        let c = ask(LONG_Q, "Claude Code спрашивает", &[LONG_OPT, "Оставить текущую базу и ничего не менять, пока не станет понятно, что нужно", "Хранить всё в файлах рядом с проектом, без отдельной базы", "Отложить решение"]);
+        let l = layout_card(&c, &m);
+        assert_tidy(&l);
+        assert!(l.stacked && l.w <= STACK_W && l.h <= CARD_MAX_H, "{l:?}");
+        assert_eq!(l.buttons.len(), 4);
+        assert!(l.buttons.iter().all(|b| b.x == 20.0 && (b.w - (l.w - 40.0)).abs() < 1e-3), "one full-width button per option: {l:?}");
+        assert!(l.buttons.windows(2).all(|p| (p[1].y - p[0].bottom() - 8.0).abs() < 1e-3), "evenly spaced, one under the other");
+        assert!(l.buttons[0].h > 32.0 && l.buttons[3].h == 32.0, "a long label makes its button taller, a short one stays one line: {l:?}");
+        assert!(l.title_h >= 3.0 * TITLE_PITCH, "the whole question has its lines");
+        assert!((l.buttons[3].bottom() + 12.0 - l.h).abs() < 1e-3, "the card ends right under the last button");
+        // short labels beside each other, long ones under each other
+        let near = layout_card(&ask(LONG_Q, "", &["Да", "Нет"]), &m);
+        assert!(near.buttons[0].y == near.buttons[1].y && near.buttons[0].h == 32.0);
+    }
+
+    #[test]
+    fn a_card_never_outgrows_the_screens_limit_the_text_gives_lines_up_first() {
+        let m = Mono(0.5);
+        let c = ask(&LONG_Q.repeat(4), "Claude Code спрашивает", &[LONG_OPT, LONG_OPT, LONG_OPT, LONG_OPT]);
+        let full = layout_card_open(&c, &m, false, 5000.0);
+        assert!(full.h > 400.0, "unlimited it is tall: {}", full.h);
+        for cap in [420.0, 300.0, 240.0] {
+            let l = layout_card_open(&c, &m, false, cap);
+            assert_tidy(&l);
+            assert!(l.h <= cap + 1e-3, "{cap}: {}", l.h);
+            assert!(l.title_h >= TITLE_PITCH && l.sub_h >= SUB_PITCH, "at least a line of each stays");
+        }
+    }
+
+    #[test]
+    fn text_that_does_not_fit_its_lines_is_cut_with_an_ellipsis() {
+        assert_eq!(clip_lines("short", 40.0, 100.0, 1.0), "short");
+        let s = "word ".repeat(40);
+        let cut = clip_lines(&s, 400.0, 100.0, 2.0);
+        assert!(cut.ends_with('\u{2026}') && cut.chars().count() < s.chars().count() / 2, "{cut}");
+        assert!(clip_lines("x", 1000.0, 1.0, 1.0).ends_with('\u{2026}'), "never empty, never a panic");
     }
 
     #[test]

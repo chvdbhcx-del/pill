@@ -6,7 +6,7 @@ use crate::shell::liquid::{SPAN, STRIP, UP};
 use crate::shell::motion::{GHOST_LIFETIME_MS, PANEL_IN};
 use crate::shell::types::{BodyView, ChromeView, Ghost, LiveView, PanelView, Phase, StripRect, TabView, View};
 
-use super::capsule::{PillState, Shell, CARD_FRAME_H, COL_FRAME_H, COL_FRAME_W, EXP_FRAME_H, EXP_FRAME_W};
+use super::capsule::{PillState, Shell, COL_FRAME_H, COL_FRAME_W, EXP_FRAME_H, EXP_FRAME_W};
 
 impl<B: Backend, C: Clock> Shell<B, C> {
     /// The capsule's high-level state.
@@ -97,7 +97,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             frame: if self.frame_exp {
                 (EXP_FRAME_W, EXP_FRAME_H)
             } else if self.carding {
-                (COL_FRAME_W, CARD_FRAME_H)
+                (COL_FRAME_W, self.card_frame_h)
             } else {
                 (COL_FRAME_W, COL_FRAME_H)
             },

@@ -232,7 +232,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
     pub(super) fn next(&mut self) {
         let can_show = !self.away && !self.hidden && self.state != PillState::Expanded;
         if self.cards.next(can_show, self.now) {
-            self.invoke("pill_cards", json!({"on": true})); // pill.rs CARD_FRAME
+            self.invoke("pill_cards", json!({"on": true, "h": self.card_frame_h})); // pill.rs CARD_FRAME
             self.carding = true;
             self.card_gen += 1;
             self.render_live();
@@ -247,6 +247,7 @@ impl<B: Backend, C: Clock> Shell<B, C> {
     pub(super) fn drop_cards(&mut self) {
         self.cards.clear_queue();
         self.carding = false;
+        self.card_frame_h = super::capsule::CARD_FRAME_H;
         self.invoke("pill_cards", json!({"on": false}));
         self.cards.cancel_frame_off();
         if self.cards.has_current() {

@@ -612,7 +612,7 @@ fn a_card_takes_over_the_row_and_the_island_grows_to_it() {
     let mut h = H::new();
     h.sh.toast(card("a"));
     assert_eq!(h.sh.phase(), Phase::Cards);
-    assert_eq!(h.last("pill_cards"), json!({"on": true}));
+    assert_eq!(h.last("pill_cards"), json!({"on": true, "h": 200.0}));
     assert_eq!(h.sh.view().frame, (720.0, 200.0));
     assert!(matches!(h.sh.view().live.content, LiveContent::Card(_)));
     assert!(h.sh.view().live.tall);
@@ -622,6 +622,33 @@ fn a_card_takes_over_the_row_and_the_island_grows_to_it() {
     let v = h.sh.view();
     assert_eq!((v.body.width, v.body.height), (300.0, 56.0));
     assert_eq!((v.body.radius_top, v.body.radius_bottom), (24.0, 24.0));
+}
+
+#[test]
+fn a_tall_card_asks_for_a_taller_os_frame_and_gives_it_back() {
+    let mut h = H::new();
+    h.sh.toast(card("a"));
+    // a card that fits the card frame leaves it alone
+    h.ev(Event::LiveMeasured { w: 300.0, h: 120.0 });
+    h.run(300.0);
+    assert_eq!(h.sh.view().frame, (720.0, 200.0));
+    // a long question: the card is 330 tall; the frame gets the card, the gap above the body and a margin for the glow
+    h.ev(Event::LiveMeasured { w: 560.0, h: 330.0 });
+    h.run(300.0);
+    assert_eq!(h.sh.view().frame, (720.0, 362.0));
+    assert_eq!(h.last("pill_cards"), json!({"on": true, "h": 362.0}));
+    h.run(1200.0);
+    assert!((h.sh.view().body.height - 330.0).abs() < 1.0, "the island is as tall as the card: {}", h.sh.view().body.height);
+    // it never shrinks while a card is up, even for a smaller next card
+    h.ev(Event::LiveMeasured { w: 300.0, h: 56.0 });
+    h.run(300.0);
+    assert_eq!(h.sh.view().frame, (720.0, 362.0));
+    // and the frame goes back to the plain one with the card
+    h.run(9000.0);
+    assert_eq!(h.last("pill_cards"), json!({"on": false}));
+    assert_eq!(h.sh.view().frame, (720.0, 120.0));
+    h.sh.toast(card("b"));
+    assert_eq!(h.last("pill_cards"), json!({"on": true, "h": 200.0}), "the next card starts from the plain card frame");
 }
 
 #[test]

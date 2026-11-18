@@ -226,18 +226,19 @@ fn cards_toast_notification_uninstall() {
 #[test]
 fn agent_ask_cards_show_the_whole_question_and_every_label() {
     let q = json!({"id":"1","kind":"question","question":"Тест: появилась ли на острове карточка с этими вариантами и кнопками?","options":["Да, вижу на острове","Нет, только в терминале"],"project":"island-replica"});
-    let perm = json!({"id":"2","kind":"permission","toolName":"Bash","summary":"git push --force-with-lease origin feature/claude-answer-from-the-island && cargo test --locked --workspace","project":"pill"});
+    let long = json!({"id":"4","kind":"question","question":"Какой из подходов выбрать для нового слоя хранения данных: оставить текущую базу, перейти на отдельный сервис или хранить всё в файлах рядом с проектом? Учти, что синхронизация между машинами понадобится позже, а миграцию старых записей хотелось бы сделать без простоя и без потери истории.","options":["Перейти на отдельный сервис и переписать слой доступа к данным целиком, с миграцией старых записей и временной поддержкой обоих форматов","Оставить текущую базу и ничего не менять, пока не станет понятно, что именно нужно","Хранить всё в файлах рядом с проектом, без отдельной базы","Отложить решение"],"project":"island-replica"});
+    let perm = json!({"id":"2","kind":"permission","toolName":"Bash","summary":"git push --force-with-lease origin feature/claude-answer-from-the-island && cargo test --locked --workspace -- --skip snapshot --skip pixels_ --skip dark_and_light && cargo build --release --locked && powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/usr/bin/release-all.ps1 -Only pill && gh release view v0.13.3 --repo chvdbhcx-del/pill --json assets,tagName,publishedAt","project":"pill"});
     let short = json!({"id":"3","kind":"permission","toolName":"Bash","summary":"ls","project":"app"});
-    let mut widths = Vec::new();
-    for (name, payload) in [("ask-question", q), ("ask-permission", perm), ("ask-short", short)] {
-        let mut s = Scn::new(base(json!({"language":"ru","agents.answerFromIsland":true})), (720.0, 260.0), 1.0, false);
+    let mut hs = Vec::new();
+    for (name, payload) in [("ask-question", q), ("ask-long", long), ("ask-permission", perm), ("ask-short", short)] {
+        let mut s = Scn::new(base(json!({"language":"ru","agents.answerFromIsland":true})), (720.0, 620.0), 1.0, false);
         s.emit("agents:ask", payload);
-        let img = s.shot(name, 1300.0);
+        let img = s.shot(name, 1500.0);
         let (x0, y0, x1, y1) = opaque(&img).unwrap_or_else(|| panic!("{name}: nothing drawn"));
-        assert!(y1 - y0 >= 44 && x1 - x0 <= 610, "{name}: {}x{}", x1 - x0, y1 - y0);
-        widths.push((x1 - x0, y1 - y0));
+        assert!(y1 - y0 >= 44 && x1 - x0 <= 610 && y1 <= 560, "{name}: {}x{}", x1 - x0, y1 - y0);
+        hs.push(y1 - y0);
     }
-    assert!(widths[0].1 > widths[2].1 && widths[1].1 > widths[2].1, "the two-row cards are taller than the one-row one: {widths:?}");
+    assert!(hs[1] > hs[0] && hs[0] > hs[3] && hs[2] > hs[3], "the longer the content the taller the card: {hs:?}");
 }
 
 #[test]

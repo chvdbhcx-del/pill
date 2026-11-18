@@ -1406,7 +1406,7 @@ impl View for IslandView {
         self.amb.glow.paint(cv, body, rb.max(rt), s);
         // the silhouette: flat against the screen edge, round on the free side, the flares and the light theme's shadow on the same sides
         flipped(cv, bottom, wh, dx, |cv| shapes::paint_body(cv, &sb, sb.radius_top as f32, b.radius_bottom as f32, self.flare_a * (1.0 - self.bar_w), self.fx.shadow(), self.fx.fill()));
-        let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq), fx: { let mut f = live::Fx { ring: self.amb.ring.paint(), ..self.fx.fx() }; f.card.phone_open = self.phone.open_target(); f } };
+        let ctx = live::Ctx { rows: &self.core.rows, cards: &self.core.cards, reduced: v.reduced, ru: self.core.ru(), eq: (now - self.eq_seen < EQ_FRESH_MS).then_some(self.eq), fx: { let mut f = live::Fx { ring: self.amb.ring.paint(), ..self.fx.fx() }; f.card.phone_open = self.phone.open_target(); f }, card_max_h: crate::pill::card_max_h().unwrap_or(live::CARD_MAX_H) };
         // ---- everything inside the body is clipped to its silhouette
         let mut painted = Painted::default();
         cv.with_clip_rr(body, rb.max(rt), |cv| {

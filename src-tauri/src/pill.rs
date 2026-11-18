@@ -156,9 +156,15 @@ fn frame_for(m: &crate::ui::host::MonitorInfo, expanded: bool) -> Lay {
     let sf = m.scale as f64;
     let (ml, mt, mw, mh) = (m.rect.l, m.rect.t, m.rect.r - m.rect.l, m.rect.b - m.rect.t);
     let k = sf * crate::settings::get_f64("size", 100.0).clamp(80.0, 200.0) / 100.0;
-    let (fw, fh) = if expanded { EXPANDED } else if CARD.load(Ordering::Relaxed) { CARD_FRAME } else { COLLAPSED };
+    let (fw, fh) = if expanded {
+        EXPANDED
+    } else if CARD.load(Ordering::Relaxed) {
+        (CARD_FRAME.0, CARD_FRAME.1.max(f32::from_bits(CARD_H.load(Ordering::Relaxed)) as f64))
+    } else {
+        COLLAPSED
+    };
     let w = ((fw * k).round() as i32).min(mw);
-    let mut h = (fh * k).round() as i32;
+    let mut h = ((fh * k).round() as i32).min(mh);
     // `offsetX` (-50..50 % of the monitor width, 0 = middle) moves the window centre; the window stays inside the monitor.
     let off = crate::settings::get_f64("offsetX", 0.0).clamp(-50.0, 50.0);
     let dock = dock();
@@ -652,11 +658,26 @@ pub fn pill_monitors(_app: AppHandle) -> Vec<String> {
 /// An event card hangs below the folded pill: while one is shown the folded frame is taller so a long notification fits.
 static CARD: AtomicBool = AtomicBool::new(false);
 const CARD_FRAME: (f64, f64) = (720.0, 200.0);
+/// The frame height (css px) the card on screen asks for when it is taller than `CARD_FRAME` (f32 bits; 0 = the plain card frame).
+static CARD_H: AtomicU32 = AtomicU32::new(0);
 
-pub fn pill_cards(app: AppHandle, on: bool) {
-    if CARD.swap(on, Ordering::Relaxed) != on {
+/// `on`: an event card is up. `h`: the frame height it needs (css px), grown to fit a long question (the frame never shrinks while the card is up).
+pub fn pill_cards(app: AppHandle, on: bool, h: Option<f64>) {
+    let want = if on { h.unwrap_or(0.0).max(0.0) as f32 } else { 0.0 };
+    let grew = CARD_H.swap(want.to_bits(), Ordering::Relaxed) != want.to_bits();
+    if CARD.swap(on, Ordering::Relaxed) != on || grew {
         on_main(&app, place);
     }
+}
+
+/// The tallest an event card may be (css px): 60 % of the height of the monitor the island is on. None while no monitor is known.
+pub fn card_max_h() -> Option<f32> {
+    let (mh, sc) = {
+        let s = st();
+        ((s.mon[3] - s.mon[1]) as f64, s.scale)
+    };
+    let k = sc * crate::settings::get_f64("size", 100.0).clamp(80.0, 200.0) / 100.0;
+    (mh > 0.0 && k > 0.0).then(|| ((mh * 0.6 / k) as f32).clamp(200.0, 900.0))
 }
 
 /// The pets' look-at-the-cursor feed comes from the host's proximity engine; nothing to switch here.
