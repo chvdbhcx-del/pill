@@ -5,10 +5,11 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 ## [Unreleased]
 
 ### Fixed
+- The Notes tab (and Chat) take the keyboard when you open them on purpose (a tab click, the hotkey, the command bar): after the island had been folded once it ignored keys, so typing went to the app behind it. Opening by hovering still leaves your keyboard alone, and when Windows refuses to hand over the foreground the island retries.
 - The island's "Claude Code asks" card (answering from the island) shows the whole question and every option, however long: the question wraps over as many lines as it needs, the options sit side by side while each fits one line and otherwise stack one full-width button per option with its label wrapped, and the island and its window grow to the card (up to 60 % of the screen's height, then the text is cut with an ellipsis). Questions with 4 options are answered from the island too, and the answer goes back with Claude Code's own question and option text.
 
 ### Changed
-- Music widget capsule in the taskbar strip: softer text (medium title, regular artist, a touch under full white), a bigger cover with a smaller, more even set of buttons, a progress of fewer, wider bars (a thin line while the track is not measured yet instead of a row of dots), and a smoother body: a vertical, barely-there ramp of the cover's colour (a pale cover no longer turns it grey).
+- Music widget capsule in the taskbar strip: softer text (medium title, regular artist, a touch under full white), a bigger cover with a smaller, more even set of buttons, every glyph on whole pixels (previous and next look the same), the progress one calm line with the title centred between the cover and the line, and the body fades from a clean deep tone of the cover's colour into black (a yellow cover is amber, a pale one grey, never muddy; the light text always reads on it).
 
 ## [0.13.2] - 2026-11-17
 
