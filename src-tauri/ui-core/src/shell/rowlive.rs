@@ -232,6 +232,10 @@ impl<B: Backend, C: Clock> Shell<B, C> {
     pub(super) fn next(&mut self) {
         let can_show = !self.away && !self.hidden && self.state != PillState::Expanded;
         if self.cards.next(can_show, self.now) {
+            // a card with buttons and a lot of text will be taller than the card frame: ask for the frame it is likely to need now, not after
+            // its first frame (the measured size corrects it either way)
+            let guess = self.cards.current_spec().map_or(0.0, super::capsule::card_frame_guess);
+            self.card_frame_h = self.card_frame_h.max(guess);
             self.invoke("pill_cards", json!({"on": true, "h": self.card_frame_h})); // pill.rs CARD_FRAME
             self.carding = true;
             self.card_gen += 1;

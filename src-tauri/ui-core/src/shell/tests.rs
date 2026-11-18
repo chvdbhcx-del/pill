@@ -652,6 +652,30 @@ fn a_tall_card_asks_for_a_taller_os_frame_and_gives_it_back() {
 }
 
 #[test]
+fn a_card_with_a_lot_of_text_and_buttons_asks_for_its_taller_frame_before_its_first_frame() {
+    let mut h = H::new();
+    let mut c = card("q");
+    c.title = "Какой из подходов выбрать для нового слоя хранения данных: оставить текущую базу, перейти на отдельный сервис или хранить всё в файлах рядом с проектом? Учти, что синхронизация понадобится позже.".into();
+    c.sub = "Claude Code спрашивает".into();
+    let long = "Перейти на отдельный сервис и переписать слой доступа к данным целиком, с миграцией старых записей";
+    c.actions = [long, long, long, "Отложить"].iter().map(|l| CardAction { label: (*l).into(), ..Default::default() }).collect();
+    h.sh.toast(c);
+    let asked = h.last("pill_cards");
+    assert!(asked["h"].as_f64().unwrap() > 300.0, "the frame is asked for at once, before anything is measured: {asked}");
+    assert_eq!(h.sh.view().frame.1, asked["h"].as_f64().unwrap());
+    // a question that fits the card frame (and a small card with no buttons) keeps the plain frame
+    let mut h = H::new();
+    let mut c = card("q");
+    c.title = "Диагностика: появилась ли карточка на острове на этот раз, и видно ли здесь весь вопрос целиком без обрезки?".into();
+    c.actions = vec![CardAction { label: "Да".into(), ..Default::default() }, CardAction { label: "Нет".into(), ..Default::default() }];
+    h.sh.toast(c);
+    assert_eq!(h.last("pill_cards"), json!({"on": true, "h": 200.0}));
+    let mut h = H::new();
+    h.sh.toast(card("a"));
+    assert_eq!(h.last("pill_cards"), json!({"on": true, "h": 200.0}));
+}
+
+#[test]
 fn cards_queue_one_at_a_time_and_use_the_default_ttl() {
     let mut h = H::new();
     h.sh.toast(card("a"));

@@ -35,6 +35,20 @@ pub const COL_FRAME_W: f64 = 720.0;
 pub const COL_FRAME_H: f64 = 120.0;
 /// 720x200 while an event card is shown (pill.rs CARD_FRAME)
 pub const CARD_FRAME_H: f64 = 200.0;
+
+/// The frame height (css px) a card is likely to need, from its text alone (the renderer measures it exactly later): a card with buttons stacks
+/// them under the text when it is long, and its text wraps at about 62 (title) / 75 (sub) characters a line. 0 = the plain card frame will do.
+pub fn card_frame_guess(c: &crate::shell::cards::CardSpec) -> f64 {
+    let n = |s: &str| s.chars().count() as f64;
+    if c.actions.is_empty() || n(&c.title) + n(&c.sub) < 60.0 {
+        return 0.0;
+    }
+    let (tl, sl) = ((n(&c.title) / 62.0).ceil().max(1.0), if c.sub.is_empty() { 0.0 } else { (n(&c.sub) / 75.0).ceil() });
+    let labels: f64 = c.actions.iter().map(|a| n(&a.label) * 7.0 + 32.0).sum();
+    let buttons = if labels + 8.0 * c.actions.len() as f64 > 520.0 { c.actions.iter().map(|a| 32.0 + 16.0 * ((n(&a.label) * 7.0 / 488.0).ceil() - 1.0).max(0.0) + 8.0).sum::<f64>() } else { 40.0 };
+    let text = 20.0 * tl + if sl > 0.0 { 4.0 + 16.0 * sl } else { 0.0 };
+    ((12.0 + text.max(40.0) + 10.0 + buttons + 12.0 + CAP_TOP + 24.0).ceil()).clamp(CARD_FRAME_H, 560.0)
+}
 pub const EXP_W: f64 = 680.0;
 pub const EXP_FRAME_W: f64 = 720.0;
 pub const EXP_FRAME_H: f64 = 480.0;

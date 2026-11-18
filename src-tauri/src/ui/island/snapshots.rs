@@ -241,6 +241,29 @@ fn agent_ask_cards_show_the_whole_question_and_every_label() {
     assert!(hs[1] > hs[0] && hs[0] > hs[3] && hs[2] > hs[3], "the longer the content the taller the card: {hs:?}");
 }
 
+/// The order of a real island: the card arrives while the window is still the folded frame (120 css px, 108 at the user's 90 %), the window
+/// grows only after the OS has been asked. The tall card must be whole and visible in a window that is still small AND in one that has grown.
+#[test]
+fn a_tall_ask_card_is_whole_and_visible_in_a_window_that_has_not_grown_yet() {
+    let ask = json!({"id":"7","kind":"question","toolName":"AskUserQuestion","summary":"","tool":"claude-code","question":"Диагностика: появилась ли карточка на острове на этот раз, и видно ли здесь весь вопрос целиком без обрезки, и работают ли кнопки вариантов?","options":["Да, появилась и всё видно целиком","Нет, не появилась"],"project":"src-tauri"});
+    let user = json!({"language":"ru","agents.answerFromIsland":true,"size":90.0,"shape":"capsule","pet":"eyes","pet.size":"l","pet.side":"right","edge.position":"top","edge.align":"left"});
+    let white = |p: [u8; 4]| p[3] > 200 && p[0] > 235 && p[1] > 235 && p[2] > 235;
+    for (name, win_h, reduced, waiting) in [("ask-live-folded-window", 108.0f32, false, false), ("ask-live-card-window", 180.0, false, false), ("ask-live-grown-window", 300.0, false, false), ("ask-live-reduced-motion", 180.0, true, false), ("ask-live-with-status-row", 180.0, false, true)] {
+        let mut s = Scn::new(base(user.clone()), (648.0, win_h), 1.0, reduced);
+        s.emit("agents:ask", ask.clone());
+        if waiting {
+            // Claude Code's Notification hook fires with the permission request: the "Needs your input" row comes with the card, not instead of it
+            s.emit("agents:changed", json!({"waiting":1,"working":0,"sessions":[{"state":"waiting","project":"src-tauri"}]}));
+        }
+        let img = s.shot(name, 1500.0);
+        let (_, y0, _, y1) = opaque(&img).unwrap_or_else(|| panic!("{name}: nothing is drawn"));
+        assert!(y1 - y0 >= 80, "{name}: the card is up ({}px)", y1 - y0);
+        // the two answer buttons (white pills) are whole inside the window: wide, and ending above its last row
+        let (bx0, by0, bx1, by1) = img.bounds(white).unwrap_or_else(|| panic!("{name}: no answer buttons are visible"));
+        assert!(bx1 - bx0 >= 300 && by1 + 2 < win_h as u32 && by1 - by0 >= 20, "{name}: the buttons are cut off: x {bx0}..{bx1}, y {by0}..{by1} of {win_h}");
+    }
+}
+
 #[test]
 fn pc_snapshot_the_pairing_card_and_the_clipboard_chip() {
     let pair = json!({"enabled":true,"name":"DESK","peers":[],"pair":{"mode":"show","state":"request","token":"PILL-X","expires":1,"peer":{"name":"LAPTOP-X","os":"Windows"}}});

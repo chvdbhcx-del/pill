@@ -361,6 +361,9 @@ impl Core {
     ///
     /// Windows Focus Assist (opt-in): a card that is not critical is held while Windows is quiet and shown when it is not ([`Core::sync_focus`]).
     pub fn show_card(&mut self, card: lm::CardSpec) {
+        if card.id.starts_with("agent-ask:") {
+            eprintln!("island: {} reaches the island (hidden {}, quiet {}, expanded {})", card.id, self.shell.is_hidden(), self.shell.quiet(), self.shell.frame_expanded());
+        }
         self.toast_recs.push(toast_rec(&card));
         match verdict(card.quiet_exempt(), self.shell.quiet(), respect(&self.settings), self.focus.sys_quiet) {
             Verdict::Hold => {

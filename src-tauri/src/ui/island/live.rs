@@ -34,6 +34,9 @@ pub struct Ctx<'a> {
     pub fx: Fx<'a>,
     /// the tallest an event card may be (css px): 60 % of the work area
     pub card_max_h: f32,
+    /// how much of the window is left below the top of the body (css px; `f32::MAX` = no limit, as at the bottom edge): a card that asked for a
+    /// taller window than it has yet is painted shorter (its text gives lines up) and stands inside what there is, so it is never cut off
+    pub room_h: f32,
 }
 
 /// The card on screen as the flows of `fx.rs` have it right now.
@@ -242,6 +245,14 @@ const TITLE_PITCH: f32 = 18.0;
 /// DirectWrite's line pitch of the 14 px title when it wraps (a one-line title is centred in an 18 px box)
 const TITLE_LINE: f32 = 20.0;
 const SUB_PITCH: f32 = 16.0;
+/// The gap kept between a card and the end of its window.
+const CARD_EDGE: f32 = 4.0;
+
+/// The tallest a card may be in `room` px of window (never under a one-row card's 56).
+fn fit_room(room: f32) -> f32 {
+    (room - CARD_EDGE).max(56.0)
+}
+
 /// A card's tallest height (css px) when the screen is not known (the tests); the island passes 60 % of the work area.
 pub const CARD_MAX_H: f32 = 520.0;
 
@@ -595,7 +606,7 @@ pub fn paint_content(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, content:
 fn paint_card_view(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, view: &CardView, area: Rect, alpha: f32, out: &mut Painted) {
     let Some(card) = view.spec.id.as_ref().and_then(|id| ctx.cards.get(id)) else { return };
     let m = CvMeter(cv);
-    let lay = layout_card_open(card, &m, ctx.fx.card.phone_open, ctx.card_max_h);
+    let lay = layout_card_open(card, &m, ctx.fx.card.phone_open, ctx.card_max_h.min(fit_room(ctx.room_h)));
     let k = ctx.fx.card;
     if matches!(card.body, CardBody::Phone(_)) {
         // anchored at the top: the second row is revealed by the growing body instead of sliding the first row
@@ -605,7 +616,12 @@ fn paint_card_view(cv: &Canvas, th: &Theme, gpu: &mut Gpu, ctx: &Ctx, view: &Car
         out.phone = Some((r, alpha * k.alpha, k.scale));
         return;
     }
-    let (x0, y0) = (area.cx() - lay.w / 2.0, area.cy() - lay.h / 2.0);
+    // centred in the body, but inside the window while that is still growing to the card
+    let mut y0 = area.cy() - lay.h / 2.0;
+    if ctx.room_h < f32::MAX {
+        y0 = y0.min(ctx.room_h - lay.h - CARD_EDGE).max(0.0);
+    }
+    let x0 = area.cx() - lay.w / 2.0;
     out.card_rect = Some(Rect::new(x0, y0, lay.w, lay.h));
     cv.with_opacity(alpha * k.alpha, |cv| {
         cv.with_scale_about((area.cx(), y0), k.scale, |cv| {

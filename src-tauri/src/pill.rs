@@ -666,6 +666,7 @@ pub fn pill_cards(app: AppHandle, on: bool, h: Option<f64>) {
     let want = if on { h.unwrap_or(0.0).max(0.0) as f32 } else { 0.0 };
     let grew = CARD_H.swap(want.to_bits(), Ordering::Relaxed) != want.to_bits();
     if CARD.swap(on, Ordering::Relaxed) != on || grew {
+        eprintln!("pill: card frame {} (asked {:.0} css px high)", if on { "on" } else { "off" }, want);
         on_main(&app, place);
     }
 }

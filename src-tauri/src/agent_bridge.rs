@@ -314,14 +314,21 @@ fn handle(bridge: &Bridge, token: &str, notify: &Notify, wait: Duration, mut s: 
         return reply(&mut s, 404, "");
     }
     // anything we cannot or should not ask about: empty body = "no decision", Claude Code asks in the terminal
-    let Some(req) = parse_request(&http.body) else { return reply(&mut s, 200, "") };
+    let Some(req) = parse_request(&http.body) else {
+        eprintln!("agent-bridge: a request of {} bytes is not shown on the island (not a simple question or permission): the terminal asks", http.body.len());
+        return reply(&mut s, 200, "");
+    };
     let (project, session, cwd) = (crate::agents::project_name(&req.cwd).to_string(), req.session.clone(), req.cwd.clone());
     let (kind, question, options) = match &req.kind {
         Kind::Permission => ("permission", String::new(), Vec::new()),
         Kind::Question { question, options } => ("question", question.clone(), options.clone()),
     };
     let (tool_name, summary) = (req.tool_name.clone(), req.summary.clone());
-    let Some((id, rx)) = bridge.open(req.clone()) else { return reply(&mut s, 200, "") };
+    let Some((id, rx)) = bridge.open(req.clone()) else {
+        eprintln!("agent-bridge: {MAX_PENDING} requests already wait: this one goes to the terminal");
+        return reply(&mut s, 200, "");
+    };
+    eprintln!("agent-bridge: ask {id}: {kind}, question {} chars, {} options, summary {} chars", question.chars().count(), options.len(), summary.chars().count());
     notify(
         "agents:ask",
         json!({ "id": id, "kind": kind, "tool": "claude-code", "toolName": tool_name, "summary": summary, "question": question, "options": options,
