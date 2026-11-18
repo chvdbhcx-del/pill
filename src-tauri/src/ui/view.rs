@@ -116,6 +116,13 @@ pub trait View {
         let _ = cx;
     }
 
+    /// A tab of the island only: the user opened this tab ON PURPOSE (clicked its tab, a hotkey or the command bar asked for it), as opposed
+    /// to the island opening by itself under the cursor. A tab with a text field takes the keyboard here (the island is a no-activate
+    /// overlay, so without it the first keys would go to the app behind). Never called for a hover / edge open.
+    fn on_user_open(&mut self, cx: &mut Cx) {
+        let _ = cx;
+    }
+
     /// The window moved to a monitor with another DPI (`scale` = device px per logical px) or the user changed the DPI. `cx.scale` is already
     /// the new value; drop caches that depend on device pixels (text layouts are cached by the canvas and re-made on their own).
     fn on_dpi(&mut self, scale: f32, cx: &mut Cx) {

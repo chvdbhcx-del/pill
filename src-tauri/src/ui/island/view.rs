@@ -162,6 +162,10 @@ pub struct IslandView {
     measured: (f64, f64),
     pending_measure: Option<(f64, f64)>,
     want_tab: Option<String>,
+    /// When the user asked for the island ON PURPOSE (a tab clicked, or a hotkey / command bar / tray / `--open` expand): the open tab gets
+    /// `View::on_user_open` once the panel shows it, so a tab with a text field takes the keyboard. Never set by a hover or edge open
+    /// (that would steal the keys from the app the user is typing in). Stale after `USER_OPEN_MS`.
+    user_open_at: Option<f64>,
     /// the meter sample last handed to the Controls tab
     sent_meters: Option<pill_ui_core::live::sysmon::MetersView>,
     last_hit: Vec<Rect>,
@@ -247,6 +251,10 @@ const RAISE: Feel = Feel::FLOW.within(380.0);
 const PANEL_IN: Feel = Feel::FADE.within(200.0);
 const PANEL_OUT: Feel = Feel::FADE.within(120.0);
 const PANEL_DELAY_MS: f64 = 40.0;
+/// `pill:expand` `via` values that are the user asking for the island (a hover or the screen edge is not): see `IslandView::user_open_at`.
+const USER_VIA: [&str; 4] = ["hotkey", "command", "tray", "open"];
+/// How long an explicit open waits for the panel to show its tab.
+const USER_OPEN_MS: f64 = 2000.0;
 
 /// How long the full frame rate stays after the last real movement.
 const CALM_AFTER_MS: f64 = 600.0;
@@ -295,6 +303,7 @@ impl IslandView {
             measured: (0.0, 0.0),
             pending_measure: None,
             want_tab: None,
+            user_open_at: None,
             sent_meters: None,
             last_hit: Vec::new(),
             last_pass: None,
@@ -559,7 +568,8 @@ impl IslandView {
                     if self.host.overlay_open {
                         self.host.close_overlay(cx);
                     }
-                    self.host.hide(&id, cx)
+                    self.host.hide(&id, cx);
+                    self.host.parked = true; // `show` (the next switch, or the panel opening again on this tab) clears it
                 }
                 Out::Broadcast { name, payload } => match self.amb.take(&name, &payload) {
                     super::ambient::Taken::No => {
@@ -1020,6 +1030,9 @@ impl View for IslandView {
                     // `pill.rs`: the height of the bar the window stands in (logical px, 0 = none); the next frame moves the body
                     self.bar_h = payload.get("h").and_then(|h| h.as_f64()).unwrap_or(0.0).max(0.0) as f32;
                 }
+                if name == "pill:expand" && payload.get("via").and_then(|v| v.as_str()).is_some_and(|v| USER_VIA.contains(&v)) {
+                    self.user_open_at = Some(cx.now_ms);
+                }
                 self.core.bus_event(&name, &payload, cx.now_ms);
                 self.kbd_event(&name, &payload, cx);
                 if matches!(name.as_str(), "settings:changed" | "pill:show") {
@@ -1133,10 +1146,18 @@ impl View for IslandView {
         // the tab view follows the shell's current tab while the panel is open
         if v.panel.visible {
             if let Some(id) = v.current_tab.clone() {
-                if self.host.cur.as_deref() != Some(&id) {
+                if self.host.cur.as_deref() != Some(&id) || self.host.parked {
                     self.host.show(&id, v.tab_dir, self.core.ru(), cx, now);
                 }
+                if let Some(t) = self.user_open_at.take() {
+                    if cx.now_ms - t <= USER_OPEN_MS {
+                        self.host.user_open(&id, cx);
+                    }
+                }
             }
+        }
+        if self.user_open_at.is_some_and(|t| cx.now_ms - t > USER_OPEN_MS) {
+            self.user_open_at = None;
         }
         self.want_tab = None;
         // pets and characters
@@ -1226,6 +1247,7 @@ impl View for IslandView {
                 match h {
                     Hit::Tab(i) => {
                         let id = self.chrome.tabs[i].id.clone();
+                        self.user_open_at = Some(cx.now_ms);
                         self.core.shell_event(Event::TabClicked(id), cx.now_ms);
                     }
                     Hit::Btn(Btn::Dict) => self.core.shell_event(Event::DictButton, cx.now_ms),
