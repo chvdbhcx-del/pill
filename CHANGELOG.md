@@ -4,6 +4,9 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+### Fixed
+- The island's "Claude Code asks" card (answering from the island) no longer cuts the question and the option labels: when the text and the buttons do not fit one row, the buttons go to a row of their own under the text, the question wraps (up to 3 lines) and the card may grow to 600 px; labels can be up to 32 characters, the question 140.
+
 ### Changed
 - Music widget capsule in the taskbar strip: softer text (medium title, regular artist, a touch under full white), a bigger cover with a smaller, more even set of buttons, a progress of fewer, wider bars (a thin line while the track is not measured yet instead of a row of dots), and a smoother body: a vertical, barely-there ramp of the cover's colour (a pale cover no longer turns it grey).
 

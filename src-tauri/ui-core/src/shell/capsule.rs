@@ -28,6 +28,8 @@ use crate::shell::types::{Env, Event, LiveContent, Notice, Rect};
 pub const COL_H: f64 = 30.0;
 pub const COL_MIN_W: f64 = 118.0;
 pub const COL_MAX_W: f64 = 500.0;
+/// the widest an event card may make the island (a text card with its buttons under the text can need more than a row); the frame is 720
+pub const CARD_MAX_W: f64 = 600.0;
 /// collapsed OS frame 720x120 (same width as the expanded one so the island never shifts on a frame resize)
 pub const COL_FRAME_W: f64 = 720.0;
 pub const COL_FRAME_H: f64 = 120.0;
@@ -545,8 +547,9 @@ impl<B: Backend, C: Clock> Shell<B, C> {
             x + (x % 2.0)
         };
         let (mw, mh) = self.measure;
-        let wide = ev((COL_MAX_W * s).min((COL_MIN_W * s).max(mw + self.pet_res * s)));
-        if (self.cards.has_current() && self.live_key == "card") || self.live_tall {
+        let card = self.cards.has_current() && self.live_key == "card";
+        let wide = ev(((if card { CARD_MAX_W } else { COL_MAX_W }) * s).min((COL_MIN_W * s).max(mw + self.pet_res * s)));
+        if card || self.live_tall {
             // the island grown to an event card (or a tall live widget): its own content height, round ends
             let hh = ev(hgt.max(mh));
             let rr = (24.0 * s).min(hh / 2.0);

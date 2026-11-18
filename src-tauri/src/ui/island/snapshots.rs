@@ -224,6 +224,23 @@ fn cards_toast_notification_uninstall() {
 }
 
 #[test]
+fn agent_ask_cards_show_the_whole_question_and_every_label() {
+    let q = json!({"id":"1","kind":"question","question":"Тест: появилась ли на острове карточка с этими вариантами и кнопками?","options":["Да, вижу на острове","Нет, только в терминале"],"project":"island-replica"});
+    let perm = json!({"id":"2","kind":"permission","toolName":"Bash","summary":"git push --force-with-lease origin feature/claude-answer-from-the-island && cargo test --locked --workspace","project":"pill"});
+    let short = json!({"id":"3","kind":"permission","toolName":"Bash","summary":"ls","project":"app"});
+    let mut widths = Vec::new();
+    for (name, payload) in [("ask-question", q), ("ask-permission", perm), ("ask-short", short)] {
+        let mut s = Scn::new(base(json!({"language":"ru","agents.answerFromIsland":true})), (720.0, 260.0), 1.0, false);
+        s.emit("agents:ask", payload);
+        let img = s.shot(name, 1300.0);
+        let (x0, y0, x1, y1) = opaque(&img).unwrap_or_else(|| panic!("{name}: nothing drawn"));
+        assert!(y1 - y0 >= 44 && x1 - x0 <= 610, "{name}: {}x{}", x1 - x0, y1 - y0);
+        widths.push((x1 - x0, y1 - y0));
+    }
+    assert!(widths[0].1 > widths[2].1 && widths[1].1 > widths[2].1, "the two-row cards are taller than the one-row one: {widths:?}");
+}
+
+#[test]
 fn pc_snapshot_the_pairing_card_and_the_clipboard_chip() {
     let pair = json!({"enabled":true,"name":"DESK","peers":[],"pair":{"mode":"show","state":"request","token":"PILL-X","expires":1,"peer":{"name":"LAPTOP-X","os":"Windows"}}});
     for (name, ev, payload) in [("pc-pair-card", "pc:state", pair), ("pc-clip-chip", "pc:clip", json!({"device":"d1","name":"LAPTOP-X"}))] {

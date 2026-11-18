@@ -36,11 +36,11 @@ pub fn ask(env: &dyn Env, p: &Value) -> Vec<LiveCmd> {
     let at = if proj.is_empty() { String::new() } else { format!(" · {proj}") };
     let tool = cut(&text_or_empty(p.get("toolName")), 24);
     let card = if text_or_empty(p.get("kind")) == "question" {
-        let q = cut(&text_or_empty(p.get("question")), 70);
+        let q = cut(&text_or_empty(p.get("question")), 140);
         let actions: Vec<CardAction> = p
             .get("options")
             .and_then(Value::as_array)
-            .map(|o| o.iter().take(3).enumerate().map(|(i, l)| CardAction::new(cut(&text(Some(l)), 16), ActionKind::White, answer(&id, &format!("opt:{i}")))).collect())
+            .map(|o| o.iter().take(3).enumerate().map(|(i, l)| CardAction::new(cut(&text(Some(l)), 32), ActionKind::White, answer(&id, &format!("opt:{i}")))).collect())
             .unwrap_or_default();
         if actions.len() < 2 {
             return Vec::new();
@@ -49,7 +49,7 @@ pub fn ask(env: &dyn Env, p: &Value) -> Vec<LiveCmd> {
             .icon(IconName::Sparkles)
             .actions(actions)
     } else {
-        let sub = cut(&text_or_empty(p.get("summary")), 90);
+        let sub = cut(&text_or_empty(p.get("summary")), 120);
         let icon = match tool.as_str() {
             "Bash" | "PowerShell" => IconName::Terminal,
             "Write" | "Edit" | "MultiEdit" | "NotebookEdit" | "Read" => IconName::File,
@@ -116,10 +116,10 @@ mod tests {
 
     #[test]
     fn question_card_has_one_button_per_option() {
-        let c = ask(&on(), &json!({ "id": "9", "kind": "question", "question": "Which database should we use?", "options": ["SQLite", "Postgres", "A very long option label"] }));
+        let c = ask(&on(), &json!({ "id": "9", "kind": "question", "question": "Which database should we use?", "options": ["SQLite", "Postgres", "A very long option label that goes on and on"] }));
         let t = toast(&c);
         assert_eq!(t.body, CardBody::Text { title: "Which database should we use?".into(), sub: Some("Claude Code asks".into()) });
-        assert_eq!(t.actions.iter().map(|a| a.label.as_str()).collect::<Vec<_>>(), ["SQLite", "Postgres", "A very long opt…"]);
+        assert_eq!(t.actions.iter().map(|a| a.label.as_str()).collect::<Vec<_>>(), ["SQLite", "Postgres", "A very long option label that g…"]);
         assert_eq!(t.actions[2].action, Action::invoke("agents_answer", json!({ "id": "9", "choice": "opt:2" })));
         assert!(ask(&on(), &json!({ "id": "9", "kind": "question", "question": "q", "options": ["only"] })).is_empty());
     }
