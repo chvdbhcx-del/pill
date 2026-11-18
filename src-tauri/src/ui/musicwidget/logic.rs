@@ -452,19 +452,16 @@ pub struct CapsuleLayout {
 /// The cover's corner radius over its side: the card's (14 of 84), the same shape at every size.
 pub const COVER_R_RATIO: f32 = CARD_COVER_R / 84.0;
 
-/// A capsule lower than this is a taskbar strip: its progress is a calm line (a few 1-2 px bars there only read as smudges) and its text is centred
-/// between the cover and the line, so no hole opens next to a short title.
+/// A capsule lower than this is a taskbar strip: its text is centred between the cover and the bars, so no hole opens next to a short title.
 pub const STRIP_H: f32 = 44.0;
 
-/// How many bars the capsule's mini waveform has: 10 at the full height, 8 a little lower (a strip has a line instead, see [`STRIP_H`]; 5 is what the
-/// bars would be there).
+/// How many bars the capsule's mini waveform has: 10 at the full height, 8 lower (a strip too: the bars are 2+ device px wide on whole pixels there, so
+/// they stay crisp).
 pub fn wave_n(h: f32) -> usize {
     if h >= 52.0 {
         10
-    } else if h >= STRIP_H {
-        8
     } else {
-        5
+        8
     }
 }
 
@@ -499,17 +496,12 @@ pub fn capsule_layout(c: Rect, k: f32) -> CapsuleLayout {
     let btn = [Rect::new(prev_x, y(side), side, side), Rect::new(play_x, y(play), play, play), Rect::new(next_x, y(side), side, side)];
     let cover = Rect::new(c.x + e, y(cs), cs, cs);
     let text_x = cover.right() + sp(9.0 * s);
-    // the progress, as far from the buttons as from the text: thin bars with a gap as wide as a bar, or in a strip one line of a fixed length (44 px,
-    // whole device px) with the text centred in what is left
+    // the progress, as far from the buttons as from the text: thin bars (a strip's too) of whole device px, at least 2 wide, with a gap as wide as a bar
     let g = sp(8.0 * s);
     let (bar, text_end) = if c.h >= 28.0 {
-        let (w, h) = if c.h < STRIP_H {
-            ((44.0 * k).round() / k, even(22.0 * s, 8.0))
-        } else {
-            let n = wave_n(c.h) as f32;
-            let bw = ((2.0 * s * k).round().max(2.0)) / k;
-            (n * 2.0 * bw - bw, even(22.0 * s, 8.0))
-        };
+        let n = wave_n(c.h) as f32;
+        let bw = ((2.0 * s * k).round().max(2.0)) / k;
+        let (w, h) = (n * 2.0 * bw - bw, even(22.0 * s, 8.0));
         let r = Rect::new(prev_x - g - w, y(h), w, h);
         (r, r.x - g)
     } else {

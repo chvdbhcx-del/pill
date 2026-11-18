@@ -112,6 +112,9 @@ const BODY_LUMA: f32 = 0.16;
 /// How much of the left stop is left at the right end (a hair of the cover's hue in the black).
 const BODY_TAIL: f32 = 0.07;
 
+/// The heights (a share of the waveform's room) of the bars of a track nothing is measured of yet: a calm, uneven, low pattern that reads as sound, not as dots.
+const PLACEHOLDER: [f32; 8] = [0.30, 0.55, 0.38, 0.70, 0.46, 0.62, 0.34, 0.52];
+
 /// The relative luminance of a colour, 0 (black) .. 1 (white).
 fn luma(c: Color) -> f32 {
     let lin = |c: f32| if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) };
@@ -156,13 +159,27 @@ pub(super) fn soft_pair(_th: &Theme, tint: Option<(Color, Color)>, accent: Color
     (a, a.mix(Color::rgb8(0, 0, 0), 1.0 - BODY_TAIL))
 }
 
+/// Where the folded capsule's body reaches its dark end, as a share of its width: a little past the middle, like the open card's (whose cover colour is
+/// gone by 52 %); the rest is plain dark. The open card's own gradient spans the whole body.
+pub(super) const BODY_END: f32 = 0.58;
+
+/// The share of the gradient's length the colour change takes: [`BODY_END`] folded (`ease` 1), the whole length for the card (`ease` 0).
+fn body_end(ease: f32) -> f32 {
+    1.0 + (BODY_END - 1.0) * ease
+}
+
 /// The gradient's stops from `ca` to `cb`: five of them on a curve that eases from the straight line (`ease` 0, the card's own) to a smoothstep
-/// (`ease` 1, the capsule: the cover's colour holds for a while at its end, then falls softly into the dark with no seam at either end).
-fn ease_stops(ca: Color, cb: Color, ease: f32, fk: f32) -> [(f32, Color); 5] {
+/// (`ease` 1, the capsule: the cover's colour holds for a while at its end, then falls softly into the dark with no seam), squeezed into the first
+/// [`body_end`] of the length; a last stop holds `cb` to the far end.
+pub(super) fn ease_stops(ca: Color, cb: Color, ease: f32, fk: f32) -> [(f32, Color); 6] {
+    let end = body_end(ease);
     std::array::from_fn(|i| {
+        if i == 5 {
+            return (1.0, cb.fade(fk));
+        }
         let t = i as f32 / 4.0;
         let w = t + (t * t * (3.0 - 2.0 * t) - t) * ease;
-        (t, ca.mix(cb, w).fade(fk))
+        (t * end, ca.mix(cb, w).fade(fk))
     })
 }
 
@@ -291,6 +308,7 @@ impl Ink<'_> {
         let half = (b.w * sx.abs() + b.h * sy.abs()) / 2.0;
         let c = b.center();
         let t = (0.5 + ((q.0 - c.0) * sx + (q.1 - c.1) * sy) / (2.0 * half.max(1.0))).clamp(0.0, 1.0);
+        let t = (t / body_end(cap)).min(1.0);
         ca.mix(cb, t + (t * t * (3.0 - 2.0 * t) - t) * cap)
     }
 
@@ -324,23 +342,22 @@ impl Ink<'_> {
     }
 
     /// The capsule's progress: the track's loudness as a few thin rounded bars (the card's 32 squashed into `lg::wave_n`), the ones the playhead has
-    /// passed in the ink, the rest dim; a bar not measured yet is a short flat one, dimmer. The colour follows the playhead bar by bar (it glides
-    /// with the progress spring) and the heights are the springs of `Loud`, so a bar that gets measured grows to its height.
+    /// passed in the ink, the rest dim; the colour follows the playhead (it glides with the progress spring) and the heights are the springs of `Loud`,
+    /// so a bar that gets measured grows to its height. Everything stands on whole device px (a bar 2+ wide, none shorter than 4) so it is crisp in a
+    /// strip too. A bar not measured yet is a calm, dimmer one of the fixed pattern [`PLACEHOLDER`] (never a flat dot).
     fn mini_wave(&self, cv: &Canvas, r: Rect, track: Color, fill: Color) {
         let n = lg::wave_n(self.cap.h);
         let bars = squash(&self.heights, &self.known, n);
-        if self.cap.h < lg::STRIP_H || !bars.iter().any(|b| b.1) {
-            return self.mini_line(cv, r, track, fill);
-        }
         let gap = r.w / (2 * n - 1) as f32;
         let head = self.frac.clamp(0.0, 1.0) * n as f32;
         let k = self.st.bs();
-        let (lo, hi) = (r.h * 0.2, r.h * 0.92);
+        let (lo, hi) = ((r.h * 0.2).max(4.0 / k).min(r.h), r.h * 0.92);
         // a bar's height on device px with the parity of the strip, so that it stands centred without a half-pixel row
         let rp = (r.h * k).round() as i32;
         for (i, &(h, known)) in bars.iter().enumerate() {
             let (x, w) = lg::wave_cell(r, n, gap, i);
-            let nat = if known { lo + (hi - lo) * ((h - 0.2) / 0.8).clamp(0.0, 1.0) } else { r.h * 0.3 };
+            let share = if known { ((h - 0.2) / 0.8).clamp(0.0, 1.0) } else { PLACEHOLDER[i % PLACEHOLDER.len()] };
+            let nat = lo + (hi - lo) * share;
             let mut hp = (nat * k).round() as i32;
             if (rp - hp) % 2 != 0 {
                 hp += 1;
@@ -349,20 +366,6 @@ impl Ink<'_> {
             let (rest, played) = if known { (track, fill) } else { (track.fade(0.8), fill.fade(0.6)) };
             let col = rest.mix(played, (head - i as f32).clamp(0.0, 1.0));
             cv.fill_rr(Rect::new(x, r.cy() - h / 2.0, w, h), (w / 2.0).min(h / 2.0), col);
-        }
-    }
-
-    /// The mini waveform of a track nothing is measured of yet (a stream, a first listen): not a row of dots but a calm thin rounded line, the played part
-    /// of it in the ink, which the bars replace as they are learned.
-    fn mini_line(&self, cv: &Canvas, r: Rect, track: Color, fill: Color) {
-        let k = self.st.bs();
-        // 2 device px, 3 when the strip is an odd number of them (so it stands centred on a whole pixel row)
-        let h = if (r.h * k).round() as i32 % 2 == 0 { 2.0 } else { 3.0 } / k;
-        let line = Rect::new(r.x, r.cy() - h / 2.0, r.w, h);
-        cv.fill_rr(line, h / 2.0, track.fade(0.8));
-        let w = ((r.w * self.frac.clamp(0.0, 1.0) * k).round() / k).max(if self.frac > 0.0 { h } else { 0.0 });
-        if w > 0.0 {
-            cv.fill_rr(Rect::new(r.x, line.y, w, h), h / 2.0, fill);
         }
     }
 
