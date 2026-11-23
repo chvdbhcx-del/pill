@@ -4,6 +4,17 @@ All notable changes to Pill. The `## [x.y.z]` sections are used as release notes
 
 ## [Unreleased]
 
+## [0.13.4] - 2026-11-23
+
+### Highlights
+- The Text tab takes your typing and paste again, and the small music widget in the taskbar strip no longer has progress bars: the title and artist get their room.
+
+### Fixed
+- The Text tab (the text area and the AI ask line) takes the keyboard while it has the caret, and when you open the tab on purpose (a tab click, the hotkey, the command bar) the caret goes into the text area at once. Before, keys and Ctrl+V went to the app behind the island. Opening by hovering still leaves your keyboard alone.
+
+### Changed
+- Music widget capsule in the taskbar strip: no progress bars any more, the title and artist take their room; the full-height capsule keeps its bars.
+
 ## [0.13.3] - 2026-11-18
 
 ### Highlights
