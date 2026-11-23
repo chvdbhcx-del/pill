@@ -9,6 +9,7 @@
 //! after that mirrors it into the model. Buttons answer at once (their rectangles come from the last draw).
 //! Caret blink: the view has no timer, so a focused field keeps frames coming (not under reduced motion, where the caret is solid).
 use super::kit::{self, focus_one, lang_of, ms_of, route_effects, Calls, Clicks, Cues, Field, Icons, Lit};
+use crate::ui::tabs::fx::{emit, TabFx};
 use crate::ui::view::{Cx, Msg, View};
 use glasskit::canvas::Canvas;
 use crate::ui::liquid::{Feel, Flow};
@@ -173,6 +174,8 @@ pub struct TextScreen {
     /// IME candidate window position computed by the last draw
     ime: Option<Rect>,
     now_ms: f64,
+    /// the keyboard is taken for the text area / ask line (the island is a no-activate overlay; see `sync_keyboard`)
+    kb: bool,
 }
 
 impl Default for TextScreen {
@@ -226,6 +229,7 @@ impl TextScreen {
             drag: None,
             ime: None,
             now_ms: 0.0,
+            kb: false,
         };
         s.refresh();
         s
@@ -308,6 +312,16 @@ impl TextScreen {
             K::Copy => self.act(Action::Copy, cx),
             K::QrClose => self.act(Action::CloseQr, cx),
             K::AskGo => self.act(Action::AskGo, cx),
+        }
+    }
+
+    /// The island is a no-activate overlay: while the text area or the ask line has the caret it must take the keyboard (and stay open), and
+    /// give it back when the caret is gone. Without this, typing and Ctrl+V go to the app behind the island.
+    fn sync_keyboard(&mut self) {
+        let on = self.area.is_focused() || self.ask.is_focused();
+        if on != self.kb {
+            self.kb = on;
+            emit(TabFx::TextFocus(on));
         }
     }
 
@@ -411,6 +425,7 @@ impl View for TextScreen {
             self.model.tick(ms);
         }
         self.drain_model(cx);
+        self.sync_keyboard();
         if self.dirty || self.view.toast.is_some() || self.toast_t.at() > 0.0 {
             self.refresh();
         }
@@ -470,6 +485,19 @@ impl View for TextScreen {
         self.ctx(cx);
         self.dirty = true;
         cx.request_frame();
+    }
+
+    /// The user opened the tab on purpose (`View::on_user_open`): the text area gets the caret, which takes the keyboard (`sync_keyboard`),
+    /// so typing and paste work at once. Not on a hover open: that must not steal the keys.
+    fn on_user_open(&mut self, cx: &mut Cx) {
+        focus_one(&mut [&mut self.area, &mut self.ask], Some(0));
+        self.sync_keyboard();
+        cx.request_frame();
+    }
+
+    fn on_hide(&mut self, _cx: &mut Cx) {
+        focus_one(&mut [&mut self.area, &mut self.ask], None);
+        self.sync_keyboard();
     }
 
     fn draw(&mut self, cv: &Canvas, th: &Theme, rect: Rect, cx: &Cx) {
@@ -1003,6 +1031,29 @@ mod tests {
         s.set_mode(Mode::Ai, &mut cx);
         s.step(16.0, &mut cx);
         assert_eq!(s.mode_t.at(), 1.0, "reduced motion: the switch jumps");
+    }
+
+    #[test]
+    fn the_text_area_takes_the_keyboard_on_a_user_open_and_gives_it_back_on_hide() {
+        use crate::ui::tabs::fx::{take, TabFx};
+        let (svc, _f) = Services::fake();
+        let mut cx = Cx::headless_with(svc);
+        let mut s = screen("x", None, &mut cx);
+        let _ = take();
+        s.on_show(&mut cx);
+        s.step(16.0, &mut cx);
+        assert!(take().is_empty(), "a hover open must not steal the keys");
+        s.on_user_open(&mut cx);
+        assert!(s.area.is_focused());
+        assert_eq!(take(), vec![TabFx::TextFocus(true)]);
+        s.step(16.0, &mut cx);
+        assert!(take().is_empty(), "asked once, not every frame");
+        s.on_hide(&mut cx);
+        assert_eq!(take(), vec![TabFx::TextFocus(false)]);
+        // a click into the field (focus without on_user_open) takes the keyboard on the next step
+        s.area.ti.set_focused(true);
+        s.step(16.0, &mut cx);
+        assert_eq!(take(), vec![TabFx::TextFocus(true)]);
     }
 
     #[test]
